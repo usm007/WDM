@@ -1,0 +1,22 @@
+{
+  "manifest_version": 3,
+  "name": "WDM Download Catcher",
+  "version": "1.0.0",
+  "description": "Catch browser downloads and send them to WDM (Windows Download Manager).",
+  "permissions": [
+    "downloads"
+  ],
+  "host_permissions": [
+    "http://127.0.0.1:17530/*",
+    "http://localhost:17530/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "wdm-catcher@wdm.app",
+      "strict_min_version": "109.0"
+    }
+  }
+}

@@ -1,0 +1,188 @@
+using System.IO;
+using System.Net;
+using System.Net.Sockets;
+using System.Text;
+using System.Text.Json;
+
+namespace WDM.Services;
+
+public sealed class CaptureServer : IDisposable
+{
+    public const int Port = 17530;
+    private static readonly JsonSerializerOptions JsonOptions = new()
+    {
+        PropertyNameCaseInsensitive = true,
+    };
+    private readonly TcpListener _listener;
+    private readonly Action<string, string?, string?> _onCapture;
+    private readonly CancellationTokenSource _cts = new();
+    private bool _running;
+
+    public CaptureServer(Action<string, string?, string?> onCapture)
+    {
+        _onCapture = onCapture;
+        _listener = new TcpListener(IPAddress.Loopback, Port);
+    }
+
+    public void Start()
+    {
+        _listener.Start();
+        _running = true;
+        _ = Task.Run(AcceptLoopAsync);
+    }
+
+    private async Task AcceptLoopAsync()
+    {
+        while (_running)
+        {
+            TcpClient client;
+            try
+            {
+                client = await _listener.AcceptTcpClientAsync(_cts.Token);
+            }
+            catch (OperationCanceledException)
+            {
+                break;
+            }
+            catch
+            {
+                break;
+            }
+            _ = Task.Run(() => HandleClientAsync(client));
+        }
+    }
+
+    private async Task HandleClientAsync(TcpClient client)
+    {
+        using (client)
+        {
+            try
+            {
+                using var stream = client.GetStream();
+                using var reader = new StreamReader(stream, Encoding.UTF8, leaveOpen: true);
+
+                string? line = await reader.ReadLineAsync();
+                if (line is null)
+                    return;
+                var parts = line.Split(' ');
+                if (parts.Length < 2)
+                    return;
+                string method = parts[0];
+                string path = parts[1];
+
+                long contentLength = 0;
+                bool expectContinue = false;
+                while (!string.IsNullOrEmpty(line = await reader.ReadLineAsync()))
+                {
+                    var colon = line.IndexOf(':');
+                    if (colon <= 0)
+                        continue;
+                    string name = line[..colon].Trim();
+                    string value = line[(colon + 1)..].Trim();
+                    if (name.Equals("Content-Length", StringComparison.OrdinalIgnoreCase))
+                        long.TryParse(value, out contentLength);
+                    else if (name.Equals("Expect", StringComparison.OrdinalIgnoreCase))
+                        expectContinue = value.Contains("100-continue", StringComparison.OrdinalIgnoreCase);
+                }
+
+                if (expectContinue)
+                {
+                    await WriteRawAsync(stream, "HTTP/1.1 100 Continue\r\n\r\n");
+                }
+
+                string body = "";
+                if (contentLength > 0)
+                {
+                    var buffer = new char[contentLength];
+                    int read = 0;
+                    while (read < buffer.Length)
+                    {
+                        int n = await reader.ReadBlockAsync(buffer, read, buffer.Length - read);
+                        if (n == 0)
+                            break;
+                        read += n;
+                    }
+                    body = new string(buffer, 0, read);
+                }
+
+                if (method == "OPTIONS")
+                {
+                    await WriteResponseAsync(stream, HttpStatusCode.NoContent, "");
+                    return;
+                }
+
+                if (method == "GET" && path == "/ping")
+                {
+                    await WriteResponseAsync(stream, HttpStatusCode.OK, "{\"status\":\"ok\"}");
+                    return;
+                }
+
+                if (method == "POST" && path == "/download")
+                {
+                    try
+                    {
+                        var payload = JsonSerializer.Deserialize<CapturePayload>(body, JsonOptions);
+                        if (payload is null || string.IsNullOrWhiteSpace(payload.Url))
+                            throw new InvalidOperationException("Empty url");
+                        _onCapture(payload.Url, payload.FileName, payload.Referer);
+                        await WriteResponseAsync(stream, HttpStatusCode.OK, "{\"accepted\":true}");
+                    }
+                    catch
+                    {
+                        await WriteResponseAsync(stream, HttpStatusCode.BadRequest, "{\"error\":\"invalid request\"}");
+                    }
+                    return;
+                }
+
+                await WriteResponseAsync(stream, HttpStatusCode.NotFound, "");
+            }
+            catch
+            {
+                // Client hung up mid-request; nothing to do.
+            }
+        }
+    }
+
+    private static async Task WriteResponseAsync(Stream stream, HttpStatusCode status, string body)
+    {
+        byte[] bodyBytes = Encoding.UTF8.GetBytes(body);
+        string headers =
+            $"HTTP/1.1 {(int)status} {status}\r\n" +
+            "Content-Type: application/json\r\n" +
+            "Access-Control-Allow-Origin: *\r\n" +
+            "Access-Control-Allow-Methods: POST, GET, OPTIONS\r\n" +
+            "Access-Control-Allow-Headers: Content-Type\r\n" +
+            $"Content-Length: {bodyBytes.Length}\r\n" +
+            "Connection: close\r\n\r\n";
+        await WriteRawAsync(stream, headers + body);
+    }
+
+    private static async Task WriteRawAsync(Stream stream, string text)
+    {
+        byte[] bytes = Encoding.UTF8.GetBytes(text);
+        await stream.WriteAsync(bytes);
+        await stream.FlushAsync();
+    }
+
+    public void Dispose()
+    {
+        _running = false;
+        _cts.Cancel();
+        try
+        {
+            _listener.Stop();
+        }
+        catch
+        {
+            // Ignore.
+        }
+        _cts.Dispose();
+    }
+
+    private sealed class CapturePayload
+    {
+        public string? Url { get; set; }
+        public string? FileName { get; set; }
+        public string? Referer { get; set; }
+    }
+}
