@@ -1,31 +1,68 @@
-// WDM Download Catcher — sends browser downloads to WDM's localhost server.
+// WDM Download Catcher — cross-browser (Chrome MV3 + Firefox MV3).
+const webext = typeof browser !== "undefined" ? browser : chrome;
 const WDM_HOST = "http://127.0.0.1:17530";
 
-// URLs we just re-issued to the browser (fallback after WDM is unreachable),
-// so we don't recursively catch our own re-download.
+// Re-entrance guard for URLs handed off to WDM
 const loopGuard = new Map();
 
-chrome.downloads.onCreated.addListener((item) => {
-  if (!item.url || item.url.startsWith("file:")) {
+// Periodic ping to verify WDM connection status
+let isWdmActive = false;
+async function checkWdm() {
+  try {
+    const res = await fetch(`${WDM_HOST}/ping`, { method: "GET" });
+    isWdmActive = res.ok;
+  } catch {
+    isWdmActive = false;
+  }
+}
+checkWdm();
+setInterval(checkWdm, 4000);
+
+webext.downloads.onCreated.addListener(async (item) => {
+  // 1. Ignore historical/restored items when browser/PC restarts
+  if (item.state && item.state !== "in_progress") {
     return;
   }
+
+  // 2. Ignore items created in the past (more than 10 seconds ago)
+  if (item.startTime && (Date.now() - new Date(item.startTime).getTime()) > 10000) {
+    return;
+  }
+
+  // 3. Ignore non-downloadable protocols (file:, blob:, data:, chrome:, about:)
+  if (!item.url || !/^https?:\/\//i.test(item.url)) {
+    return;
+  }
+
+  // 4. Ignore URLs in loop guard
   if (loopGuard.get(item.url) > Date.now()) {
     loopGuard.delete(item.url);
     return;
   }
 
-  // Cancel the browser's own download first, then hand it to WDM.
-  chrome.downloads.cancel(item.id, () => {
-    void chrome.downloads.erase({ id: item.id });
-  });
+  // 5. Ping WDM first BEFORE cancelling the browser download.
+  // If WDM is not running, let the browser download naturally!
+  await checkWdm();
+  if (!isWdmActive) {
+    return;
+  }
 
-  sendToWdm(item.url, item.filename, item.referrer)
-    .then(() => {})
-    .catch(() => {
-      // WDM is not running — restore the original browser download.
-      loopGuard.set(item.url, Date.now() + 15000);
-      void chrome.downloads.download({ url: item.url, filename: item.filename });
-    });
+  // Mark URL in loop guard
+  loopGuard.set(item.url, Date.now() + 15000);
+
+  // Cancel browser download and hand over to WDM
+  try {
+    await webext.downloads.cancel(item.id);
+    await webext.downloads.erase({ id: item.id }).catch(() => {});
+  } catch {
+    // If cancel failed, continue anyway
+  }
+
+  try {
+    await sendToWdm(item.url, item.filename, item.referrer);
+  } catch (err) {
+    console.warn("WDM handoff failed:", err);
+  }
 });
 
 async function sendToWdm(url, filename, referrer) {

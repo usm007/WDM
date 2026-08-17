@@ -1,0 +1,37 @@
+{
+  "manifest_version": 3,
+  "name": "WDM Download Catcher",
+  "version": "1.0.0",
+  "description": "Catch browser downloads and send them to WDM (Windows Download Manager).",
+  "permissions": [
+    "downloads"
+  ],
+  "host_permissions": [
+    "http://127.0.0.1:17530/*",
+    "http://localhost:17530/*"
+  ],
+  "action": {
+    "default_title": "WDM Download Catcher",
+    "default_icon": {
+      "16": "icon16.png",
+      "32": "icon32.png",
+      "48": "icon48.png",
+      "128": "icon128.png"
+    }
+  },
+  "icons": {
+    "16": "icon16.png",
+    "32": "icon32.png",
+    "48": "icon48.png",
+    "128": "icon128.png"
+  },
+  "background": {
+    "scripts": ["background.js"]
+  },
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "wdm-catcher@wdm.app",
+      "strict_min_version": "109.0"
+    }
+  }
+}

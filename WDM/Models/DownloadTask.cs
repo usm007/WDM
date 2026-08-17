@@ -11,7 +11,6 @@ public enum TaskStatus
     Paused,
     Completed,
     Failed,
-    Scheduled,
 }
 
 public enum PriorityLevel
@@ -45,7 +44,29 @@ public sealed class DownloadTask : INotifyPropertyChanged
 
     public string Url { get; set; } = "";
     public string? Referer { get; set; }
-    public int ChunkCount { get; set; } = 4;
+
+    /// <summary>Alternative URLs for the same file. Used as failover mirrors; the
+    /// engine rotates to the next mirror when the current URL keeps failing.</summary>
+    public List<string> Mirrors { get; set; } = new();
+
+    /// <summary>Server identity of the file (ETag / Last-Modified) captured at probe
+    /// time. Compared on resume to detect that the file changed on the server.</summary>
+    public string? Etag { get; set; }
+    public string? LastModified { get; set; }
+
+    /// <summary>Set when the user refreshed the download link. On the next start the
+    /// engine skips the ETag identity check (a new URL may serve the same file with
+    /// different headers) and resumes from the existing progress; it only restarts
+    /// from zero if the new file has a different size. Not persisted.</summary>
+    public bool LinkRefreshed { get; set; }
+
+    private int _chunkCount = 0;
+    public int ChunkCount
+    {
+        get => _chunkCount;
+        set => Set(ref _chunkCount, Math.Max(0, value));
+    }
+
     public long SpeedLimitKbps { get; set; }
     public DownloadCategory Category { get; set; } = DownloadCategory.Other;
     public string? Checksum { get; set; }
@@ -56,17 +77,6 @@ public sealed class DownloadTask : INotifyPropertyChanged
     {
         get => _priority;
         set => Set(ref _priority, value);
-    }
-
-    private DateTime? _scheduledStart;
-    public DateTime? ScheduledStart
-    {
-        get => _scheduledStart;
-        set
-        {
-            if (Set(ref _scheduledStart, value))
-                Raise(nameof(ScheduledStartText));
-        }
     }
 
     private string _saveFolder = DefaultSaveFolder;
@@ -83,7 +93,27 @@ public sealed class DownloadTask : INotifyPropertyChanged
     public string FileName
     {
         get => _fileName;
-        set => Set(ref _fileName, value);
+        set
+        {
+            if (Set(ref _fileName, value))
+                Raise(nameof(DisplayFileName));
+        }
+    }
+
+    public string DisplayFileName
+    {
+        get
+        {
+            if (!string.IsNullOrWhiteSpace(FileName))
+                return FileName;
+            if (Uri.TryCreate(Url, UriKind.Absolute, out var uri) && !string.IsNullOrWhiteSpace(uri.LocalPath))
+            {
+                string name = Path.GetFileName(uri.LocalPath);
+                if (!string.IsNullOrWhiteSpace(name))
+                    return name;
+            }
+            return Url;
+        }
     }
 
     public string FullPath => string.IsNullOrWhiteSpace(SaveFolder) ? "" : Path.Combine(SaveFolder, FileName);
@@ -95,7 +125,14 @@ public sealed class DownloadTask : INotifyPropertyChanged
         set
         {
             if (Set(ref _status, value))
+            {
                 Raise(nameof(StatusText));
+                Raise(nameof(ProgressText));
+                Raise(nameof(SpeedText));
+                Raise(nameof(ProgressSpeedText));
+                Raise(nameof(Eta));
+                Raise(nameof(DownloadedOfTotalText));
+            }
         }
     }
 
@@ -106,7 +143,10 @@ public sealed class DownloadTask : INotifyPropertyChanged
         set
         {
             if (Set(ref _totalBytes, value))
+            {
                 Raise(nameof(SizeText));
+                Raise(nameof(DownloadedOfTotalText));
+            }
         }
     }
 
@@ -117,15 +157,23 @@ public sealed class DownloadTask : INotifyPropertyChanged
         set
         {
             if (Set(ref _downloadedBytes, value))
-                Raise(nameof(SizeText));
+            {
+                Raise(nameof(DownloadedText));
+                Raise(nameof(ProgressSpeedText));
+                Raise(nameof(DownloadedOfTotalText));
+            }
         }
     }
 
     private int _progress;
     public int Progress
     {
-        get => _progress;
-        set => Set(ref _progress, value);
+        get => Status == TaskStatus.Completed ? 100 : _progress;
+        set
+        {
+            if (Set(ref _progress, value))
+                Raise(nameof(ProgressSpeedText));
+        }
     }
 
     private double _speedBps;
@@ -135,15 +183,22 @@ public sealed class DownloadTask : INotifyPropertyChanged
         set
         {
             if (Set(ref _speedBps, value))
+            {
                 Raise(nameof(SpeedText));
+                Raise(nameof(ProgressSpeedText));
+            }
         }
     }
 
     private string _eta = "";
     public string Eta
     {
-        get => _eta;
-        set => Set(ref _eta, value);
+        get => Status == TaskStatus.Downloading ? _eta : "";
+        set
+        {
+            if (Set(ref _eta, value))
+                Raise(nameof(Eta));
+        }
     }
 
     private string? _error;
@@ -161,11 +216,54 @@ public sealed class DownloadTask : INotifyPropertyChanged
 
     public string DownloadedText => FormatBytes(DownloadedBytes);
 
-    public string ProgressText => $"{Progress}%";
+    public string ProgressText => Status == TaskStatus.Downloading ? $"{Progress}%" : "";
 
-    public string SpeedText => SpeedBps >= 1 ? $"{FormatBytes((long)SpeedBps)}/s" : "";
+    public string SpeedText => Status == TaskStatus.Downloading && SpeedBps >= 1
+        ? $"{FormatBytes((long)SpeedBps)}/s"
+        : "";
 
-    public string QueueText => Status == TaskStatus.Queued || Status == TaskStatus.Downloading ? "Q" : "";
+    public string DomainText
+    {
+        get
+        {
+            if (Uri.TryCreate(Url, UriKind.Absolute, out var uri))
+                return uri.Host;
+            return "—";
+        }
+    }
+
+    public string SpeedOrDetailText => Status switch
+    {
+        TaskStatus.Downloading => SpeedText,
+        TaskStatus.Completed => CompletedAt.HasValue ? $"Completed {CompletedAt.Value:HH:mm}" : "",
+        TaskStatus.Failed => !string.IsNullOrEmpty(Error) ? Error : "",
+        _ => "",
+    };
+
+    public string ProgressSpeedText => Status == TaskStatus.Downloading
+        ? $"{Progress}% · {SpeedText}".TrimEnd('·', ' ')
+        : "";
+
+    public string DownloadedOfTotalText => Status == TaskStatus.Downloading
+        ? TotalBytes > 0
+            ? $"{DownloadedText} of {SizeText}"
+            : DownloadedText
+        : "";
+
+    public string QueueText => Status == TaskStatus.Queued ? (QueuePosition > 0 ? QueuePosition.ToString() : "Q") : "";
+
+    private int _queuePosition;
+    public int QueuePosition
+    {
+        get => _queuePosition;
+        set
+        {
+            if (_queuePosition == value)
+                return;
+            _queuePosition = value;
+            Raise(nameof(QueueText));
+        }
+    }
 
     public string CategoryColorHex => Category switch
     {
@@ -174,8 +272,11 @@ public sealed class DownloadTask : INotifyPropertyChanged
         DownloadCategory.Document => "#3B82F6",
         DownloadCategory.Compressed => "#F59E0B",
         DownloadCategory.Program => "#10B981",
-        _ => "#6B7280",
+        _ => "#000000",
     };
+
+    public System.Windows.Media.Brush CategoryBrush =>
+        (System.Windows.Media.Brush)System.Windows.Application.Current.Resources["Brush.TextDim"];
 
     public string TypeIcon => Category switch
     {
@@ -189,12 +290,13 @@ public sealed class DownloadTask : INotifyPropertyChanged
 
     public string StatusText => Status switch
     {
-        TaskStatus.Failed => Error ?? "Failed",
-        TaskStatus.Scheduled => ScheduledStart is DateTime s ? $"Scheduled · {s:HH:mm}" : "Scheduled",
+        TaskStatus.Downloading => "Running",
+        TaskStatus.Failed => "Failed",
+        TaskStatus.Completed => "Done",
+        TaskStatus.Paused => "Paused",
+        TaskStatus.Queued => "Queued",
         _ => Status.ToString(),
     };
-
-    public string ScheduledStartText => ScheduledStart is DateTime s ? s.ToString("yyyy-MM-dd HH:mm") : "";
 
     public static string FormatBytes(long bytes)
     {

@@ -12,6 +12,15 @@
 
   <ItemGroup>
     <Resource Include="Assets\WDM.ico" />
+    <Resource Include="Assets\icon.png" />
+    <Resource Include="Assets\logo.png" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Content Include="..\WDM.BrowserExtension\**\*" Exclude="..\WDM.BrowserExtension\**\*.md">
+      <Link>BrowserExtension\%(RecursiveDir)%(Filename)%(Extension)</Link>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
   </ItemGroup>
 
 </Project>

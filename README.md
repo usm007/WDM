@@ -6,7 +6,7 @@ An IDM-style download manager for Windows, written in C# / WPF / .NET 8.
 - **Pause / Resume** — the set of completed chunks is persisted to a `*.wdmstate` file next to the target; resuming skips chunks already on disk and continues from there, even across restarts.
 - **Automatic retry** — transient failures and HTTP 408/429/5xx responses are retried with exponential backoff (`MaxRetries`).
 - **Browser download catching** — a small Chrome/Edge/Firefox extension (Manifest V3) intercepts downloads and hands them to WDM over a localhost server.
-- **Speed limiting & scheduling** — per-download and global limits, a time-of-day throttle window, a download window (only download inside e.g. 01:00–06:00), and per-task scheduled start times.
+- **Speed limiting** — per-download and global throughput limits.
 - **Priorities & categories** — Low/Normal/High priority that reorders the queue, and automatic categorization by file extension with optional per-category save folders.
 - **Post-download actions** — optional SHA-256 checksum computation and a script/command to run on completion.
 - **Modern dark UI** — sidebar filters, search box, drag-and-drop URL/file support, progress table, live speed and ETA, status bar.
@@ -52,7 +52,6 @@ With WDM running, any download the browser starts is cancelled by the extension 
 4. On resume, `ChunkState.Load` validates the state file's magic, total bytes, chunk size and chunk count, then workers skip already-completed chunks.
 5. `RunSingleStreamAsync` is the fallback when the server doesn't support ranges or the size is unknown; it also retries on failure.
 6. A 500ms timer samples bytes/sec to drive the speed and ETA shown in the UI.
-7. A 30s schedule timer promotes due scheduled tasks, applies the throttle limit, and auto-pauses/resumes around the download window.
 
 ## Caveats
 

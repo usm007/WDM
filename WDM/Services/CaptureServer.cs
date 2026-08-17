@@ -18,6 +18,9 @@ public sealed class CaptureServer : IDisposable
     private readonly CancellationTokenSource _cts = new();
     private bool _running;
 
+    public bool IsConnected { get; private set; }
+    public event Action? ExtensionConnected;
+
     public CaptureServer(Action<string, string?, string?> onCapture)
     {
         _onCapture = onCapture;
@@ -26,9 +29,17 @@ public sealed class CaptureServer : IDisposable
 
     public void Start()
     {
-        _listener.Start();
-        _running = true;
-        _ = Task.Run(AcceptLoopAsync);
+        try
+        {
+            _listener.Start();
+            _running = true;
+            _ = Task.Run(AcceptLoopAsync);
+        }
+        catch (Exception)
+        {
+            // Port unavailable or already bound by another instance
+            _running = false;
+        }
     }
 
     private async Task AcceptLoopAsync()
@@ -113,6 +124,8 @@ public sealed class CaptureServer : IDisposable
 
                 if (method == "GET" && path == "/ping")
                 {
+                    IsConnected = true;
+                    ExtensionConnected?.Invoke();
                     await WriteResponseAsync(stream, HttpStatusCode.OK, "{\"status\":\"ok\"}");
                     return;
                 }
@@ -124,6 +137,8 @@ public sealed class CaptureServer : IDisposable
                         var payload = JsonSerializer.Deserialize<CapturePayload>(body, JsonOptions);
                         if (payload is null || string.IsNullOrWhiteSpace(payload.Url))
                             throw new InvalidOperationException("Empty url");
+                        IsConnected = true;
+                        ExtensionConnected?.Invoke();
                         _onCapture(payload.Url, payload.FileName, payload.Referer);
                         await WriteResponseAsync(stream, HttpStatusCode.OK, "{\"accepted\":true}");
                     }

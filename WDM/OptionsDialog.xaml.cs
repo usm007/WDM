@@ -23,15 +23,6 @@ public partial class OptionsDialog : Window
         RetriesBox.SelectedIndex = Math.Clamp(RetryIndex(s.MaxRetries), 0, RetriesBox.Items.Count - 1);
         SpeedBox.Text = s.GlobalSpeedLimitKbps.ToString();
 
-        ThrottleBox.IsChecked = s.ThrottleScheduleEnabled;
-        ThrottleStartBox.Text = s.ThrottleStart;
-        ThrottleEndBox.Text = s.ThrottleEnd;
-        ThrottleLimitBox.Text = s.ThrottleLimitKbps.ToString();
-
-        WindowBox.IsChecked = s.DownloadWindowEnabled;
-        WindowStartBox.Text = s.WindowStart;
-        WindowEndBox.Text = s.WindowEnd;
-
         RouteBox.IsChecked = s.RouteByCategory;
         VideoFolderBox.Text = s.CategoryFolders.GetValueOrDefault(DownloadCategory.Video.ToString()) ?? "";
         MusicFolderBox.Text = s.CategoryFolders.GetValueOrDefault(DownloadCategory.Music.ToString()) ?? "";
@@ -46,6 +37,105 @@ public partial class OptionsDialog : Window
         NotifyBox.IsChecked = s.NotifyOnCompletion;
         MinimizeToTrayBox.IsChecked = s.MinimizeToTray;
         RunAtStartupBox.IsChecked = s.RunAtStartup;
+
+        PopulateBrowsers();
+    }
+
+    private void PopulateBrowsers()
+    {
+        if (BrowserList == null) return;
+
+        var browsers = BrowserIntegration.DetectInstalledBrowsers();
+        if (browsers.Count == 0)
+        {
+            BrowserStatusText.Text = "No supported browsers detected on this system.";
+            return;
+        }
+
+        BrowserStatusText.Text = $"Detected {browsers.Count} browser(s):";
+
+        foreach (var browser in browsers)
+        {
+            var row = new StackPanel
+            {
+                Orientation = Orientation.Horizontal,
+                Margin = new Thickness(0, 0, 0, 8),
+            };
+
+            var icon = new TextBlock
+            {
+                Text = browser.Kind == BrowserKind.Firefox ? "\uE7B4" : "\uE774",
+                FontFamily = new System.Windows.Media.FontFamily("Segoe MDL2 Assets"),
+                FontSize = 14,
+                Foreground = (System.Windows.Media.Brush)FindResource("Brush.TextDim"),
+                VerticalAlignment = VerticalAlignment.Center,
+                Margin = new Thickness(0, 0, 8, 0),
+            };
+
+            var label = new TextBlock
+            {
+                Text = browser.Name,
+                FontSize = 13,
+                VerticalAlignment = VerticalAlignment.Center,
+                Margin = new Thickness(0, 0, 12, 0),
+            };
+
+            var status = new TextBlock
+            {
+                Text = "Not installed",
+                FontSize = 11,
+                Foreground = (System.Windows.Media.Brush)FindResource("Brush.TextDim"),
+                VerticalAlignment = VerticalAlignment.Center,
+                Margin = new Thickness(0, 0, 12, 0),
+            };
+
+            var button = new Button
+            {
+                Content = "Install",
+                Style = (Style)FindResource("Button.Secondary"),
+                Height = 28,
+                MinWidth = 80,
+                Padding = new Thickness(14, 0, 14, 0),
+            };
+
+            button.Click += (_, _) => InstallBrowser(browser, status);
+            status.Text = IsBrowserInjected(browser) ? "Installed" : "Not installed";
+
+            row.Children.Add(icon);
+            row.Children.Add(label);
+            row.Children.Add(status);
+            row.Children.Add(button);
+            BrowserList.Children.Add(row);
+        }
+    }
+
+    private void InstallBrowser(InstalledBrowser browser, TextBlock status)
+    {
+        try
+        {
+            string message = browser.Kind == BrowserKind.Firefox
+                ? BrowserIntegration.InjectFirefox(browser)
+                : BrowserIntegration.InjectChromium(browser);
+            status.Text = "Installed";
+            status.Foreground = (System.Windows.Media.Brush)FindResource("Brush.Success");
+            BrowserStatusText.Text = message;
+        }
+        catch (Exception ex)
+        {
+            status.Text = "Failed";
+            status.Foreground = (System.Windows.Media.Brush)FindResource("Brush.Danger");
+            BrowserStatusText.Text = ex.Message;
+        }
+    }
+
+    private static bool IsBrowserInjected(InstalledBrowser browser)
+    {
+        if (browser.Kind == BrowserKind.Firefox)
+        {
+            using var key = Registry.CurrentUser.OpenSubKey(@"Software\Mozilla\Firefox\Extensions");
+            return key?.GetValue(BrowserIntegration.FirefoxExtensionId) != null;
+        }
+        return false;
     }
 
     private void Tab_Checked(object sender, RoutedEventArgs e)
@@ -55,18 +145,18 @@ public partial class OptionsDialog : Window
             if (PanelConnection != null) PanelConnection.Visibility = tag == "Connection" ? Visibility.Visible : Visibility.Collapsed;
             if (PanelFolders != null) PanelFolders.Visibility = tag == "Folders" ? Visibility.Visible : Visibility.Collapsed;
             if (PanelBrowser != null) PanelBrowser.Visibility = tag == "Browser" ? Visibility.Visible : Visibility.Collapsed;
-            if (PanelScheduler != null) PanelScheduler.Visibility = tag == "Scheduler" ? Visibility.Visible : Visibility.Collapsed;
             if (PanelBehavior != null) PanelBehavior.Visibility = tag == "Behavior" ? Visibility.Visible : Visibility.Collapsed;
         }
     }
 
     private static int ChunkIndex(int chunks) => chunks switch
     {
-        1 => 0,
-        2 => 1,
-        8 => 3,
-        16 => 4,
-        _ => 2,
+        0 => 0,
+        1 => 1,
+        2 => 2,
+        8 => 4,
+        16 => 5,
+        _ => 0,
     };
 
     private static int RetryIndex(int retries) => retries switch
@@ -96,6 +186,20 @@ public partial class OptionsDialog : Window
             ScriptBox.Text = dialog.FileName;
     }
 
+    private void OpenExtensionHelper_Click(object sender, RoutedEventArgs e)
+    {
+        var mainWin = Application.Current.Windows.OfType<MainWindow>().FirstOrDefault();
+        if (mainWin is not null)
+        {
+            mainWin.ShowExtensionInstallerDialog();
+        }
+        else
+        {
+            var helper = new BrowserExtensionDialog { Owner = this };
+            helper.ShowDialog();
+        }
+    }
+
     private void SaveClick(object sender, RoutedEventArgs e)
     {
         var s = _viewModel.Settings;
@@ -103,9 +207,9 @@ public partial class OptionsDialog : Window
             ? DownloadTask.DefaultSaveFolder
             : FolderBox.Text;
 
-        s.DefaultChunkCount = ChunksBox.SelectedItem is ComboBoxItem chunks && int.TryParse(ExtractFirstDigit(chunks.Content.ToString()!), out int c)
+        s.DefaultChunkCount = ChunksBox.SelectedItem is ComboBoxItem chunks && chunks.Tag is string tag && int.TryParse(tag, out int c)
             ? c
-            : 4;
+            : 0;
 
         s.MaxConcurrentDownloads = MaxConcurrentBox.SelectedItem is ComboBoxItem mc && int.TryParse(mc.Content.ToString(), out int m)
             ? m
@@ -118,17 +222,6 @@ public partial class OptionsDialog : Window
         s.GlobalSpeedLimitKbps = long.TryParse(SpeedBox.Text.Trim(), out long speed) && speed >= 0
             ? speed
             : 0;
-
-        s.ThrottleScheduleEnabled = ThrottleBox.IsChecked == true;
-        s.ThrottleStart = ThrottleStartBox.Text.Trim();
-        s.ThrottleEnd = ThrottleEndBox.Text.Trim();
-        s.ThrottleLimitKbps = long.TryParse(ThrottleLimitBox.Text.Trim(), out long throttleLimit) && throttleLimit >= 0
-            ? throttleLimit
-            : 0;
-
-        s.DownloadWindowEnabled = WindowBox.IsChecked == true;
-        s.WindowStart = WindowStartBox.Text.Trim();
-        s.WindowEnd = WindowEndBox.Text.Trim();
 
         s.RouteByCategory = RouteBox.IsChecked == true;
         s.CategoryFolders = new Dictionary<string, string>
@@ -156,5 +249,11 @@ public partial class OptionsDialog : Window
     {
         var match = System.Text.RegularExpressions.Regex.Match(input, @"\d+");
         return match.Success ? match.Value : "0";
+    }
+
+    private void CancelClick(object sender, RoutedEventArgs e)
+    {
+        DialogResult = false;
+        Close();
     }
 }

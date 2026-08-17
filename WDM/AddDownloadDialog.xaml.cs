@@ -12,23 +12,63 @@ namespace WDM;
 public partial class AddDownloadDialog : Window
 {
     private readonly MainViewModel _viewModel;
+    private readonly string? _prefillUrl;
+    private readonly string? _prefillFileName;
+    private readonly string? _prefillReferer;
     private string _lastDerivedName = "";
     private CancellationTokenSource? _probeCts;
 
-    public AddDownloadDialog(MainViewModel viewModel)
+    public AddDownloadDialog(MainViewModel viewModel, string? prefillUrl = null, string? prefillFileName = null, string? prefillReferer = null)
     {
         InitializeComponent();
         _viewModel = viewModel;
+        _prefillUrl = prefillUrl;
+        _prefillFileName = prefillFileName;
+        _prefillReferer = prefillReferer;
         FolderBox.Text = viewModel.Settings.DownloadFolder;
         ChunksBox.SelectedIndex = Math.Clamp(ChunkIndex(viewModel.Settings.DefaultChunkCount), 0, ChunksBox.Items.Count - 1);
         CategoryBox.SelectedIndex = 0;
-        LaterTimeBox.Text = DateTime.Now.AddMinutes(5).ToString("yyyy-MM-dd HH:mm");
         UrlBox.Focus();
+
+        Loaded += (_, _) =>
+        {
+            if (!string.IsNullOrWhiteSpace(_prefillUrl))
+            {
+                UrlBox.Text = _prefillUrl.Trim();
+                if (!string.IsNullOrWhiteSpace(_prefillFileName))
+                {
+                    NameBox.Text = DownloadEngine.SanitizeFileName(_prefillFileName);
+                }
+                UrlBox.SelectAll();
+                UrlBox.Focus();
+            }
+            else
+            {
+                AutoPasteClipboardUrl();
+            }
+        };
     }
 
-    private void StartNow_Checked(object sender, RoutedEventArgs e) { if (LaterTimeBox != null) LaterTimeBox.IsEnabled = false; }
-
-    private void StartLater_Checked(object sender, RoutedEventArgs e) { if (LaterTimeBox != null) LaterTimeBox.IsEnabled = true; }
+    private void AutoPasteClipboardUrl()
+    {
+        try
+        {
+            if (Clipboard.ContainsText())
+            {
+                string clip = Clipboard.GetText().Trim();
+                if (Uri.TryCreate(clip, UriKind.Absolute, out var uri) &&
+                    (uri.Scheme == Uri.UriSchemeHttp || uri.Scheme == Uri.UriSchemeHttps || uri.Scheme == Uri.UriSchemeFtp))
+                {
+                    UrlBox.Text = clip;
+                    UrlBox.SelectAll();
+                }
+            }
+        }
+        catch
+        {
+            // Clipboard access protection
+        }
+    }
 
     private void ApplyRouting()
     {
@@ -57,11 +97,12 @@ public partial class AddDownloadDialog : Window
 
     private static int ChunkIndex(int chunks) => chunks switch
     {
-        1 => 0,
-        2 => 1,
-        8 => 3,
-        16 => 4,
-        _ => 2,
+        0 => 0,
+        1 => 1,
+        2 => 2,
+        8 => 4,
+        16 => 5,
+        _ => 0,
     };
 
     private void UrlBox_TextChanged(object sender, TextChangedEventArgs e)
@@ -71,11 +112,13 @@ public partial class AddDownloadDialog : Window
                        (uri.Scheme == Uri.UriSchemeHttp || uri.Scheme == Uri.UriSchemeHttps || uri.Scheme == Uri.UriSchemeFtp);
 
         OkButton.IsEnabled = isValid;
+        StartHint.Visibility = isValid ? Visibility.Collapsed : Visibility.Visible;
         DuplicateWarning.Visibility = _viewModel.ExistingUrl(url) ? Visibility.Visible : Visibility.Collapsed;
 
         if (!isValid)
         {
             ProbeBadge.Visibility = Visibility.Collapsed;
+            UpdateCategoryBadge();
             return;
         }
 
@@ -88,7 +131,29 @@ public partial class AddDownloadDialog : Window
             ApplyRouting();
         }
 
+        UpdateCategoryBadge();
         ProbeUrlAsync(url);
+    }
+
+    private void NameBox_TextChanged(object sender, TextChangedEventArgs e)
+    {
+        UpdateCategoryBadge();
+    }
+
+    private void UpdateCategoryBadge()
+    {
+        if (FileCategoryIcon is null || FileCategoryLabel is null) return;
+        var cat = SelectedCategory();
+        FileCategoryLabel.Text = cat.ToString();
+        FileCategoryIcon.Text = cat switch
+        {
+            DownloadCategory.Video => "\uE714",
+            DownloadCategory.Music => "\uE8D6",
+            DownloadCategory.Document => "\uE8A5",
+            DownloadCategory.Compressed => "\uF133",
+            DownloadCategory.Program => "\uE756",
+            _ => "\uE7C3",
+        };
     }
 
     private async void ProbeUrlAsync(string url)
@@ -111,23 +176,51 @@ public partial class AddDownloadDialog : Window
 
             long totalBytes = resp.Content.Headers.ContentLength ?? -1;
             bool supportsRanges = resp.Headers.AcceptRanges.Any(r => r.Equals("bytes", StringComparison.OrdinalIgnoreCase));
+            HttpResponseMessage? rangeResp = null;
 
             if (!supportsRanges && resp.IsSuccessStatusCode)
             {
                 // Range test with byte=0-0 fallback probe
                 var rangeReq = new HttpRequestMessage(HttpMethod.Get, url);
                 rangeReq.Headers.Range = new RangeHeaderValue(0, 0);
-                var rangeResp = await http.SendAsync(rangeReq, HttpCompletionOption.ResponseHeadersRead, ct);
+                rangeResp = await http.SendAsync(rangeReq, HttpCompletionOption.ResponseHeadersRead, ct);
                 supportsRanges = rangeResp.StatusCode == System.Net.HttpStatusCode.PartialContent;
                 if (totalBytes <= 0 && rangeResp.Content.Headers.ContentRange?.Length is long len)
                     totalBytes = len;
+            }
+
+            // If the server announces a real filename via Content-Disposition, use it —
+            // URLs with signed/tokenized paths (e.g. googleusercontent) don't carry an
+            // extension, so DeriveName would otherwise fall back to a meaningless .bin.
+            string? dispositionRaw = resp.Content.Headers.TryGetValues("Content-Disposition", out var vals) ? vals.FirstOrDefault() : null;
+            string? dispositionName = FileNameHelper.ParseDispositionFileName(dispositionRaw);
+            if (string.IsNullOrWhiteSpace(dispositionName) && rangeResp is not null)
+            {
+                string? rangeRaw = rangeResp.Content.Headers.TryGetValues("Content-Disposition", out var rvals) ? rvals.FirstOrDefault() : null;
+                dispositionName = FileNameHelper.ParseDispositionFileName(rangeRaw);
+            }
+            if (string.IsNullOrWhiteSpace(dispositionName))
+                dispositionName = FileNameHelper.FileNameFromS3Query(url);
+            if (!string.IsNullOrWhiteSpace(dispositionName)
+                && (string.IsNullOrWhiteSpace(NameBox.Text) || NameBox.Text == _lastDerivedName || NameBox.Text.EndsWith(".bin", StringComparison.OrdinalIgnoreCase)))
+            {
+                _lastDerivedName = DownloadEngine.SanitizeFileName(dispositionName);
+                NameBox.Text = _lastDerivedName;
             }
 
             if (ct.IsCancellationRequested)
                 return;
 
             string sizeStr = totalBytes > 0 ? DownloadTask.FormatBytes(totalBytes) : "Unknown size";
-            if (supportsRanges)
+            bool isHls = resp.Content.Headers.ContentType?.MediaType is string mt
+                && (mt.Contains("mpegurl", StringComparison.OrdinalIgnoreCase) || mt.Contains("m3u8", StringComparison.OrdinalIgnoreCase))
+                || url.Contains(".m3u8", StringComparison.OrdinalIgnoreCase);
+            if (isHls)
+            {
+                ProbeIcon.Text = "\uE946";
+                ProbeText.Text = $"{sizeStr} • HLS stream (downloads as one media file)";
+            }
+            else if (supportsRanges)
             {
                 ProbeIcon.Text = "\uE946";
                 ProbeText.Text = $"{sizeStr} • Multi-threaded resume supported";
@@ -174,34 +267,59 @@ public partial class AddDownloadDialog : Window
             return;
         }
 
-        int chunks = 4;
-        if (ChunksBox.SelectedItem is ComboBoxItem item && int.TryParse(item.Content.ToString(), out int parsed))
+        int chunks = 0;
+        if (ChunksBox.SelectedItem is ComboBoxItem item && item.Tag is string tag && int.TryParse(tag, out int parsed))
             chunks = parsed;
 
         long speedLimit = 0;
         if (!long.TryParse(SpeedBox.Text.Trim(), out speedLimit) || speedLimit < 0)
             speedLimit = 0;
 
-        DateTime? scheduledStart = null;
-        if (StartLater.IsChecked == true &&
-            DateTime.TryParse(LaterTimeBox.Text.Trim(), out DateTime later))
-        {
-            scheduledStart = later;
-        }
+        string derivedName = DownloadEngine.DeriveName(url);
+        string nameInput = string.IsNullOrWhiteSpace(NameBox.Text) ? derivedName : NameBox.Text.Trim();
+        string finalFileName = DownloadEngine.SanitizeFileName(nameInput);
+        if (string.IsNullOrWhiteSpace(finalFileName))
+            finalFileName = derivedName;
+
+        var mirrors = ParseMirrors();
 
         var task = new DownloadTask(Application.Current.Dispatcher)
         {
             Url = url,
+            Referer = _prefillReferer,
+            Mirrors = mirrors,
             SaveFolder = string.IsNullOrWhiteSpace(FolderBox.Text) ? DownloadTask.DefaultSaveFolder : FolderBox.Text,
-            FileName = string.IsNullOrWhiteSpace(NameBox.Text) ? "" : DownloadEngine.SanitizeFileName(NameBox.Text.Trim()),
-            ChunkCount = Math.Max(1, chunks),
+            FileName = finalFileName,
+            ChunkCount = Math.Max(0, chunks),
             SpeedLimitKbps = speedLimit,
             Category = SelectedCategory(),
-            ScheduledStart = scheduledStart,
         };
 
         _viewModel.AddTask(task);
         DialogResult = true;
+        Close();
+    }
+
+    private List<string> ParseMirrors()
+    {
+        var mirrors = new List<string>();
+        if (MirrorsBox is null)
+            return mirrors;
+        foreach (string line in MirrorsBox.Text.Split(
+                     new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        {
+            if (Uri.TryCreate(line, UriKind.Absolute, out var uri) &&
+                (uri.Scheme == Uri.UriSchemeHttp || uri.Scheme == Uri.UriSchemeHttps || uri.Scheme == Uri.UriSchemeFtp))
+            {
+                mirrors.Add(line);
+            }
+        }
+        return mirrors;
+    }
+
+    private void CancelClick(object sender, RoutedEventArgs e)
+    {
+        DialogResult = false;
         Close();
     }
 }

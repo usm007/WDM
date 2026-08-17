@@ -15,7 +15,9 @@ public partial class MainWindow : Window
     private readonly CaptureServer _captureServer;
     private readonly TrayIcon _tray;
     private readonly ClipboardMonitor _clipboard;
+    private readonly Dictionary<Guid, Window> _openDialogs = new();
     private bool _exiting;
+    private DownloadCompleteDialog? _completeDialog;
 
     public MainWindow()
     {
@@ -26,30 +28,44 @@ public partial class MainWindow : Window
         _viewModel.AddTaskRequested += _ => ShowAddDialog();
         _viewModel.EditTaskRequested += task => ShowProperties(task);
         _viewModel.OptionsRequested += ShowOptions;
-        _viewModel.ScheduleRequested += task => ShowSchedule(task);
         _viewModel.AboutRequested += ShowAbout;
         _viewModel.ShowProgressDialogRequested += task => ShowProgressDialog(task);
+        _viewModel.RefreshLinkRequested += task => ShowRefreshLink(task);
         _viewModel.SpeedHistoryUpdated += history => _dispatcher.BeginInvoke(() => RenderSparkline(history));
 
         _viewModel.TaskCompleted += task =>
         {
             if (_viewModel.Settings.NotifyOnCompletion)
-                _tray?.ShowBalloon("Download complete", task.FileName);
+                _tray?.ShowBalloon("Done", $"{task.FileName} is ready.");
+
+            // Show a single Download Complete dialog at a time instead of stacking
+            // a modal chain when several tasks finish close together.
+            _dispatcher.BeginInvoke(() =>
+            {
+                if (_completeDialog is not null)
+                    return;
+                var dialog = new DownloadCompleteDialog(task);
+                _completeDialog = dialog;
+                dialog.Closed += (_, _) => _completeDialog = null;
+                dialog.Show();
+            });
         };
 
-        _captureServer = new CaptureServer((url, name, referer) => _viewModel.AddTask(url, name, referer));
+        _captureServer = new CaptureServer((url, name, referer) =>
+            _dispatcher.BeginInvoke(() => ShowAddDialog(url, name, referer)));
         _captureServer.Start();
 
         _clipboard = new ClipboardMonitor();
-        _clipboard.UrlCopied += url => _dispatcher.BeginInvoke(() =>
+        _clipboard.UrlCopied += url => _dispatcher.BeginInvoke(async () =>
         {
-            if (_viewModel.Settings.MonitorClipboard)
-                _viewModel.AddTask(url);
+            if (!_viewModel.Settings.MonitorClipboard || _viewModel.ExistingUrl(url))
+                return;
+            await PromptForClipboardLinkAsync(url);
         });
 
         _tray = new TrayIcon();
         _tray.Activated += () => _dispatcher.BeginInvoke(RestoreWindow);
-        _tray.NewDownloadRequested += () => _dispatcher.BeginInvoke(ShowAddDialog);
+        _tray.NewDownloadRequested += () => _dispatcher.BeginInvoke(() => ShowAddDialog());
         _tray.PauseAllRequested += () => _dispatcher.BeginInvoke(() => _viewModel.Engine.PauseAll());
         _tray.ResumeAllRequested += () => _dispatcher.BeginInvoke(() => _viewModel.Engine.ResumeAll());
         _tray.ClipboardMonitoringChanged += enabled => _dispatcher.BeginInvoke(() =>
@@ -66,30 +82,54 @@ public partial class MainWindow : Window
         {
             Interval = TimeSpan.FromSeconds(1),
         };
-        trayTimer.Tick += (_, _) => _tray.SetActiveCount(_viewModel.Engine.ActiveCount, _viewModel.Engine.QueuedCount);
+        trayTimer.Tick += (_, _) => _tray.SetActiveCount(
+            _viewModel.Engine.ActiveCount, _viewModel.Engine.QueuedCount, _viewModel.Engine.TotalSpeedBps);
         trayTimer.Start();
+
+        ApplyRoundedClip(SidebarCard);
+        ApplyRoundedClip(ListCard);
+
+        Loaded += (_, _) =>
+        {
+            BrowserIntegration.DeployExtension();
+            if (!_captureServer.IsConnected && !_viewModel.Settings.HasPromptedExtensionInstall)
+            {
+                _viewModel.Settings.HasPromptedExtensionInstall = true;
+                _viewModel.PersistSettings();
+                _dispatcher.BeginInvoke(ShowExtensionInstallerDialog);
+            }
+        };
+    }
+
+    private void ApplyRoundedClip(Border border)
+    {
+        border.SizeChanged += (_, _) =>
+        {
+            if (border.ActualWidth <= 0 || border.ActualHeight <= 0)
+                return;
+            border.Clip = new RectangleGeometry
+            {
+                Rect = new Rect(0, 0, border.ActualWidth, border.ActualHeight),
+                RadiusX = 8,
+                RadiusY = 8,
+            };
+        };
     }
 
     private System.Windows.Threading.Dispatcher _dispatcher =>
         System.Windows.Application.Current.Dispatcher;
 
-    private void RenderSparkline(List<double> history)
+    private static void RenderCanvasSparkline(Canvas canvas, List<double> history)
     {
-        if (SparklineCanvas == null)
-            return;
+        canvas.Children.Clear();
+        if (history.Count < 2) return;
 
-        SparklineCanvas.Children.Clear();
-        if (history == null || history.Count < 2)
-            return;
-
+        double width = canvas.ActualWidth > 0 ? canvas.ActualWidth : 80;
+        double height = canvas.ActualHeight > 0 ? canvas.ActualHeight : 14;
         double max = history.Max();
-        if (max <= 0)
-            max = 1;
+        if (max <= 0) max = 1;
 
-        double width = SparklineCanvas.ActualWidth > 0 ? SparklineCanvas.ActualWidth : 100;
-        double height = SparklineCanvas.ActualHeight > 0 ? SparklineCanvas.ActualHeight : 18;
         double step = width / (history.Count - 1);
-
         var points = new PointCollection();
         for (int i = 0; i < history.Count; i++)
         {
@@ -98,30 +138,6 @@ public partial class MainWindow : Window
             points.Add(new Point(x, y));
         }
 
-        var polyPoints = new PointCollection(points)
-        {
-            new Point(width, height),
-            new Point(0, height)
-        };
-
-        var fillBrush = new LinearGradientBrush
-        {
-            StartPoint = new Point(0, 0),
-            EndPoint = new Point(0, 1),
-            GradientStops = new GradientStopCollection
-            {
-                new GradientStop(Color.FromArgb(70, 59, 130, 246), 0),
-                new GradientStop(Color.FromArgb(0, 59, 130, 246), 1)
-            }
-        };
-
-        var polygon = new Polygon
-        {
-            Points = polyPoints,
-            Fill = fillBrush
-        };
-        SparklineCanvas.Children.Add(polygon);
-
         var polyline = new Polyline
         {
             Points = points,
@@ -129,30 +145,64 @@ public partial class MainWindow : Window
             StrokeThickness = 1.5,
             StrokeLineJoin = PenLineJoin.Round
         };
-        SparklineCanvas.Children.Add(polyline);
+        canvas.Children.Add(polyline);
     }
 
-    private void ShowAddDialog()
+    private void RenderSparkline(List<double> history)
     {
-        var dialog = new AddDownloadDialog(_viewModel) { Owner = this };
+        RenderCanvasSparkline(SparklineCanvas, history);
+    }
+
+    private AddDownloadDialog? _activeAddDialog;
+
+    private void ShowAddDialog(string? prefillUrl = null, string? prefillFileName = null, string? prefillReferer = null)
+    {
+        if (!string.IsNullOrWhiteSpace(prefillUrl) && _viewModel.ExistingUrl(prefillUrl))
+            return;
+
+        RestoreWindow();
+
+        if (_activeAddDialog is not null && _activeAddDialog.IsLoaded)
+        {
+            _activeAddDialog.Activate();
+            return;
+        }
+
+        var dialog = new AddDownloadDialog(_viewModel, prefillUrl, prefillFileName, prefillReferer);
+        _activeAddDialog = dialog;
+        dialog.Closed += (_, _) => _activeAddDialog = null;
         dialog.ShowDialog();
+    }
+
+    /// <summary>
+    /// Called when the clipboard captures a URL. Probes the link first and only
+    /// notifies the user when it actually points at a downloadable file. The user
+    /// confirms by clicking the balloon, which opens the Add dialog prefilled.
+    /// </summary>
+    private async Task PromptForClipboardLinkAsync(string url)
+    {
+        var probe = await UrlProbe.ProbeAsync(url);
+        if (probe is null || !probe.IsFile)
+            return;
+
+        string size = probe.SizeBytes > 0 ? DownloadTask.FormatBytes(probe.SizeBytes) : "unknown size";
+        _tray?.ShowBalloon("Download link detected", $"{probe.FileName} ({size}) — click to download.", () =>
+            _dispatcher.BeginInvoke(() => ShowAddDialog(url, probe.FileName)));
     }
 
     private void ShowProperties(DownloadTask? task)
     {
         if (task is null)
             return;
-        var dialog = new TaskPropertiesDialog(task) { Owner = this };
+        var dialog = new TaskPropertiesDialog(task);
         dialog.ShowDialog();
     }
 
-    private void ShowSchedule(DownloadTask? task)
+    private void ShowRefreshLink(DownloadTask task)
     {
-        if (task is null)
-            return;
-        var dialog = new ScheduleDialog(task) { Owner = this };
-        if (dialog.ShowDialog() == true && dialog.SelectedTime is DateTime when)
-            _viewModel.ScheduleSelected(when);
+        var dialog = new RefreshLinkDialog(task) { Owner = this };
+        if (dialog.ShowDialog() == true)
+            _viewModel.ApplyLinkRefresh(task, dialog.NewUrl);
     }
 
     private void Root_DragOver(object sender, DragEventArgs e)
@@ -203,7 +253,7 @@ public partial class MainWindow : Window
 
     private void ShowOptions()
     {
-        var dialog = new OptionsDialog(_viewModel) { Owner = this };
+        var dialog = new OptionsDialog(_viewModel);
         if (dialog.ShowDialog() == true)
         {
             _viewModel.PersistSettings();
@@ -227,9 +277,14 @@ public partial class MainWindow : Window
     private void TaskGrid_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
         _viewModel.SetBulkSelection(TaskGrid.SelectedItems.OfType<DownloadTask>());
-        bool showBulk = TaskGrid.SelectedItems.Count >= 2;
-        if (BulkBar.Visibility != (showBulk ? Visibility.Visible : Visibility.Collapsed))
-            BulkBar.Visibility = showBulk ? Visibility.Visible : Visibility.Collapsed;
+    }
+
+    private void SidebarSplitter_DragCompleted(object sender, System.Windows.Controls.Primitives.DragCompletedEventArgs e)
+    {
+        _viewModel.SetSidebarWidth(SidebarColumn.ActualWidth);
+        // The splitter sets a local width; clear it so the {Binding SidebarWidth}
+        // keeps driving collapse/expand and future resize drags stay consistent.
+        SidebarColumn.ClearValue(System.Windows.Controls.ColumnDefinition.WidthProperty);
     }
 
     private void ActionPauseClick(object sender, RoutedEventArgs e)
@@ -255,7 +310,7 @@ public partial class MainWindow : Window
 
     private void ShowAbout()
     {
-        var dialog = new AboutDialog { Owner = this };
+        var dialog = new AboutDialog();
         dialog.ShowDialog();
     }
 
@@ -263,13 +318,34 @@ public partial class MainWindow : Window
     {
         if (task is null)
             return;
-        var dialog = new DownloadProgressDialog(task, _viewModel) { Owner = this };
+
+        // Reuse an already-open dialog for this task instead of stacking duplicates.
+        if (_openDialogs.TryGetValue(task.Id, out var existing))
+        {
+            existing.Activate();
+            return;
+        }
+
+        var dialog = new DownloadProgressDialog(task, _viewModel);
+        _openDialogs[task.Id] = dialog;
+        dialog.Closed += (_, _) => _openDialogs.Remove(task.Id);
         dialog.Show();
     }
 
     private void MenuExit_Click(object sender, RoutedEventArgs e)
     {
         ExitApp();
+    }
+
+    private void MenuExtension_Click(object sender, RoutedEventArgs e)
+    {
+        ShowExtensionInstallerDialog();
+    }
+
+    public void ShowExtensionInstallerDialog()
+    {
+        var dialog = new BrowserExtensionDialog(_captureServer);
+        dialog.ShowDialog();
     }
 
     private void TaskGrid_MouseDoubleClick(object sender, MouseButtonEventArgs e)
@@ -289,10 +365,7 @@ public partial class MainWindow : Window
     protected override void OnStateChanged(EventArgs e)
     {
         base.OnStateChanged(e);
-        if (WindowState == WindowState.Minimized && _viewModel.Settings.MinimizeToTray && !_exiting)
-        {
-            Hide();
-        }
+        // Minimize sends WDM window to the main Windows taskbar
     }
 
     protected override void OnClosing(System.ComponentModel.CancelEventArgs e)
@@ -311,7 +384,7 @@ public partial class MainWindow : Window
         _captureServer.Dispose();
         _clipboard.Enabled = false;
         _tray.Dispose();
-        _viewModel.SaveTasksSoon();
+        _viewModel.SaveTasksNow();
         base.OnClosed(e);
     }
 }

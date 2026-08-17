@@ -6,32 +6,31 @@ namespace WDM.Services;
 public sealed class AppSettings
 {
     public string DownloadFolder { get; set; } = DownloadTask.DefaultSaveFolder;
-    public int DefaultChunkCount { get; set; } = 4;
+    public int DefaultChunkCount { get; set; } = 0;
     public int MaxConcurrentDownloads { get; set; } = 3;
     public long GlobalSpeedLimitKbps { get; set; }
-    public bool MonitorClipboard { get; set; } = true;
+    public bool MonitorClipboard { get; set; } = false;
+    public bool HasPromptedExtensionInstall { get; set; } = false;
     public bool MinimizeToTray { get; set; } = true;
     public bool NotifyOnCompletion { get; set; } = true;
     public bool RunAtStartup { get; set; }
     public bool StartInBackground { get; set; }
+    public bool UseDarkTheme { get; set; }
 
     // Automatic retry
     public int MaxRetries { get; set; } = 3;
 
-    // Time-of-day throttle ("throttle during work hours")
-    public bool ThrottleScheduleEnabled { get; set; }
-    public string ThrottleStart { get; set; } = "09:00";
-    public string ThrottleEnd { get; set; } = "17:00";
-    public long ThrottleLimitKbps { get; set; }
-
-    // Download window ("only download 1am–6am")
-    public bool DownloadWindowEnabled { get; set; }
-    public string WindowStart { get; set; } = "01:00";
-    public string WindowEnd { get; set; } = "06:00";
-
     // Category auto-routing
-    public bool RouteByCategory { get; set; }
-    public Dictionary<string, string> CategoryFolders { get; set; } = new();
+    public bool RouteByCategory { get; set; } = true;
+    public Dictionary<string, string> CategoryFolders { get; set; } = new()
+    {
+        { "Video",      Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "Downloads", "Video") },
+        { "Music",      Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "Downloads", "Music") },
+        { "Document",   Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "Downloads", "Documents") },
+        { "Compressed", Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "Downloads", "Compressed") },
+        { "Program",    Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "Downloads", "Programs") },
+        { "Other",      Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "Downloads") },
+    };
 
     // Post-download
     public bool ComputeChecksum { get; set; }
@@ -69,7 +68,7 @@ public sealed class TaskStore
         try
         {
             Directory.CreateDirectory(AppDir);
-            File.WriteAllText(SettingsPath, JsonSerializer.Serialize(settings, JsonOptions));
+            AtomicFile.Write(SettingsPath, JsonSerializer.Serialize(settings, JsonOptions));
         }
         catch
         {
@@ -99,20 +98,25 @@ public sealed class TaskStore
             var records = tasks.Select(t => new TaskRecord
             {
                 Url = t.Url,
+                Referer = t.Referer,
+                Mirrors = t.Mirrors?.ToList() ?? new(),
+                Etag = t.Etag,
+                LastModified = t.LastModified,
                 FileName = t.FileName,
                 SaveFolder = t.SaveFolder,
                 ChunkCount = t.ChunkCount,
                 Status = t.Status,
                 TotalBytes = t.TotalBytes,
+                DownloadedBytes = t.DownloadedBytes,
+                Progress = t.Progress,
                 SpeedLimitKbps = t.SpeedLimitKbps,
-                Referer = t.Referer,
                 Priority = t.Priority,
                 Category = t.Category,
-                ScheduledStart = t.ScheduledStart,
                 Checksum = t.Checksum,
+                AddedAt = t.AddedAt,
                 CompletedAt = t.CompletedAt,
             }).ToList();
-            File.WriteAllText(TasksPath, JsonSerializer.Serialize(records, JsonOptions));
+            AtomicFile.Write(TasksPath, JsonSerializer.Serialize(records, JsonOptions));
         }
         catch
         {
@@ -125,15 +129,20 @@ public sealed class TaskRecord
 {
     public string Url { get; set; } = "";
     public string? Referer { get; set; }
+    public List<string> Mirrors { get; set; } = new();
+    public string? Etag { get; set; }
+    public string? LastModified { get; set; }
     public string FileName { get; set; } = "";
     public string SaveFolder { get; set; } = "";
-    public int ChunkCount { get; set; } = 4;
+    public int ChunkCount { get; set; } = 0;
     public TaskStatus Status { get; set; }
     public long TotalBytes { get; set; } = -1;
+    public long DownloadedBytes { get; set; }
+    public int Progress { get; set; }
     public long SpeedLimitKbps { get; set; }
     public PriorityLevel Priority { get; set; } = PriorityLevel.Normal;
     public DownloadCategory Category { get; set; } = DownloadCategory.Other;
-    public DateTime? ScheduledStart { get; set; }
     public string? Checksum { get; set; }
+    public DateTime AddedAt { get; set; } = DateTime.Now;
     public DateTime? CompletedAt { get; set; }
 }

@@ -2,3 +2,13 @@ bin/
 obj/
 .vs/
 *.user
+
+# Build artifacts, packaged output and junk
+output/
+publish/
+staging/
+WDM_Payload.zip
+idman643build8.exe
+*.bak
+app_icon_1024*.png
+*.tmp

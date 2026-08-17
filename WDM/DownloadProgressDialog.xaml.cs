@@ -34,6 +34,7 @@ public sealed class ChunkVisualItem : INotifyPropertyChanged
 public partial class DownloadProgressDialog : Window, INotifyPropertyChanged
 {
     private readonly MainViewModel _mainViewModel;
+    private double[]? _lastChunkProgress;
     public DownloadTask Task { get; }
 
     public ObservableCollection<ChunkVisualItem> ChunkList { get; } = new();
@@ -46,13 +47,14 @@ public partial class DownloadProgressDialog : Window, INotifyPropertyChanged
         DataContext = this;
 
         Task.PropertyChanged += Task_PropertyChanged;
+        _mainViewModel.Engine.ChunkProgressUpdated += Engine_ChunkProgressUpdated;
         UpdateState();
         SetupChunkVisuals();
     }
 
     public string ProgressTitleText => $"{Task.Progress}%";
     public string DownloadedDetailText => $"{Task.DownloadedText} ({Task.Progress}%)";
-    public string ChunkCountText => $"{Task.ChunkCount} threads";
+    public string ChunkCountText => Task.ChunkCount > 0 ? $"{Task.ChunkCount} threads" : "Auto";
     public string PauseButtonText => Task.Status == TaskStatus.Paused ? "Resume" : "Pause";
 
     public bool IsSpeedLimitEnabled
@@ -97,20 +99,52 @@ public partial class DownloadProgressDialog : Window, INotifyPropertyChanged
             {
                 Index = i + 1,
                 ToolTip = $"Thread #{i + 1} active",
-                WidthPercent = 30 // initial sample visual
+                WidthPercent = 0
             });
         }
         UpdateChunkVisuals();
     }
 
+    private void Engine_ChunkProgressUpdated(DownloadTask task, double[] progress)
+    {
+        if (task.Id != Task.Id)
+            return;
+        Dispatcher.BeginInvoke(() =>
+        {
+            _lastChunkProgress = progress;
+            UpdateChunkVisuals();
+        });
+    }
+
     private void UpdateChunkVisuals()
     {
         if (ChunkList.Count == 0) return;
+
+        // Use the real per-chunk progress emitted by the engine when available,
+        // aggregating the (potentially many) dynamic segments onto the visible bars.
+        if (_lastChunkProgress is { Length: > 0 })
+        {
+            int bars = ChunkList.Count;
+            for (int i = 0; i < bars; i++)
+            {
+                double from = i * (_lastChunkProgress.Length / (double)bars);
+                double to = (i + 1) * (_lastChunkProgress.Length / (double)bars);
+                int start = (int)Math.Floor(from);
+                int end = (int)Math.Ceiling(to);
+                if (end <= start) end = start + 1;
+                double sum = 0;
+                for (int j = start; j < end && j < _lastChunkProgress.Length; j++)
+                    sum += _lastChunkProgress[j];
+                ChunkList[i].WidthPercent = Math.Clamp(sum / (end - start), 0, 100);
+            }
+            return;
+        }
+
+        // Fallback when no chunked state exists yet (single stream / probing).
         double currentPercent = Task.Progress;
         for (int i = 0; i < ChunkList.Count; i++)
         {
-            // Calculate pseudo chunk fill for visual feedback based on overall progress
-            double chunkFill = Math.Min(100, Math.Max(0, (currentPercent - (i * (100.0 / ChunkList.Count))) * ChunkList.Count));
+            double chunkFill = Math.Min(100, Math.Max(0, currentPercent));
             ChunkList[i].WidthPercent = chunkFill;
         }
     }
@@ -122,11 +156,16 @@ public partial class DownloadProgressDialog : Window, INotifyPropertyChanged
             OnPropertyChanged(nameof(ProgressTitleText));
             OnPropertyChanged(nameof(DownloadedDetailText));
             OnPropertyChanged(nameof(PauseButtonText));
+            if (e.PropertyName == nameof(DownloadTask.ChunkCount))
+            {
+                OnPropertyChanged(nameof(ChunkCountText));
+                SetupChunkVisuals();
+            }
             UpdateChunkVisuals();
 
             if (Task.Status == TaskStatus.Completed)
             {
-                Title = $"100% - Download Finished";
+                Title = "100% — Done";
                 if (CloseOnComplete)
                     Close();
             }
@@ -159,6 +198,18 @@ public partial class DownloadProgressDialog : Window, INotifyPropertyChanged
             PanelOptions.Visibility = Visibility.Visible;
     }
 
+    private void CopyUrl_Click(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            Clipboard.SetText(Task.Url);
+        }
+        catch
+        {
+            // Ignore clipboard access errors
+        }
+    }
+
     private void PauseClick(object sender, RoutedEventArgs e)
     {
         _mainViewModel.ToggleTask(Task);
@@ -170,9 +221,9 @@ public partial class DownloadProgressDialog : Window, INotifyPropertyChanged
         OnPropertyChanged(nameof(IsSpeedLimitEnabled));
     }
 
-    private void BackgroundClick(object sender, RoutedEventArgs e)
+    private void MinimizeClick(object sender, RoutedEventArgs e)
     {
-        Close();
+        WindowState = WindowState.Minimized;
     }
 
     private void CancelClick(object sender, RoutedEventArgs e)
@@ -184,6 +235,7 @@ public partial class DownloadProgressDialog : Window, INotifyPropertyChanged
 
     protected override void OnClosed(EventArgs e)
     {
+        _mainViewModel.Engine.ChunkProgressUpdated -= Engine_ChunkProgressUpdated;
         Task.PropertyChanged -= Task_PropertyChanged;
         base.OnClosed(e);
     }

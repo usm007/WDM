@@ -1,6 +1,6 @@
 using System.Windows;
 using System.Windows.Media;
-using System.Windows.Media.Imaging;
+using WDM.Models;
 
 namespace WDM.Services;
 
@@ -12,6 +12,7 @@ namespace WDM.Services;
     private readonly System.Windows.Forms.NotifyIcon _icon;
     private readonly System.Windows.Forms.ToolStripMenuItem _clipboardItem;
     private readonly System.Windows.Forms.ToolStripMenuItem _resumeAllItem;
+    private Action? _balloonClickAction;
 
     public event Action? Activated;
     public event Action? NewDownloadRequested;
@@ -26,7 +27,7 @@ namespace WDM.Services;
         menu.Items.Add("New Download...", null, (_, _) => NewDownloadRequested?.Invoke());
         menu.Items.Add("Pause All", null, (_, _) => PauseAllRequested?.Invoke());
         menu.Items.Add(_resumeAllItem);
-        _clipboardItem = new System.Windows.Forms.ToolStripMenuItem("Monitor Clipboard") { CheckOnClick = true, Checked = true };
+        _clipboardItem = new System.Windows.Forms.ToolStripMenuItem("Monitor Clipboard") { CheckOnClick = true, Checked = false };
         _clipboardItem.CheckedChanged += (_, _) => ClipboardMonitoringChanged?.Invoke(_clipboardItem.Checked);
         menu.Items.Add(_clipboardItem);
         menu.Items.Add(new System.Windows.Forms.ToolStripSeparator());
@@ -34,12 +35,17 @@ namespace WDM.Services;
 
         _icon = new System.Windows.Forms.NotifyIcon
         {
-            Icon = CreateIcon(),
-            Text = "WDM — Windows Download Manager",
+            Icon = AppIcon.Tray ?? RuntimeFallbackIcon(),
+            Text = "WDM — Download Manager",
             Visible = true,
             ContextMenuStrip = menu,
         };
         _icon.DoubleClick += (_, _) => Activated?.Invoke();
+        _icon.BalloonTipClicked += (_, _) =>
+        {
+            _balloonClickAction?.Invoke();
+            _balloonClickAction = null;
+        };
     }
 
     public event Action? PauseAllRequested;
@@ -61,16 +67,32 @@ namespace WDM.Services;
     private void ClipboardChanged(object? sender, EventArgs e) =>
         ClipboardMonitoringChanged?.Invoke(_clipboardItem.Checked);
 
-    public void SetActiveCount(int active, int queued)
+    public void SetActiveCount(int active, int queued, long speedBps = 0)
     {
         bool hasWork = active > 0 || queued > 0;
-        string label = hasWork ? $"Downloading: {active} · Queued: {queued}" : "WDM — Windows Download Manager";
+        string label;
+        if (hasWork)
+        {
+            string speed = speedBps > 0 ? $"{DownloadTask.FormatBytes(speedBps)}/s" : "0 B/s";
+            label = $"Downloading: {active} · Queued: {queued} · {speed}";
+        }
+        else
+        {
+            label = "WDM — Download Manager";
+        }
         _icon.Text = label.Length <= 63 ? label : label[..63];
         _resumeAllItem.Enabled = queued > 0;
     }
 
     public void ShowBalloon(string title, string text)
     {
+        _balloonClickAction = null;
+        _icon.ShowBalloonTip(4000, title, text, System.Windows.Forms.ToolTipIcon.Info);
+    }
+
+    public void ShowBalloon(string title, string text, Action onClick)
+    {
+        _balloonClickAction = onClick;
         _icon.ShowBalloonTip(4000, title, text, System.Windows.Forms.ToolTipIcon.Info);
     }
 
@@ -80,26 +102,9 @@ namespace WDM.Services;
         _icon.Dispose();
     }
 
-    private static System.Drawing.Icon CreateIcon()
+    private static System.Drawing.Icon RuntimeFallbackIcon()
     {
-        // Load the embedded app logo; fall back to a runtime-drawn arrow tile.
-        try
-        {
-            var uri = new Uri("pack://application:,,,/Assets/WDM.ico", UriKind.Absolute);
-            var stream = System.Windows.Application.GetResourceStream(uri)?.Stream;
-            if (stream is not null)
-            {
-                using (stream)
-                    return new System.Drawing.Icon(stream);
-            }
-        }
-        catch
-        {
-            // Fall through to the runtime-drawn fallback.
-        }
-
-        // A small rounded blue tile with a white down-arrow, rendered at runtime
-        // so no .ico file needs to ship with the app.
+        // Only reached if the bundled icon asset is missing entirely.
         const int size = 32;
         var bmp = new System.Drawing.Bitmap(size, size);
         using (var g = System.Drawing.Graphics.FromImage(bmp))
@@ -108,7 +113,6 @@ namespace WDM.Services;
             var bg = new System.Drawing.SolidBrush(System.Drawing.Color.FromArgb(15, 108, 189));
             g.FillRoundedRect(bg, 2, 2, size - 4, size - 4, 7);
             using var pen = new System.Drawing.Pen(System.Drawing.Color.White, 2.4f);
-            // down arrow
             g.DrawLine(pen, size / 2f, 8, size / 2f, size - 11);
             g.DrawLine(pen, size / 2f - 6, size - 15, size / 2f, size - 9);
             g.DrawLine(pen, size / 2f + 6, size - 15, size / 2f, size - 9);

@@ -25,11 +25,20 @@ public partial class TaskPropertiesDialog : Window
         ProgressBar.Value = task.Progress;
         PercentText.Text = $"{task.Progress}%";
         SpeedText.Text = task.SpeedText;
-        ChunksText.Text = $"{task.ChunkCount} threads";
+        ChunksText.Text = task.ChunkCount > 0 ? $"{task.ChunkCount} threads" : "Auto";
         AddedText.Text = task.AddedAt.ToString("yyyy-MM-dd HH:mm");
         CategoryText.Text = task.Category.ToString();
         PriorityText.Text = task.Priority.ToString();
         ChecksumText.Text = string.IsNullOrWhiteSpace(task.Checksum) ? "Not computed" : task.Checksum;
+
+        if (task.Status == TaskStatus.Completed)
+        {
+            ProgressBar.Visibility = Visibility.Collapsed;
+            SpeedText.Text = "—";
+            PercentText.Text = task.CompletedAt.HasValue
+                ? $"Completed {task.CompletedAt.Value:yyyy-MM-dd HH:mm}"
+                : "Completed";
+        }
     }
 
     private void CopyUrlClick(object sender, RoutedEventArgs e)
@@ -51,5 +60,10 @@ public partial class TaskPropertiesDialog : Window
             Process.Start(new ProcessStartInfo("explorer.exe", $"/select,\"{path}\"") { UseShellExecute = true });
         else if (Directory.Exists(_task.SaveFolder))
             Process.Start(new ProcessStartInfo(_task.SaveFolder) { UseShellExecute = true });
+    }
+
+    private void CloseClick(object sender, RoutedEventArgs e)
+    {
+        Close();
     }
 }

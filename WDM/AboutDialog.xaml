@@ -4,53 +4,75 @@
         Title="About WDM"
         Icon="Assets/WDM.ico"
         Width="460"
-        Height="310"
-        WindowStartupLocation="CenterOwner"
+        Height="370"
+        WindowStartupLocation="CenterScreen"
         ResizeMode="NoResize"
-        ShowInTaskbar="False"
-        Background="{DynamicResource Brush.Bg}">
-    <Border Padding="20" Background="{DynamicResource Brush.Surface}" BorderBrush="{DynamicResource Brush.Border}" BorderThickness="1" CornerRadius="8" Margin="10">
-        <Grid>
-            <Grid.RowDefinitions>
-                <RowDefinition Height="Auto" />
-                <RowDefinition Height="*" />
-                <RowDefinition Height="Auto" />
-            </Grid.RowDefinitions>
+        ShowInTaskbar="True"
+        Background="{DynamicResource Brush.Surface}">
+    <Grid Margin="20,16,20,20">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
 
-            <!-- Logo Header -->
-            <DockPanel Grid.Row="0" Margin="0,0,0,16">
-                <Border Width="52" Height="52" CornerRadius="12" Background="{DynamicResource Brush.AccentSoft}" Margin="0,0,14,0" VerticalAlignment="Center">
-                    <TextBlock Text="&#xE896;" FontFamily="{StaticResource Font.Icon}" FontSize="28" Foreground="{DynamicResource Brush.Accent}" HorizontalAlignment="Center" VerticalAlignment="Center" />
-                </Border>
-                <StackPanel VerticalAlignment="Center">
-                    <TextBlock Text="Windows Download Manager" FontSize="17" FontWeight="Bold" Foreground="{DynamicResource Brush.Text}" />
-                    <TextBlock Text="Version 6.42 Modern Edition (64-bit)" FontSize="12" Foreground="{DynamicResource Brush.TextDim}" Margin="0,2,0,0" />
-                    <TextBlock Text="High-Speed Multi-Threaded Download Accelerator" FontSize="11" Foreground="{DynamicResource Brush.Accent}" Margin="0,2,0,0" />
-                </StackPanel>
-            </DockPanel>
-
-            <!-- Product Details -->
-            <Border Grid.Row="1" Background="{DynamicResource Brush.SurfaceAlt}" CornerRadius="6" Padding="14,10" Margin="0,0,0,16">
-                <StackPanel>
-                    <Grid Margin="0,2">
-                        <TextBlock Text="License Type:" FontSize="11" Foreground="{DynamicResource Brush.TextDim}" />
-                        <TextBlock Text="Full Version (Lifetime License)" FontSize="11" FontWeight="SemiBold" HorizontalAlignment="Right" Foreground="{DynamicResource Brush.Success}" />
-                    </Grid>
-                    <Grid Margin="0,4">
-                        <TextBlock Text="Browser Integration:" FontSize="11" Foreground="{DynamicResource Brush.TextDim}" />
-                        <TextBlock Text="Active (127.0.0.1:17530)" FontSize="11" FontWeight="SemiBold" HorizontalAlignment="Right" Foreground="{DynamicResource Brush.Accent}" />
-                    </Grid>
-                    <Grid Margin="0,4">
-                        <TextBlock Text="Engine Capabilities:" FontSize="11" Foreground="{DynamicResource Brush.TextDim}" />
-                        <TextBlock Text="16-Thread Chunking, Speed Limiter, Scheduler" FontSize="11" HorizontalAlignment="Right" />
-                    </Grid>
-                </StackPanel>
+        <!-- Logo Header -->
+        <DockPanel Grid.Row="0" Margin="0,0,0,16">
+            <Border Width="52" Height="52" CornerRadius="14" Background="{DynamicResource Brush.SurfaceAlt}" Margin="0,0,14,0" VerticalAlignment="Center">
+                <Border.Effect>
+                    <DropShadowEffect BlurRadius="8" ShadowDepth="1" Opacity="0.10" Color="#40464D" />
+                </Border.Effect>
+                <Image Source="pack://application:,,,/Assets/logo.png" Width="48" Height="48" Stretch="Uniform" RenderOptions.BitmapScalingMode="HighQuality" HorizontalAlignment="Center" VerticalAlignment="Center" />
             </Border>
-
-            <!-- Action Buttons -->
-            <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Right">
-                <Button Content="Close" Style="{StaticResource Button.Accent}" IsDefault="True" IsCancel="True" MinWidth="100" Click="CloseClick" />
+            <StackPanel VerticalAlignment="Center">
+                <TextBlock Text="WDM" Style="{StaticResource Text.Brand}" Foreground="{DynamicResource Brush.Text}" />
+                <TextBlock x:Name="VersionText" Text="Version 1.0" FontSize="12" Foreground="{DynamicResource Brush.TextDim}" Margin="0,2,0,0" />
+                <TextBlock Text="A warm, fast download manager." FontSize="11" Foreground="{DynamicResource Brush.Accent}" Margin="0,2,0,0" />
             </StackPanel>
-        </Grid>
-    </Border>
+        </DockPanel>
+
+        <!-- Product Details -->
+        <Border Grid.Row="1" Background="{DynamicResource Brush.SurfaceAlt}" CornerRadius="6" Padding="14,10" Margin="0,0,0,14">
+            <StackPanel>
+                <Grid Margin="0,2">
+                    <TextBlock Text="Browser integration:" FontSize="11" Foreground="{DynamicResource Brush.TextDim}" />
+                    <TextBlock Text="Active (127.0.0.1:17530)" FontSize="11" FontWeight="Medium" HorizontalAlignment="Right" Foreground="{DynamicResource Brush.Accent}" />
+                </Grid>
+                <Grid Margin="0,4">
+                    <TextBlock Text="Engine capabilities:" FontSize="11" Foreground="{DynamicResource Brush.TextDim}" />
+                    <TextBlock Text="Multithreaded chunks, resume, speed limiter" FontSize="11" HorizontalAlignment="Right" />
+                </Grid>
+            </StackPanel>
+        </Border>
+
+        <!-- Related Projects -->
+        <StackPanel Grid.Row="2">
+            <TextBlock Text="Other projects by me" FontSize="11" FontWeight="SemiBold"
+                       Foreground="{DynamicResource Brush.TextDim}" Margin="0,0,0,8" />
+            <Grid Margin="0,2">
+                <TextBlock Text="Kivoy — YouTube downloader" FontSize="11" Foreground="{DynamicResource Brush.TextDim}" />
+                <TextBlock HorizontalAlignment="Right" VerticalAlignment="Center">
+                    <Hyperlink x:Name="KivoyLink" NavigateUri="https://github.com/usm007/Kivoy/releases" Click="Link_Click"
+                               Foreground="{DynamicResource Brush.Accent}" FontSize="11">
+                        <Run Text="github.com/usm007/Kivoy/releases" />
+                    </Hyperlink>
+                </TextBlock>
+            </Grid>
+            <Grid Margin="0,6,0,0">
+                <TextBlock Text="Teleflow — Telegram downloader" FontSize="11" Foreground="{DynamicResource Brush.TextDim}" />
+                <TextBlock HorizontalAlignment="Right" VerticalAlignment="Center">
+                    <Hyperlink x:Name="TeleflowLink" NavigateUri="https://github.com/usm007/Teleflow/releases" Click="Link_Click"
+                               Foreground="{DynamicResource Brush.Accent}" FontSize="11">
+                        <Run Text="github.com/usm007/Teleflow/releases" />
+                    </Hyperlink>
+                </TextBlock>
+            </Grid>
+        </StackPanel>
+
+        <!-- Action Buttons -->
+        <StackPanel Grid.Row="3" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,8,0,0">
+            <Button Content="Close" Style="{StaticResource Button.Accent}" IsDefault="True" IsCancel="True" MinWidth="100" Height="30" Click="CloseClick" />
+        </StackPanel>
+    </Grid>
 </Window>
