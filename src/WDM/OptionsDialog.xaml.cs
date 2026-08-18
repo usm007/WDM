@@ -121,7 +121,7 @@ public partial class OptionsDialog : Window
         {
             string message = browser.Kind == BrowserKind.Firefox
                 ? BrowserIntegration.InstallFirefoxViaPolicy(browser)
-                : BrowserIntegration.InjectChromium(browser);
+                : BrowserIntegration.LoadChromiumViaCdp(browser);
             status.Text = "Installed";
             status.Foreground = (System.Windows.Media.Brush)FindResource("Brush.Success");
             BrowserStatusText.Text = message;
@@ -136,7 +136,11 @@ public partial class OptionsDialog : Window
 
     private static bool IsBrowserInjected(InstalledBrowser browser)
     {
-        return browser.Kind == BrowserKind.Firefox && BrowserIntegration.IsFirefoxPolicyRegistered();
+        return browser.Kind switch
+        {
+            BrowserKind.Firefox => BrowserIntegration.IsFirefoxPolicyRegistered(),
+            _ => BrowserIntegration.IsChromiumStoreRegistered(browser),
+        };
     }
 
     private void Tab_Checked(object sender, RoutedEventArgs e)

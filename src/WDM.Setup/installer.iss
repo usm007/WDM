@@ -4,7 +4,7 @@
 
 #define MyAppName "Windows Download Manager"
 #define MyAppShortName "WDM"
-#define MyAppVersion "1.1.0.0"
+#define MyAppVersion "1.2.0.0"
 #define MyAppPublisher "WDM Team"
 #define MyAppExeName "WDM.exe"
 #define MyAppIcon "..\WDM\Assets\WDM.ico"

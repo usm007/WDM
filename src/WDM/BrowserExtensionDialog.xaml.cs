@@ -25,6 +25,26 @@ public partial class BrowserExtensionDialog : Window
         // Always ensure extension is deployed to AppData on load
         BrowserIntegration.DeployExtension();
         UpdateSigningStatus();
+        UpdateStoreStatus();
+    }
+
+    private void UpdateStoreStatus()
+    {
+        if (ChromiumStatusText is not null)
+        {
+            var chrome = BrowserIntegration.DetectInstalledBrowsers()
+                .FirstOrDefault(b => b.Kind == BrowserKind.Chromium);
+            bool registered = chrome is not null && BrowserIntegration.IsChromiumStoreRegistered(chrome);
+            string storeId = chrome is not null && chrome.Name.Contains("Edge", StringComparison.OrdinalIgnoreCase)
+                ? BrowserIntegration.EdgeAddOnsId
+                : BrowserIntegration.ChromiumWebStoreId;
+
+            ChromiumStatusText.Text = registered
+                ? "Store install is active — open the browser and confirm the “Enable extension” prompt once."
+                : string.IsNullOrWhiteSpace(storeId)
+                    ? "Chrome/Edge: “Install Now” loads the extension right away (session only). For a permanent install, publish the add-on once to the store, then use “Permanent Install (Store)”."
+                    : "Store install is set up — next browser launch will ask you to confirm the extension.";
+        }
     }
 
     private void UpdateSigningStatus()
@@ -82,9 +102,8 @@ public partial class BrowserExtensionDialog : Window
                 return;
             }
 
-            string chromeResult = BrowserIntegration.InjectChromium(chrome);
+            string chromeResult = BrowserIntegration.LoadChromiumViaCdp(chrome);
             FeedbackText.Text = chromeResult;
-            BrowserIntegration.OpenExtensionFolder();
         }
         catch (Exception ex)
         {
@@ -127,6 +146,7 @@ public partial class BrowserExtensionDialog : Window
 
             string result = BrowserIntegration.PreinstallChromium(chrome);
             FeedbackText.Text = result;
+            UpdateStoreStatus();
         }
         catch (Exception ex)
         {

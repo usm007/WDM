@@ -4,8 +4,11 @@ using System.Diagnostics;
 using System.IO;
 using System.IO.Compression;
 using System.Linq;
+using System.Net;
+using System.Net.Sockets;
+using System.Net.WebSockets;
 using System.Text.Json;
-using System.Windows;
+using System.Threading;
 using Microsoft.Win32;
 
 namespace WDM.Services;
@@ -114,46 +117,163 @@ public static class BrowserIntegration
         return found;
     }
 
-    public static string InjectChromium(InstalledBrowser browser)
+    /// <summary>
+    /// Loads the unpacked extension into a running Chrome/Edge (or launches it)
+    /// via the DevTools Protocol "Extensions.loadUnpacked" command. This replaced
+    /// the removed "--load-extension" flag (Chrome 137+) and works over a plain
+    /// remote-debugging WebSocket on modern browsers (Chrome/Edge 149+; older
+    /// versions may need --remote-debugging-pipe, which is not supported here).
+    /// <para>
+    /// Note: CDP-installed extensions are tied to the browser session and may be
+    /// uninstalled after a browser restart, so this is a "load now" helper rather
+    /// than a permanent install.
+    /// </para>
+    /// </summary>
+    public static string LoadChromiumViaCdp(InstalledBrowser browser)
     {
         string dir = DeployExtension();
         if (!File.Exists(Path.Combine(dir, "manifest.json")))
             throw new IOException($"Extension files missing from {dir}");
 
-        Process.Start(new ProcessStartInfo(browser.ExePath)
+        int port = GetFreePort();
+        string args = $"--remote-debugging-port={port} --remote-allow-origins=* --enable-unsafe-extension-debugging";
+        Process.Start(new ProcessStartInfo(browser.ExePath) { Arguments = args, UseShellExecute = true });
+
+        string? wsUrl = WaitForDebugEndpoint(port, TimeSpan.FromSeconds(12));
+        if (wsUrl is null)
         {
-            Arguments = $"--load-extension=\"{dir}\"",
-            UseShellExecute = true
-        });
-        return $"{browser.Name} launched with the extension loaded for this session.";
+            return $"{browser.Name} is already running without remote debugging — the DevTools " +
+                   $"port can't open. Close {browser.Name} completely, then click this button again.";
+        }
+
+        var result = CallCdpAsync(wsUrl, "Extensions.loadUnpacked",
+            new Dictionary<string, object?> { ["path"] = dir, ["enableInIncognito"] = true }).GetAwaiter().GetResult();
+
+        string id = result.TryGetProperty("id", out var idEl) ? idEl.GetString() ?? "" : "";
+        string note = "Extension loaded for this session. It may be removed when the browser restarts — " +
+                      "run “Install Now” again, or use Load unpacked for a permanent (manual) install.";
+        return string.IsNullOrEmpty(id)
+            ? $"{browser.Name}: extension loaded. {note}"
+            : $"{browser.Name}: extension loaded (ID {id}). {note}";
     }
 
     /// <summary>
-    /// Registers the extension with Chrome/Edge via the External Extension (registry)
-    /// pre-install mechanism, pointing at the Chrome Web Store once the add-on is
-    /// published. Without a published Web Store ID, Chromium cannot persist a
-    /// locally-shipped extension — this only takes effect once
-    /// <see cref="ChromiumWebStoreId"/> is set.
+    /// Registers the extension with Chrome/Edge via the Windows "External Extension"
+    /// registry pre-install mechanism, so the browser shows the one-time
+    /// "enable extension" confirmation on next launch. Chrome requires the add-on
+    /// to be published to the Chrome Web Store (one-time $5 developer fee); Edge
+    /// uses Microsoft Edge Add-ons, which is free to publish.
     /// </summary>
-    public const string ChromiumWebStoreId = ""; // e.g. "aabbccddeeff00112233445566778899" after publishing
+    public const string ChromiumWebStoreId = ""; // 32-char ID, e.g. "aabbccddeeff00112233445566778899", once published (paid)
+    public const string EdgeAddOnsId = "";       // 32-char ID once published to Edge Add-ons (free)
 
     public static string PreinstallChromium(InstalledBrowser browser)
     {
-        if (string.IsNullOrWhiteSpace(ChromiumWebStoreId))
+        bool isEdge = browser.Name.Contains("Edge", StringComparison.OrdinalIgnoreCase);
+        string id = isEdge ? EdgeAddOnsId : ChromiumWebStoreId;
+        string root = isEdge
+            ? @"Software\Microsoft\Edge\Extensions"
+            : @"Software\Google\Chrome\Extensions";
+        string updateUrl = isEdge
+            ? "https://edge.microsoft.com/extensionwebstorebase/v1/crx"
+            : "https://clients2.google.com/service/update2/crx";
+
+        if (string.IsNullOrWhiteSpace(id))
         {
-            return $"{browser.Name}: extension not published to the Chrome Web Store yet — " +
-                   "loaded for this session instead (see InjectChromium).";
+            string store = isEdge
+                ? "Microsoft Edge Add-ons (free to publish)"
+                : "the Chrome Web Store (requires the one-time $5 developer registration)";
+            return $"{browser.Name}: the add-on isn't published to {store} yet, so a permanent " +
+                   "install isn't possible. Publish it, set the store ID in BrowserIntegration.cs, and retry.";
         }
 
-        string root = browser.Name.Contains("Edge")
-            ? @"Software\Policies\Microsoft\Edge\ExtensionInstallForcelist"
-            : @"Software\Policies\Google\Chrome\ExtensionInstallForcelist";
+        using var key = Registry.CurrentUser.CreateSubKey(root + "\\" + id);
+        key?.SetValue("update_url", updateUrl, RegistryValueKind.String);
 
-        using var key = Registry.CurrentUser.CreateSubKey(root);
-        key?.SetValue("1", $"{ChromiumWebStoreId};https://clients2.google.com/service/update2/crx", RegistryValueKind.String);
+        return $"{browser.Name}: registered for automatic install. Next time you open {browser.Name}, " +
+               "confirm the “Enable extension” prompt once and it stays installed.";
+    }
 
-        Process.Start(new ProcessStartInfo(browser.ExePath) { UseShellExecute = true });
-        return $"{browser.Name}: extension force-installed from the Chrome Web Store.";
+    /// <summary>True when the store-registry entry for this Chromium browser exists.</summary>
+    public static bool IsChromiumStoreRegistered(InstalledBrowser browser)
+    {
+        bool isEdge = browser.Name.Contains("Edge", StringComparison.OrdinalIgnoreCase);
+        string id = isEdge ? EdgeAddOnsId : ChromiumWebStoreId;
+        if (string.IsNullOrWhiteSpace(id))
+            return false;
+        string root = isEdge
+            ? @"Software\Microsoft\Edge\Extensions"
+            : @"Software\Google\Chrome\Extensions";
+        using var key = Registry.CurrentUser.OpenSubKey(root);
+        return key?.GetSubKeyNames().Any(n => string.Equals(n, id, StringComparison.OrdinalIgnoreCase)) == true;
+    }
+
+    private static int GetFreePort()
+    {
+        using var listener = new TcpListener(IPAddress.Loopback, 0);
+        listener.Start();
+        int port = ((IPEndPoint)listener.LocalEndpoint).Port;
+        listener.Stop();
+        return port;
+    }
+
+    private static string? WaitForDebugEndpoint(int port, TimeSpan timeout)
+    {
+        DateTime deadline = DateTime.UtcNow + timeout;
+        while (DateTime.UtcNow < deadline)
+        {
+            try
+            {
+                using var client = new HttpClient { Timeout = TimeSpan.FromSeconds(2) };
+                string json = client.GetStringAsync($"http://127.0.0.1:{port}/json/version").GetAwaiter().GetResult();
+                using var doc = JsonDocument.Parse(json);
+                if (doc.RootElement.TryGetProperty("webSocketDebuggerUrl", out var ws))
+                    return ws.GetString();
+            }
+            catch
+            {
+                // Browser not ready yet — keep polling.
+            }
+            Thread.Sleep(400);
+        }
+        return null;
+    }
+
+    private static async Task<JsonElement> CallCdpAsync(string wsUrl, string method, object? parameters)
+    {
+        using var ws = new ClientWebSocket();
+        ws.Options.KeepAliveInterval = TimeSpan.FromSeconds(20);
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+
+        await ws.ConnectAsync(new Uri(wsUrl), cts.Token);
+
+        int msgId = Environment.TickCount & 0x7FFFFFFF;
+        byte[] request = JsonSerializer.SerializeToUtf8Bytes(new Dictionary<string, object?>
+        {
+            ["id"] = msgId,
+            ["method"] = method,
+            ["params"] = parameters,
+        });
+
+        await ws.SendAsync(new ArraySegment<byte>(request), WebSocketMessageType.Text, true, cts.Token);
+
+        using var ms = new MemoryStream();
+        var buffer = new byte[8192];
+        WebSocketReceiveResult recv;
+        do
+        {
+            recv = await ws.ReceiveAsync(new ArraySegment<byte>(buffer), cts.Token);
+            ms.Write(buffer, 0, recv.Count);
+        }
+        while (!recv.EndOfMessage);
+
+        using var doc = JsonDocument.Parse(ms.ToArray());
+        JsonElement root = doc.RootElement;
+
+        if (root.TryGetProperty("error", out JsonElement err))
+            throw new InvalidOperationException($"CDP error ({method}): {err.GetProperty("message").GetString()}");
+
+        return root.TryGetProperty("result", out JsonElement result) ? result.Clone() : default;
     }
 
     /// <summary>
