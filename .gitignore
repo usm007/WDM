@@ -12,3 +12,8 @@ idman643build8.exe
 *.bak
 app_icon_1024*.png
 *.tmp
+
+# Development scratch / bug reports
+allbugs.md
+bugs.md
+WDM/bugs.md
