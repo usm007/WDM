@@ -17,6 +17,7 @@
             <RowDefinition Height="Auto" />
             <RowDefinition Height="Auto" />
             <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
         </Grid.RowDefinitions>
 
         <!-- Header -->
@@ -61,8 +62,16 @@
             <Button Grid.Row="1" Grid.Column="1" x:Name="CopyPathButton" Content="📋 Copy Extension Path" Style="{StaticResource Button.Secondary}" Click="CopyPath_Click" Margin="4,0,0,0" Height="30" Padding="10,0" />
         </Grid>
 
-        <!-- Step-by-Step Instructions Card -->
+        <!-- Manual Fallback -->
         <Border Grid.Row="3" Background="{DynamicResource Brush.Surface}" BorderBrush="{DynamicResource Brush.Border}" BorderThickness="1" CornerRadius="8" Padding="14,12" Margin="0,0,0,16">
+            <StackPanel>
+                <TextBlock Text="If automatic install fails — manual option:" FontWeight="SemiBold" FontSize="12" Foreground="{DynamicResource Brush.Text}" Margin="0,0,0,8" />
+                <TextBlock Text="Chrome/Edge: click “Copy Extension Path”, then open chrome://extensions, enable Developer mode, click “Load unpacked” and paste that folder. Firefox: open about:debugging#/runtime/this-firefox and click “Load Temporary Add-on” (session only)." TextWrapping="Wrap" FontSize="12" Foreground="{DynamicResource Brush.TextDim}" />
+            </StackPanel>
+        </Border>
+
+        <!-- Step-by-Step Instructions Card -->
+        <Border Grid.Row="4" Background="{DynamicResource Brush.Surface}" BorderBrush="{DynamicResource Brush.Border}" BorderThickness="1" CornerRadius="8" Padding="14,12" Margin="0,0,0,16">
             <StackPanel>
                 <TextBlock Text="How to install:" FontWeight="SemiBold" FontSize="12" Foreground="{DynamicResource Brush.Text}" Margin="0,0,0,8" />
 
@@ -84,10 +93,10 @@
         </Border>
 
         <!-- Divider -->
-        <Border Grid.Row="4" Height="1" Background="{DynamicResource Brush.Border}" Margin="0,0,0,14" />
+        <Border Grid.Row="5" Height="1" Background="{DynamicResource Brush.Border}" Margin="0,0,0,14" />
 
         <!-- Bottom Action -->
-        <DockPanel Grid.Row="5" LastChildFill="False">
+        <DockPanel Grid.Row="6" LastChildFill="False">
             <TextBlock x:Name="FeedbackText" Text="" FontSize="11" Foreground="{DynamicResource Brush.Accent}" VerticalAlignment="Center" DockPanel.Dock="Left" />
             <Button Content="Done" Style="{StaticResource Button.Accent}" IsCancel="True" Click="CloseClick" MinWidth="100" Height="30" DockPanel.Dock="Right" />
         </DockPanel>
