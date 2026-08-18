@@ -4,7 +4,7 @@
 
 #define MyAppName "Windows Download Manager"
 #define MyAppShortName "WDM"
-#define MyAppVersion "1.2.2.0"
+#define MyAppVersion "1.3.0.0"
 #define MyAppPublisher "WDM Team"
 #define MyAppExeName "WDM.exe"
 #define MyAppIcon "..\WDM\Assets\WDM.ico"
@@ -55,12 +55,8 @@ Source: "{#StagingDir}\WDM.runtimeconfig.json"; DestDir: "{app}"; Flags: ignorev
 Source: "{#StagingDir}\BrowserExtension\*"; DestDir: "{app}\BrowserExtension"; Flags: ignoreversion recursesubdirs createallsubdirs
 
 [Registry]
-; Firefox: register the WDM Download Catcher via the per-user enterprise policy so
-; Firefox installs it automatically on next launch. Points at the XPI bundled next
-; to the deployed extension (built during publish into BrowserExtension\wdm-catcher.xpi).
-; Note: Firefox release builds require the XPI to be signed by Mozilla (submit once to
-; addons.mozilla.org as a self-distributed add-on) or the add-on will show as blocked.
-Root: HKCU; Subkey: "Software\Policies\Mozilla\Firefox"; ValueType: string; ValueName: "ExtensionSettings"; ValueData: "{{""wdm-catcher@wdm.app"":{{""installation_mode"":""normal_installed"",""install_url"":""file:///{localappdata}\WDM\BrowserExtension\wdm-catcher.xpi""}}}}"; Flags: uninsdeletevalue
+; No registry entries. Chrome/Edge: manual "Load unpacked" install (see the in-app
+; step-by-step guide). Firefox: install from the add-ons store (AMO) once approved.
 
 [Icons]
 Name: "{group}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"

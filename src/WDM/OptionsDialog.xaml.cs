@@ -1,3 +1,4 @@
+using System.Linq;
 using System.Windows;
 using System.Windows.Controls;
 using Microsoft.Win32;
@@ -49,98 +50,12 @@ public partial class OptionsDialog : Window
 
     private void PopulateBrowsers()
     {
-        if (BrowserList == null) return;
+        if (BrowserStatusText == null) return;
 
         var browsers = BrowserIntegration.DetectInstalledBrowsers();
-        if (browsers.Count == 0)
-        {
-            BrowserStatusText.Text = "No supported browsers detected on this system.";
-            return;
-        }
-
-        BrowserStatusText.Text = $"Detected {browsers.Count} browser(s):";
-
-        foreach (var browser in browsers)
-        {
-            var row = new StackPanel
-            {
-                Orientation = Orientation.Horizontal,
-                Margin = new Thickness(0, 0, 0, 8),
-            };
-
-            var icon = new TextBlock
-            {
-                Text = browser.Kind == BrowserKind.Firefox ? "\uE7B4" : "\uE774",
-                FontFamily = new System.Windows.Media.FontFamily("Segoe MDL2 Assets"),
-                FontSize = 14,
-                Foreground = (System.Windows.Media.Brush)FindResource("Brush.TextDim"),
-                VerticalAlignment = VerticalAlignment.Center,
-                Margin = new Thickness(0, 0, 8, 0),
-            };
-
-            var label = new TextBlock
-            {
-                Text = browser.Name,
-                FontSize = 13,
-                VerticalAlignment = VerticalAlignment.Center,
-                Margin = new Thickness(0, 0, 12, 0),
-            };
-
-            var status = new TextBlock
-            {
-                Text = "Not installed",
-                FontSize = 11,
-                Foreground = (System.Windows.Media.Brush)FindResource("Brush.TextDim"),
-                VerticalAlignment = VerticalAlignment.Center,
-                Margin = new Thickness(0, 0, 12, 0),
-            };
-
-            var button = new Button
-            {
-                Content = "Install",
-                Style = (Style)FindResource("Button.Secondary"),
-                Height = 28,
-                MinWidth = 80,
-                Padding = new Thickness(14, 0, 14, 0),
-            };
-
-            button.Click += (_, _) => InstallBrowser(browser, status);
-            status.Text = IsBrowserInjected(browser) ? "Installed" : "Not installed";
-
-            row.Children.Add(icon);
-            row.Children.Add(label);
-            row.Children.Add(status);
-            row.Children.Add(button);
-            BrowserList.Children.Add(row);
-        }
-    }
-
-    private void InstallBrowser(InstalledBrowser browser, TextBlock status)
-    {
-        try
-        {
-            string message = browser.Kind == BrowserKind.Firefox
-                ? BrowserIntegration.InstallFirefoxViaPolicy(browser)
-                : BrowserIntegration.LoadChromiumViaCdp(browser);
-            status.Text = "Installed";
-            status.Foreground = (System.Windows.Media.Brush)FindResource("Brush.Success");
-            BrowserStatusText.Text = message;
-        }
-        catch (Exception ex)
-        {
-            status.Text = "Failed";
-            status.Foreground = (System.Windows.Media.Brush)FindResource("Brush.Danger");
-            BrowserStatusText.Text = ex.Message;
-        }
-    }
-
-    private static bool IsBrowserInjected(InstalledBrowser browser)
-    {
-        return browser.Kind switch
-        {
-            BrowserKind.Firefox => BrowserIntegration.IsFirefoxPolicyRegistered(),
-            _ => BrowserIntegration.IsChromiumStoreRegistered(browser),
-        };
+        BrowserStatusText.Text = browsers.Count == 0
+            ? "No supported browsers detected on this system."
+            : "Detected: " + string.Join(", ", browsers.Select(b => b.Name)) + ".";
     }
 
     private void Tab_Checked(object sender, RoutedEventArgs e)

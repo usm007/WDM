@@ -459,7 +459,7 @@ public partial class MainWindow : Window
 
     public void ShowExtensionInstallerDialog()
     {
-        var dialog = new BrowserExtensionDialog(_captureServer);
+        var dialog = new BrowserExtensionDialog();
         dialog.ShowDialog();
     }
 

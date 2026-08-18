@@ -176,8 +176,7 @@
                         <TextBlock Text="Install the WDM download catcher into your browsers" FontWeight="Medium" Margin="0,0,0,8" />
                         <TextBlock x:Name="BrowserStatusText" TextWrapping="Wrap" Foreground="{DynamicResource Brush.TextDim}" FontSize="12" Margin="0,0,0,12" />
 
-                        <StackPanel x:Name="BrowserList" />
-                        <Button Content="🚀 Open Chrome Extension Installer Helper..." Style="{StaticResource Button.Accent}" Click="OpenExtensionHelper_Click" Height="32" Margin="0,14,0,0" HorizontalAlignment="Left" Padding="14,0" />
+                        <Button Content="📖 Open Install Guide..." Style="{StaticResource Button.Accent}" Click="OpenExtensionHelper_Click" Height="32" Margin="0,14,0,0" HorizontalAlignment="Left" Padding="14,0" />
                     </StackPanel>
 
                     <!-- Panel 4: Behavior -->
