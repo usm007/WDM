@@ -54,6 +54,14 @@ Source: "{#StagingDir}\WDM.deps.json"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#StagingDir}\WDM.runtimeconfig.json"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#StagingDir}\BrowserExtension\*"; DestDir: "{app}\BrowserExtension"; Flags: ignoreversion recursesubdirs createallsubdirs
 
+[Registry]
+; Firefox: register the WDM Download Catcher via the per-user enterprise policy so
+; Firefox installs it automatically on next launch. Points at the XPI bundled next
+; to the deployed extension (built during publish into BrowserExtension\wdm-catcher.xpi).
+; Note: Firefox release builds require the XPI to be signed by Mozilla (submit once to
+; addons.mozilla.org as a self-distributed add-on) or the add-on will show as blocked.
+Root: HKCU; Subkey: "Software\Policies\Mozilla\Firefox"; ValueType: string; ValueName: "ExtensionSettings"; ValueData: "{{""wdm-catcher@wdm.app"":{{""installation_mode"":""normal_installed"",""install_url"":""file:///{localappdata}\WDM\BrowserExtension\wdm-catcher.xpi""}}}}"; Flags: uninsdeletevalue
+
 [Icons]
 Name: "{group}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"
 Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; Tasks: desktopicon

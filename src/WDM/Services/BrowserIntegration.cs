@@ -2,7 +2,9 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
+using System.IO.Compression;
 using System.Linq;
+using System.Text.Json;
 using System.Windows;
 using Microsoft.Win32;
 
@@ -123,21 +125,87 @@ public static class BrowserIntegration
             Arguments = $"--load-extension=\"{dir}\"",
             UseShellExecute = true
         });
-        return $"{browser.Name} launched with extension loaded.";
+        return $"{browser.Name} launched with the extension loaded for this session.";
     }
 
-    public static string InjectFirefox(InstalledBrowser browser)
+    /// <summary>
+    /// Registers the extension with Chrome/Edge via the External Extension (registry)
+    /// pre-install mechanism, pointing at the Chrome Web Store once the add-on is
+    /// published. Without a published Web Store ID, Chromium cannot persist a
+    /// locally-shipped extension — this only takes effect once
+    /// <see cref="ChromiumWebStoreId"/> is set.
+    /// </summary>
+    public const string ChromiumWebStoreId = ""; // e.g. "aabbccddeeff00112233445566778899" after publishing
+
+    public static string PreinstallChromium(InstalledBrowser browser)
+    {
+        if (string.IsNullOrWhiteSpace(ChromiumWebStoreId))
+        {
+            return $"{browser.Name}: extension not published to the Chrome Web Store yet — " +
+                   "loaded for this session instead (see InjectChromium).";
+        }
+
+        string root = browser.Name.Contains("Edge")
+            ? @"Software\Policies\Microsoft\Edge\ExtensionInstallForcelist"
+            : @"Software\Policies\Google\Chrome\ExtensionInstallForcelist";
+
+        using var key = Registry.CurrentUser.CreateSubKey(root);
+        key?.SetValue("1", $"{ChromiumWebStoreId};https://clients2.google.com/service/update2/crx", RegistryValueKind.String);
+
+        Process.Start(new ProcessStartInfo(browser.ExePath) { UseShellExecute = true });
+        return $"{browser.Name}: extension force-installed from the Chrome Web Store.";
+    }
+
+    /// <summary>
+    /// Builds a signed-ready XPI from the bundled unpacked Firefox extension and
+    /// registers it via the per-user ExtensionSettings enterprise policy, so
+    /// Firefox installs it automatically on next launch.
+    /// <para>
+    /// Firefox release builds require the XPI to be Mozilla-signed (submit once
+    /// to addons.mozilla.org as a self-distributed add-on). Until then the policy
+    /// is registered but the extension shows as a blocked/unsigned add-on.
+    /// </para>
+    /// </summary>
+    public static string InstallFirefoxViaPolicy(InstalledBrowser browser)
     {
         string dir = DeployExtension();
         string firefoxDir = Path.Combine(dir, "firefox");
         if (!File.Exists(Path.Combine(firefoxDir, "manifest.json")))
             throw new IOException($"Firefox extension missing from {firefoxDir}");
 
-        using var key = Registry.CurrentUser.CreateSubKey(@"Software\Mozilla\Firefox\Extensions");
-        key?.SetValue(FirefoxExtensionId, firefoxDir, RegistryValueKind.String);
+        string xpi = BuildFirefoxXpi(firefoxDir);
+        string json = JsonSerializer.Serialize(new Dictionary<string, object>
+        {
+            [FirefoxExtensionId] = new Dictionary<string, string>
+            {
+                ["installation_mode"] = "normal_installed",
+                ["install_url"] = new Uri(xpi).AbsoluteUri,
+            }
+        });
+
+        using var key = Registry.CurrentUser.CreateSubKey(@"Software\Policies\Mozilla\Firefox");
+        key?.SetValue("ExtensionSettings", json, RegistryValueKind.String);
 
         Process.Start(new ProcessStartInfo(browser.ExePath) { UseShellExecute = true });
-        return $"{browser.Name}: Extension registered in Windows registry.";
+        return $"{browser.Name}: extension registered via enterprise policy — Firefox installs it on next launch.";
+    }
+
+    /// <summary>True when the per-user ExtensionSettings policy for WDM is registered.</summary>
+    public static bool IsFirefoxPolicyRegistered()
+    {
+        using var key = Registry.CurrentUser.OpenSubKey(@"Software\Policies\Mozilla\Firefox");
+        return key?.GetValue("ExtensionSettings") is string json && json.Contains(FirefoxExtensionId, StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>Packs the unpacked Firefox extension folder into a single XPI file.</summary>
+    public static string BuildFirefoxXpi(string firefoxDir)
+    {
+        string xpi = Path.Combine(DeployDir, "wdm-catcher.xpi");
+        if (File.Exists(xpi))
+            File.Delete(xpi);
+
+        ZipFile.CreateFromDirectory(firefoxDir, xpi, CompressionLevel.Optimal, includeBaseDirectory: false);
+        return xpi;
     }
 
     public static void OpenExtensionFolder()

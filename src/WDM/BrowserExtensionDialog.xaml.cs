@@ -62,13 +62,62 @@ public partial class BrowserExtensionDialog : Window
                 return;
             }
 
-            string result = BrowserIntegration.InjectChromium(chrome);
-            FeedbackText.Text = result;
+            if (chrome.Kind == BrowserKind.Firefox)
+            {
+                string result = BrowserIntegration.InstallFirefoxViaPolicy(chrome);
+                FeedbackText.Text = result;
+                return;
+            }
+
+            string chromeResult = BrowserIntegration.InjectChromium(chrome);
+            FeedbackText.Text = chromeResult;
             BrowserIntegration.OpenExtensionFolder();
         }
         catch (Exception ex)
         {
             MessageBox.Show($"Failed to launch browser: {ex.Message}", "WDM Setup Error", MessageBoxButton.OK, MessageBoxImage.Error);
+        }
+    }
+
+    private void InstallFirefox_Click(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            var firefox = BrowserIntegration.DetectInstalledBrowsers().FirstOrDefault(b => b.Kind == BrowserKind.Firefox);
+            if (firefox is null)
+            {
+                MessageBox.Show("Mozilla Firefox is not installed.", "WDM Setup", MessageBoxButton.OK, MessageBoxImage.Warning);
+                return;
+            }
+
+            string result = BrowserIntegration.InstallFirefoxViaPolicy(firefox);
+            FeedbackText.Text = result;
+            BrowserIntegration.OpenExtensionFolder();
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show($"Failed to register Firefox extension: {ex.Message}", "WDM Setup Error", MessageBoxButton.OK, MessageBoxImage.Error);
+        }
+    }
+
+    private void PreinstallChrome_Click(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            var browsers = BrowserIntegration.DetectInstalledBrowsers();
+            var chrome = browsers.FirstOrDefault(b => b.Name.Contains("Chrome")) ?? browsers.FirstOrDefault();
+            if (chrome is null)
+            {
+                MessageBox.Show("No supported browser detected on your system.", "WDM Setup", MessageBoxButton.OK, MessageBoxImage.Warning);
+                return;
+            }
+
+            string result = BrowserIntegration.PreinstallChromium(chrome);
+            FeedbackText.Text = result;
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show($"Failed to pre-install extension: {ex.Message}", "WDM Setup Error", MessageBoxButton.OK, MessageBoxImage.Error);
         }
     }
 
