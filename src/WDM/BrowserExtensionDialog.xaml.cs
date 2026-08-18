@@ -24,6 +24,19 @@ public partial class BrowserExtensionDialog : Window
 
         // Always ensure extension is deployed to AppData on load
         BrowserIntegration.DeployExtension();
+        UpdateSigningStatus();
+    }
+
+    private void UpdateSigningStatus()
+    {
+        string? note = null;
+        if (FirefoxStatusText is not null)
+        {
+            note = BrowserIntegration.IsFirefoxXpiSigned()
+                ? "Signed XPI bundled — Firefox will auto-install on next launch."
+                : "XPI is unsigned — Firefox will block it. Upload once to AMO (self-distribution) and re-bundle the signed file.";
+            FirefoxStatusText.Text = note;
+        }
     }
 
     private void OnExtensionConnected()

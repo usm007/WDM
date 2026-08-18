@@ -197,6 +197,23 @@ public static class BrowserIntegration
         return key?.GetValue("ExtensionSettings") is string json && json.Contains(FirefoxExtensionId, StringComparison.OrdinalIgnoreCase);
     }
 
+    /// <summary>True when the bundled XPI carries a Mozilla signature (META-INF/).</summary>
+    public static bool IsFirefoxXpiSigned()
+    {
+        try
+        {
+            string xpi = Path.Combine(DeployDir, "wdm-catcher.xpi");
+            if (!File.Exists(xpi))
+                return false;
+            using var zip = ZipFile.OpenRead(xpi);
+            return zip.Entries.Any(e => e.FullName.StartsWith("META-INF/", StringComparison.OrdinalIgnoreCase));
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
     /// <summary>Packs the unpacked Firefox extension folder into a single XPI file.</summary>
     public static string BuildFirefoxXpi(string firefoxDir)
     {

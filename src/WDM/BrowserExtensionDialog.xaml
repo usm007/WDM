@@ -68,7 +68,7 @@
 
                 <StackPanel Orientation="Horizontal" Margin="0,2,0,4">
                     <TextBlock Text="🦊" Margin="0,0,8,0" />
-                    <TextBlock Text="Firefox: click “Install Firefox (Automatic)” — WDM registers it so Firefox installs it on next launch. (For a permanent install the add-on must be signed via addons.mozilla.org.)" TextWrapping="Wrap" FontSize="12" Foreground="{DynamicResource Brush.TextDim}" />
+                    <TextBlock x:Name="FirefoxStatusText" Text="Firefox: click “Install Firefox (Automatic)” — WDM registers it so Firefox installs it on next launch." TextWrapping="Wrap" FontSize="12" Foreground="{DynamicResource Brush.TextDim}" />
                 </StackPanel>
 
                 <StackPanel Orientation="Horizontal" Margin="0,6,0,4">
