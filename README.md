@@ -9,7 +9,6 @@ An IDM-style download manager for Windows, written in C# / WPF / .NET 8.
 - **Speed limiting** — per-download and global throughput limits.
 - **Priorities & categories** — Low/Normal/High priority that reorders the queue, and automatic categorization by file extension with optional per-category save folders.
 - **Post-download actions** — optional SHA-256 checksum computation and a script/command to run on completion.
-- **Modern dark UI** — sidebar filters, search box, drag-and-drop URL/file support, progress table, live speed and ETA, status bar.
 
 ## Structure
 
