@@ -193,6 +193,13 @@ public sealed class DownloadEngine
         _ = Task.Run(async () =>
         {
             await Task.WhenAll(session.Chunks);
+            // Only clean up the partial files if the task wasn't restarted in the
+            // meantime (a new session for the same task would be writing there).
+            lock (_lock)
+            {
+                if (_sessions.ContainsKey(task.Id))
+                    return;
+            }
             TryDelete(session.StatePath);
             TryDelete(task.FullPath);
             session.Dispose();
@@ -376,7 +383,6 @@ public sealed class DownloadEngine
                 if (_sessions.ContainsKey(task.Id) && session.Done)
                     _sessions.Remove(task.Id);
             }
-            session.Dispose();
             ReleaseReservedPath(task);
             TaskChanged?.Invoke();
             PumpQueue();
@@ -385,6 +391,7 @@ public sealed class DownloadEngine
                 if (ActiveCount == 0 && QueuedCount == 0)
                     _meter.Stop();
             }
+            session.Dispose();
         }
     }
 
@@ -471,6 +478,8 @@ public sealed class DownloadEngine
                         totalBytes = len;
                     etag ??= get.Headers.ETag?.ToString();
                     lastModified ??= get.Content.Headers.LastModified?.ToString("R");
+                    suggestedName ??= NameFromDisposition(get.Content.Headers.ContentDisposition);
+                    contentType ??= get.Content.Headers.ContentType?.ToString();
                     get.Dispose();
                 }
                 else if (get.StatusCode == HttpStatusCode.OK)
@@ -482,6 +491,8 @@ public sealed class DownloadEngine
                     supportsRanges = false;
                     etag ??= get.Headers.ETag?.ToString();
                     lastModified ??= get.Content.Headers.LastModified?.ToString("R");
+                    suggestedName ??= NameFromDisposition(get.Content.Headers.ContentDisposition);
+                    contentType ??= get.Content.Headers.ContentType?.ToString();
                     // Non-resumable (and often one-time) URL. Keep the response open so
                     // the body already sent by the server isn't wasted; single-stream
                     // consumes it directly instead of re-requesting the link.
@@ -496,14 +507,16 @@ public sealed class DownloadEngine
                         totalBytes = len;
                     etag ??= get.Headers.ETag?.ToString();
                     lastModified ??= get.Content.Headers.LastModified?.ToString("R");
+                    suggestedName ??= NameFromDisposition(get.Content.Headers.ContentDisposition);
+                    contentType ??= get.Content.Headers.ContentType?.ToString();
                     get.Dispose();
                 }
                 else
                 {
+                    suggestedName ??= NameFromDisposition(get.Content.Headers.ContentDisposition);
+                    contentType ??= get.Content.Headers.ContentType?.ToString();
                     get.Dispose();
                 }
-                suggestedName ??= NameFromDisposition(get.Content.Headers.ContentDisposition);
-                contentType ??= get.Content.Headers.ContentType?.ToString();
             }
             catch
             {
@@ -744,7 +757,7 @@ public sealed class DownloadEngine
                 Interlocked.Add(ref session.BytesDownloaded, read);
                 session.Token.ThrowIfCancellationRequested();
             }
-            if (written != to - from + 1)
+            if (written < to - from + 1)
                 throw new HttpRequestException($"Chunk incomplete: got {written} of {to - from + 1} bytes.");
             return written;
         }
@@ -1160,22 +1173,25 @@ public sealed class DownloadEngine
     private string EnsureUniqueName(string folder, string name, Guid taskId)
     {
         string full = Path.Combine(folder, name);
-        if (!File.Exists(full) && !_reservedPaths.Contains(full))
+        lock (_lock)
         {
-            lock (_lock) _reservedPaths.Add(full);
-            return name;
-        }
-
-        string baseName = Path.GetFileNameWithoutExtension(name);
-        string ext = Path.GetExtension(name);
-        for (int i = 1; ; i++)
-        {
-            string candidate = $"{baseName} ({i}){ext}";
-            string candidateFull = Path.Combine(folder, candidate);
-            if (!File.Exists(candidateFull) && !_reservedPaths.Contains(candidateFull))
+            if (!File.Exists(full) && !_reservedPaths.Contains(full))
             {
-                lock (_lock) _reservedPaths.Add(candidateFull);
-                return candidate;
+                _reservedPaths.Add(full);
+                return name;
+            }
+
+            string baseName = Path.GetFileNameWithoutExtension(name);
+            string ext = Path.GetExtension(name);
+            for (int i = 1; ; i++)
+            {
+                string candidate = $"{baseName} ({i}){ext}";
+                string candidateFull = Path.Combine(folder, candidate);
+                if (!File.Exists(candidateFull) && !_reservedPaths.Contains(candidateFull))
+                {
+                    _reservedPaths.Add(candidateFull);
+                    return candidate;
+                }
             }
         }
     }

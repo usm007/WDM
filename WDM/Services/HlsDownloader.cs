@@ -112,7 +112,7 @@ public static class HlsDownloader
             var seg = playlist.Segments[i];
             if (seg.Length > 0)
             {
-                playlist.TotalBytes += seg.Length;
+                Interlocked.Add(ref playlist.TotalBytes, seg.Length);
                 continue;
             }
             tasks.Add(Task.Run(async () =>
@@ -121,7 +121,7 @@ public static class HlsDownloader
                 try
                 {
                     seg.Length = await ProbeSizeAsync(http, seg.Uri, referer, ct);
-                    playlist.TotalBytes += seg.Length;
+                    Interlocked.Add(ref playlist.TotalBytes, seg.Length);
                 }
                 finally
                 {
@@ -264,6 +264,7 @@ public static class HlsDownloader
         bool haveMediaSequence = false;
 
         string[] lines = text.Split('\n');
+        int segmentOrdinal = 0;
         for (int i = 0; i < lines.Length; i++)
         {
             string line = lines[i].Trim();
@@ -333,9 +334,10 @@ public static class HlsDownloader
             if (!string.IsNullOrEmpty(keyUri))
             {
                 seg.Key = new byte[0]; // placeholder: real key resolved in PrepareKeysAsync
-                seg.Iv = ParseIv(keyIv, haveMediaSequence ? mediaSequence : i);
+                seg.Iv = ParseIv(keyIv, haveMediaSequence ? mediaSequence : segmentOrdinal);
             }
             result.Segments.Add(seg);
+            segmentOrdinal++;
             if (haveMediaSequence)
                 mediaSequence++;
         }
@@ -534,9 +536,21 @@ public static class HlsDownloader
         if (idx < 0)
             return null;
         int start = idx + name.Length + 1;
-        int end = line.IndexOf(',', start);
-        if (end < 0)
-            end = line.Length;
+
+        // Scan for the end of the value, respecting quoted strings that may
+        // contain commas (e.g. CODECS="avc1.42c01e,mp4a.40.2" or URI query strings).
+        int end = start;
+        bool inQuotes = false;
+        while (end < line.Length)
+        {
+            char c = line[end];
+            if (c == '"')
+                inQuotes = !inQuotes;
+            else if (c == ',' && !inQuotes)
+                break;
+            end++;
+        }
+
         string value = line.Substring(start, end - start).Trim();
         return value.Trim('"').Trim();
     }

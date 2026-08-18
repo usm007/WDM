@@ -11,20 +11,39 @@ namespace WDM;
 public sealed class ChunkVisualItem : INotifyPropertyChanged
 {
     public int Index { get; set; }
-    public string ToolTip { get; set; } = "";
+
+    private string _toolTip = "";
+    public string ToolTip
+    {
+        get => _toolTip;
+        set
+        {
+            if (_toolTip != value)
+            {
+                _toolTip = value;
+                OnPropertyChanged();
+            }
+        }
+    }
+
     private double _widthPercent = 0;
     public double WidthPercent
     {
         get => _widthPercent;
         set
         {
-            if (_widthPercent != value)
+            if (Math.Abs(_widthPercent - value) > 0.01)
             {
                 _widthPercent = value;
                 OnPropertyChanged();
+                OnPropertyChanged(nameof(FillGridLength));
+                OnPropertyChanged(nameof(RemainingGridLength));
             }
         }
     }
+
+    public GridLength FillGridLength => new GridLength(Math.Clamp(WidthPercent, 0, 100), GridUnitType.Star);
+    public GridLength RemainingGridLength => new GridLength(Math.Max(0, 100 - Math.Clamp(WidthPercent, 0, 100)), GridUnitType.Star);
 
     public event PropertyChangedEventHandler? PropertyChanged;
     private void OnPropertyChanged([CallerMemberName] string? name = null) =>
@@ -98,7 +117,7 @@ public partial class DownloadProgressDialog : Window, INotifyPropertyChanged
             ChunkList.Add(new ChunkVisualItem
             {
                 Index = i + 1,
-                ToolTip = $"Thread #{i + 1} active",
+                ToolTip = $"Thread #{i + 1}",
                 WidthPercent = 0
             });
         }
@@ -135,17 +154,21 @@ public partial class DownloadProgressDialog : Window, INotifyPropertyChanged
                 double sum = 0;
                 for (int j = start; j < end && j < _lastChunkProgress.Length; j++)
                     sum += _lastChunkProgress[j];
-                ChunkList[i].WidthPercent = Math.Clamp(sum / (end - start), 0, 100);
+                double pct = Math.Clamp(sum / (end - start), 0, 100);
+                ChunkList[i].WidthPercent = pct;
+                ChunkList[i].ToolTip = $"Thread #{i + 1}: {Math.Round(pct)}%";
             }
             return;
         }
 
-        // Fallback when no chunked state exists yet (single stream / probing).
+        // Fallback when no chunked state exists yet (single stream / probing / restored state).
         double currentPercent = Task.Progress;
-        for (int i = 0; i < ChunkList.Count; i++)
+        int count = ChunkList.Count;
+        for (int i = 0; i < count; i++)
         {
-            double chunkFill = Math.Min(100, Math.Max(0, currentPercent));
+            double chunkFill = Math.Clamp((currentPercent - i * (100.0 / count)) * count, 0, 100);
             ChunkList[i].WidthPercent = chunkFill;
+            ChunkList[i].ToolTip = $"Thread #{i + 1}: {Math.Round(chunkFill)}%";
         }
     }
 

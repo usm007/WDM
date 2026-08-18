@@ -181,11 +181,8 @@ public static class BrowserIntegration
             }
             else
             {
-                Process.Start(new ProcessStartInfo("cmd.exe", "/c start chrome://extensions")
-                {
-                    CreateNoWindow = true,
-                    UseShellExecute = false
-                });
+                // Last resort: let the OS resolve the URI to whatever handles it.
+                Process.Start(new ProcessStartInfo("chrome://extensions") { UseShellExecute = true });
             }
         }
         catch

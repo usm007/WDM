@@ -1,6 +1,8 @@
+using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
+using System.Windows.Interop;
 using System.Windows.Media;
 using System.Windows.Shapes;
 using WDM.Models;
@@ -14,8 +16,8 @@ public partial class MainWindow : Window
     private readonly MainViewModel _viewModel;
     private readonly CaptureServer _captureServer;
     private readonly TrayIcon _tray;
-    private readonly ClipboardMonitor _clipboard;
     private readonly Dictionary<Guid, Window> _openDialogs = new();
+    private TrayProgressPanel? _progressPanel;
     private bool _exiting;
     private DownloadCompleteDialog? _completeDialog;
 
@@ -52,38 +54,36 @@ public partial class MainWindow : Window
         };
 
         _captureServer = new CaptureServer((url, name, referer) =>
-            _dispatcher.BeginInvoke(() => ShowAddDialog(url, name, referer)));
+            _dispatcher.BeginInvoke(() => ShowAddDialog(url, name, referer, fromCapture: true)));
         _captureServer.Start();
-
-        _clipboard = new ClipboardMonitor();
-        _clipboard.UrlCopied += url => _dispatcher.BeginInvoke(async () =>
-        {
-            if (!_viewModel.Settings.MonitorClipboard || _viewModel.ExistingUrl(url))
-                return;
-            await PromptForClipboardLinkAsync(url);
-        });
 
         _tray = new TrayIcon();
         _tray.Activated += () => _dispatcher.BeginInvoke(RestoreWindow);
         _tray.NewDownloadRequested += () => _dispatcher.BeginInvoke(() => ShowAddDialog());
         _tray.PauseAllRequested += () => _dispatcher.BeginInvoke(() => _viewModel.Engine.PauseAll());
         _tray.ResumeAllRequested += () => _dispatcher.BeginInvoke(() => _viewModel.Engine.ResumeAll());
-        _tray.ClipboardMonitoringChanged += enabled => _dispatcher.BeginInvoke(() =>
-        {
-            _viewModel.Settings.MonitorClipboard = enabled;
-            _viewModel.PersistSettings();
-            _clipboard.Enabled = enabled;
-        });
         _tray.ExitRequested += () => _dispatcher.BeginInvoke(ExitApp);
-        _tray.ClipboardMonitoring = _viewModel.Settings.MonitorClipboard;
-        _clipboard.Enabled = _viewModel.Settings.MonitorClipboard;
 
         var trayTimer = new System.Windows.Threading.DispatcherTimer
         {
             Interval = TimeSpan.FromSeconds(1),
         };
-        trayTimer.Tick += (_, _) => _tray.SetActiveCount(
-            _viewModel.Engine.ActiveCount, _viewModel.Engine.QueuedCount, _viewModel.Engine.TotalSpeedBps);
+        trayTimer.Tick += (_, _) =>
+        {
+            var active = _viewModel.Tasks.FirstOrDefault(t => t.Status == Models.TaskStatus.Downloading);
+            if (active is not null)
+            {
+                // The floating pill (docked to the right edge) shows % + speed.
+                _tray.SetProgress(active.Progress, active.SpeedText ?? "0 B/s", active.FileName ?? "");
+                UpdateProgressPanel(_viewModel.Settings.ShowTrayProgress ? active : null);
+            }
+            else
+            {
+                _tray.SetActiveCount(
+                    _viewModel.Engine.ActiveCount, _viewModel.Engine.QueuedCount, _viewModel.Engine.TotalSpeedBps);
+                UpdateProgressPanel(null);
+            }
+        };
         trayTimer.Start();
 
         ApplyRoundedClip(SidebarCard);
@@ -92,13 +92,50 @@ public partial class MainWindow : Window
         Loaded += (_, _) =>
         {
             BrowserIntegration.DeployExtension();
-            if (!_captureServer.IsConnected && !_viewModel.Settings.HasPromptedExtensionInstall)
+            if (!_captureServer.IsConnected && !_viewModel.Settings.HasPromptedExtensionInstall && !App.StartMinimized)
             {
                 _viewModel.Settings.HasPromptedExtensionInstall = true;
                 _viewModel.PersistSettings();
                 _dispatcher.BeginInvoke(ShowExtensionInstallerDialog);
             }
+            // Started via the Windows-startup shortcut: run in the background and only
+            // surface the window when the user clicks the tray icon.
+            if (App.StartMinimized)
+            {
+                Hide();
+                var active = _viewModel.Tasks.FirstOrDefault(t => t.Status == Models.TaskStatus.Downloading);
+                if (active is not null)
+                    UpdateProgressPanel(_viewModel.Settings.ShowTrayProgress ? active : null);
+            }
+
+            // Background update check (once a day, tray balloon when a release exists).
+            if (_viewModel.Settings.CheckForUpdates)
+                _ = CheckForUpdatesAsync();
         };
+    }
+
+    protected override void OnSourceInitialized(EventArgs e)
+    {
+        base.OnSourceInitialized(e);
+        RemoveNativeWindowShadow();
+    }
+
+    private const int GCL_STYLE = -20;
+    private const int CS_DROPSHADOW = 0x00020000;
+
+    [DllImport("user32.dll", CharSet = CharSet.Auto)]
+    private static extern int GetClassLong(IntPtr hWnd, int nIndex);
+
+    [DllImport("user32.dll", CharSet = CharSet.Auto)]
+    private static extern int SetClassLong(IntPtr hWnd, int nIndex, int dwNewLong);
+
+    /// <summary>Clears the CS_DROPSHADOW class style so the window has no native drop shadow.</summary>
+    private void RemoveNativeWindowShadow()
+    {
+        IntPtr hwnd = new WindowInteropHelper(this).Handle;
+        int style = GetClassLong(hwnd, GCL_STYLE);
+        if ((style & CS_DROPSHADOW) != 0)
+            SetClassLong(hwnd, GCL_STYLE, style & ~CS_DROPSHADOW);
     }
 
     private void ApplyRoundedClip(Border border)
@@ -155,39 +192,30 @@ public partial class MainWindow : Window
 
     private AddDownloadDialog? _activeAddDialog;
 
-    private void ShowAddDialog(string? prefillUrl = null, string? prefillFileName = null, string? prefillReferer = null)
+    private void ShowAddDialog(string? prefillUrl = null, string? prefillFileName = null, string? prefillReferer = null, bool fromCapture = false)
     {
         if (!string.IsNullOrWhiteSpace(prefillUrl) && _viewModel.ExistingUrl(prefillUrl))
             return;
 
-        RestoreWindow();
+        // When a link is captured from the browser extension, show the dialog on
+        // top of every window without surfacing the main WDM window.
+        if (!fromCapture)
+            RestoreWindow();
 
         if (_activeAddDialog is not null && _activeAddDialog.IsLoaded)
         {
+            _activeAddDialog.Topmost = fromCapture;
             _activeAddDialog.Activate();
             return;
         }
 
-        var dialog = new AddDownloadDialog(_viewModel, prefillUrl, prefillFileName, prefillReferer);
+        var dialog = new AddDownloadDialog(_viewModel, prefillUrl, prefillFileName, prefillReferer)
+        {
+            Topmost = fromCapture,
+        };
         _activeAddDialog = dialog;
         dialog.Closed += (_, _) => _activeAddDialog = null;
         dialog.ShowDialog();
-    }
-
-    /// <summary>
-    /// Called when the clipboard captures a URL. Probes the link first and only
-    /// notifies the user when it actually points at a downloadable file. The user
-    /// confirms by clicking the balloon, which opens the Add dialog prefilled.
-    /// </summary>
-    private async Task PromptForClipboardLinkAsync(string url)
-    {
-        var probe = await UrlProbe.ProbeAsync(url);
-        if (probe is null || !probe.IsFile)
-            return;
-
-        string size = probe.SizeBytes > 0 ? DownloadTask.FormatBytes(probe.SizeBytes) : "unknown size";
-        _tray?.ShowBalloon("Download link detected", $"{probe.FileName} ({size}) — click to download.", () =>
-            _dispatcher.BeginInvoke(() => ShowAddDialog(url, probe.FileName)));
     }
 
     private void ShowProperties(DownloadTask? task)
@@ -255,10 +283,7 @@ public partial class MainWindow : Window
     {
         var dialog = new OptionsDialog(_viewModel);
         if (dialog.ShowDialog() == true)
-        {
             _viewModel.PersistSettings();
-            _clipboard.Enabled = _viewModel.Settings.MonitorClipboard;
-        }
     }
 
     private void RestoreWindow()
@@ -266,12 +291,55 @@ public partial class MainWindow : Window
         Show();
         WindowState = WindowState.Normal;
         Activate();
+        UpdateProgressPanel(null);
+    }
+
+    /// <summary>Shows the always-on-top tray progress panel only while the main
+    /// window is hidden to the tray, a download is running, and the option is on.</summary>
+    private void UpdateProgressPanel(DownloadTask? active)
+    {
+        bool show = _viewModel.Settings.ShowTrayProgress &&
+                    Visibility != Visibility.Visible &&
+                    active is not null;
+
+        if (!show)
+        {
+            _progressPanel?.HidePanel();
+            return;
+        }
+
+        _progressPanel ??= new TrayProgressPanel(_viewModel);
+        _progressPanel.ShowPanel(active!);
     }
 
     private void ExitApp()
     {
         _exiting = true;
         Close();
+    }
+
+    /// <summary>Checks GitHub for a newer WDM release, at most once a day, and shows a
+    /// tray notification (clickable) when one is found.</summary>
+    private async Task CheckForUpdatesAsync()
+    {
+        var settings = _viewModel.Settings;
+        DateTime? lastCheck = DateTime.TryParse(settings.LastUpdateCheckUtc, null, System.Globalization.DateTimeStyles.RoundtripKind, out var parsed)
+            ? parsed
+            : null;
+        if (lastCheck is not null && DateTime.UtcNow - lastCheck < TimeSpan.FromHours(24))
+            return;
+
+        settings.LastUpdateCheckUtc = DateTime.UtcNow.ToString("O");
+        _viewModel.PersistSettings();
+
+        var latest = await UpdateChecker.CheckLatestAsync();
+        if (latest?.Version is not null && latest.Version.CompareTo(UpdateChecker.CurrentVersion) > 0)
+        {
+            _tray.ShowBalloon(
+                "WDM update available",
+                $"WDM {latest.Version} is available — click to open the download page.",
+                () => _dispatcher.BeginInvoke(() => UpdateChecker.OpenReleasesPage(latest.Url)));
+        }
     }
 
     private void TaskGrid_SelectionChanged(object sender, SelectionChangedEventArgs e)
@@ -374,6 +442,9 @@ public partial class MainWindow : Window
         {
             e.Cancel = true;
             Hide();
+            var active = _viewModel.Tasks.FirstOrDefault(t => t.Status == Models.TaskStatus.Downloading);
+            if (active is not null)
+                UpdateProgressPanel(_viewModel.Settings.ShowTrayProgress ? active : null);
             return;
         }
         base.OnClosing(e);
@@ -381,8 +452,8 @@ public partial class MainWindow : Window
 
     protected override void OnClosed(EventArgs e)
     {
+        _progressPanel?.Close();
         _captureServer.Dispose();
-        _clipboard.Enabled = false;
         _tray.Dispose();
         _viewModel.SaveTasksNow();
         base.OnClosed(e);

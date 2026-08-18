@@ -169,7 +169,9 @@ public sealed class CaptureServer : IDisposable
             "Access-Control-Allow-Headers: Content-Type\r\n" +
             $"Content-Length: {bodyBytes.Length}\r\n" +
             "Connection: close\r\n\r\n";
-        await WriteRawAsync(stream, headers + body);
+        await stream.WriteAsync(Encoding.UTF8.GetBytes(headers));
+        await stream.WriteAsync(bodyBytes);
+        await stream.FlushAsync();
     }
 
     private static async Task WriteRawAsync(Stream stream, string text)

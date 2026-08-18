@@ -22,9 +22,8 @@
             <RowDefinition Height="Auto" />
         </Grid.RowDefinitions>
 
-        <!-- 1. Header: Category Icon + File Name + Progress Badge -->
+        <!-- 1. Header: Category Icon + File Name + Progress Pill -->
         <DockPanel Grid.Row="0" Margin="0,0,0,16">
-            <!-- Progress Pill Badge (Right) -->
             <Border DockPanel.Dock="Right" Background="{DynamicResource Brush.AccentSoft}"
                     CornerRadius="12" Padding="12,4" VerticalAlignment="Center">
                 <TextBlock Text="{Binding ProgressTitleText}" FontSize="12" FontWeight="Bold"
@@ -66,7 +65,6 @@
                             <ColumnDefinition Width="*" />
                         </Grid.ColumnDefinitions>
                         <Grid.RowDefinitions>
-                            <RowDefinition Height="26" />
                             <RowDefinition Height="26" />
                             <RowDefinition Height="26" />
                             <RowDefinition Height="26" />
@@ -132,21 +130,6 @@
                         <TextBlock Grid.Row="6" Grid.Column="1" Text="Yes — multithreaded chunking"
                                    Foreground="{DynamicResource Brush.Success}" FontWeight="Medium"
                                    FontSize="12" VerticalAlignment="Center" />
-
-                        <!-- Overall Progress -->
-                        <TextBlock Grid.Row="7" Grid.Column="0" Text="Overall progress" FontWeight="Medium" FontSize="12"
-                                   Foreground="{DynamicResource Brush.TextDim}" VerticalAlignment="Center" />
-                        <Grid Grid.Row="7" Grid.Column="1" VerticalAlignment="Center">
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="*" />
-                                <ColumnDefinition Width="Auto" />
-                            </Grid.ColumnDefinitions>
-                            <ProgressBar Value="{Binding Task.Progress}" Maximum="100"
-                                         Style="{StaticResource ProgressBar.Download}"
-                                         Foreground="#2E9B57" Height="8" VerticalAlignment="Center" />
-                            <TextBlock Grid.Column="1" Text="{Binding ProgressTitleText}" FontSize="12" FontWeight="Bold"
-                                       Foreground="{DynamicResource Brush.Accent}" Margin="10,0,0,0" VerticalAlignment="Center" />
-                        </Grid>
                     </Grid>
                 </Border>
 
@@ -168,11 +151,14 @@
                         </ItemsControl.ItemsPanel>
                         <ItemsControl.ItemTemplate>
                             <DataTemplate>
-                                <Grid Margin="0.5,0">
-                                    <Border Height="8" CornerRadius="2" Background="Transparent" ToolTip="{Binding ToolTip}">
-                                        <Border Background="#2E9B57" HorizontalAlignment="Left"
-                                                Width="{Binding WidthPercent}" CornerRadius="2" />
-                                    </Border>
+                                <Grid Margin="0.5,0" ToolTip="{Binding ToolTip}">
+                                    <Grid Height="8">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="{Binding FillGridLength}" />
+                                            <ColumnDefinition Width="{Binding RemainingGridLength}" />
+                                        </Grid.ColumnDefinitions>
+                                        <Border Grid.Column="0" Background="#2E9B57" CornerRadius="2" />
+                                    </Grid>
                                 </Grid>
                             </DataTemplate>
                         </ItemsControl.ItemTemplate>

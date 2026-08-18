@@ -18,7 +18,7 @@ WDM/
   WDM/                    # WPF app (.NET 8)
     Models/               # DownloadTask, TaskStatus, PriorityLevel, DownloadCategory
     Services/             # DownloadEngine (chunked downloads), CaptureServer (localhost listener),
-                          # TaskStore (JSON persistence), SpeedGovernor, TrayIcon, ClipboardMonitor
+                          # TaskStore (JSON persistence), SpeedGovernor, TrayIcon, HlsDownloader
     ViewModels/           # MainViewModel, commands, converters
     Themes/Theme.xaml     # dark theme
   WDM.BrowserExtension/   # Manifest V3 extension for Chrome/Edge/Firefox

@@ -9,13 +9,19 @@ public sealed class AppSettings
     public int DefaultChunkCount { get; set; } = 0;
     public int MaxConcurrentDownloads { get; set; } = 3;
     public long GlobalSpeedLimitKbps { get; set; }
-    public bool MonitorClipboard { get; set; } = false;
     public bool HasPromptedExtensionInstall { get; set; } = false;
     public bool MinimizeToTray { get; set; } = true;
     public bool NotifyOnCompletion { get; set; } = true;
+    public bool ShowTrayProgress { get; set; } = false;
+    public double? ProgressPanelLeft { get; set; }
+    public double? ProgressPanelTop { get; set; }
     public bool RunAtStartup { get; set; }
     public bool StartInBackground { get; set; }
     public bool UseDarkTheme { get; set; }
+
+    // Updates
+    public bool CheckForUpdates { get; set; } = true;
+    public string? LastUpdateCheckUtc { get; set; }
 
     // Automatic retry
     public int MaxRetries { get; set; } = 3;

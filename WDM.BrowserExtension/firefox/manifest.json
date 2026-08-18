@@ -4,7 +4,8 @@
   "version": "1.0.0",
   "description": "Catch browser downloads and send them to WDM (Windows Download Manager).",
   "permissions": [
-    "downloads"
+    "downloads",
+    "storage"
   ],
   "host_permissions": [
     "http://127.0.0.1:17530/*",
@@ -12,6 +13,7 @@
   ],
   "action": {
     "default_title": "WDM Download Catcher",
+    "default_popup": "popup.html",
     "default_icon": {
       "16": "icon16.png",
       "32": "icon32.png",

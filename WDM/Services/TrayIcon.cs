@@ -1,16 +1,15 @@
-using System.Windows;
-using System.Windows.Media;
 using WDM.Models;
 
 namespace WDM.Services;
 
 /// <summary>
 /// Thin wrapper around the WinForms NotifyIcon so the rest of the app stays WPF-only.
+/// The tray icon stays the normal WDM icon; while a download runs the tooltip shows
+/// download percentage and network speed.
 /// </summary>
-    public sealed class TrayIcon : IDisposable
+public sealed class TrayIcon : IDisposable
 {
     private readonly System.Windows.Forms.NotifyIcon _icon;
-    private readonly System.Windows.Forms.ToolStripMenuItem _clipboardItem;
     private readonly System.Windows.Forms.ToolStripMenuItem _resumeAllItem;
     private Action? _balloonClickAction;
 
@@ -27,9 +26,6 @@ namespace WDM.Services;
         menu.Items.Add("New Download...", null, (_, _) => NewDownloadRequested?.Invoke());
         menu.Items.Add("Pause All", null, (_, _) => PauseAllRequested?.Invoke());
         menu.Items.Add(_resumeAllItem);
-        _clipboardItem = new System.Windows.Forms.ToolStripMenuItem("Monitor Clipboard") { CheckOnClick = true, Checked = false };
-        _clipboardItem.CheckedChanged += (_, _) => ClipboardMonitoringChanged?.Invoke(_clipboardItem.Checked);
-        menu.Items.Add(_clipboardItem);
         menu.Items.Add(new System.Windows.Forms.ToolStripSeparator());
         menu.Items.Add("Exit", null, (_, _) => ExitRequested?.Invoke());
 
@@ -50,23 +46,18 @@ namespace WDM.Services;
 
     public event Action? PauseAllRequested;
     public event Action? ResumeAllRequested;
-    public event Action<bool>? ClipboardMonitoringChanged;
     public event Action? ExitRequested;
 
-    public bool ClipboardMonitoring
+    /// <summary>
+    /// Active download state: the floating pill (docked to the right edge) is the progress
+    /// indicator, so the native tooltip is suppressed during the download.
+    /// </summary>
+    public void SetProgress(int percent, string speedText, string fileName)
     {
-        get => _clipboardItem.Checked;
-        set
-        {
-            _clipboardItem.CheckedChanged -= ClipboardChanged;
-            _clipboardItem.Checked = value;
-            _clipboardItem.CheckedChanged += ClipboardChanged;
-        }
+        _icon.Text = "";
     }
 
-    private void ClipboardChanged(object? sender, EventArgs e) =>
-        ClipboardMonitoringChanged?.Invoke(_clipboardItem.Checked);
-
+    /// <summary>Idle state: plain tooltip (optionally with counts/speed).</summary>
     public void SetActiveCount(int active, int queued, long speedBps = 0)
     {
         bool hasWork = active > 0 || queued > 0;

@@ -10,6 +10,7 @@ namespace WDM;
 public partial class OptionsDialog : Window
 {
     private readonly MainViewModel _viewModel;
+    private ReleaseInfo? _latestRelease;
 
     public OptionsDialog(MainViewModel viewModel)
     {
@@ -33,10 +34,15 @@ public partial class OptionsDialog : Window
         ChecksumBox.IsChecked = s.ComputeChecksum;
         ScriptBox.Text = s.PostDownloadScript ?? "";
 
-        MonitorClipboardBox.IsChecked = s.MonitorClipboard;
         NotifyBox.IsChecked = s.NotifyOnCompletion;
+        TrayProgressBox.IsChecked = s.ShowTrayProgress;
         MinimizeToTrayBox.IsChecked = s.MinimizeToTray;
         RunAtStartupBox.IsChecked = s.RunAtStartup;
+
+        CheckForUpdatesBox.IsChecked = s.CheckForUpdates;
+        CurrentVersionText.Text = UpdateChecker.CurrentVersion.ToString();
+        LatestVersionText.Text = "—";
+        UpdateStatusText.Text = "Click “Check now” to look for a new release on GitHub.";
 
         PopulateBrowsers();
     }
@@ -146,7 +152,44 @@ public partial class OptionsDialog : Window
             if (PanelFolders != null) PanelFolders.Visibility = tag == "Folders" ? Visibility.Visible : Visibility.Collapsed;
             if (PanelBrowser != null) PanelBrowser.Visibility = tag == "Browser" ? Visibility.Visible : Visibility.Collapsed;
             if (PanelBehavior != null) PanelBehavior.Visibility = tag == "Behavior" ? Visibility.Visible : Visibility.Collapsed;
+            if (PanelUpdates != null) PanelUpdates.Visibility = tag == "Updates" ? Visibility.Visible : Visibility.Collapsed;
         }
+    }
+
+    private async void CheckNowClick(object sender, RoutedEventArgs e)
+    {
+        CheckNowButton.IsEnabled = false;
+        OpenReleaseButton.Visibility = Visibility.Collapsed;
+        UpdateStatusText.Text = "Checking for updates...";
+        try
+        {
+            _latestRelease = await UpdateChecker.CheckLatestAsync();
+            if (_latestRelease is null)
+            {
+                UpdateStatusText.Text = "No release published yet, or GitHub is unreachable. Try again later.";
+            }
+            else if (_latestRelease.Version is { } version && version.CompareTo(UpdateChecker.CurrentVersion) > 0)
+            {
+                LatestVersionText.Text = _latestRelease.TagName;
+                OpenReleaseButton.Visibility = Visibility.Visible;
+                UpdateStatusText.Text = $"A new version is available: {_latestRelease.TagName}." +
+                    (_latestRelease.PublishedAt is { } published ? $" Published {published.ToLocalTime():yyyy-MM-dd}." : "");
+            }
+            else
+            {
+                LatestVersionText.Text = _latestRelease.TagName;
+                UpdateStatusText.Text = "You are running the latest version.";
+            }
+        }
+        finally
+        {
+            CheckNowButton.IsEnabled = true;
+        }
+    }
+
+    private void OpenReleaseClick(object sender, RoutedEventArgs e)
+    {
+        UpdateChecker.OpenReleasesPage(_latestRelease?.Url);
     }
 
     private static int ChunkIndex(int chunks) => chunks switch
@@ -154,6 +197,7 @@ public partial class OptionsDialog : Window
         0 => 0,
         1 => 1,
         2 => 2,
+        4 => 3,
         8 => 4,
         16 => 5,
         _ => 0,
@@ -236,10 +280,11 @@ public partial class OptionsDialog : Window
         s.ComputeChecksum = ChecksumBox.IsChecked == true;
         s.PostDownloadScript = string.IsNullOrWhiteSpace(ScriptBox.Text) ? null : ScriptBox.Text.Trim();
 
-        s.MonitorClipboard = MonitorClipboardBox.IsChecked == true;
         s.NotifyOnCompletion = NotifyBox.IsChecked == true;
+        s.ShowTrayProgress = TrayProgressBox.IsChecked == true;
         s.MinimizeToTray = MinimizeToTrayBox.IsChecked == true;
         s.RunAtStartup = RunAtStartupBox.IsChecked == true;
+        s.CheckForUpdates = CheckForUpdatesBox.IsChecked == true;
 
         DialogResult = true;
         Close();

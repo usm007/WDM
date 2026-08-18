@@ -464,6 +464,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
         {
             task.FileName = DownloadEngine.DeriveName(task.Url);
         }
+        task.Category = DownloadTask.Categorize(task.FileName);
         Tasks.Add(task);
         ApplyCategoryRouting(task);
         Engine.Start(task);

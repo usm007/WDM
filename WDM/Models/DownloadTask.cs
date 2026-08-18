@@ -116,7 +116,8 @@ public sealed class DownloadTask : INotifyPropertyChanged
         }
     }
 
-    public string FullPath => string.IsNullOrWhiteSpace(SaveFolder) ? "" : Path.Combine(SaveFolder, FileName);
+    public string FullPath => (string.IsNullOrWhiteSpace(SaveFolder) || string.IsNullOrWhiteSpace(FileName))
+        ? "" : Path.Combine(SaveFolder, FileName);
 
     private TaskStatus _status = TaskStatus.Queued;
     public TaskStatus Status
@@ -196,8 +197,7 @@ public sealed class DownloadTask : INotifyPropertyChanged
         get => Status == TaskStatus.Downloading ? _eta : "";
         set
         {
-            if (Set(ref _eta, value))
-                Raise(nameof(Eta));
+            Set(ref _eta, value);
         }
     }
 

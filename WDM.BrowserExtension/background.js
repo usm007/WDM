@@ -5,6 +5,33 @@ const WDM_HOST = "http://127.0.0.1:17530";
 // Re-entrance guard for URLs handed off to WDM
 const loopGuard = new Map();
 
+// Capture on/off, persisted in storage so the toggle survives restarts.
+const STORAGE_KEY = "captureEnabled";
+let captureEnabled = true;
+async function loadCaptureState() {
+  try {
+    const data = await webext.storage.local.get(STORAGE_KEY);
+    captureEnabled = data[STORAGE_KEY] !== false;
+    updateBadge();
+  } catch {
+    captureEnabled = true;
+  }
+}
+function updateBadge() {
+  if (!captureEnabled) {
+    try { webext.action.setBadgeText({ text: "OFF" }); } catch {}
+  } else {
+    try { webext.action.setBadgeText({ text: "" }); } catch {}
+  }
+}
+webext.storage.onChanged.addListener((changes, area) => {
+  if (area === "local" && changes[STORAGE_KEY]) {
+    captureEnabled = changes[STORAGE_KEY].newValue !== false;
+    updateBadge();
+  }
+});
+loadCaptureState();
+
 // Periodic ping to verify WDM connection status
 let isWdmActive = false;
 async function checkWdm() {
@@ -19,6 +46,11 @@ checkWdm();
 setInterval(checkWdm, 4000);
 
 webext.downloads.onCreated.addListener(async (item) => {
+  // 0. If capturing is switched off, let the browser download naturally.
+  if (!captureEnabled) {
+    return;
+  }
+
   // 1. Ignore historical/restored items when browser/PC restarts
   if (item.state && item.state !== "in_progress") {
     return;

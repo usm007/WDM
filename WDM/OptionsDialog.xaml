@@ -3,7 +3,7 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         Title="WDM Settings"
         Icon="Assets/WDM.ico"
-        Width="680"
+        Width="700"
         Height="500"
         WindowStartupLocation="CenterScreen"
         ResizeMode="NoResize"
@@ -17,7 +17,7 @@
 
         <Grid Grid.Row="0">
             <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="160" />
+                <ColumnDefinition Width="200" />
                 <ColumnDefinition Width="*" />
             </Grid.ColumnDefinitions>
 
@@ -47,6 +47,12 @@
                         <StackPanel Orientation="Horizontal">
                             <TextBlock Text="&#xE713;" FontFamily="{StaticResource Font.Icon}" FontSize="13" Margin="0,0,8,0" VerticalAlignment="Center" />
                             <TextBlock Text="Advanced Behavior" VerticalAlignment="Center" />
+                        </StackPanel>
+                    </RadioButton>
+                    <RadioButton Style="{StaticResource Button.SettingsTab}" Checked="Tab_Checked" Tag="Updates">
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="&#xE72C;" FontFamily="{StaticResource Font.Icon}" FontSize="13" Margin="0,0,8,0" VerticalAlignment="Center" />
+                            <TextBlock Text="Updates" VerticalAlignment="Center" />
                         </StackPanel>
                     </RadioButton>
                 </StackPanel>
@@ -191,10 +197,36 @@
                         </Grid>
 
                         <TextBlock Text="System integration" Style="{StaticResource Label.Field}" Margin="0,0,0,6" />
-                        <CheckBox x:Name="MonitorClipboardBox" Content="Watch the clipboard for download links" Margin="0,0,0,6" />
                         <CheckBox x:Name="NotifyBox" Content="Show a notification when a download finishes" Margin="0,0,0,6" />
+                        <CheckBox x:Name="TrayProgressBox" Content="Show the floating download progress pill" Margin="0,0,0,6" />
                         <CheckBox x:Name="MinimizeToTrayBox" Content="Minimize to the system tray on close" Margin="0,0,0,6" />
                         <CheckBox x:Name="RunAtStartupBox" Content="Launch WDM when Windows starts" Margin="0,0,0,6" />
+                    </StackPanel>
+
+                    <!-- Panel 5: Updates -->
+                    <StackPanel x:Name="PanelUpdates" Visibility="Collapsed">
+                        <TextBlock Text="Updates" Style="{StaticResource Text.Section}" Margin="0,0,0,14" />
+                        <TextBlock Text="Check GitHub for new versions of WDM." Style="{StaticResource Text.Muted}" FontSize="12" Margin="0,-8,0,14" />
+
+                        <CheckBox x:Name="CheckForUpdatesBox" Content="Check for updates automatically when WDM starts" FontWeight="Medium" Margin="0,0,0,16" />
+
+                        <Border Background="{DynamicResource Brush.SurfaceAlt}" CornerRadius="8" Padding="14,12">
+                            <StackPanel>
+                                <StackPanel Orientation="Horizontal" Margin="0,0,0,6">
+                                    <TextBlock Text="Current version" FontSize="12" Foreground="{DynamicResource Brush.TextDim}" Width="110" />
+                                    <TextBlock x:Name="CurrentVersionText" FontSize="12" FontWeight="Medium" VerticalAlignment="Center" />
+                                </StackPanel>
+                                <StackPanel Orientation="Horizontal" Margin="0,0,0,6">
+                                    <TextBlock Text="Latest version" FontSize="12" Foreground="{DynamicResource Brush.TextDim}" Width="110" />
+                                    <TextBlock x:Name="LatestVersionText" FontSize="12" FontWeight="Medium" VerticalAlignment="Center" />
+                                </StackPanel>
+                                <TextBlock x:Name="UpdateStatusText" TextWrapping="Wrap" FontSize="12" Foreground="{DynamicResource Brush.TextDim}" Margin="0,4,0,10" />
+                                <StackPanel Orientation="Horizontal">
+                                    <Button x:Name="CheckNowButton" Content="Check now" Style="{StaticResource Button.Secondary}" Click="CheckNowClick" Height="30" MinWidth="110" />
+                                    <Button x:Name="OpenReleaseButton" Content="Open download page" Style="{StaticResource Button.Accent}" Click="OpenReleaseClick" Height="30" MinWidth="130" Margin="8,0,0,0" Visibility="Collapsed" />
+                                </StackPanel>
+                            </StackPanel>
+                        </Border>
                     </StackPanel>
                 </Grid>
             </Border>
