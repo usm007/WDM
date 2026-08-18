@@ -117,35 +117,46 @@ public static class BrowserIntegration
         {
             if (browser is not null && File.Exists(browser.ExePath))
             {
-                string page = browser.Kind == BrowserKind.Firefox ? "about:debugging#/runtime/this-firefox" : "chrome://extensions";
                 Process.Start(new ProcessStartInfo(browser.ExePath)
                 {
-                    Arguments = page,
+                    Arguments = ExtensionsPageFor(browser),
                     UseShellExecute = true
                 });
                 return;
             }
 
-            // Fall back to default browser or Chrome
-            var chrome = DetectInstalledBrowsers().FirstOrDefault(b => b.Name.Contains("Chrome"));
-            if (chrome is not null)
+            // No browser specified: open the extensions page of the first installed
+            // Chromium browser (Chrome, Edge, Brave, Opera), preferring Edge to match
+            // the manual install guide's chrome://extensions step.
+            var chromium = DetectInstalledBrowsers().FirstOrDefault(b => b.Kind == BrowserKind.Chromium);
+            if (chromium is not null)
             {
-                Process.Start(new ProcessStartInfo(chrome.ExePath)
+                Process.Start(new ProcessStartInfo(chromium.ExePath)
                 {
-                    Arguments = "chrome://extensions",
+                    Arguments = ExtensionsPageFor(chromium),
                     UseShellExecute = true
                 });
+                return;
             }
-            else
-            {
-                // Last resort: let the OS resolve the URI to whatever handles it.
-                Process.Start(new ProcessStartInfo("chrome://extensions") { UseShellExecute = true });
-            }
+
+            // No Chromium browser installed — nothing else can open chrome://extensions.
+            throw new InvalidOperationException("No Chromium browser (Chrome, Edge, Brave, Opera) was found on this system.");
         }
         catch
         {
             // Best effort
         }
+    }
+
+    /// <summary>Returns the extensions page URL for a browser (edge://extensions on
+    /// Edge, chrome://extensions on other Chromium browsers, about:debugging on Firefox).</summary>
+    private static string ExtensionsPageFor(InstalledBrowser browser)
+    {
+        if (browser.Kind == BrowserKind.Firefox)
+            return "about:debugging#/runtime/this-firefox";
+        if (browser.Name.Contains("Edge", StringComparison.OrdinalIgnoreCase))
+            return "edge://extensions";
+        return "chrome://extensions";
     }
 
     public static void OpenFirefoxAddonPage()
