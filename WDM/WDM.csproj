@@ -13,7 +13,6 @@
 
   <ItemGroup>
     <Resource Include="Assets\WDM.ico" />
-    <Resource Include="Assets\icon.png" />
     <Resource Include="Assets\logo.png" />
   </ItemGroup>
 
