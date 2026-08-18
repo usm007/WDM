@@ -1,7 +1,9 @@
 # WDM — Windows Download Manager
 <img width="1774" height="887" alt="dkdtjgj" src="https://github.com/user-attachments/assets/3aa2f63c-8128-4f5f-b385-ca8f397dc315" />
 
-An IDM-inspired no nonsense download manager for Windows, written in C# / WPF / .NET 8.
+
+**An IDM-inspired no nonsense download manager for Windows, written in C# / WPF / .NET 8.**
+
 
 - **Multi-threaded downloads** — dynamic segmentation with a shared chunk pool: the file is divided into small byte-range chunks that any worker thread can pick up as they finish, so slower segments don't idle threads.
 - **Pause / Resume** — the set of completed chunks is persisted to a `*.wdmstate` file next to the target; resuming skips chunks already on disk and continues from there, even across restarts.
