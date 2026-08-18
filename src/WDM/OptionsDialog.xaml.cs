@@ -171,6 +171,7 @@ public partial class OptionsDialog : Window
             {
                 LatestVersionText.Text = _latestRelease.TagName;
                 OpenReleaseButton.Visibility = Visibility.Visible;
+                DownloadInstallButton.Visibility = Visibility.Visible;
                 UpdateStatusText.Text = $"A new version is available: {_latestRelease.TagName}." +
                     (_latestRelease.PublishedAt is { } published ? $" Published {published.ToLocalTime():yyyy-MM-dd}." : "");
             }
@@ -189,6 +190,32 @@ public partial class OptionsDialog : Window
     private void OpenReleaseClick(object sender, RoutedEventArgs e)
     {
         UpdateChecker.OpenReleasesPage(_latestRelease?.Url);
+    }
+
+    private async void DownloadInstallClick(object sender, RoutedEventArgs e)
+    {
+        if (_latestRelease is null)
+            return;
+
+        DownloadInstallButton.IsEnabled = false;
+        OpenReleaseButton.IsEnabled = false;
+        UpdateStatusText.Text = "Downloading the new installer…";
+
+        try
+        {
+            string installer = await UpdateChecker.DownloadInstallerAsync(_latestRelease);
+            UpdateChecker.LaunchInstaller(installer);
+            UpdateStatusText.Text = "Installer downloaded — WDM will close and restart to complete the update.";
+            await Task.Delay(500);
+            DialogResult = false;
+            Close();
+        }
+        catch (Exception ex)
+        {
+            UpdateStatusText.Text = $"Download failed: {ex.Message}";
+            DownloadInstallButton.IsEnabled = true;
+            OpenReleaseButton.IsEnabled = true;
+        }
     }
 
     private static int ChunkIndex(int chunks) => chunks switch

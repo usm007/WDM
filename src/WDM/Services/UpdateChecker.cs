@@ -5,7 +5,7 @@ using System.Text.RegularExpressions;
 namespace WDM.Services;
 
 /// <summary>Details about the newest GitHub release.</summary>
-public sealed record ReleaseInfo(string TagName, Version? Version, string Name, string Url, string? Body, DateTime? PublishedAt);
+public sealed record ReleaseInfo(string TagName, Version? Version, string Name, string Url, string? Body, DateTime? PublishedAt, string? InstallerUrl);
 
 /// <summary>Queries the GitHub releases API for WDM and compares against the running
 /// version. Used for the manual "Check now" button in Settings and the automatic
@@ -38,15 +38,75 @@ public static class UpdateChecker
             string? url = root.TryGetProperty("html_url", out var u) ? u.GetString() : null;
             string? body = root.TryGetProperty("body", out var b) ? b.GetString() : null;
             DateTime? published = root.TryGetProperty("published_at", out var p) && p.TryGetDateTime(out var dt) ? dt : null;
+            string? installerUrl = FindInstallerUrl(root);
             if (string.IsNullOrWhiteSpace(tag) || string.IsNullOrWhiteSpace(url))
                 return null;
 
-            return new ReleaseInfo(tag, ParseVersion(tag), name ?? tag, url, body, published);
+            return new ReleaseInfo(tag, ParseVersion(tag), name ?? tag, url, body, published, installerUrl);
         }
         catch
         {
             return null;
         }
+    }
+
+    /// <summary>Picks the browser_download_url of the WDM installer .exe from the release assets.</summary>
+    private static string? FindInstallerUrl(JsonElement release)
+    {
+        if (!release.TryGetProperty("assets", out var assets) || assets.ValueKind != JsonValueKind.Array)
+            return null;
+
+        foreach (var asset in assets.EnumerateArray())
+        {
+            if (!asset.TryGetProperty("name", out var n) || n.GetString() is not string name)
+                continue;
+            if (name.EndsWith(".exe", StringComparison.OrdinalIgnoreCase)
+                && asset.TryGetProperty("browser_download_url", out var u))
+            {
+                return u.GetString();
+            }
+        }
+        return null;
+    }
+
+    /// <summary>Downloads the latest installer to the temp folder and returns its path.
+    /// <paramref name="onProgress"/> reports 0..1 as bytes arrive.</summary>
+    public static async Task<string> DownloadInstallerAsync(ReleaseInfo release, Action<double>? onProgress = null, CancellationToken ct = default)
+    {
+        if (string.IsNullOrWhiteSpace(release.InstallerUrl))
+            throw new InvalidOperationException("The latest release has no installer asset.");
+
+        string target = Path.Combine(Path.GetTempPath(), $"WDM_Setup_{release.Version}.exe");
+        using var http = new HttpClient { Timeout = TimeSpan.FromMinutes(10) };
+        http.DefaultRequestHeaders.UserAgent.ParseAdd($"WDM/{CurrentVersion}");
+
+        using var response = await http.GetAsync(release.InstallerUrl, HttpCompletionOption.ResponseHeadersRead, ct);
+        response.EnsureSuccessStatusCode();
+
+        long total = response.Content.Headers.ContentLength ?? -1;
+        using var source = await response.Content.ReadAsStreamAsync(ct);
+        using var file = File.Create(target);
+
+        var buffer = new byte[81920];
+        long read = 0;
+        while (true)
+        {
+            int n = await source.ReadAsync(buffer, ct);
+            if (n <= 0)
+                break;
+            await file.WriteAsync(buffer.AsMemory(0, n), ct);
+            read += n;
+            if (total > 0)
+                onProgress?.Invoke((double)read / total);
+        }
+
+        return target;
+    }
+
+    /// <summary>Runs the downloaded installer (UAC-per-user install; WDM restarts after).</summary>
+    public static void LaunchInstaller(string installerPath)
+    {
+        Process.Start(new ProcessStartInfo(installerPath) { UseShellExecute = true });
     }
 
     public static void OpenReleasesPage(string? url = null)

@@ -223,7 +223,8 @@
                                 <TextBlock x:Name="UpdateStatusText" TextWrapping="Wrap" FontSize="12" Foreground="{DynamicResource Brush.TextDim}" Margin="0,4,0,10" />
                                 <StackPanel Orientation="Horizontal">
                                     <Button x:Name="CheckNowButton" Content="Check now" Style="{StaticResource Button.Secondary}" Click="CheckNowClick" Height="30" MinWidth="110" />
-                                    <Button x:Name="OpenReleaseButton" Content="Open download page" Style="{StaticResource Button.Accent}" Click="OpenReleaseClick" Height="30" MinWidth="130" Margin="8,0,0,0" Visibility="Collapsed" />
+                                    <Button x:Name="OpenReleaseButton" Content="Open download page" Style="{StaticResource Button.Secondary}" Click="OpenReleaseClick" Height="30" MinWidth="130" Margin="8,0,0,0" Visibility="Collapsed" />
+                                    <Button x:Name="DownloadInstallButton" Content="⬇ Download &amp; Install" Style="{StaticResource Button.Accent}" Click="DownloadInstallClick" Height="30" MinWidth="150" Margin="8,0,0,0" Visibility="Collapsed" />
                                 </StackPanel>
                             </StackPanel>
                         </Border>

@@ -318,8 +318,8 @@ public partial class MainWindow : Window
         Close();
     }
 
-    /// <summary>Checks GitHub for a newer WDM release, at most once a day, and shows a
-    /// tray notification (clickable) when one is found.</summary>
+    /// <summary>Checks GitHub for a newer WDM release, at most once a day, and prompts
+    /// the user to download and install it when one is found.</summary>
     private async Task CheckForUpdatesAsync()
     {
         var settings = _viewModel.Settings;
@@ -329,16 +329,63 @@ public partial class MainWindow : Window
         if (lastCheck is not null && DateTime.UtcNow - lastCheck < TimeSpan.FromHours(24))
             return;
 
+        var latest = await UpdateChecker.CheckLatestAsync();
+        // Only stamp the last-check time on a successful answer; a transient network
+        // failure must not disable checking for another 24h.
+        if (latest is null)
+            return;
+
         settings.LastUpdateCheckUtc = DateTime.UtcNow.ToString("O");
         _viewModel.PersistSettings();
 
-        var latest = await UpdateChecker.CheckLatestAsync();
-        if (latest?.Version is not null && latest.Version.CompareTo(UpdateChecker.CurrentVersion) > 0)
+        if (latest.Version is not null && latest.Version.CompareTo(UpdateChecker.CurrentVersion) > 0)
         {
             _tray.ShowBalloon(
                 "WDM update available",
-                $"WDM {latest.Version} is available — click to open the download page.",
-                () => _dispatcher.BeginInvoke(() => UpdateChecker.OpenReleasesPage(latest.Url)));
+                $"WDM {latest.Version} is available — click to download and install.",
+                () => _dispatcher.BeginInvoke(async () => await DownloadAndInstallUpdateAsync(latest)));
+            _ = _dispatcher.BeginInvoke(() => ShowUpdatePrompt(latest));
+        }
+    }
+
+    private void ShowUpdatePrompt(ReleaseInfo latest)
+    {
+        if (Visibility != Visibility.Visible)
+            return; // Start minimized: the tray balloon is the notification.
+
+        var dialog = new UpdateAvailableDialog(latest) { Owner = this };
+        dialog.ShowDialog();
+    }
+
+    /// <summary>Downloads the new installer to the temp folder and launches it. WDM
+    /// closes itself so the installer can replace the running copy, then restarts.</summary>
+    private async Task DownloadAndInstallUpdateAsync(ReleaseInfo? release)
+    {
+        if (release is null || string.IsNullOrWhiteSpace(release.InstallerUrl))
+        {
+            _tray.ShowBalloon("No download available", "This release has no installer attached yet — open the releases page instead.");
+            return;
+        }
+
+        try
+        {
+            _tray.ShowBalloon("WDM update", "Downloading the new installer…");
+            string installer = await UpdateChecker.DownloadInstallerAsync(release, progress =>
+            {
+                int pct = (int)Math.Round(progress * 100);
+                if (pct % 25 == 0)
+                    _dispatcher.BeginInvoke(() => _tray.ShowBalloon("WDM update", $"Downloading the new installer… {pct}%"));
+            });
+
+            // Let the installer take over; it closes and restarts WDM.
+            UpdateChecker.LaunchInstaller(installer);
+            await Task.Delay(500);
+            _exiting = true;
+            Close();
+        }
+        catch (Exception ex)
+        {
+            _tray.ShowBalloon("Update failed", $"Could not download the update: {ex.Message}");
         }
     }
 
