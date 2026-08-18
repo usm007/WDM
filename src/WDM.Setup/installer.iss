@@ -8,7 +8,7 @@
 #define MyAppPublisher "WDM Team"
 #define MyAppExeName "WDM.exe"
 #define MyAppIcon "..\WDM\Assets\WDM.ico"
-#define StagingDir "..\staging"
+#define StagingDir "..\..\staging"
 
 [Setup]
 AppId={{4F3B2C0A-8D2E-4B7A-9C1E-6A5B4D3E2F10}
@@ -20,7 +20,7 @@ DefaultDirName={localappdata}\{#MyAppShortName}
 DefaultGroupName={#MyAppShortName}
 DisableProgramGroupPage=yes
 PrivilegesRequired=lowest
-OutputDir=..\output
+OutputDir=..\..\output
 OutputBaseFilename=WDM_Setup_{#MyAppVersion}
 Compression=lzma2
 SolidCompression=yes

@@ -16,14 +16,14 @@ app_icon_1024*.png
 # Development scratch / bug reports
 allbugs.md
 bugs.md
-WDM/bugs.md
+src/WDM/bugs.md
 _defined.txt
 Ui.md
-WDM/dark.md
-WDM/Assets/icon.png
-WDM/Assets/logo1.png
-WDM.Setup/App.xaml
-WDM.Setup/App.xaml.cs
-WDM.Setup/MainWindow.xaml
-WDM.Setup/MainWindow.xaml.cs
-WDM.Setup/WDM.Setup.csproj
+src/WDM/dark.md
+src/WDM/Assets/icon.png
+src/WDM/Assets/logo1.png
+src/WDM.Setup/App.xaml
+src/WDM.Setup/App.xaml.cs
+src/WDM.Setup/MainWindow.xaml
+src/WDM.Setup/MainWindow.xaml.cs
+src/WDM.Setup/WDM.Setup.csproj
