@@ -15,6 +15,7 @@
             <RowDefinition Height="Auto" />
             <RowDefinition Height="Auto" />
             <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
         </Grid.RowDefinitions>
 
         <!-- Logo Header -->
@@ -71,8 +72,10 @@
         </StackPanel>
 
         <!-- Action Buttons -->
-        <StackPanel Grid.Row="3" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,8,0,0">
-            <Button Content="Close" Style="{StaticResource Button.Accent}" IsDefault="True" IsCancel="True" MinWidth="100" Height="30" Click="CloseClick" />
-        </StackPanel>
+        <DockPanel Grid.Row="3" Margin="0,8,0,0" LastChildFill="False">
+            <TextBlock x:Name="UpdateStatusText" DockPanel.Dock="Left" Text="" FontSize="11" Foreground="{DynamicResource Brush.Accent}" TextWrapping="Wrap" MaxWidth="300" VerticalAlignment="Center" />
+            <Button Content="Close" DockPanel.Dock="Right" Style="{StaticResource Button.Accent}" IsDefault="True" IsCancel="True" MinWidth="100" Height="30" Click="CloseClick" />
+            <Button x:Name="CheckUpdateButton" DockPanel.Dock="Right" Content="Check for updates" Style="{StaticResource Button.Secondary}" MinWidth="130" Height="30" Margin="0,0,10,0" Click="CheckUpdateClick" />
+        </DockPanel>
     </Grid>
 </Window>

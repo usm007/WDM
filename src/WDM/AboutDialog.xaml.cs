@@ -1,6 +1,8 @@
+using System;
 using System.Diagnostics;
 using System.Windows;
 using System.Windows.Documents;
+using WDM.Services;
 
 namespace WDM;
 
@@ -25,6 +27,38 @@ public partial class AboutDialog : Window
             {
                 // Ignore navigation failures.
             }
+        }
+    }
+
+    private async void CheckUpdateClick(object sender, RoutedEventArgs e)
+    {
+        CheckUpdateButton.IsEnabled = false;
+        UpdateStatusText.Text = "Checking for updates…";
+        try
+        {
+            var latest = await UpdateChecker.CheckLatestAsync();
+            if (latest is null)
+            {
+                UpdateStatusText.Text = "Could not reach GitHub — try again later.";
+            }
+            else if (latest.Version is { } version && version.CompareTo(UpdateChecker.CurrentVersion) > 0)
+            {
+                UpdateStatusText.Text = "";
+                var dialog = new UpdateAvailableDialog(latest) { Owner = this };
+                dialog.ShowDialog();
+            }
+            else
+            {
+                UpdateStatusText.Text = "You are running the latest version.";
+            }
+        }
+        catch (Exception ex)
+        {
+            UpdateStatusText.Text = $"Check failed: {ex.Message}";
+        }
+        finally
+        {
+            CheckUpdateButton.IsEnabled = true;
         }
     }
 
