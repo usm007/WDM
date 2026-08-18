@@ -318,15 +318,15 @@ public partial class MainWindow : Window
         Close();
     }
 
-    /// <summary>Checks GitHub for a newer WDM release, at most once a day, and prompts
-    /// the user to download and install it when one is found.</summary>
+    /// <summary>Checks GitHub for a newer WDM release, at most once every 15 minutes,
+    /// and prompts the user to download and install it when one is found.</summary>
     private async Task CheckForUpdatesAsync()
     {
         var settings = _viewModel.Settings;
         DateTime? lastCheck = DateTime.TryParse(settings.LastUpdateCheckUtc, null, System.Globalization.DateTimeStyles.RoundtripKind, out var parsed)
             ? parsed
             : null;
-        if (lastCheck is not null && DateTime.UtcNow - lastCheck < TimeSpan.FromHours(24))
+        if (lastCheck is not null && DateTime.UtcNow - lastCheck < TimeSpan.FromMinutes(15))
             return;
 
         var latest = await UpdateChecker.CheckLatestAsync();
@@ -350,9 +350,9 @@ public partial class MainWindow : Window
 
     private void ShowUpdatePrompt(ReleaseInfo latest)
     {
-        if (Visibility != Visibility.Visible)
-            return; // Start minimized: the tray balloon is the notification.
-
+        // Always surface the dialog, even when started minimized, because Windows
+        // 10/11 frequently suppress tray balloons and the user would never see the
+        // notification otherwise.
         var dialog = new UpdateAvailableDialog(latest) { Owner = this };
         dialog.ShowDialog();
     }
