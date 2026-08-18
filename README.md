@@ -1,5 +1,5 @@
 # WDM — Windows Download Manager
-![Uploading dkdtjgj.png…]()
+<img width="1774" height="887" alt="dkdtjgj" src="https://github.com/user-attachments/assets/3aa2f63c-8128-4f5f-b385-ca8f397dc315" />
 
 An IDM-inspired no nonsense download manager for Windows, written in C# / WPF / .NET 8.
 
