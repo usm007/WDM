@@ -3,13 +3,13 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         Title="WDM Settings"
         Icon="Assets/WDM.ico"
-        Width="700"
-        Height="500"
+        Width="820"
+        Height="600"
         WindowStartupLocation="CenterScreen"
         ResizeMode="NoResize"
         ShowInTaskbar="True"
         Background="{DynamicResource Brush.Surface}">
-    <Grid Margin="16">
+    <Grid Margin="18">
         <Grid.RowDefinitions>
             <RowDefinition Height="*" />
             <RowDefinition Height="Auto" />
@@ -17,214 +17,158 @@
 
         <Grid Grid.Row="0">
             <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="200" />
+                <ColumnDefinition Width="220" />
                 <ColumnDefinition Width="*" />
             </Grid.ColumnDefinitions>
 
-            <!-- Left Tab Navigation Menu -->
-            <Border Grid.Column="0" Background="{DynamicResource Brush.Sidebar}" BorderBrush="Transparent" BorderThickness="0" Padding="8,10">
+            <!-- Left navigation -->
+            <Border Grid.Column="0" Background="{DynamicResource Brush.SurfaceAlt}"
+                    BorderBrush="{DynamicResource Brush.Border}" BorderThickness="1"
+                    CornerRadius="12" Padding="10,12">
                 <StackPanel>
-                    <TextBlock Text="Settings" FontSize="12" FontWeight="Medium" Foreground="{DynamicResource Brush.TextMuted}" Margin="10,0,0,10" />
+                    <TextBlock Text="Settings" FontSize="13" FontWeight="SemiBold"
+                               Foreground="{DynamicResource Brush.Text}" Margin="10,4,0,14" />
                     <RadioButton Style="{StaticResource Button.SettingsTab}" IsChecked="True" Checked="Tab_Checked" Tag="Connection">
                         <StackPanel Orientation="Horizontal">
-                            <TextBlock Text="&#xE774;" FontFamily="{StaticResource Font.Icon}" FontSize="13" Margin="0,0,8,0" VerticalAlignment="Center" />
+                            <TextBlock Text="&#xE774;" FontFamily="{StaticResource Font.Icon}" FontSize="13" Margin="0,0,9,0" VerticalAlignment="Center" />
                             <TextBlock Text="Connection" VerticalAlignment="Center" />
                         </StackPanel>
                     </RadioButton>
                     <RadioButton Style="{StaticResource Button.SettingsTab}" Checked="Tab_Checked" Tag="Folders">
                         <StackPanel Orientation="Horizontal">
-                            <TextBlock Text="&#xE8B7;" FontFamily="{StaticResource Font.Icon}" FontSize="13" Margin="0,0,8,0" VerticalAlignment="Center" />
+                            <TextBlock Text="&#xE8B7;" FontFamily="{StaticResource Font.Icon}" FontSize="13" Margin="0,0,9,0" VerticalAlignment="Center" />
                             <TextBlock Text="Folders &amp; Routing" VerticalAlignment="Center" />
                         </StackPanel>
                     </RadioButton>
                     <RadioButton Style="{StaticResource Button.SettingsTab}" Checked="Tab_Checked" Tag="Browser">
                         <StackPanel Orientation="Horizontal">
-                            <TextBlock Text="&#xE704;" FontFamily="{StaticResource Font.Icon}" FontSize="13" Margin="0,0,8,0" VerticalAlignment="Center" />
+                            <TextBlock Text="&#xE704;" FontFamily="{StaticResource Font.Icon}" FontSize="13" Margin="0,0,9,0" VerticalAlignment="Center" />
                             <TextBlock Text="Browser Integration" VerticalAlignment="Center" />
                         </StackPanel>
                     </RadioButton>
                     <RadioButton Style="{StaticResource Button.SettingsTab}" Checked="Tab_Checked" Tag="Behavior">
                         <StackPanel Orientation="Horizontal">
-                            <TextBlock Text="&#xE713;" FontFamily="{StaticResource Font.Icon}" FontSize="13" Margin="0,0,8,0" VerticalAlignment="Center" />
+                            <TextBlock Text="&#xE713;" FontFamily="{StaticResource Font.Icon}" FontSize="13" Margin="0,0,9,0" VerticalAlignment="Center" />
                             <TextBlock Text="Advanced Behavior" VerticalAlignment="Center" />
                         </StackPanel>
                     </RadioButton>
                     <RadioButton Style="{StaticResource Button.SettingsTab}" Checked="Tab_Checked" Tag="Updates">
                         <StackPanel Orientation="Horizontal">
-                            <TextBlock Text="&#xE72C;" FontFamily="{StaticResource Font.Icon}" FontSize="13" Margin="0,0,8,0" VerticalAlignment="Center" />
+                            <TextBlock Text="&#xE72C;" FontFamily="{StaticResource Font.Icon}" FontSize="13" Margin="0,0,9,0" VerticalAlignment="Center" />
                             <TextBlock Text="Updates" VerticalAlignment="Center" />
                         </StackPanel>
                     </RadioButton>
                 </StackPanel>
             </Border>
 
-            <!-- Right Content Panels -->
-            <Border Grid.Column="1" Padding="20,10">
+            <!-- Right content -->
+            <Border Grid.Column="1" Padding="26,12,8,12">
                 <Grid>
-                    <!-- Panel 1: Connection -->
                     <StackPanel x:Name="PanelConnection" Visibility="Visible">
-                        <TextBlock Text="Connection &amp; speed" Style="{StaticResource Text.Section}" Margin="0,0,0,14" />
-                        <TextBlock Text="Tune how downloads connect and flow." Style="{StaticResource Text.Muted}" FontSize="12" Margin="0,-8,0,14" />
-
-                        <Grid Margin="0,0,0,14">
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="*" />
-                                <ColumnDefinition Width="*" />
-                            </Grid.ColumnDefinitions>
-                            <StackPanel Grid.Column="0" Margin="0,0,10,0">
-                                <TextBlock Text="Connections per download" Style="{StaticResource Label.Field}" />
-                                <ComboBox x:Name="ChunksBox">
-                                    <ComboBoxItem Content="Auto (recommended)" Tag="0" />
-                                    <ComboBoxItem Content="1 thread" Tag="1" />
-                                    <ComboBoxItem Content="2 threads" Tag="2" />
-                                    <ComboBoxItem Content="4 threads" Tag="4" />
-                                    <ComboBoxItem Content="8 threads" Tag="8" />
-                                    <ComboBoxItem Content="16 threads" Tag="16" />
-                                </ComboBox>
-                            </StackPanel>
-                            <StackPanel Grid.Column="1" Margin="10,0,0,0">
-                                <TextBlock Text="Maximum concurrent downloads" Style="{StaticResource Label.Field}" />
-                                <ComboBox x:Name="MaxConcurrentBox">
-                                    <ComboBoxItem Content="1" />
-                                    <ComboBoxItem Content="2" />
-                                    <ComboBoxItem Content="3" />
-                                    <ComboBoxItem Content="5" />
-                                    <ComboBoxItem Content="10" />
-                                </ComboBox>
-                            </StackPanel>
-                        </Grid>
-
-                        <TextBlock Text="Retries on failure" Style="{StaticResource Label.Field}" />
-                        <ComboBox x:Name="RetriesBox" Margin="0,0,0,14">
-                            <ComboBoxItem Content="0 (No retries)" />
-                            <ComboBoxItem Content="1 retry" />
-                            <ComboBoxItem Content="2 retries" />
-                            <ComboBoxItem Content="3 retries" />
-                            <ComboBoxItem Content="5 retries" />
-                            <ComboBoxItem Content="10 retries" />
-                        </ComboBox>
-
-                        <TextBlock Text="Global speed limit (KB/s)" Style="{StaticResource Label.Field}" />
-                        <TextBox x:Name="SpeedBox" ToolTip="0 = no limit" VerticalContentAlignment="Center" />
-                        <TextBlock Text="Applies across all active downloads at once." FontSize="11" Foreground="{DynamicResource Brush.TextDim}" Margin="0,4,0,0" />
-                    </StackPanel>
-
-                    <!-- Panel 2: Folders & Routing -->
-                    <StackPanel x:Name="PanelFolders" Visibility="Collapsed">
-                        <TextBlock Text="Folders &amp; routing" Style="{StaticResource Text.Section}" Margin="0,0,0,14" />
-
-                        <TextBlock Text="Default download folder" Style="{StaticResource Label.Field}" />
-                        <Grid Margin="0,0,0,14">
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="*" />
-                                <ColumnDefinition Width="Auto" />
-                            </Grid.ColumnDefinitions>
-                            <TextBox x:Name="FolderBox" VerticalContentAlignment="Center" />
-                            <Button Grid.Column="1" Content="Browse..." Style="{StaticResource Button.Secondary}" Click="BrowseClick" Margin="8,0,0,0" />
-                        </Grid>
-
-                        <CheckBox x:Name="RouteBox" Content="Keep each category in its own subfolder" FontWeight="Medium" Margin="0,0,0,10" />
-
-                        <Grid Margin="0,4,0,0">
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="*" />
-                                <ColumnDefinition Width="*" />
-                            </Grid.ColumnDefinitions>
-                            <StackPanel Grid.Column="0" Margin="0,0,8,10">
-                                <TextBlock Text="Videos" Style="{StaticResource Label.Field}" />
-                                <TextBox x:Name="VideoFolderBox" VerticalContentAlignment="Center" />
-                            </StackPanel>
-                            <StackPanel Grid.Column="1" Margin="8,0,0,10">
-                                <TextBlock Text="Music" Style="{StaticResource Label.Field}" />
-                                <TextBox x:Name="MusicFolderBox" VerticalContentAlignment="Center" />
-                            </StackPanel>
-                        </Grid>
-                        <Grid>
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="*" />
-                                <ColumnDefinition Width="*" />
-                            </Grid.ColumnDefinitions>
-                            <StackPanel Grid.Column="0" Margin="0,0,8,10">
-                                <TextBlock Text="Documents" Style="{StaticResource Label.Field}" />
-                                <TextBox x:Name="DocumentFolderBox" VerticalContentAlignment="Center" />
-                            </StackPanel>
-                            <StackPanel Grid.Column="1" Margin="8,0,0,10">
-                                <TextBlock Text="Archives" Style="{StaticResource Label.Field}" />
-                                <TextBox x:Name="CompressedFolderBox" VerticalContentAlignment="Center" />
-                            </StackPanel>
-                        </Grid>
-                        <StackPanel Margin="0,0,0,10">
-                            <TextBlock Text="Programs" Style="{StaticResource Label.Field}" />
-                            <TextBox x:Name="ProgramFolderBox" VerticalContentAlignment="Center" />
-                        </StackPanel>
-                    </StackPanel>
-
-                    <!-- Panel 3: Browser Integration -->
-                    <StackPanel x:Name="PanelBrowser" Visibility="Collapsed">
-                        <TextBlock Text="Browser integration" Style="{StaticResource Text.Section}" Margin="0,0,0,14" />
-
-                        <Border Background="{DynamicResource Brush.SurfaceAlt}" CornerRadius="8" Padding="14,12" Margin="0,0,0,16">
+                        <TextBlock Text="Connection &amp; speed" Style="{StaticResource Text.Section}" Margin="0,0,0,6" />
+                        <TextBlock Text="Tune how downloads connect and flow." Style="{StaticResource Text.Muted}" FontSize="12" Margin="0,0,0,20" />
+                        <Border Background="{DynamicResource Brush.SurfaceAlt}" BorderBrush="{DynamicResource Brush.Border}" BorderThickness="1" CornerRadius="11" Padding="18" Margin="0,0,0,16">
                             <StackPanel>
-                                <StackPanel Orientation="Horizontal" Margin="0,0,0,6">
-                                    <Border Width="8" Height="8" CornerRadius="4" Background="{DynamicResource Brush.Success}" Margin="0,0,8,0" VerticalAlignment="Center" />
-                                    <TextBlock Text="Local server running" FontWeight="Medium" FontSize="13" Foreground="{DynamicResource Brush.Success}" />
-                                </StackPanel>
+                                <TextBlock Text="Connection limits" Style="{StaticResource Text.DialogSection}" />
+                                <Grid Margin="0,0,0,14">
+                                    <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+                                    <StackPanel Grid.Column="0" Margin="0,0,8,0">
+                                        <TextBlock Text="Connections per download" Style="{StaticResource Label.Field}" />
+                                        <ComboBox x:Name="ChunksBox">
+                                            <ComboBoxItem Content="Auto (recommended)" Tag="0" /><ComboBoxItem Content="1 thread" Tag="1" /><ComboBoxItem Content="2 threads" Tag="2" /><ComboBoxItem Content="4 threads" Tag="4" /><ComboBoxItem Content="8 threads" Tag="8" /><ComboBoxItem Content="16 threads" Tag="16" />
+                                        </ComboBox>
+                                    </StackPanel>
+                                    <StackPanel Grid.Column="1" Margin="8,0,0,0">
+                                        <TextBlock Text="Maximum concurrent downloads" Style="{StaticResource Label.Field}" />
+                                        <ComboBox x:Name="MaxConcurrentBox">
+                                            <ComboBoxItem Content="1" /><ComboBoxItem Content="2" /><ComboBoxItem Content="3" /><ComboBoxItem Content="5" /><ComboBoxItem Content="10" />
+                                        </ComboBox>
+                                    </StackPanel>
+                                </Grid>
+                                <TextBlock Text="Retries on failure" Style="{StaticResource Label.Field}" />
+                                <ComboBox x:Name="RetriesBox" Margin="0,0,0,14">
+                                    <ComboBoxItem Content="0 (No retries)" /><ComboBoxItem Content="1 retry" /><ComboBoxItem Content="2 retries" /><ComboBoxItem Content="3 retries" /><ComboBoxItem Content="5 retries" /><ComboBoxItem Content="10 retries" />
+                                </ComboBox>
+                                <TextBlock Text="Global speed limit (KB/s)" Style="{StaticResource Label.Field}" />
+                                <TextBox x:Name="SpeedBox" ToolTip="0 = no limit" />
+                                <TextBlock Text="Applies across all active downloads at once." FontSize="11" Foreground="{DynamicResource Brush.TextDim}" Margin="0,6,0,0" />
+                            </StackPanel>
+                        </Border>
+                    </StackPanel>
+
+                    <StackPanel x:Name="PanelFolders" Visibility="Collapsed">
+                        <TextBlock Text="Folders &amp; routing" Style="{StaticResource Text.Section}" Margin="0,0,0,6" />
+                        <TextBlock Text="Choose where files are stored and how categories are routed." Style="{StaticResource Text.Muted}" FontSize="12" Margin="0,0,0,20" />
+                        <Border Background="{DynamicResource Brush.SurfaceAlt}" BorderBrush="{DynamicResource Brush.Border}" BorderThickness="1" CornerRadius="11" Padding="18">
+                            <StackPanel>
+                                <TextBlock Text="Storage" Style="{StaticResource Text.DialogSection}" />
+                                <TextBlock Text="Default download folder" Style="{StaticResource Label.Field}" />
+                                <Grid Margin="0,0,0,14">
+                                    <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                                    <TextBox x:Name="FolderBox" /><Button Grid.Column="1" Content="Browse..." Style="{StaticResource Button.Secondary}" Click="BrowseClick" Margin="10,0,0,0" MinWidth="90" />
+                                </Grid>
+                                <CheckBox x:Name="RouteBox" Content="Keep each category in its own subfolder" FontWeight="Medium" Margin="0,0,0,14" />
+                                <Grid Margin="0,4,0,0">
+                                    <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+                                    <StackPanel Grid.Column="0" Margin="0,0,8,10"><TextBlock Text="Videos" Style="{StaticResource Label.Field}" /><TextBox x:Name="VideoFolderBox" /></StackPanel>
+                                    <StackPanel Grid.Column="1" Margin="8,0,0,10"><TextBlock Text="Music" Style="{StaticResource Label.Field}" /><TextBox x:Name="MusicFolderBox" /></StackPanel>
+                                </Grid>
+                                <Grid>
+                                    <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+                                    <StackPanel Grid.Column="0" Margin="0,0,8,10"><TextBlock Text="Documents" Style="{StaticResource Label.Field}" /><TextBox x:Name="DocumentFolderBox" /></StackPanel>
+                                    <StackPanel Grid.Column="1" Margin="8,0,0,10"><TextBlock Text="Archives" Style="{StaticResource Label.Field}" /><TextBox x:Name="CompressedFolderBox" /></StackPanel>
+                                </Grid>
+                                <TextBlock Text="Programs" Style="{StaticResource Label.Field}" /><TextBox x:Name="ProgramFolderBox" />
+                            </StackPanel>
+                        </Border>
+                    </StackPanel>
+
+                    <StackPanel x:Name="PanelBrowser" Visibility="Collapsed">
+                        <TextBlock Text="Browser integration" Style="{StaticResource Text.Section}" Margin="0,0,0,6" />
+                        <TextBlock Text="Connect supported browsers to WDM for automatic downloads." Style="{StaticResource Text.Muted}" FontSize="12" Margin="0,0,0,20" />
+                        <Border Background="{DynamicResource Brush.SurfaceAlt}" BorderBrush="{DynamicResource Brush.Border}" BorderThickness="1" CornerRadius="11" Padding="18" Margin="0,0,0,18">
+                            <StackPanel>
+                                <StackPanel Orientation="Horizontal" Margin="0,0,0,7"><Border Width="8" Height="8" CornerRadius="4" Background="{DynamicResource Brush.Success}" Margin="0,0,8,0" VerticalAlignment="Center" /><TextBlock Text="Local server running" FontWeight="Medium" FontSize="13" Foreground="{DynamicResource Brush.Success}" /></StackPanel>
                                 <TextBlock Text="Listening on http://127.0.0.1:17530 for the browser extension" FontSize="12" Foreground="{DynamicResource Brush.TextDim}" />
                             </StackPanel>
                         </Border>
-
                         <TextBlock Text="Install the WDM download catcher into your browsers" FontWeight="Medium" Margin="0,0,0,8" />
                         <TextBlock x:Name="BrowserStatusText" TextWrapping="Wrap" Foreground="{DynamicResource Brush.TextDim}" FontSize="12" Margin="0,0,0,12" />
-
-                        <Button Content="📖 Open Install Guide..." Style="{StaticResource Button.Accent}" Click="OpenExtensionHelper_Click" Height="32" Margin="0,14,0,0" HorizontalAlignment="Left" Padding="14,0" />
+                        <Button Content="📖 Open Install Guide..." Style="{StaticResource Button.Accent}" Click="OpenExtensionHelper_Click" Height="40" Margin="0,8,0,0" HorizontalAlignment="Left" MinWidth="170" />
                     </StackPanel>
 
-                    <!-- Panel 4: Behavior -->
                     <StackPanel x:Name="PanelBehavior" Visibility="Collapsed">
-                        <TextBlock Text="What happens when a download finishes" Style="{StaticResource Text.Section}" Margin="0,0,0,14" />
-
-                        <CheckBox x:Name="ChecksumBox" Content="Verify with a SHA-256 checksum when it finishes" Margin="0,0,0,10" />
-
-                        <TextBlock Text="Run a script after each download (file path passed as an argument):" Foreground="{DynamicResource Brush.TextDim}" FontSize="11" Margin="0,4,0,4" />
-                        <Grid Margin="0,0,0,16">
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="*" />
-                                <ColumnDefinition Width="Auto" />
-                            </Grid.ColumnDefinitions>
-                            <TextBox x:Name="ScriptBox" VerticalContentAlignment="Center" />
-                            <Button Grid.Column="1" Content="Browse..." Style="{StaticResource Button.Secondary}" Click="ScriptBrowseClick" Margin="8,0,0,0" />
-                        </Grid>
-
-                        <TextBlock Text="System integration" Style="{StaticResource Label.Field}" Margin="0,0,0,6" />
-                        <CheckBox x:Name="NotifyBox" Content="Show a notification when a download finishes" Margin="0,0,0,6" />
-                        <CheckBox x:Name="TrayProgressBox" Content="Show the floating download progress pill" Margin="0,0,0,6" />
-                        <CheckBox x:Name="MinimizeToTrayBox" Content="Minimize to the system tray on close" Margin="0,0,0,6" />
-                        <CheckBox x:Name="RunAtStartupBox" Content="Launch WDM when Windows starts" Margin="0,0,0,6" />
+                        <TextBlock Text="What happens when a download finishes" Style="{StaticResource Text.Section}" Margin="0,0,0,6" />
+                        <TextBlock Text="Choose verification, scripts and Windows integration behaviour." Style="{StaticResource Text.Muted}" FontSize="12" Margin="0,0,0,20" />
+                        <Border Background="{DynamicResource Brush.SurfaceAlt}" BorderBrush="{DynamicResource Brush.Border}" BorderThickness="1" CornerRadius="11" Padding="18">
+                            <StackPanel>
+                                <CheckBox x:Name="ChecksumBox" Content="Verify with a SHA-256 checksum when it finishes" Margin="0,0,0,14" />
+                                <TextBlock Text="Run a script after each download (file path passed as an argument):" Foreground="{DynamicResource Brush.TextDim}" FontSize="11" Margin="0,4,0,6" />
+                                <Grid Margin="0,0,0,18">
+                                    <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                                    <TextBox x:Name="ScriptBox" /><Button Grid.Column="1" Content="Browse..." Style="{StaticResource Button.Secondary}" Click="ScriptBrowseClick" Margin="10,0,0,0" MinWidth="90" />
+                                </Grid>
+                                <TextBlock Text="System integration" Style="{StaticResource Label.Field}" Margin="0,0,0,6" />
+                                <CheckBox x:Name="NotifyBox" Content="Show a notification when a download finishes" Margin="0,0,0,7" />
+                                <CheckBox x:Name="TrayProgressBox" Content="Show the floating download progress pill" Margin="0,0,0,7" />
+                                <CheckBox x:Name="MinimizeToTrayBox" Content="Minimize to the system tray on close" Margin="0,0,0,7" />
+                                <CheckBox x:Name="RunAtStartupBox" Content="Launch WDM when Windows starts" />
+                            </StackPanel>
+                        </Border>
                     </StackPanel>
 
-                    <!-- Panel 5: Updates -->
                     <StackPanel x:Name="PanelUpdates" Visibility="Collapsed">
-                        <TextBlock Text="Updates" Style="{StaticResource Text.Section}" Margin="0,0,0,14" />
-                        <TextBlock Text="Check GitHub for new versions of WDM." Style="{StaticResource Text.Muted}" FontSize="12" Margin="0,-8,0,14" />
-
+                        <TextBlock Text="Updates" Style="{StaticResource Text.Section}" Margin="0,0,0,6" />
+                        <TextBlock Text="Check GitHub for new versions of WDM." Style="{StaticResource Text.Muted}" FontSize="12" Margin="0,0,0,20" />
                         <CheckBox x:Name="CheckForUpdatesBox" Content="Check for updates automatically when WDM starts" FontWeight="Medium" Margin="0,0,0,16" />
-
-                        <Border Background="{DynamicResource Brush.SurfaceAlt}" CornerRadius="8" Padding="14,12">
+                        <Border Background="{DynamicResource Brush.SurfaceAlt}" BorderBrush="{DynamicResource Brush.Border}" BorderThickness="1" CornerRadius="11" Padding="18">
                             <StackPanel>
-                                <StackPanel Orientation="Horizontal" Margin="0,0,0,6">
-                                    <TextBlock Text="Current version" FontSize="12" Foreground="{DynamicResource Brush.TextDim}" Width="110" />
-                                    <TextBlock x:Name="CurrentVersionText" FontSize="12" FontWeight="Medium" VerticalAlignment="Center" />
-                                </StackPanel>
-                                <StackPanel Orientation="Horizontal" Margin="0,0,0,6">
-                                    <TextBlock Text="Latest version" FontSize="12" Foreground="{DynamicResource Brush.TextDim}" Width="110" />
-                                    <TextBlock x:Name="LatestVersionText" FontSize="12" FontWeight="Medium" VerticalAlignment="Center" />
-                                </StackPanel>
-                                <TextBlock x:Name="UpdateStatusText" TextWrapping="Wrap" FontSize="12" Foreground="{DynamicResource Brush.TextDim}" Margin="0,4,0,10" />
-                                <StackPanel>
-                                    <Button x:Name="CheckNowButton" Content="Check now" Style="{StaticResource Button.Secondary}" Click="CheckNowClick" Height="30" MinWidth="110" HorizontalAlignment="Left" />
-                                    <Button x:Name="OpenReleaseButton" Content="Open download page" Style="{StaticResource Button.Secondary}" Click="OpenReleaseClick" Height="30" MinWidth="130" Margin="0,8,0,0" Visibility="Collapsed" HorizontalAlignment="Left" />
-                                    <Button x:Name="DownloadInstallButton" Content="⬇ Download &amp; Install" Style="{StaticResource Button.Accent}" Click="DownloadInstallClick" Height="30" MinWidth="150" Margin="0,8,0,0" Visibility="Collapsed" HorizontalAlignment="Left" />
-                                </StackPanel>
+                                <StackPanel Orientation="Horizontal" Margin="0,0,0,8"><TextBlock Text="Current version" FontSize="12" Foreground="{DynamicResource Brush.TextDim}" Width="110" /><TextBlock x:Name="CurrentVersionText" FontSize="12" FontWeight="Medium" /></StackPanel>
+                                <StackPanel Orientation="Horizontal" Margin="0,0,0,8"><TextBlock Text="Latest version" FontSize="12" Foreground="{DynamicResource Brush.TextDim}" Width="110" /><TextBlock x:Name="LatestVersionText" FontSize="12" FontWeight="Medium" /></StackPanel>
+                                <TextBlock x:Name="UpdateStatusText" TextWrapping="Wrap" FontSize="12" Foreground="{DynamicResource Brush.TextDim}" Margin="0,4,0,14" />
+                                <Button x:Name="CheckNowButton" Content="Check now" Style="{StaticResource Button.Secondary}" Click="CheckNowClick" Height="40" MinWidth="110" HorizontalAlignment="Left" />
+                                <Button x:Name="OpenReleaseButton" Content="Open download page" Style="{StaticResource Button.Secondary}" Click="OpenReleaseClick" Height="40" MinWidth="140" Margin="0,10,0,0" Visibility="Collapsed" HorizontalAlignment="Left" />
+                                <Button x:Name="DownloadInstallButton" Content="⬇ Download &amp; Install" Style="{StaticResource Button.Accent}" Click="DownloadInstallClick" Height="40" MinWidth="160" Margin="0,10,0,0" Visibility="Collapsed" HorizontalAlignment="Left" />
                             </StackPanel>
                         </Border>
                     </StackPanel>
@@ -232,11 +176,10 @@
             </Border>
         </Grid>
 
-        <!-- Bottom Action Buttons -->
-        <Border Grid.Row="1" Padding="0,12,0,0">
+        <Border Grid.Row="1" Padding="0,14,0,0">
             <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
-                <Button Content="Cancel" Style="{StaticResource Button.Secondary}" IsCancel="True" Click="CancelClick" MinWidth="90" Height="30" />
-                <Button Content="Save changes" Style="{StaticResource Button.Accent}" Click="SaveClick" MinWidth="120" Height="30" Margin="10,0,0,0" />
+                <Button Content="Cancel" Style="{StaticResource Button.Secondary}" IsCancel="True" Click="CancelClick" MinWidth="100" Height="40" />
+                <Button Content="Save changes" Style="{StaticResource Button.Accent}" Click="SaveClick" MinWidth="140" Height="40" Margin="10,0,0,0" />
             </StackPanel>
         </Border>
     </Grid>
