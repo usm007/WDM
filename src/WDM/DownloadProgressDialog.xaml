@@ -4,7 +4,7 @@
         xmlns:vm="clr-namespace:WDM.ViewModels"
         Title="{Binding Task.FileName, StringFormat='{}{0} — WDM'}"
         Icon="Assets/WDM.ico"
-        Width="620"
+        Width="680"
         SizeToContent="Height"
         WindowStartupLocation="CenterScreen"
         ResizeMode="CanMinimize"
@@ -14,7 +14,7 @@
         <vm:TaskStatusToBrushConverter x:Key="StatusBrush" />
     </Window.Resources>
 
-    <Grid Margin="20,16,20,20">
+    <Grid Margin="24,20,24,22">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />
             <RowDefinition Height="Auto" />
@@ -22,27 +22,26 @@
             <RowDefinition Height="Auto" />
         </Grid.RowDefinitions>
 
-        <!-- 1. Header: Category Icon + File Name + Progress Pill -->
-        <DockPanel Grid.Row="0" Margin="0,0,0,16">
+        <!-- Header -->
+        <DockPanel Grid.Row="0" Margin="0,0,0,18">
             <Border DockPanel.Dock="Right" Background="{DynamicResource Brush.AccentSoft}"
-                    CornerRadius="12" Padding="12,4" VerticalAlignment="Center">
-                <TextBlock Text="{Binding ProgressTitleText}" FontSize="12" FontWeight="Bold"
+                    BorderBrush="{DynamicResource Brush.AccentSoftStrong}" BorderThickness="1"
+                    CornerRadius="14" Padding="14,6" VerticalAlignment="Center">
+                <TextBlock Text="{Binding ProgressTitleText}" FontSize="12" FontWeight="SemiBold"
                            Foreground="{DynamicResource Brush.Accent}" />
             </Border>
-
-            <!-- Category Icon & File Name (Left) -->
             <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
                 <TextBlock Text="{Binding Task.TypeIcon}" FontFamily="{StaticResource Font.Icon}"
-                           FontSize="16" Foreground="{DynamicResource Brush.Accent}"
-                           VerticalAlignment="Center" Margin="0,0,10,0" />
-                <TextBlock Text="{Binding Task.FileName}" FontWeight="SemiBold" FontSize="15"
+                           FontSize="18" Foreground="{DynamicResource Brush.Accent}"
+                           VerticalAlignment="Center" Margin="0,0,11,0" />
+                <TextBlock Text="{Binding Task.FileName}" FontWeight="SemiBold" FontSize="17"
                            Foreground="{DynamicResource Brush.Text}" VerticalAlignment="Center"
-                           TextTrimming="CharacterEllipsis" MaxWidth="340" />
+                           TextTrimming="CharacterEllipsis" MaxWidth="480" />
             </StackPanel>
         </DockPanel>
 
-        <!-- 2. Tab Bar Navigation -->
-        <StackPanel Grid.Row="1" Orientation="Horizontal" Margin="0,0,0,14">
+        <!-- Tabs -->
+        <StackPanel Grid.Row="1" Orientation="Horizontal" Margin="0,0,0,16">
             <RadioButton x:Name="TabStatus" Content="Download status" Style="{StaticResource Tab.Item}"
                          IsChecked="True" Checked="Tab_Checked" Margin="0,0,6,0" />
             <RadioButton x:Name="TabLimiter" Content="Speed limiter" Style="{StaticResource Tab.Item}"
@@ -51,113 +50,82 @@
                          Checked="Tab_Checked" />
         </StackPanel>
 
-        <!-- 3. TAB CONTENT PANELS -->
-        <Grid Grid.Row="2" x:Name="MainContentHost" Margin="0,0,0,16">
-
-            <!-- TAB 1: Download Status -->
+        <!-- Content -->
+        <Grid Grid.Row="2" x:Name="MainContentHost" Margin="0,0,0,18">
             <StackPanel x:Name="PanelStatus">
-                <!-- Info Table Card -->
-                <Border Background="{DynamicResource Brush.Surface}" BorderBrush="{DynamicResource Brush.Border}"
-                        BorderThickness="1" CornerRadius="8" Padding="16,12" Margin="0,0,0,14">
+                <Border Background="{DynamicResource Brush.SurfaceAlt}"
+                        BorderBrush="{DynamicResource Brush.Border}"
+                        BorderThickness="1" CornerRadius="12" Padding="18,16" Margin="0,0,0,16">
                     <Grid>
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="130" />
                             <ColumnDefinition Width="*" />
                         </Grid.ColumnDefinitions>
                         <Grid.RowDefinitions>
-                            <RowDefinition Height="26" />
-                            <RowDefinition Height="26" />
-                            <RowDefinition Height="26" />
-                            <RowDefinition Height="26" />
-                            <RowDefinition Height="26" />
-                            <RowDefinition Height="26" />
-                            <RowDefinition Height="26" />
+                            <RowDefinition Height="32" />
+                            <RowDefinition Height="32" />
+                            <RowDefinition Height="32" />
+                            <RowDefinition Height="32" />
+                            <RowDefinition Height="32" />
+                            <RowDefinition Height="32" />
+                            <RowDefinition Height="38" />
                         </Grid.RowDefinitions>
 
-                        <!-- URL -->
-                        <TextBlock Grid.Row="0" Grid.Column="0" Text="URL" FontWeight="Medium" FontSize="12"
-                                   Foreground="{DynamicResource Brush.TextDim}" VerticalAlignment="Center" />
+                        <TextBlock Grid.Row="0" Grid.Column="0" Text="URL" FontWeight="Medium" FontSize="12" Foreground="{DynamicResource Brush.TextDim}" VerticalAlignment="Center" />
                         <DockPanel Grid.Row="0" Grid.Column="1" VerticalAlignment="Center">
-                            <Button DockPanel.Dock="Right" Style="{StaticResource Button.Icon}" Click="CopyUrl_Click"
-                                    ToolTip="Copy URL" Width="22" Height="22" Margin="6,0,0,0">
+                            <Button DockPanel.Dock="Right" Style="{StaticResource Button.Icon}" Click="CopyUrl_Click" ToolTip="Copy URL" Width="24" Height="24" Margin="8,0,0,0">
                                 <TextBlock Text="&#xE8C8;" FontFamily="{StaticResource Font.Icon}" FontSize="11" />
                             </Button>
-                            <TextBox Text="{Binding Task.Url}" IsReadOnly="True" BorderThickness="0" Background="Transparent"
-                                     FontSize="12" Foreground="{DynamicResource Brush.Accent}" VerticalAlignment="Center"
-                                     Padding="0" VerticalContentAlignment="Center" />
+                            <TextBox Text="{Binding Task.Url}" IsReadOnly="True" BorderThickness="0" Background="Transparent" FontSize="12" Foreground="{DynamicResource Brush.Accent}" VerticalAlignment="Center" Padding="0" VerticalContentAlignment="Center" />
                         </DockPanel>
 
-                        <!-- Status -->
-                        <TextBlock Grid.Row="1" Grid.Column="0" Text="Status" FontWeight="Medium" FontSize="12"
-                                   Foreground="{DynamicResource Brush.TextDim}" VerticalAlignment="Center" />
+                        <TextBlock Grid.Row="1" Grid.Column="0" Text="Status" FontWeight="Medium" FontSize="12" Foreground="{DynamicResource Brush.TextDim}" VerticalAlignment="Center" />
                         <StackPanel Grid.Row="1" Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
-                            <Ellipse Width="7" Height="7" Margin="0,0,7,0" VerticalAlignment="Center"
-                                     Fill="{Binding Task.Status, Converter={StaticResource StatusBrush}}" />
-                            <TextBlock Text="{Binding Task.StatusText}" FontWeight="SemiBold"
-                                       Foreground="{Binding Task.Status, Converter={StaticResource StatusBrush}}"
-                                       FontSize="12" VerticalAlignment="Center" />
+                            <Ellipse Width="8" Height="8" Margin="0,0,8,0" VerticalAlignment="Center" Fill="{Binding Task.Status, Converter={StaticResource StatusBrush}}" />
+                            <TextBlock Text="{Binding Task.StatusText}" FontWeight="SemiBold" Foreground="{Binding Task.Status, Converter={StaticResource StatusBrush}}" FontSize="12" VerticalAlignment="Center" />
                         </StackPanel>
 
-                        <!-- File Size -->
-                        <TextBlock Grid.Row="2" Grid.Column="0" Text="File size" FontWeight="Medium" FontSize="12"
-                                   Foreground="{DynamicResource Brush.TextDim}" VerticalAlignment="Center" />
-                        <TextBlock Grid.Row="2" Grid.Column="1" Text="{Binding Task.SizeText}" FontSize="12"
-                                   Foreground="{DynamicResource Brush.Text}" VerticalAlignment="Center" />
+                        <TextBlock Grid.Row="2" Grid.Column="0" Text="File size" FontWeight="Medium" FontSize="12" Foreground="{DynamicResource Brush.TextDim}" VerticalAlignment="Center" />
+                        <TextBlock Grid.Row="2" Grid.Column="1" Text="{Binding Task.SizeText}" FontSize="12" Foreground="{DynamicResource Brush.Text}" VerticalAlignment="Center" />
 
-                        <!-- Downloaded -->
-                        <TextBlock Grid.Row="3" Grid.Column="0" Text="Downloaded" FontWeight="Medium" FontSize="12"
-                                   Foreground="{DynamicResource Brush.TextDim}" VerticalAlignment="Center" />
-                        <TextBlock Grid.Row="3" Grid.Column="1" Text="{Binding DownloadedDetailText}" FontWeight="SemiBold"
-                                   Foreground="{DynamicResource Brush.Text}" FontSize="12" VerticalAlignment="Center" />
+                        <TextBlock Grid.Row="3" Grid.Column="0" Text="Downloaded" FontWeight="Medium" FontSize="12" Foreground="{DynamicResource Brush.TextDim}" VerticalAlignment="Center" />
+                        <TextBlock Grid.Row="3" Grid.Column="1" Text="{Binding DownloadedDetailText}" FontWeight="SemiBold" Foreground="{DynamicResource Brush.Text}" FontSize="12" VerticalAlignment="Center" />
 
-                        <!-- Transfer Rate -->
-                        <TextBlock Grid.Row="4" Grid.Column="0" Text="Transfer rate" FontWeight="Medium" FontSize="12"
-                                   Foreground="{DynamicResource Brush.TextDim}" VerticalAlignment="Center" />
-                        <TextBlock Grid.Row="4" Grid.Column="1"
-                                   Text="{Binding Task.SpeedText, TargetNullValue='0 B/s'}"
-                                   FontWeight="Bold" Foreground="{DynamicResource Brush.Accent}"
-                                   FontSize="12.5" VerticalAlignment="Center" />
+                        <TextBlock Grid.Row="4" Grid.Column="0" Text="Speed" FontWeight="Medium" FontSize="12" Foreground="{DynamicResource Brush.TextDim}" VerticalAlignment="Center" />
+                        <TextBlock Grid.Row="4" Grid.Column="1" Text="{Binding Task.SpeedText, TargetNullValue='0 B/s'}" FontWeight="SemiBold" Foreground="{DynamicResource Brush.Accent}" FontSize="12.5" VerticalAlignment="Center" />
 
-                        <!-- Time Left -->
-                        <TextBlock Grid.Row="5" Grid.Column="0" Text="Time left" FontWeight="Medium" FontSize="12"
-                                   Foreground="{DynamicResource Brush.TextDim}" VerticalAlignment="Center" />
-                        <TextBlock Grid.Row="5" Grid.Column="1" Text="{Binding Task.Eta}" FontSize="12"
-                                   Foreground="{DynamicResource Brush.Text}" VerticalAlignment="Center" />
+                        <TextBlock Grid.Row="5" Grid.Column="0" Text="Time left" FontWeight="Medium" FontSize="12" Foreground="{DynamicResource Brush.TextDim}" VerticalAlignment="Center" />
+                        <TextBlock Grid.Row="5" Grid.Column="1" Text="{Binding Task.Eta}" FontSize="12" Foreground="{DynamicResource Brush.Text}" VerticalAlignment="Center" />
 
-                        <!-- Resume Capability -->
-                        <TextBlock Grid.Row="6" Grid.Column="0" Text="Resume capability" FontWeight="Medium" FontSize="12"
-                                   Foreground="{DynamicResource Brush.TextDim}" VerticalAlignment="Center" />
-                        <TextBlock Grid.Row="6" Grid.Column="1" Text="Yes — multithreaded chunking"
-                                   Foreground="{DynamicResource Brush.Success}" FontWeight="Medium"
-                                   FontSize="12" VerticalAlignment="Center" />
+                        <TextBlock Grid.Row="6" Grid.Column="0" Text="Resume capability" FontWeight="Medium" FontSize="12" Foreground="{DynamicResource Brush.TextDim}" VerticalAlignment="Center" />
+                        <Border Grid.Row="6" Grid.Column="1" Background="{DynamicResource Brush.StatusCompleteSoft}" CornerRadius="10" Padding="9,4" HorizontalAlignment="Left" VerticalAlignment="Center">
+                            <TextBlock Text="✓ Multithreaded resume" Foreground="{DynamicResource Brush.StatusComplete}" FontWeight="SemiBold" FontSize="11" />
+                        </Border>
                     </Grid>
                 </Border>
 
-                <!-- Threads Visualization Header -->
-                <DockPanel Margin="0,0,0,6">
-                    <TextBlock Text="Start positions and download progress by connections:" FontSize="11" FontWeight="Medium"
-                               Foreground="{DynamicResource Brush.TextDim}" VerticalAlignment="Center" />
-                    <TextBlock Text="{Binding ChunkCountText}" FontSize="11" FontWeight="SemiBold"
-                               Foreground="{DynamicResource Brush.Accent}" HorizontalAlignment="Right" VerticalAlignment="Center" />
+                <DockPanel Margin="0,0,0,7">
+                    <StackPanel>
+                        <TextBlock Text="Download progress" FontSize="12" FontWeight="SemiBold" Foreground="{DynamicResource Brush.Text}" />
+                        <TextBlock Text="Connections and chunk activity" FontSize="10.5" Foreground="{DynamicResource Brush.TextDim}" Margin="0,2,0,0" />
+                    </StackPanel>
+                    <TextBlock Text="{Binding ChunkCountText}" FontSize="11" FontWeight="SemiBold" Foreground="{DynamicResource Brush.Accent}" HorizontalAlignment="Right" VerticalAlignment="Center" />
                 </DockPanel>
 
-                <!-- Clean Thread Progress Segment Bar -->
-                <Border Background="{DynamicResource Brush.Track}" Height="10" CornerRadius="4" Padding="1">
+                <Border Background="{DynamicResource Brush.Track}" Height="14" CornerRadius="7" Padding="2">
                     <ItemsControl x:Name="ChunkListHost" ItemsSource="{Binding ChunkList}">
                         <ItemsControl.ItemsPanel>
-                            <ItemsPanelTemplate>
-                                <UniformGrid Rows="1" />
-                            </ItemsPanelTemplate>
+                            <ItemsPanelTemplate><UniformGrid Rows="1" /></ItemsPanelTemplate>
                         </ItemsControl.ItemsPanel>
                         <ItemsControl.ItemTemplate>
                             <DataTemplate>
                                 <Grid Margin="0.5,0" ToolTip="{Binding ToolTip}">
-                                    <Grid Height="8">
+                                    <Grid Height="10">
                                         <Grid.ColumnDefinitions>
                                             <ColumnDefinition Width="{Binding FillGridLength}" />
                                             <ColumnDefinition Width="{Binding RemainingGridLength}" />
                                         </Grid.ColumnDefinitions>
-                                        <Border Grid.Column="0" Background="#2E9B57" CornerRadius="2" />
+                                        <Border Grid.Column="0" Background="{DynamicResource Brush.Accent}" CornerRadius="4" />
                                     </Grid>
                                 </Grid>
                             </DataTemplate>
@@ -166,54 +134,39 @@
                 </Border>
             </StackPanel>
 
-            <!-- TAB 2: Speed Limiter -->
             <StackPanel x:Name="PanelLimiter" Visibility="Collapsed">
-                <Border Background="{DynamicResource Brush.Surface}" BorderBrush="{DynamicResource Brush.Border}"
-                        BorderThickness="1" CornerRadius="8" Padding="16,14">
+                <Border Background="{DynamicResource Brush.SurfaceAlt}" BorderBrush="{DynamicResource Brush.Border}" BorderThickness="1" CornerRadius="12" Padding="18,16">
                     <StackPanel>
-                        <CheckBox x:Name="CheckSpeedLimit" Content="Limit the speed of this download"
-                                  IsChecked="{Binding IsSpeedLimitEnabled, Mode=TwoWay}"
-                                  Checked="SpeedLimit_Changed" Unchecked="SpeedLimit_Changed"
-                                  FontWeight="Medium" Margin="0,0,0,14" />
+                        <CheckBox x:Name="CheckSpeedLimit" Content="Limit the speed of this download" IsChecked="{Binding IsSpeedLimitEnabled, Mode=TwoWay}" Checked="SpeedLimit_Changed" Unchecked="SpeedLimit_Changed" FontWeight="Medium" Margin="0,0,0,16" />
                         <Grid>
                             <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="170" />
-                                <ColumnDefinition Width="120" />
+                                <ColumnDefinition Width="190" />
+                                <ColumnDefinition Width="140" />
                                 <ColumnDefinition Width="Auto" />
                             </Grid.ColumnDefinitions>
                             <TextBlock Text="Maximum download speed:" VerticalAlignment="Center" FontSize="12" Foreground="{DynamicResource Brush.TextDim}" />
-                            <TextBox Grid.Column="1" Text="{Binding TaskSpeedLimit, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
-                                     VerticalContentAlignment="Center" Padding="8,0" Height="28" FontSize="12" />
-                            <TextBlock Grid.Column="2" Text="KB/sec" VerticalAlignment="Center"
-                                       Foreground="{DynamicResource Brush.TextDim}" FontSize="12" Margin="8,0,0,0" />
+                            <TextBox Grid.Column="1" Text="{Binding TaskSpeedLimit, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+                            <TextBlock Grid.Column="2" Text="KB/sec" VerticalAlignment="Center" Foreground="{DynamicResource Brush.TextDim}" FontSize="12" Margin="8,0,0,0" />
                         </Grid>
                     </StackPanel>
                 </Border>
             </StackPanel>
 
-            <!-- TAB 3: On Completion -->
             <StackPanel x:Name="PanelOptions" Visibility="Collapsed">
-                <Border Background="{DynamicResource Brush.Surface}" BorderBrush="{DynamicResource Brush.Border}"
-                        BorderThickness="1" CornerRadius="8" Padding="16,14">
+                <Border Background="{DynamicResource Brush.SurfaceAlt}" BorderBrush="{DynamicResource Brush.Border}" BorderThickness="1" CornerRadius="12" Padding="18,16">
                     <StackPanel>
-                        <CheckBox Content="Close this window when download finishes"
-                                  IsChecked="{Binding CloseOnComplete, Mode=TwoWay}" Margin="0,4" />
-                        <CheckBox Content="Open file when download finishes"
-                                  IsChecked="{Binding OpenOnComplete, Mode=TwoWay}" Margin="0,6" />
-                        <CheckBox Content="Shutdown computer when finished"
-                                  IsChecked="{Binding ShutdownOnComplete, Mode=TwoWay}" Margin="0,4" />
+                        <CheckBox Content="Close this window when download finishes" IsChecked="{Binding CloseOnComplete, Mode=TwoWay}" Margin="0,4" />
+                        <CheckBox Content="Open file when download finishes" IsChecked="{Binding OpenOnComplete, Mode=TwoWay}" Margin="0,6" />
+                        <CheckBox Content="Shutdown computer when finished" IsChecked="{Binding ShutdownOnComplete, Mode=TwoWay}" Margin="0,4" />
                     </StackPanel>
                 </Border>
             </StackPanel>
         </Grid>
 
-        <!-- 4. Action Buttons Footer -->
         <DockPanel Grid.Row="3" LastChildFill="False">
             <StackPanel Orientation="Horizontal" DockPanel.Dock="Right">
-                <Button x:Name="BtnPause" Content="{Binding PauseButtonText}" Style="{StaticResource Button.Accent}"
-                        Click="PauseClick" MinWidth="100" Height="32" Margin="0,0,8,0" />
-                <Button Content="Cancel" Style="{StaticResource Button.Secondary}"
-                        Click="CancelClick" MinWidth="90" Height="32" />
+                <Button x:Name="BtnPause" Content="{Binding PauseButtonText}" Style="{StaticResource Button.Accent}" Click="PauseClick" MinWidth="110" Height="40" Margin="0,0,10,0" />
+                <Button Content="Cancel" Style="{StaticResource Button.Secondary}" Click="CancelClick" MinWidth="100" Height="40" />
             </StackPanel>
         </DockPanel>
     </Grid>
