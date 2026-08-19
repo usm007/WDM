@@ -153,6 +153,20 @@ public partial class MainWindow : Window
         };
     }
 
+    private void ThemeToggle_Click(object sender, RoutedEventArgs e)
+    {
+        bool dark = !ThemeService.IsDark;
+        ThemeService.Apply(dark);
+
+        // Re-apply DWM title bar colour to every currently open window.
+        foreach (Window w in Application.Current.Windows)
+            ThemeService.ApplyTitleBar(w);
+
+        // Update icon: sun = currently dark (click → go light), moon = currently light (click → go dark).
+        ThemeToggleIcon.Text  = dark ? "\uE706" : "\uE708";
+        ThemeToggleLabel.Text = dark ? "Light"  : "Dark";
+    }
+
     private System.Windows.Threading.Dispatcher _dispatcher =>
         System.Windows.Application.Current.Dispatcher;
 

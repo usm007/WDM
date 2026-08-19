@@ -20,10 +20,8 @@
 
         <!-- Logo Header -->
         <DockPanel Grid.Row="0" Margin="0,0,0,16">
-            <Border Width="52" Height="52" CornerRadius="14" Background="{DynamicResource Brush.SurfaceAlt}" Margin="0,0,14,0" VerticalAlignment="Center">
-                <Border.Effect>
-                    <DropShadowEffect BlurRadius="8" ShadowDepth="1" Opacity="0.10" Color="#40464D" />
-                </Border.Effect>
+            <Border Width="52" Height="52" CornerRadius="14" Background="{DynamicResource Brush.SurfaceAlt}" Margin="0,0,14,0" VerticalAlignment="Center"
+                    Effect="{DynamicResource Shadow.Logo}">
                 <Image Source="pack://application:,,,/Assets/logo.png" Width="48" Height="48" Stretch="Uniform" RenderOptions.BitmapScalingMode="HighQuality" HorizontalAlignment="Center" VerticalAlignment="Center" />
             </Border>
             <StackPanel VerticalAlignment="Center">

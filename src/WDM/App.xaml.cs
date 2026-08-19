@@ -26,7 +26,12 @@ public partial class App : Application
         StartMinimized = e.Args.Any(a =>
             string.Equals(a, "/minimized", StringComparison.OrdinalIgnoreCase) ||
             string.Equals(a, "--minimized", StringComparison.OrdinalIgnoreCase));
-        ThemeService.Apply(false);
+        // Apply dark DWM title bar to every window automatically (main + all dialogs).
+        EventManager.RegisterClassHandler(
+            typeof(Window),
+            FrameworkElement.LoadedEvent,
+            new RoutedEventHandler((s, _) => { if (s is Window w) ThemeService.ApplyTitleBar(w); }));
+        ThemeService.Apply(true);
     }
 
     public static void LogException(Exception? ex)

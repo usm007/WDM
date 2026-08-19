@@ -1,102 +1,119 @@
 <ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
                     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
 
-    <!-- ============ DARK PALETTE — Modern Slate Dark Theme ============ -->
-    <!-- Neutral tokens -->
-    <Color x:Key="Color.Bg">#0F172A</Color>
-    <Color x:Key="Color.Surface">#1E293B</Color>
-    <Color x:Key="Color.SurfaceAlt">#334155</Color>
-    <Color x:Key="Color.SurfaceHover">#475569</Color>
-    <Color x:Key="Color.Border">#334155</Color>
-    <Color x:Key="Color.BorderStrong">#475569</Color>
-    <Color x:Key="Color.GridLine">#293548</Color>
-    <Color x:Key="Color.Text">#F8FAFC</Color>
-    <Color x:Key="Color.TextDim">#CBD5E1</Color>
-    <Color x:Key="Color.TextMuted">#94A3B8</Color>
+    <!-- ============ DARK PALETTE — Deep Blue-Black + Blue Accent ============ -->
+    <!-- Neutral tokens (cool, blue-tinted dark surfaces) -->
+    <Color x:Key="Color.Bg">#080D16</Color>
+    <Color x:Key="Color.Surface">#0D1420</Color>
+    <Color x:Key="Color.SurfaceAlt">#111A27</Color>
+    <Color x:Key="Color.SurfaceHover">#1B2737</Color>
+    <Color x:Key="Color.Border">#243144</Color>
+    <Color x:Key="Color.BorderStrong">#35475F</Color>
+    <Color x:Key="Color.GridLine">#151E2D</Color>
+    <Color x:Key="Color.Text">#F1F5F9</Color>
+    <Color x:Key="Color.TextDim">#9AA7B8</Color>
+    <Color x:Key="Color.TextMuted">#6B7890</Color>
 
-    <!-- Accent — vibrant blue for dark mode -->
-    <Color x:Key="Color.Accent">#3B82F6</Color>
-    <Color x:Key="Color.AccentDark">#2563EB</Color>
-    <Color x:Key="Color.AccentSoft">#1E3A8A</Color>
-    <Color x:Key="Color.AccentSoftStrong">#1E40AF</Color>
+    <!-- Accent — Desktop Utility Blue -->
+    <Color x:Key="Color.Accent">#4A90FF</Color>
+    <Color x:Key="Color.AccentDark">#3B7BE8</Color>
+    <Color x:Key="Color.AccentSoft">#14233E</Color>
+    <Color x:Key="Color.AccentSoftStrong">#1D3358</Color>
 
-    <!-- Semantic status colors -->
-    <Color x:Key="Color.StatusActive">#60A5FA</Color>
+    <!-- AccentFg — foreground on accent-coloured surfaces -->
+    <Color x:Key="Color.AccentFg">#0B0F17</Color>
+
+    <!-- Semantic status colors — distinct on blue-black -->
+    <Color x:Key="Color.StatusActive">#4A90FF</Color>
     <Color x:Key="Color.StatusComplete">#34D399</Color>
     <Color x:Key="Color.StatusFailed">#F87171</Color>
-    <Color x:Key="Color.StatusPaused">#94A3B8</Color>
+    <Color x:Key="Color.StatusPaused">#8B96A8</Color>
     <Color x:Key="Color.StatusQueued">#FBBF24</Color>
 
-    <!-- Soft tints for pill badge backgrounds -->
-    <Color x:Key="Color.StatusActiveSoft">#2E60A5FA</Color>
-    <Color x:Key="Color.StatusCompleteSoft">#2E34D399</Color>
-    <Color x:Key="Color.StatusFailedSoft">#2EF87171</Color>
-    <Color x:Key="Color.StatusPausedSoft">#2E94A3B8</Color>
-    <Color x:Key="Color.StatusQueuedSoft">#2EFBBF24</Color>
+    <!-- Solid soft tints for pill badge backgrounds -->
+    <Color x:Key="Color.StatusActiveSoft">#16233E</Color>
+    <Color x:Key="Color.StatusCompleteSoft">#122B25</Color>
+    <Color x:Key="Color.StatusFailedSoft">#331B1E</Color>
+    <Color x:Key="Color.StatusPausedSoft">#1B2333</Color>
+    <Color x:Key="Color.StatusQueuedSoft">#2E2A1A</Color>
 
+    <!-- Semantic aliases -->
     <Color x:Key="Color.Success">#34D399</Color>
     <Color x:Key="Color.Warning">#FBBF24</Color>
     <Color x:Key="Color.Danger">#F87171</Color>
 
     <!-- Disabled state -->
-    <Color x:Key="Color.DisabledBg">#1E293B</Color>
-    <Color x:Key="Color.DisabledFg">#64748B</Color>
+    <Color x:Key="Color.DisabledBg">#111827</Color>
+    <Color x:Key="Color.DisabledFg">#3D4A5E</Color>
 
     <!-- Zones -->
-    <Color x:Key="Color.Track">#334155</Color>
-    <Color x:Key="Color.Sidebar">#1E293B</Color>
-    <Color x:Key="Color.RowAlt">#1E293B</Color>
-    <Color x:Key="Color.RowHover">#334155</Color>
-    <Color x:Key="Color.RowSelected">#1E3A8A</Color>
+    <Color x:Key="Color.Track">#1B2737</Color>
+    <Color x:Key="Color.Sidebar">#0B101B</Color>
+    <Color x:Key="Color.RowAlt">#0B101B</Color>
+    <Color x:Key="Color.RowHover">#1B2737</Color>
+    <Color x:Key="Color.RowSelected">#14233E</Color>
 
-    <!-- Muted per-category icon tints -->
+    <!-- Per-category icon tints — vivid & rich on blue-black -->
     <Color x:Key="Color.CatCompressed">#FBBF24</Color>
-    <Color x:Key="Color.CatDocument">#94A3B8</Color>
-    <Color x:Key="Color.CatMusic">#C084FC</Color>
+    <Color x:Key="Color.CatDocument">#8B96A8</Color>
+    <Color x:Key="Color.CatMusic">#A855F7</Color>
     <Color x:Key="Color.CatProgram">#34D399</Color>
-    <Color x:Key="Color.CatVideo">#F87171</Color>
+    <Color x:Key="Color.CatVideo">#4A90FF</Color>
 
     <!-- Palette Brushes -->
-    <SolidColorBrush x:Key="Brush.Bg" Color="{StaticResource Color.Bg}" />
-    <SolidColorBrush x:Key="Brush.Surface" Color="{StaticResource Color.Surface}" />
-    <SolidColorBrush x:Key="Brush.SurfaceAlt" Color="{StaticResource Color.SurfaceAlt}" />
-    <SolidColorBrush x:Key="Brush.SurfaceHover" Color="{StaticResource Color.SurfaceHover}" />
-    <SolidColorBrush x:Key="Brush.Border" Color="{StaticResource Color.Border}" />
-    <SolidColorBrush x:Key="Brush.BorderStrong" Color="{StaticResource Color.BorderStrong}" />
-    <SolidColorBrush x:Key="Brush.GridLine" Color="{StaticResource Color.GridLine}" />
-    <SolidColorBrush x:Key="Brush.Text" Color="{StaticResource Color.Text}" />
-    <SolidColorBrush x:Key="Brush.TextDim" Color="{StaticResource Color.TextDim}" />
-    <SolidColorBrush x:Key="Brush.TextMuted" Color="{StaticResource Color.TextMuted}" />
-    <SolidColorBrush x:Key="Brush.Accent" Color="{StaticResource Color.Accent}" />
-    <SolidColorBrush x:Key="Brush.AccentDark" Color="{StaticResource Color.AccentDark}" />
-    <SolidColorBrush x:Key="Brush.AccentSoft" Color="{StaticResource Color.AccentSoft}" />
+    <SolidColorBrush x:Key="Brush.Bg"              Color="{StaticResource Color.Bg}" />
+    <SolidColorBrush x:Key="Brush.Surface"         Color="{StaticResource Color.Surface}" />
+    <SolidColorBrush x:Key="Brush.SurfaceAlt"      Color="{StaticResource Color.SurfaceAlt}" />
+    <SolidColorBrush x:Key="Brush.SurfaceHover"    Color="{StaticResource Color.SurfaceHover}" />
+    <SolidColorBrush x:Key="Brush.Border"          Color="{StaticResource Color.Border}" />
+    <SolidColorBrush x:Key="Brush.BorderStrong"    Color="{StaticResource Color.BorderStrong}" />
+    <SolidColorBrush x:Key="Brush.GridLine"        Color="{StaticResource Color.GridLine}" />
+    <SolidColorBrush x:Key="Brush.Text"            Color="{StaticResource Color.Text}" />
+    <SolidColorBrush x:Key="Brush.TextDim"         Color="{StaticResource Color.TextDim}" />
+    <SolidColorBrush x:Key="Brush.TextMuted"       Color="{StaticResource Color.TextMuted}" />
+    <SolidColorBrush x:Key="Brush.Accent"          Color="{StaticResource Color.Accent}" />
+    <SolidColorBrush x:Key="Brush.AccentDark"      Color="{StaticResource Color.AccentDark}" />
+    <SolidColorBrush x:Key="Brush.AccentSoft"      Color="{StaticResource Color.AccentSoft}" />
     <SolidColorBrush x:Key="Brush.AccentSoftStrong" Color="{StaticResource Color.AccentSoftStrong}" />
+    <SolidColorBrush x:Key="Brush.AccentFg"        Color="{StaticResource Color.AccentFg}" />
 
-    <SolidColorBrush x:Key="Brush.StatusActive" Color="{StaticResource Color.StatusActive}" />
-    <SolidColorBrush x:Key="Brush.StatusComplete" Color="{StaticResource Color.StatusComplete}" />
-    <SolidColorBrush x:Key="Brush.StatusFailed" Color="{StaticResource Color.StatusFailed}" />
-    <SolidColorBrush x:Key="Brush.StatusPaused" Color="{StaticResource Color.StatusPaused}" />
-    <SolidColorBrush x:Key="Brush.StatusQueued" Color="{StaticResource Color.StatusQueued}" />
-    <SolidColorBrush x:Key="Brush.StatusActiveSoft" Color="{StaticResource Color.StatusActiveSoft}" />
+    <SolidColorBrush x:Key="Brush.StatusActive"       Color="{StaticResource Color.StatusActive}" />
+    <SolidColorBrush x:Key="Brush.StatusComplete"     Color="{StaticResource Color.StatusComplete}" />
+    <SolidColorBrush x:Key="Brush.StatusFailed"       Color="{StaticResource Color.StatusFailed}" />
+    <SolidColorBrush x:Key="Brush.StatusPaused"       Color="{StaticResource Color.StatusPaused}" />
+    <SolidColorBrush x:Key="Brush.StatusQueued"       Color="{StaticResource Color.StatusQueued}" />
+    <SolidColorBrush x:Key="Brush.StatusActiveSoft"   Color="{StaticResource Color.StatusActiveSoft}" />
     <SolidColorBrush x:Key="Brush.StatusCompleteSoft" Color="{StaticResource Color.StatusCompleteSoft}" />
-    <SolidColorBrush x:Key="Brush.StatusFailedSoft" Color="{StaticResource Color.StatusFailedSoft}" />
-    <SolidColorBrush x:Key="Brush.StatusPausedSoft" Color="{StaticResource Color.StatusPausedSoft}" />
-    <SolidColorBrush x:Key="Brush.StatusQueuedSoft" Color="{StaticResource Color.StatusQueuedSoft}" />
+    <SolidColorBrush x:Key="Brush.StatusFailedSoft"   Color="{StaticResource Color.StatusFailedSoft}" />
+    <SolidColorBrush x:Key="Brush.StatusPausedSoft"   Color="{StaticResource Color.StatusPausedSoft}" />
+    <SolidColorBrush x:Key="Brush.StatusQueuedSoft"   Color="{StaticResource Color.StatusQueuedSoft}" />
 
-    <SolidColorBrush x:Key="Brush.Success" Color="{StaticResource Color.Success}" />
-    <SolidColorBrush x:Key="Brush.Warning" Color="{StaticResource Color.Warning}" />
-    <SolidColorBrush x:Key="Brush.Danger" Color="{StaticResource Color.Danger}" />
-    <SolidColorBrush x:Key="Brush.DisabledBg" Color="{StaticResource Color.DisabledBg}" />
-    <SolidColorBrush x:Key="Brush.DisabledFg" Color="{StaticResource Color.DisabledFg}" />
-    <SolidColorBrush x:Key="Brush.Track" Color="{StaticResource Color.Track}" />
-    <SolidColorBrush x:Key="Brush.Sidebar" Color="{StaticResource Color.Sidebar}" />
-    <SolidColorBrush x:Key="Brush.RowAlt" Color="{StaticResource Color.RowAlt}" />
-    <SolidColorBrush x:Key="Brush.RowHover" Color="{StaticResource Color.RowHover}" />
+    <SolidColorBrush x:Key="Brush.Success"     Color="{StaticResource Color.Success}" />
+    <SolidColorBrush x:Key="Brush.Warning"     Color="{StaticResource Color.Warning}" />
+    <SolidColorBrush x:Key="Brush.Danger"      Color="{StaticResource Color.Danger}" />
+    <SolidColorBrush x:Key="Brush.DisabledBg"  Color="{StaticResource Color.DisabledBg}" />
+    <SolidColorBrush x:Key="Brush.DisabledFg"  Color="{StaticResource Color.DisabledFg}" />
+    <SolidColorBrush x:Key="Brush.Track"       Color="{StaticResource Color.Track}" />
+    <SolidColorBrush x:Key="Brush.Sidebar"     Color="{StaticResource Color.Sidebar}" />
+    <SolidColorBrush x:Key="Brush.RowAlt"      Color="{StaticResource Color.RowAlt}" />
+    <SolidColorBrush x:Key="Brush.RowHover"    Color="{StaticResource Color.RowHover}" />
     <SolidColorBrush x:Key="Brush.RowSelected" Color="{StaticResource Color.RowSelected}" />
 
     <SolidColorBrush x:Key="Brush.CatCompressed" Color="{StaticResource Color.CatCompressed}" />
-    <SolidColorBrush x:Key="Brush.CatDocument" Color="{StaticResource Color.CatDocument}" />
-    <SolidColorBrush x:Key="Brush.CatMusic" Color="{StaticResource Color.CatMusic}" />
-    <SolidColorBrush x:Key="Brush.CatProgram" Color="{StaticResource Color.CatProgram}" />
-    <SolidColorBrush x:Key="Brush.CatVideo" Color="{StaticResource Color.CatVideo}" />
+    <SolidColorBrush x:Key="Brush.CatDocument"   Color="{StaticResource Color.CatDocument}" />
+    <SolidColorBrush x:Key="Brush.CatMusic"      Color="{StaticResource Color.CatMusic}" />
+    <SolidColorBrush x:Key="Brush.CatProgram"    Color="{StaticResource Color.CatProgram}" />
+    <SolidColorBrush x:Key="Brush.CatVideo"      Color="{StaticResource Color.CatVideo}" />
+
+    <!-- Shadow effects — disabled (opacity 0) for flat clean dark design -->
+    <DropShadowEffect x:Key="Shadow.Button"       BlurRadius="0" ShadowDepth="0" Opacity="0" Color="#000000" />
+    <DropShadowEffect x:Key="Shadow.ButtonStrong" BlurRadius="0" ShadowDepth="0" Opacity="0" Color="#000000" />
+    <DropShadowEffect x:Key="Shadow.Input"        BlurRadius="0" ShadowDepth="0" Opacity="0" Color="#000000" />
+    <DropShadowEffect x:Key="Shadow.InputFocus"   BlurRadius="0" ShadowDepth="0" Opacity="0" Color="#000000" />
+    <DropShadowEffect x:Key="Shadow.Card"         BlurRadius="0" ShadowDepth="0" Opacity="0" Color="#000000" />
+    <DropShadowEffect x:Key="Shadow.CardDialog"   BlurRadius="0" ShadowDepth="0" Opacity="0" Color="#000000" />
+    <DropShadowEffect x:Key="Shadow.Popup"        BlurRadius="0" ShadowDepth="0" Opacity="0" Color="#000000" />
+    <DropShadowEffect x:Key="Shadow.ToolbarPill"  BlurRadius="0" ShadowDepth="0" Opacity="0" Color="#000000" />
+    <DropShadowEffect x:Key="Shadow.Logo"         BlurRadius="0" ShadowDepth="0" Opacity="0" Color="#000000" />
+
 </ResourceDictionary>

@@ -4,10 +4,10 @@
         xmlns:vm="clr-namespace:WDM.ViewModels"
         Title="Windows Download Manager"
         Icon="Assets/WDM.ico"
-        Width="918"
-        Height="560"
-        MinWidth="760"
-        MinHeight="420"
+        Width="1120"
+        Height="720"
+        MinWidth="960"
+        MinHeight="620"
         WindowStartupLocation="CenterScreen"
         Background="{DynamicResource Brush.Bg}">
     <Window.Resources>
@@ -48,69 +48,27 @@
 
     <Grid AllowDrop="True" DragOver="Root_DragOver" Drop="Root_Drop">
         <Grid.RowDefinitions>
-            <RowDefinition Height="Auto" /> <!-- Classic Menu Bar -->
             <RowDefinition Height="Auto" /> <!-- IDM Stacked Action Toolbar -->
             <RowDefinition Height="*" />    <!-- Main Body: Tree Sidebar + Download Grid -->
             <RowDefinition Height="22" />   <!-- Bottom Status Bar -->
         </Grid.RowDefinitions>
 
-        <!-- 1. Top Menu Bar (IDM style: Tasks, File, Downloads, View, Help, Registration) -->
-        <Border Grid.Row="0" Background="Transparent" Margin="4,0,4,0" Padding="0" BorderThickness="0">
-            <Menu Background="Transparent">
-                <MenuItem Header="Tasks" Style="{StaticResource MenuItem.Top}">
-                    <MenuItem Header="Add New Download..." Command="{Binding OpenAddDialogCommand}" InputGestureText="Ctrl+N" />
-                    <Separator />
-                    <MenuItem Header="Pause All" Command="{Binding PauseAllCommand}" />
-                    <MenuItem Header="Resume All" Command="{Binding StartQueueCommand}" />
-                    <Separator />
-                    <MenuItem Header="Exit" Click="MenuExit_Click" InputGestureText="Alt+F4" />
-                </MenuItem>
-
-                <MenuItem Header="File" Style="{StaticResource MenuItem.Top}">
-                    <MenuItem Header="Show Progress Window..." Command="{Binding ShowProgressDialogCommand}" />
-                    <MenuItem Header="Properties..." Command="{Binding PropertiesCommand}" />
-                    <Separator />
-                    <MenuItem Header="Open File" Command="{Binding OpenFileCommand}" />
-                    <MenuItem Header="Open Folder" Command="{Binding RevealCommand}" />
-                    <Separator />
-                    <MenuItem Header="Delete Selected" Command="{Binding RemoveCommand}" InputGestureText="Del" />
-                    <MenuItem Header="Delete All Completed" Command="{Binding ClearCompletedCommand}" />
-                </MenuItem>
-
-                <MenuItem Header="Downloads" Style="{StaticResource MenuItem.Top}">
-                    <MenuItem Header="Start Queue" Command="{Binding StartQueueCommand}" />
-                    <MenuItem Header="Stop Queue" Command="{Binding StopQueueCommand}" />
-                    <Separator />
-                    <MenuItem Header="Browser Extension Setup..." Click="MenuExtension_Click" />
-                    <MenuItem Header="Options..." Command="{Binding OptionsCommand}" InputGestureText="Ctrl+," />
-                </MenuItem>
-
-                <MenuItem Header="View" Style="{StaticResource MenuItem.Top}">
-                    <MenuItem Header="Clear Search" Command="{Binding ClearSearchCommand}" />
-                </MenuItem>
-
-                <MenuItem Header="Help" Style="{StaticResource MenuItem.Top}">
-                    <MenuItem Header="About WDM..." Command="{Binding AboutCommand}" />
-                </MenuItem>
-            </Menu>
-        </Border>
-
-        <!-- 2. IDM Action Toolbar (Icon on top, Text underneath) -->
-        <Grid Grid.Row="1" Margin="8,2,8,6">
+        <!-- 1. IDM Action Toolbar (Icon on top, Text underneath) -->
+        <Grid Grid.Row="0" Margin="10,10,10,8">
             <Border Style="{StaticResource CardShadow.Base}" />
             <Border Style="{StaticResource Card.Base}" Padding="8,4">
                 <DockPanel LastChildFill="True">
                 <!-- Search Box (Right-aligned) -->
-                <Grid DockPanel.Dock="Right" VerticalAlignment="Center" Margin="6,0,4,0" Height="28" MaxWidth="180">
+                <Grid DockPanel.Dock="Right" VerticalAlignment="Center" Margin="6,0,4,0" Height="38" MaxWidth="230">
                     <Border Style="{StaticResource ToolbarPillShadow}" />
                     <Border Style="{StaticResource ToolbarPill}">
-                        <Grid MinWidth="110" Width="140">
+                        <Grid MinWidth="200" Width="220">
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="*" />
                                 <ColumnDefinition Width="Auto" />
                                 <ColumnDefinition Width="Auto" />
                             </Grid.ColumnDefinitions>
-                            <TextBox Width="Auto" Height="24" Background="Transparent" BorderThickness="0" Padding="6,0" FontSize="12"
+                            <TextBox Width="Auto" Height="32" Background="Transparent" BorderThickness="0" Padding="8,0" FontSize="13"
                                      VerticalContentAlignment="Center" Text="{Binding SearchText, UpdateSourceTrigger=PropertyChanged}"
                                      ToolTip="Search downloads list">
                                 <TextBox.Template>
@@ -125,8 +83,8 @@
                                     Visibility="{Binding HasSearchText, Converter={StaticResource BoolToVis}}" Width="16" Height="16" ToolTip="Clear search" Margin="2,0">
                                 <TextBlock Text="&#xE10A;" FontFamily="{StaticResource Font.Icon}" FontSize="9" Foreground="{DynamicResource Brush.TextDim}" />
                             </Button>
-                            <TextBlock Grid.Column="2" Text="&#xE721;" FontFamily="{StaticResource Font.Icon}" FontSize="11"
-                                       Foreground="{DynamicResource Brush.TextDim}" Margin="4,0,6,0" VerticalAlignment="Center" />
+                            <TextBlock Grid.Column="2" Text="&#xE721;" FontFamily="{StaticResource Font.Icon}" FontSize="12"
+                                       Foreground="{DynamicResource Brush.TextDim}" Margin="4,0,8,0" VerticalAlignment="Center" />
                         </Grid>
                     </Border>
                 </Grid>
@@ -146,17 +104,17 @@
                        RenderOptions.BitmapScalingMode="HighQuality" SnapsToDevicePixels="True"
                        VerticalAlignment="Center" Margin="4,0,8,0" ToolTip="Windows Download Manager" />
                     <!-- 1. Add URL -->
-                    <Button Style="{StaticResource Button.IDMStacked}" Command="{Binding OpenAddDialogCommand}" ToolTip="Add new download URL (Ctrl+N)">
+                    <Button Style="{StaticResource Button.PrimaryStacked}" Command="{Binding OpenAddDialogCommand}" ToolTip="Add new download URL (Ctrl+N)">
                         <StackPanel HorizontalAlignment="Center">
-                            <TextBlock Text="&#xE710;" FontFamily="{StaticResource Font.Icon}" FontSize="21" Foreground="#2E9B57" HorizontalAlignment="Center" Margin="0,0,0,2" />
-                            <TextBlock Text="Add URL" FontSize="11" FontWeight="Medium" Foreground="{DynamicResource Brush.Text}" HorizontalAlignment="Center" />
+                            <TextBlock Text="&#xE710;" FontFamily="{StaticResource Font.Icon}" FontSize="21" Foreground="#FFFFFF" HorizontalAlignment="Center" Margin="0,0,0,2" />
+                            <TextBlock Text="Add URL" FontSize="11" FontWeight="Medium" Foreground="#FFFFFF" HorizontalAlignment="Center" />
                         </StackPanel>
                     </Button>
 
                     <!-- 2. Resume -->
                     <Button Style="{StaticResource Button.IDMStacked}" Command="{Binding ResumeCommand}" ToolTip="Resume selected download (Space)">
                         <StackPanel HorizontalAlignment="Center">
-                            <TextBlock Text="&#xE768;" FontFamily="{StaticResource Font.Icon}" FontSize="21" Foreground="{DynamicResource Brush.TextDim}" HorizontalAlignment="Center" Margin="0,0,0,2" />
+                            <TextBlock Text="&#xE768;" FontFamily="{StaticResource Font.Icon}" FontSize="21" Foreground="{DynamicResource Brush.StatusActive}" HorizontalAlignment="Center" Margin="0,0,0,2" />
                             <TextBlock Text="Resume" FontSize="11" Foreground="{DynamicResource Brush.Text}" HorizontalAlignment="Center" />
                         </StackPanel>
                     </Button>
@@ -164,7 +122,7 @@
                     <!-- 3. Stop -->
                     <Button Style="{StaticResource Button.IDMStacked}" Command="{Binding PauseCommand}" ToolTip="Stop selected download (Space)">
                         <StackPanel HorizontalAlignment="Center">
-                            <TextBlock Text="&#xE769;" FontFamily="{StaticResource Font.Icon}" FontSize="21" Foreground="{DynamicResource Brush.TextDim}" HorizontalAlignment="Center" Margin="0,0,0,2" />
+                            <TextBlock Text="&#xE769;" FontFamily="{StaticResource Font.Icon}" FontSize="21" Foreground="{DynamicResource Brush.Warning}" HorizontalAlignment="Center" Margin="0,0,0,2" />
                             <TextBlock Text="Stop" FontSize="11" Foreground="{DynamicResource Brush.Text}" HorizontalAlignment="Center" />
                         </StackPanel>
                     </Button>
@@ -172,7 +130,7 @@
                     <!-- 4. Stop All -->
                     <Button Style="{StaticResource Button.IDMStacked}" Command="{Binding PauseAllCommand}" ToolTip="Stop all active downloads">
                         <StackPanel HorizontalAlignment="Center">
-                            <TextBlock Text="&#xE71A;" FontFamily="{StaticResource Font.Icon}" FontSize="21" Foreground="{DynamicResource Brush.TextDim}" HorizontalAlignment="Center" Margin="0,0,0,2" />
+                            <TextBlock Text="&#xE71A;" FontFamily="{StaticResource Font.Icon}" FontSize="21" Foreground="{DynamicResource Brush.Danger}" HorizontalAlignment="Center" Margin="0,0,0,2" />
                             <TextBlock Text="Stop All" FontSize="11" Foreground="{DynamicResource Brush.Text}" HorizontalAlignment="Center" />
                         </StackPanel>
                     </Button>
@@ -180,7 +138,7 @@
                     <!-- 5. Delete -->
                     <Button Style="{StaticResource Button.IDMStacked}" Command="{Binding RemoveCommand}" ToolTip="Delete selected download (Del)">
                         <StackPanel HorizontalAlignment="Center">
-                            <TextBlock Text="&#xE74D;" FontFamily="{StaticResource Font.Icon}" FontSize="21" Foreground="{DynamicResource Brush.TextDim}" HorizontalAlignment="Center" Margin="0,0,0,2" />
+                            <TextBlock Text="&#xE74D;" FontFamily="{StaticResource Font.Icon}" FontSize="21" Foreground="{DynamicResource Brush.Danger}" HorizontalAlignment="Center" Margin="0,0,0,2" />
                             <TextBlock Text="Delete" FontSize="11" Foreground="{DynamicResource Brush.Text}" HorizontalAlignment="Center" />
                         </StackPanel>
                     </Button>
@@ -189,7 +147,7 @@
                     <Button Style="{StaticResource Button.IDMStacked}" Command="{Binding ClearCompletedCommand}" ToolTip="Delete all completed downloads">
                         <StackPanel HorizontalAlignment="Center">
                             <TextBlock Text="&#xE894;" FontFamily="{StaticResource Font.Icon}" FontSize="21" Foreground="{DynamicResource Brush.TextDim}" HorizontalAlignment="Center" Margin="0,0,0,2" />
-                            <TextBlock Text="Delete Co..." FontSize="11" Foreground="{DynamicResource Brush.Text}" HorizontalAlignment="Center" />
+                            <TextBlock Text="Clear Done" FontSize="11" Foreground="{DynamicResource Brush.Text}" HorizontalAlignment="Center" />
                         </StackPanel>
                     </Button>
 
@@ -208,13 +166,21 @@
                             <TextBlock Text="About" FontSize="11" Foreground="{DynamicResource Brush.Text}" HorizontalAlignment="Center" />
                         </StackPanel>
                     </Button>
+
+                    <!-- 10. Theme Toggle -->
+                    <Button x:Name="ThemeToggleBtn" Style="{StaticResource Button.IDMStacked}" Click="ThemeToggle_Click" ToolTip="Toggle light / dark theme">
+                        <StackPanel HorizontalAlignment="Center">
+                            <TextBlock x:Name="ThemeToggleIcon" Text="&#xE706;" FontFamily="{StaticResource Font.Icon}" FontSize="21" Foreground="{DynamicResource Brush.Accent}" HorizontalAlignment="Center" Margin="0,0,0,2" />
+                            <TextBlock x:Name="ThemeToggleLabel" Text="Light" FontSize="11" Foreground="{DynamicResource Brush.Text}" HorizontalAlignment="Center" />
+                        </StackPanel>
+                    </Button>
                 </StackPanel>
             </DockPanel>
             </Border>
         </Grid>
 
-        <!-- 3. Main Body (Categories Tree Sidebar + IDM Download Table) -->
-        <Grid Grid.Row="2">
+        <!-- 2. Main Body (Categories Tree Sidebar + IDM Download Table) -->
+        <Grid Grid.Row="1">
             <Grid.ColumnDefinitions>
                 <ColumnDefinition x:Name="SidebarColumn" Width="{Binding SidebarWidth}" />
                 <ColumnDefinition Width="Auto" />
@@ -290,11 +256,11 @@
                                         </TextBlock.Style>
                                     </TextBlock>
 
-                                    <!-- Category Count -->
-                                    <TextBlock Grid.Column="2" Text="{Binding CountText}" FontSize="11"
-                                               Foreground="{DynamicResource Brush.TextDim}" VerticalAlignment="Center" Margin="6,0,4,0">
-                                        <TextBlock.Style>
-                                            <Style TargetType="TextBlock">
+                                    <!-- Category Count pill -->
+                                    <Border Grid.Column="2" CornerRadius="9" Background="{DynamicResource Brush.SurfaceAlt}" Padding="7,2"
+                                            Margin="6,0,2,0" VerticalAlignment="Center">
+                                        <Border.Style>
+                                            <Style TargetType="Border">
                                                 <Setter Property="Visibility" Value="Visible" />
                                                 <Style.Triggers>
                                                     <DataTrigger Binding="{Binding IsSeparator}" Value="True">
@@ -305,8 +271,9 @@
                                                     </DataTrigger>
                                                 </Style.Triggers>
                                             </Style>
-                                        </TextBlock.Style>
-                                    </TextBlock>
+                                        </Border.Style>
+                                        <TextBlock Text="{Binding CountText}" FontSize="11" Foreground="{DynamicResource Brush.TextDim}" />
+                                    </Border>
                                 </Grid>
                             </DataTemplate>
                         </ListBox.ItemTemplate>
@@ -324,7 +291,7 @@
             <!-- IDM Download DataGrid Table -->
             <Grid Grid.Column="2" Margin="4,0,8,8">
                 <Border Style="{StaticResource CardShadow.Base}" />
-                <Border x:Name="ListCard" Style="{StaticResource Card.Base}" Padding="10,8">
+                <Border x:Name="ListCard" Style="{StaticResource Card.Base}" Padding="8">
                     <Grid>
                     <DataGrid x:Name="TaskGrid"
                           ItemsSource="{Binding TasksView}"
@@ -334,14 +301,14 @@
                           AutoGenerateColumns="False"
                           CanUserAddRows="False"
                           RowHeaderWidth="0"
-                          RowHeight="32"
+                          RowHeight="42"
                           HeadersVisibility="Column"
                           SelectionMode="Extended"
                           CanUserSortColumns="False"
                           CanUserReorderColumns="False"
-                          GridLinesVisibility="All"
+                          GridLinesVisibility="Horizontal"
                           HorizontalGridLinesBrush="{DynamicResource Brush.GridLine}"
-                          VerticalGridLinesBrush="{DynamicResource Brush.GridLine}"
+                          VerticalGridLinesBrush="Transparent"
                           ScrollViewer.VerticalScrollBarVisibility="Auto"
                           ScrollViewer.HorizontalScrollBarVisibility="Disabled"
                           MouseDoubleClick="TaskGrid_MouseDoubleClick">
@@ -478,6 +445,23 @@
                             </DataGridTemplateColumn.CellTemplate>
                         </DataGridTemplateColumn>
 
+                        <!-- Progress -->
+                        <DataGridTemplateColumn Header="Progress" Width="130" HeaderStyle="{StaticResource Header.Center}">
+                            <DataGridTemplateColumn.CellTemplate>
+                                <DataTemplate>
+                                    <Grid Margin="6,0">
+                                        <Grid.RowDefinitions>
+                                            <RowDefinition Height="Auto" />
+                                            <RowDefinition Height="Auto" />
+                                        </Grid.RowDefinitions>
+                                        <ProgressBar Grid.Row="0" Style="{StaticResource ProgressBar.IDM}" Value="{Binding Progress}" />
+                                        <TextBlock Grid.Row="1" Text="{Binding ProgressText}" FontSize="10.5"
+                                                   Foreground="{DynamicResource Brush.TextMuted}" HorizontalAlignment="Center" Margin="0,3,0,0" />
+                                    </Grid>
+                                </DataTemplate>
+                            </DataGridTemplateColumn.CellTemplate>
+                        </DataGridTemplateColumn>
+
                         <!-- Time left -->
                         <DataGridTemplateColumn Header="Time left" Width="80" HeaderStyle="{StaticResource Header.Right}">
                             <DataGridTemplateColumn.CellTemplate>
@@ -488,8 +472,8 @@
                             </DataGridTemplateColumn.CellTemplate>
                         </DataGridTemplateColumn>
 
-                        <!-- Transfer rate -->
-                        <DataGridTemplateColumn Header="Transfer rate" Width="105" HeaderStyle="{StaticResource Header.Right}">
+                        <!-- Speed -->
+                        <DataGridTemplateColumn Header="Speed" Width="105" HeaderStyle="{StaticResource Header.Right}">
                             <DataGridTemplateColumn.CellTemplate>
                                 <DataTemplate>
                                     <TextBlock Text="{Binding SpeedText}" FontFamily="Consolas, monospace" FontSize="11.5"
@@ -519,15 +503,35 @@
                 <!-- Empty State Placeholder -->
                 <Grid HorizontalAlignment="Center" VerticalAlignment="Center"
                       Visibility="{Binding HasNoVisibleTasks, Converter={StaticResource BoolToVis}}">
-                    <Border CornerRadius="6" Effect="{StaticResource Shadow.ButtonStrong}" />
-                    <Border Padding="32,24" Background="{DynamicResource Brush.Surface}" CornerRadius="6">
-                        <StackPanel HorizontalAlignment="Center">
-                            <Border Width="48" Height="48" CornerRadius="24" Background="{DynamicResource Brush.AccentSoft}" HorizontalAlignment="Center" Margin="0,0,0,12">
-                                <TextBlock Text="&#xE896;" FontFamily="{StaticResource Font.Icon}" FontSize="22" Foreground="{DynamicResource Brush.Accent}" HorizontalAlignment="Center" VerticalAlignment="Center" />
+                    <Border Style="{StaticResource CardShadow.Base}" />
+                    <Border Style="{StaticResource Card.Base}" Padding="36,30" MaxWidth="380">
+                        <StackPanel>
+                            <Border Width="104" Height="104" CornerRadius="52" Background="{DynamicResource Brush.SurfaceAlt}" HorizontalAlignment="Center" Margin="0,0,0,18">
+                                <TextBlock Text="&#xE896;" FontFamily="{StaticResource Font.Icon}" FontSize="42" Foreground="{DynamicResource Brush.TextDim}" HorizontalAlignment="Center" VerticalAlignment="Center" />
                             </Border>
-                            <TextBlock Text="{Binding EmptyStateTitle}" FontSize="16" FontWeight="SemiBold" HorizontalAlignment="Center" Margin="0,0,0,4" />
-                            <TextBlock Text="{Binding EmptyStateSubtitle}" Foreground="{DynamicResource Brush.TextDim}" FontSize="12" HorizontalAlignment="Center" Margin="0,0,0,14" />
-                            <Button Content="+ Add URL" Style="{StaticResource Button.Accent}" Command="{Binding OpenAddDialogCommand}" HorizontalAlignment="Center" Width="120" Height="30" />
+                            <TextBlock Text="{Binding EmptyStateTitle}" FontSize="18" FontWeight="SemiBold" HorizontalAlignment="Center" Margin="0,0,0,6" />
+                            <TextBlock Text="{Binding EmptyStateSubtitle}" Foreground="{DynamicResource Brush.TextDim}" FontSize="12.5" HorizontalAlignment="Center" TextAlignment="Center" TextWrapping="Wrap" Margin="0,0,0,20" />
+                            <Button Content="+ Add URL" Style="{StaticResource Button.Accent}" Command="{Binding OpenAddDialogCommand}" HorizontalAlignment="Center" Width="130" />
+                            <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,22,0,0">
+                                <Border Background="{DynamicResource Brush.SurfaceAlt}" CornerRadius="9" Padding="10,5" Margin="0,0,6,0">
+                                    <StackPanel Orientation="Horizontal">
+                                        <TextBlock Text="&#xE945;" FontFamily="{StaticResource Font.Icon}" FontSize="12" Foreground="{DynamicResource Brush.Accent}" Margin="0,0,6,0" VerticalAlignment="Center" />
+                                        <TextBlock Text="Fast downloads" FontSize="11" Foreground="{DynamicResource Brush.TextDim}" VerticalAlignment="Center" />
+                                    </StackPanel>
+                                </Border>
+                                <Border Background="{DynamicResource Brush.SurfaceAlt}" CornerRadius="9" Padding="10,5" Margin="0,0,6,0">
+                                    <StackPanel Orientation="Horizontal">
+                                        <TextBlock Text="&#xE777;" FontFamily="{StaticResource Font.Icon}" FontSize="12" Foreground="{DynamicResource Brush.StatusComplete}" Margin="0,0,6,0" VerticalAlignment="Center" />
+                                        <TextBlock Text="Safe &amp; verified" FontSize="11" Foreground="{DynamicResource Brush.TextDim}" VerticalAlignment="Center" />
+                                    </StackPanel>
+                                </Border>
+                                <Border Background="{DynamicResource Brush.SurfaceAlt}" CornerRadius="9" Padding="10,5">
+                                    <StackPanel Orientation="Horizontal">
+                                        <TextBlock Text="&#xE8B7;" FontFamily="{StaticResource Font.Icon}" FontSize="12" Foreground="{DynamicResource Brush.Warning}" Margin="0,0,6,0" VerticalAlignment="Center" />
+                                        <TextBlock Text="Smart file management" FontSize="11" Foreground="{DynamicResource Brush.TextDim}" VerticalAlignment="Center" />
+                                    </StackPanel>
+                                </Border>
+                            </StackPanel>
                         </StackPanel>
                     </Border>
                 </Grid>
@@ -536,8 +540,8 @@
             </Grid>
         </Grid>
 
-        <!-- 4. Bottom Status Bar -->
-        <Border Grid.Row="3" Background="Transparent" Margin="0" Padding="10,0" BorderThickness="0">
+        <!-- 3. Bottom Status Bar -->
+        <Border Grid.Row="2" Background="Transparent" Margin="0" Padding="10,0" BorderThickness="0">
             <DockPanel>
                 <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center">
                     <Canvas x:Name="SparklineCanvas" Width="80" Height="16" VerticalAlignment="Center" Margin="0,0,8,0" />

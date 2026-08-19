@@ -20,7 +20,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
     private FilterKind _filter = FilterKind.All;
     private string _searchText = "";
     private bool _isSidebarCollapsed = false;
-    private double _sidebarWidth = 155;
+    private double _sidebarWidth = 230;
 
     public ObservableCollection<DownloadTask> Tasks { get; } = new();
     public ObservableCollection<DownloadTask> SelectedTasks { get; } = new();
@@ -221,7 +221,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
     {
         if (IsSidebarCollapsed)
             return;
-        _sidebarWidth = Math.Clamp(width, 110, 320);
+        _sidebarWidth = Math.Clamp(width, 140, 360);
         OnPropertyChanged(nameof(SidebarWidth));
     }
 
