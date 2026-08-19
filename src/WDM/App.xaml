@@ -7,6 +7,7 @@
             <ResourceDictionary.MergedDictionaries>
                 <ResourceDictionary x:Name="PaletteDictionary" Source="Themes/Palette.Light.xaml" />
                 <ResourceDictionary Source="Themes/Theme.xaml" />
+                <ResourceDictionary Source="Themes/ModernOverrides.xaml" />
             </ResourceDictionary.MergedDictionaries>
         </ResourceDictionary>
     </Application.Resources>
