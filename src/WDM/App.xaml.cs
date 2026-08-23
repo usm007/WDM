@@ -1,5 +1,7 @@
 using System.IO;
 using System.Linq;
+using System.Runtime.InteropServices;
+using System.Threading;
 using System.Windows;
 using System.Windows.Threading;
 using WDM.Services;
@@ -12,6 +14,17 @@ public partial class App : Application
     /// the installer): the window starts hidden in the system tray.</summary>
     public static bool StartMinimized { get; private set; }
 
+    private static Mutex? _singleInstanceMutex;
+    private const string MutexId = @"Local\WDM.SingleInstance.4F3B2C0A-8D2E-4B7A-9C1E-6A5B4D3E2F10";
+
+    [DllImport("user32.dll")]
+    private static extern bool SetForegroundWindow(IntPtr hWnd);
+
+    [DllImport("user32.dll")]
+    private static extern bool ShowWindowAsync(IntPtr hWnd, int nCmdShow);
+
+    private const int SW_RESTORE = 9;
+
     protected override void OnStartup(StartupEventArgs e)
     {
         AppDomain.CurrentDomain.UnhandledException += (s, args) =>
@@ -22,6 +35,17 @@ public partial class App : Application
         {
             LogException(args.Exception);
         };
+
+        // Single instance: if another WDM is already running, surface its window
+        // instead of starting a second copy.
+        _singleInstanceMutex = new Mutex(initiallyOwned: true, MutexId, out bool createdNew);
+        if (!createdNew)
+        {
+            BringExistingInstanceToFront();
+            Shutdown();
+            return;
+        }
+
         base.OnStartup(e);
         StartMinimized = e.Args.Any(a =>
             string.Equals(a, "/minimized", StringComparison.OrdinalIgnoreCase) ||
@@ -35,6 +59,27 @@ public partial class App : Application
             ? new WdmOriginalMainWindow()
             : new MainWindow();
         mainWindow.Show();
+    }
+
+    /// <summary>Finds a running WDM main window and restores + focuses it.</summary>
+    private static void BringExistingInstanceToFront()
+    {
+        var current = System.Diagnostics.Process.GetCurrentProcess();
+        foreach (var process in System.Diagnostics.Process.GetProcessesByName(current.ProcessName))
+        {
+            if (process.Id == current.Id || process.MainWindowHandle == IntPtr.Zero)
+                continue;
+            ShowWindowAsync(process.MainWindowHandle, SW_RESTORE);
+            SetForegroundWindow(process.MainWindowHandle);
+            break;
+        }
+    }
+
+    protected override void OnExit(ExitEventArgs e)
+    {
+        _singleInstanceMutex?.ReleaseMutex();
+        _singleInstanceMutex?.Dispose();
+        base.OnExit(e);
     }
 
     public static void LogException(Exception? ex)
