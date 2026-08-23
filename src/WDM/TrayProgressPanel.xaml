@@ -1,0 +1,39 @@
+﻿<Window x:Class="WDM.TrayProgressPanel"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:shell="clr-namespace:System.Windows.Shell;assembly=PresentationFramework"
+        Title="WDM Progress"
+        Width="88"
+        SizeToContent="Height"
+        UseLayoutRounding="True"
+        SnapsToDevicePixels="True"
+        WindowStyle="None"
+        ResizeMode="NoResize"
+        ShowInTaskbar="False"
+        Topmost="True"
+        Background="{DynamicResource Brush.SurfaceAlt}"
+        ShowActivated="False"
+        Focusable="False"
+        MouseLeftButtonDown="Pill_MouseLeftButtonDown"
+        MouseMove="Pill_MouseMove"
+        MouseLeftButtonUp="Pill_MouseLeftButtonUp"
+        SizeChanged="Window_SizeChanged">
+    <!-- WindowChrome gives hardware-accelerated (DWM-composited) rounded corners
+         without AllowsTransparency, which would force software rendering and
+         make dragging laggy. -->
+    <shell:WindowChrome.WindowChrome>
+        <shell:WindowChrome CaptionHeight="0" ResizeBorderThickness="1"
+                            GlassFrameThickness="0" CornerRadius="12" />
+    </shell:WindowChrome.WindowChrome>
+    <Grid Height="24">
+        <!-- Content clipped to the rounded pill shape so the green fill never escapes -->
+        <Grid x:Name="ClipGrid" ClipToBounds="True">
+            <!-- Progress fill: grows from the left -->
+            <Border x:Name="Fill" Background="{DynamicResource Brush.StatusComplete}" HorizontalAlignment="Left"
+                    Width="{Binding FillWidth}" />
+            <!-- % and speed on the same row, very small -->
+            <TextBlock Text="{Binding StatusText}" FontSize="10" FontWeight="SemiBold"
+                       Foreground="{DynamicResource Brush.Text}" HorizontalAlignment="Center" VerticalAlignment="Center" />
+        </Grid>
+    </Grid>
+</Window>

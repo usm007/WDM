@@ -1,0 +1,34 @@
+bin/
+obj/
+.vs/
+*.user
+
+# Build artifacts, packaged output and junk
+output/
+publish/
+staging/
+WDM_Payload.zip
+idman643build8.exe
+*.bak
+app_icon_1024*.png
+*.tmp
+
+# Development scratch / bug reports
+allbugs.md
+bugs.md
+src/WDM/bugs.md
+_defined.txt
+Ui.md
+src/WDM/dark.md
+src/WDM/Assets/icon.png
+src/WDM/Assets/logo1.png
+src/WDM.Setup/App.xaml
+src/WDM.Setup/App.xaml.cs
+src/WDM.Setup/MainWindow.xaml
+src/WDM.Setup/MainWindow.xaml.cs
+src/WDM.Setup/WDM.Setup.csproj
+
+# IDE / agent skills
+.agents/
+.claude/
+.opencode/
