@@ -9,6 +9,8 @@
         MinWidth="760"
         MinHeight="420"
         WindowStartupLocation="CenterScreen"
+        UseLayoutRounding="True"
+        SnapsToDevicePixels="True"
         Background="{DynamicResource Brush.Bg}">
     <Window.Resources>
         <vm:TaskStatusToColorConverter x:Key="StatusColor" />
@@ -553,3 +555,4 @@
         </Border>
     </Grid>
 </Window>
+
