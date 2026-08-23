@@ -1,7 +1,8 @@
 # WDM — Windows Download Manager
 
 <p align="center">
-  <img src="banner.png" alt="WDM — Windows Download Manager" width="100%" />
+  <img width="1774" height="887" alt="ChatGPT Image Aug 18, 2026, 07_42_38 PM" src="https://github.com/user-attachments/assets/07643c60-d987-4859-bc99-a0bcbe099557" />
+
 </p>
 
 An IDM-inspired no nonsense download manager for Windows, written in C# / WPF / .NET 8.
