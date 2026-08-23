@@ -1,0 +1,104 @@
+<Window x:Class="WDM.TaskPropertiesDialog"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="clr-namespace:WDM.ViewModels"
+        Title="Download Properties — WDM"
+        Icon="Assets/WDM.ico"
+        Width="540"
+        Height="540"
+        WindowStartupLocation="CenterScreen"
+        ResizeMode="NoResize"
+        ShowInTaskbar="True"
+        Background="{DynamicResource Brush.Surface}">
+    <Grid Margin="20,16,20,20">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+
+        <!-- Header -->
+        <DockPanel Grid.Row="0" Margin="0,0,0,14">
+            <TextBlock x:Name="StatusText" DockPanel.Dock="Right" FontSize="13" FontWeight="Medium" VerticalAlignment="Center" />
+            <TextBlock x:Name="FileNameText" Style="{StaticResource Text.Section}" FontSize="16" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
+        </DockPanel>
+
+        <!-- Properties Body Grid -->
+        <Grid Grid.Row="1" Margin="0,4">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="130" />
+                <ColumnDefinition Width="*" />
+            </Grid.ColumnDefinitions>
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+            </Grid.RowDefinitions>
+
+            <!-- URL -->
+            <TextBlock Grid.Row="0" Grid.Column="0" Text="Download URL" Style="{StaticResource Label.Field}" Margin="0,6" />
+            <DockPanel Grid.Row="0" Grid.Column="1" Margin="0,6">
+                <Button DockPanel.Dock="Right" Style="{StaticResource Button.Icon}" Click="CopyUrlClick" ToolTip="Copy URL" Width="24" Height="24" Margin="6,0,0,0">
+                    <TextBlock Text="&#xF0770;" FontFamily="{StaticResource Font.Icon}" FontSize="12" />
+                </Button>
+                <TextBlock x:Name="UrlText" FontSize="12" TextWrapping="Wrap" VerticalAlignment="Center" Foreground="{DynamicResource Brush.Accent}" />
+            </DockPanel>
+
+            <!-- Save Folder -->
+            <TextBlock Grid.Row="1" Grid.Column="0" Text="Save location" Style="{StaticResource Label.Field}" Margin="0,6" />
+            <TextBlock Grid.Row="1" Grid.Column="1" x:Name="FolderText" FontSize="12" TextWrapping="Wrap" Margin="0,6" VerticalAlignment="Center" />
+
+            <!-- Size -->
+            <TextBlock Grid.Row="2" Grid.Column="0" Text="Total size" Style="{StaticResource Label.Field}" Margin="0,6" />
+            <TextBlock Grid.Row="2" Grid.Column="1" x:Name="SizeText" FontSize="12" Margin="0,6" VerticalAlignment="Center" />
+
+            <!-- Progress -->
+            <TextBlock Grid.Row="3" Grid.Column="0" Text="Progress" Style="{StaticResource Label.Field}" Margin="0,6" />
+            <StackPanel Grid.Row="3" Grid.Column="1" Margin="0,6">
+                <ProgressBar x:Name="ProgressBar" Height="8" Style="{StaticResource ProgressBar.Download}" Maximum="100" />
+                <TextBlock x:Name="PercentText" FontSize="11" Foreground="{DynamicResource Brush.TextDim}" Margin="0,4,0,0" />
+            </StackPanel>
+
+            <!-- Speed -->
+            <TextBlock Grid.Row="4" Grid.Column="0" Text="Speed" Style="{StaticResource Label.Field}" Margin="0,6" />
+            <TextBlock Grid.Row="4" Grid.Column="1" x:Name="SpeedText" FontSize="12" Margin="0,6" VerticalAlignment="Center" />
+
+            <!-- Threads / Connections -->
+            <TextBlock Grid.Row="5" Grid.Column="0" Text="Connections" Style="{StaticResource Label.Field}" Margin="0,6" />
+            <TextBlock Grid.Row="5" Grid.Column="1" x:Name="ChunksText" FontSize="12" Margin="0,6" VerticalAlignment="Center" />
+
+            <!-- Added Date -->
+            <TextBlock Grid.Row="6" Grid.Column="0" Text="Added" Style="{StaticResource Label.Field}" Margin="0,6" />
+            <TextBlock Grid.Row="6" Grid.Column="1" x:Name="AddedText" FontSize="12" Margin="0,6" VerticalAlignment="Center" />
+
+            <!-- Category -->
+            <TextBlock Grid.Row="7" Grid.Column="0" Text="Category" Style="{StaticResource Label.Field}" Margin="0,6" />
+            <TextBlock Grid.Row="7" Grid.Column="1" x:Name="CategoryText" FontSize="12" Margin="0,6" VerticalAlignment="Center" />
+
+            <!-- Priority -->
+            <TextBlock Grid.Row="8" Grid.Column="0" Text="Priority" Style="{StaticResource Label.Field}" Margin="0,6" />
+            <TextBlock Grid.Row="8" Grid.Column="1" x:Name="PriorityText" FontSize="12" Margin="0,6" VerticalAlignment="Center" />
+
+            <!-- Custom Headers -->
+            <TextBlock Grid.Row="9" Grid.Column="0" Text="Custom headers" Style="{StaticResource Label.Field}" Margin="0,6" />
+            <TextBlock Grid.Row="9" Grid.Column="1" x:Name="HeadersText" FontSize="11" TextWrapping="Wrap" Margin="0,6" VerticalAlignment="Center" />
+
+            <!-- Checksum -->
+            <TextBlock Grid.Row="10" Grid.Column="0" Text="SHA-256 checksum" Foreground="{DynamicResource Brush.TextDim}" FontSize="11" FontWeight="Medium" Margin="0,6" />
+            <TextBlock Grid.Row="10" Grid.Column="1" x:Name="ChecksumText" FontSize="11" TextWrapping="Wrap" Margin="0,6" VerticalAlignment="Center" FontFamily="Consolas, monospace" />
+        </Grid>
+
+        <!-- Dialog Buttons -->
+        <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,16,0,0">
+            <Button Content="Open folder" Style="{StaticResource Button.Secondary}" Click="FolderClick" MinWidth="110" Height="30" />
+            <Button Content="Close" Style="{StaticResource Button.Secondary}" IsCancel="True" Click="CloseClick" MinWidth="90" Height="30" Margin="10,0,0,0" />
+        </StackPanel>
+    </Grid>
+</Window>
