@@ -11,7 +11,7 @@ using WDM.ViewModels;
 
 namespace WDM;
 
-public partial class MainWindow : Window
+public partial class WdmOriginalMainWindow : Window
 {
     private readonly MainViewModel _viewModel;
     private readonly CaptureServer _captureServer;
@@ -21,7 +21,7 @@ public partial class MainWindow : Window
     private bool _exiting;
     private DownloadCompleteDialog? _completeDialog;
 
-    public MainWindow()
+    public WdmOriginalMainWindow()
     {
         InitializeComponent();
         _viewModel = new MainViewModel();
@@ -33,7 +33,6 @@ public partial class MainWindow : Window
         _viewModel.AboutRequested += ShowAbout;
         _viewModel.ShowProgressDialogRequested += task => ShowProgressDialog(task);
         _viewModel.RefreshLinkRequested += task => ShowRefreshLink(task);
-        _viewModel.DeletePromptRequested += ShowDeletePrompt;
         _viewModel.SpeedHistoryUpdated += history => _dispatcher.BeginInvoke(() => RenderSparkline(history));
 
         _viewModel.TaskCompleted += task =>
@@ -62,7 +61,7 @@ public partial class MainWindow : Window
         _tray.Activated += () => _dispatcher.BeginInvoke(RestoreWindow);
         _tray.NewDownloadRequested += () => _dispatcher.BeginInvoke(() => ShowAddDialog());
         _tray.PauseAllRequested += () => _dispatcher.BeginInvoke(() => _viewModel.Engine.PauseAll());
-        _tray.ResumeAllRequested += () => _dispatcher.BeginInvoke(() => _viewModel.ResumeAll());
+        _tray.ResumeAllRequested += () => _dispatcher.BeginInvoke(() => _viewModel.Engine.ResumeAll());
         _tray.ExitRequested += () => _dispatcher.BeginInvoke(ExitApp);
 
         var trayTimer = new System.Windows.Threading.DispatcherTimer
@@ -75,8 +74,7 @@ public partial class MainWindow : Window
             if (active is not null)
             {
                 // The floating pill (docked to the right edge) shows % + speed.
-                string speed = string.IsNullOrEmpty(active.SpeedText) ? "0 B/s" : active.SpeedText;
-                _tray.SetProgress(active.Progress, speed, active.FileName ?? "");
+                _tray.SetProgress(active.Progress, active.SpeedText ?? "0 B/s", active.FileName ?? "");
                 UpdateProgressPanel(_viewModel.Settings.ShowTrayProgress ? active : null);
             }
             else
@@ -88,10 +86,11 @@ public partial class MainWindow : Window
         };
         trayTimer.Start();
 
-        ApplyRoundedClip(ListCard);
+        ApplyRoundedClip(MainPanel);
 
         Loaded += (_, _) =>
         {
+            UpdateThemeToggle();
             BrowserIntegration.DeployExtension();
             if (!_captureServer.IsConnected && !_viewModel.Settings.HasPromptedExtensionInstall && !App.StartMinimized)
             {
@@ -119,7 +118,6 @@ public partial class MainWindow : Window
     {
         base.OnSourceInitialized(e);
         RemoveNativeWindowShadow();
-        ThemeService.ApplyTitleBar(this);
     }
 
     private const int GCL_STYLE = -20;
@@ -149,11 +147,42 @@ public partial class MainWindow : Window
             border.Clip = new RectangleGeometry
             {
                 Rect = new Rect(0, 0, border.ActualWidth, border.ActualHeight),
-                RadiusX = 8,
-                RadiusY = 8,
+                RadiusX = 12,
+                RadiusY = 12,
             };
         };
     }
+
+    private void ThemeToggle_Click(object sender, RoutedEventArgs e)
+    {
+        bool dark = !ThemeService.IsDark;
+        ThemeService.Apply(dark);
+
+        // Re-apply DWM title bar colour to every currently open window.
+        foreach (Window w in Application.Current.Windows)
+            ThemeService.ApplyTitleBar(w);
+
+        UpdateThemeToggle();
+    }
+
+    /// <summary>Keeps the toolbar toggle in sync with the current theme:
+    /// sun = currently dark (click â†’ go light), moon = currently light (click â†’ go dark).</summary>
+    private void UpdateThemeToggle()
+    {
+        bool dark = ThemeService.IsDark;
+        ThemeToggleIcon.Text  = dark ? "\uE706" : "\uE708";
+        ThemeToggleLabel.Text = dark ? "Light Mode" : "Dark Mode";
+    }
+
+    private void TitleBar_MouseDown(object sender, MouseButtonEventArgs e)
+    {
+        if (e.ChangedButton == MouseButton.Left)
+            DragMove();
+    }
+
+    private void MinimizeWindow_Click(object sender, RoutedEventArgs e) => WindowState = WindowState.Minimized;
+    private void MaximizeWindow_Click(object sender, RoutedEventArgs e) => WindowState = WindowState == WindowState.Maximized ? WindowState.Normal : WindowState.Maximized;
+    private void CloseWindow_Click(object sender, RoutedEventArgs e) => Close();
 
     private System.Windows.Threading.Dispatcher _dispatcher =>
         System.Windows.Application.Current.Dispatcher;
@@ -233,13 +262,6 @@ public partial class MainWindow : Window
         var dialog = new RefreshLinkDialog(task) { Owner = this };
         if (dialog.ShowDialog() == true)
             _viewModel.ApplyLinkRefresh(task, dialog.NewUrl);
-    }
-
-    private void ShowDeletePrompt(DeletePromptRequest prompt)
-    {
-        var dialog = new DeleteConfirmDialog(prompt.Message, prompt.DiskChecked) { Owner = this };
-        if (dialog.ShowDialog() == true)
-            prompt.DeleteFromDisk = dialog.DeleteFromDisk;
     }
 
     private void Root_DragOver(object sender, DragEventArgs e)
@@ -351,7 +373,7 @@ public partial class MainWindow : Window
         {
             _tray.ShowBalloon(
                 "WDM update available",
-                $"WDM {latest.Version} is available — click to download and install.",
+                $"WDM {latest.Version} is available â€” click to download and install.",
                 () => _dispatcher.BeginInvoke(async () => await DownloadAndInstallUpdateAsync(latest)));
             _ = _dispatcher.BeginInvoke(() => ShowUpdatePrompt(latest));
         }
@@ -372,18 +394,18 @@ public partial class MainWindow : Window
     {
         if (release is null || string.IsNullOrWhiteSpace(release.InstallerUrl))
         {
-            _tray.ShowBalloon("No download available", "This release has no installer attached yet — open the releases page instead.");
+            _tray.ShowBalloon("No download available", "This release has no installer attached yet â€” open the releases page instead.");
             return;
         }
 
         try
         {
-            _tray.ShowBalloon("WDM update", "Downloading the new installer…");
+            _tray.ShowBalloon("WDM update", "Downloading the new installerâ€¦");
             string installer = await UpdateChecker.DownloadInstallerAsync(release, progress =>
             {
                 int pct = (int)Math.Round(progress * 100);
                 if (pct % 25 == 0)
-                    _dispatcher.BeginInvoke(() => _tray.ShowBalloon("WDM update", $"Downloading the new installer… {pct}%"));
+                    _dispatcher.BeginInvoke(() => _tray.ShowBalloon("WDM update", $"Downloading the new installerâ€¦ {pct}%"));
             });
 
             // Let the installer take over; it closes and restarts WDM.
@@ -401,14 +423,6 @@ public partial class MainWindow : Window
     private void TaskGrid_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
         _viewModel.SetBulkSelection(TaskGrid.SelectedItems.OfType<DownloadTask>());
-    }
-
-    private void SidebarSplitter_DragCompleted(object sender, System.Windows.Controls.Primitives.DragCompletedEventArgs e)
-    {
-        _viewModel.SetSidebarWidth(SidebarColumn.ActualWidth);
-        // The splitter sets a local width; clear it so the {Binding SidebarWidth}
-        // keeps driving collapse/expand and future resize drags stay consistent.
-        SidebarColumn.ClearValue(System.Windows.Controls.ColumnDefinition.WidthProperty);
     }
 
     private void ActionPauseClick(object sender, RoutedEventArgs e)
@@ -515,3 +529,4 @@ public partial class MainWindow : Window
         base.OnClosed(e);
     }
 }
+

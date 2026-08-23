@@ -1,4 +1,4 @@
-using System.Collections.ObjectModel;
+﻿using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Runtime.CompilerServices;
 using System.Windows;
@@ -69,6 +69,12 @@ public partial class DownloadProgressDialog : Window, INotifyPropertyChanged
         _mainViewModel.Engine.ChunkProgressUpdated += Engine_ChunkProgressUpdated;
         UpdateState();
         SetupChunkVisuals();
+    }
+
+    protected override void OnSourceInitialized(EventArgs e)
+    {
+        base.OnSourceInitialized(e);
+        WDM.Services.ThemeService.ApplyTitleBar(this);
     }
 
     public string ProgressTitleText => $"{Task.Progress}%";

@@ -46,8 +46,10 @@ public sealed class SpeedGovernor
                 }
                 waitMs = (bytes - _tokens) * 1000.0 / rate;
             }
-            if (waitMs > 1)
+            if (waitMs > 0.5)
                 await Task.Delay((int)waitMs, ct);
+            else
+                await Task.Delay(1, ct); // never busy-spin the refill loop
             ct.ThrowIfCancellationRequested();
         }
     }

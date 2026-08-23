@@ -80,7 +80,7 @@
                         <DockPanel Grid.Row="0" Grid.Column="1" VerticalAlignment="Center">
                             <Button DockPanel.Dock="Right" Style="{StaticResource Button.Icon}" Click="CopyUrl_Click"
                                     ToolTip="Copy URL" Width="22" Height="22" Margin="6,0,0,0">
-                                <TextBlock Text="&#xE8C8;" FontFamily="{StaticResource Font.Icon}" FontSize="11" />
+                                <TextBlock Text="&#xF0770;" FontFamily="{StaticResource Font.Icon}" FontSize="11" />
                             </Button>
                             <TextBox Text="{Binding Task.Url}" IsReadOnly="True" BorderThickness="0" Background="Transparent"
                                      FontSize="12" Foreground="{DynamicResource Brush.Accent}" VerticalAlignment="Center"
@@ -127,9 +127,19 @@
                         <!-- Resume Capability -->
                         <TextBlock Grid.Row="6" Grid.Column="0" Text="Resume capability" FontWeight="Medium" FontSize="12"
                                    Foreground="{DynamicResource Brush.TextDim}" VerticalAlignment="Center" />
-                        <TextBlock Grid.Row="6" Grid.Column="1" Text="Yes — multithreaded chunking"
-                                   Foreground="{DynamicResource Brush.Success}" FontWeight="Medium"
-                                   FontSize="12" VerticalAlignment="Center" />
+                        <TextBlock Grid.Row="6" Grid.Column="1" Text="{Binding Task.ResumeCapabilityText}"
+                                   FontWeight="Medium" FontSize="12" VerticalAlignment="Center">
+                            <TextBlock.Style>
+                                <Style TargetType="TextBlock">
+                                    <Setter Property="Foreground" Value="{DynamicResource Brush.TextMuted}" />
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding Task.IsResumable}" Value="True">
+                                            <Setter Property="Foreground" Value="{DynamicResource Brush.Success}" />
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </TextBlock.Style>
+                        </TextBlock>
                     </Grid>
                 </Border>
 
@@ -157,7 +167,7 @@
                                             <ColumnDefinition Width="{Binding FillGridLength}" />
                                             <ColumnDefinition Width="{Binding RemainingGridLength}" />
                                         </Grid.ColumnDefinitions>
-                                        <Border Grid.Column="0" Background="#2E9B57" CornerRadius="2" />
+                                        <Border Grid.Column="0" Background="{DynamicResource Brush.StatusComplete}" CornerRadius="2" />
                                     </Grid>
                                 </Grid>
                             </DataTemplate>

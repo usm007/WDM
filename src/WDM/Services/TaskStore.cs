@@ -3,6 +3,12 @@ using WDM.Models;
 
 namespace WDM.Services;
 
+public enum AppTheme
+{
+    Default,
+    WdmOriginal
+}
+
 public sealed class AppSettings
 {
     public string DownloadFolder { get; set; } = DownloadTask.DefaultSaveFolder;
@@ -18,6 +24,7 @@ public sealed class AppSettings
     public bool RunAtStartup { get; set; }
     public bool StartInBackground { get; set; }
     public bool UseDarkTheme { get; set; }
+    public AppTheme Theme { get; set; } = AppTheme.Default;
 
     // Updates
     public bool CheckForUpdates { get; set; } = true;
@@ -53,6 +60,7 @@ public sealed class TaskStore
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
         WriteIndented = true,
+        Converters = { new System.Text.Json.Serialization.JsonStringEnumConverter() },
     };
 
     public static AppSettings LoadSettings()
@@ -119,6 +127,7 @@ public sealed class TaskStore
                 Priority = t.Priority,
                 Category = t.Category,
                 Checksum = t.Checksum,
+                Error = t.Error,
                 AddedAt = t.AddedAt,
                 CompletedAt = t.CompletedAt,
             }).ToList();
@@ -149,6 +158,7 @@ public sealed class TaskRecord
     public PriorityLevel Priority { get; set; } = PriorityLevel.Normal;
     public DownloadCategory Category { get; set; } = DownloadCategory.Other;
     public string? Checksum { get; set; }
+    public string? Error { get; set; }
     public DateTime AddedAt { get; set; } = DateTime.Now;
     public DateTime? CompletedAt { get; set; }
 }

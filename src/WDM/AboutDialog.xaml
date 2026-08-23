@@ -9,19 +9,20 @@
         ResizeMode="NoResize"
         ShowInTaskbar="True"
         Background="{DynamicResource Brush.Surface}">
-    <Grid Margin="20,16,20,20">
+<Grid Margin="20,16,20,20">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />
             <RowDefinition Height="Auto" />
             <RowDefinition Height="Auto" />
-            <RowDefinition Height="Auto" />
-            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
         </Grid.RowDefinitions>
 
         <!-- Logo Header -->
         <DockPanel Grid.Row="0" Margin="0,0,0,16">
-            <Border Width="52" Height="52" CornerRadius="14" Background="{DynamicResource Brush.SurfaceAlt}" Margin="0,0,14,0" VerticalAlignment="Center"
-                    Effect="{DynamicResource Shadow.Logo}">
+            <Border Width="52" Height="52" CornerRadius="14" Background="{DynamicResource Brush.SurfaceAlt}" Margin="0,0,14,0" VerticalAlignment="Center">
+                <Border.Effect>
+                    <DropShadowEffect BlurRadius="8" ShadowDepth="1" Opacity="0.10" Color="#40464D" />
+                </Border.Effect>
                 <Image Source="pack://application:,,,/Assets/logo.png" Width="48" Height="48" Stretch="Uniform" RenderOptions.BitmapScalingMode="HighQuality" HorizontalAlignment="Center" VerticalAlignment="Center" />
             </Border>
             <StackPanel VerticalAlignment="Center">
@@ -69,8 +70,8 @@
             </Grid>
         </StackPanel>
 
-        <!-- Action Buttons -->
-        <DockPanel Grid.Row="3" Margin="0,8,0,0" LastChildFill="False">
+        <!-- Action Buttons (pinned to the true bottom of the window) -->
+        <DockPanel Grid.Row="3" VerticalAlignment="Bottom" Margin="0,8,0,0" LastChildFill="False">
             <TextBlock x:Name="UpdateStatusText" DockPanel.Dock="Left" Text="" FontSize="11" Foreground="{DynamicResource Brush.Accent}" TextWrapping="Wrap" MaxWidth="300" VerticalAlignment="Center" />
             <Button Content="Close" DockPanel.Dock="Right" Style="{StaticResource Button.Accent}" IsDefault="True" IsCancel="True" MinWidth="100" Height="30" Click="CloseClick" />
             <Button x:Name="CheckUpdateButton" DockPanel.Dock="Right" Content="Check for updates" Style="{StaticResource Button.Secondary}" MinWidth="130" Height="30" Margin="0,0,10,0" Click="CheckUpdateClick" />

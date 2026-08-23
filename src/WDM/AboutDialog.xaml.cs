@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Diagnostics;
 using System.Windows;
 using System.Windows.Documents;
@@ -13,6 +13,12 @@ public partial class AboutDialog : Window
         InitializeComponent();
         var version = System.Reflection.Assembly.GetExecutingAssembly().GetName().Version;
         VersionText.Text = $"Version {(version?.Major ?? 1)}.{(version?.Minor ?? 0)}";
+    }
+
+    protected override void OnSourceInitialized(EventArgs e)
+    {
+        base.OnSourceInitialized(e);
+        WDM.Services.ThemeService.ApplyTitleBar(this);
     }
 
     private void Link_Click(object sender, RoutedEventArgs e)

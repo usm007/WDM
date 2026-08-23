@@ -15,7 +15,7 @@
             <!-- Header -->
             <DockPanel Margin="0,0,0,18">
                 <Border Width="44" Height="44" CornerRadius="10" Background="{DynamicResource Brush.AccentSoft}" Margin="0,0,14,0" VerticalAlignment="Center">
-                    <TextBlock Text="&#xE774;" FontFamily="{StaticResource Font.Icon}" FontSize="22" Foreground="{DynamicResource Brush.Accent}" HorizontalAlignment="Center" VerticalAlignment="Center" />
+                    <TextBlock Text="&#xF0431;" FontFamily="{StaticResource Font.Icon}" FontSize="22" Foreground="{DynamicResource Brush.Accent}" HorizontalAlignment="Center" VerticalAlignment="Center" />
                 </Border>
                 <StackPanel VerticalAlignment="Center">
                     <TextBlock Text="Install the WDM Extension" FontWeight="Bold" FontSize="16" Foreground="{DynamicResource Brush.Text}" />

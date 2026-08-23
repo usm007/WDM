@@ -27,31 +27,37 @@
                     <TextBlock Text="Settings" FontSize="12" FontWeight="Medium" Foreground="{DynamicResource Brush.TextMuted}" Margin="10,0,0,10" />
                     <RadioButton Style="{StaticResource Button.SettingsTab}" IsChecked="True" Checked="Tab_Checked" Tag="Connection">
                         <StackPanel Orientation="Horizontal">
-                            <TextBlock Text="&#xE774;" FontFamily="{StaticResource Font.Icon}" FontSize="13" Margin="0,0,8,0" VerticalAlignment="Center" />
+                            <TextBlock Text="&#xF0003;" FontFamily="pack://application:,,,/Fonts/materialdesignicons-webfont.ttf#Material Design Icons" FontSize="13" Margin="0,0,8,0" VerticalAlignment="Center" />
                             <TextBlock Text="Connection" VerticalAlignment="Center" />
                         </StackPanel>
                     </RadioButton>
                     <RadioButton Style="{StaticResource Button.SettingsTab}" Checked="Tab_Checked" Tag="Folders">
                         <StackPanel Orientation="Horizontal">
-                            <TextBlock Text="&#xE8B7;" FontFamily="{StaticResource Font.Icon}" FontSize="13" Margin="0,0,8,0" VerticalAlignment="Center" />
+                            <TextBlock Text="&#xF024B;" FontFamily="pack://application:,,,/Fonts/materialdesignicons-webfont.ttf#Material Design Icons" FontSize="13" Margin="0,0,8,0" VerticalAlignment="Center" />
                             <TextBlock Text="Folders &amp; Routing" VerticalAlignment="Center" />
                         </StackPanel>
                     </RadioButton>
                     <RadioButton Style="{StaticResource Button.SettingsTab}" Checked="Tab_Checked" Tag="Browser">
                         <StackPanel Orientation="Horizontal">
-                            <TextBlock Text="&#xE704;" FontFamily="{StaticResource Font.Icon}" FontSize="13" Margin="0,0,8,0" VerticalAlignment="Center" />
+                            <TextBlock Text="&#xF059F;" FontFamily="pack://application:,,,/Fonts/materialdesignicons-webfont.ttf#Material Design Icons" FontSize="13" Margin="0,0,8,0" VerticalAlignment="Center" />
                             <TextBlock Text="Browser Integration" VerticalAlignment="Center" />
                         </StackPanel>
                     </RadioButton>
                     <RadioButton Style="{StaticResource Button.SettingsTab}" Checked="Tab_Checked" Tag="Behavior">
                         <StackPanel Orientation="Horizontal">
-                            <TextBlock Text="&#xE713;" FontFamily="{StaticResource Font.Icon}" FontSize="13" Margin="0,0,8,0" VerticalAlignment="Center" />
+                            <TextBlock Text="&#xF062E;" FontFamily="pack://application:,,,/Fonts/materialdesignicons-webfont.ttf#Material Design Icons" FontSize="13" Margin="0,0,8,0" VerticalAlignment="Center" />
                             <TextBlock Text="Advanced Behavior" VerticalAlignment="Center" />
+                        </StackPanel>
+                    </RadioButton>
+                    <RadioButton Style="{StaticResource Button.SettingsTab}" Checked="Tab_Checked" Tag="Appearance">
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="&#xF06AA;" FontFamily="pack://application:,,,/Fonts/materialdesignicons-webfont.ttf#Material Design Icons" FontSize="13" Margin="0,0,8,0" VerticalAlignment="Center" />
+                            <TextBlock Text="Appearance" VerticalAlignment="Center" />
                         </StackPanel>
                     </RadioButton>
                     <RadioButton Style="{StaticResource Button.SettingsTab}" Checked="Tab_Checked" Tag="Updates">
                         <StackPanel Orientation="Horizontal">
-                            <TextBlock Text="&#xE72C;" FontFamily="{StaticResource Font.Icon}" FontSize="13" Margin="0,0,8,0" VerticalAlignment="Center" />
+                            <TextBlock Text="&#xF06B0;" FontFamily="pack://application:,,,/Fonts/materialdesignicons-webfont.ttf#Material Design Icons" FontSize="13" Margin="0,0,8,0" VerticalAlignment="Center" />
                             <TextBlock Text="Updates" VerticalAlignment="Center" />
                         </StackPanel>
                     </RadioButton>
@@ -202,7 +208,24 @@
                         <CheckBox x:Name="RunAtStartupBox" Content="Launch WDM when Windows starts" Margin="0,0,0,6" />
                     </StackPanel>
 
-                    <!-- Panel 5: Updates -->
+                    <!-- Panel 5: Appearance -->
+                    <StackPanel x:Name="PanelAppearance" Visibility="Collapsed">
+                        <TextBlock Text="Appearance" Style="{StaticResource Text.Section}" Margin="0,0,0,14" />
+                        <TextBlock Text="Choose how WDM looks. 'Vibrant' is the original WDM orange/blue gradient UI — 'Modern Grey' is the current soft theme." Style="{StaticResource Text.Muted}" FontSize="12" Margin="0,-8,0,14" TextWrapping="Wrap" />
+
+                        <TextBlock Text="UI Theme" Style="{StaticResource Label.Field}" />
+                        <ComboBox x:Name="ThemeBox" Margin="0,0,0,14" SelectionChanged="ThemeBox_SelectionChanged">
+                            <ComboBoxItem Content="Modern Grey (Default) — soft grey with blue accents" Tag="Default" />
+                            <ComboBoxItem Content="Vibrant (WDM Original) — orange/blue gradients, capsule sidebar, shadows" Tag="WdmOriginal" />
+                        </ComboBox>
+
+                        <TextBlock Text="Color mode" Style="{StaticResource Label.Field}" />
+                        <CheckBox x:Name="DarkModeBox" Content="Use dark theme" Margin="0,0,0,14" Checked="DarkMode_Changed" Unchecked="DarkMode_Changed" />
+
+                        <TextBlock Text="Changes preview immediately. They are saved when you click Save." FontSize="11" Foreground="{DynamicResource Brush.TextDim}" TextWrapping="Wrap" />
+                    </StackPanel>
+
+                    <!-- Panel 6: Updates -->
                     <StackPanel x:Name="PanelUpdates" Visibility="Collapsed">
                         <TextBlock Text="Updates" Style="{StaticResource Text.Section}" Margin="0,0,0,14" />
                         <TextBlock Text="Check GitHub for new versions of WDM." Style="{StaticResource Text.Muted}" FontSize="12" Margin="0,-8,0,14" />

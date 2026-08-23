@@ -1,4 +1,4 @@
-using System.Diagnostics;
+﻿using System.Diagnostics;
 using System.IO;
 using System.Windows;
 using WDM.Models;
@@ -39,6 +39,12 @@ public partial class TaskPropertiesDialog : Window
                 ? $"Completed {task.CompletedAt.Value:yyyy-MM-dd HH:mm}"
                 : "Completed";
         }
+    }
+
+    protected override void OnSourceInitialized(EventArgs e)
+    {
+        base.OnSourceInitialized(e);
+        WDM.Services.ThemeService.ApplyTitleBar(this);
     }
 
     private void CopyUrlClick(object sender, RoutedEventArgs e)

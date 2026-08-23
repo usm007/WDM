@@ -22,7 +22,7 @@
         <!-- Success Header -->
         <StackPanel Grid.Row="0" Orientation="Horizontal" Margin="0,0,0,18">
             <Border Width="40" Height="40" CornerRadius="20" Background="{DynamicResource Brush.StatusCompleteSoft}" Margin="0,0,12,0" VerticalAlignment="Center">
-                <TextBlock Text="&#xE73E;" FontFamily="{StaticResource Font.Icon}" FontSize="20"
+                <TextBlock Text="&#xF05E0;" FontFamily="{StaticResource Font.Icon}" FontSize="20"
                            Foreground="{DynamicResource Brush.Success}" HorizontalAlignment="Center" VerticalAlignment="Center" />
             </Border>
             <StackPanel VerticalAlignment="Center">
@@ -52,7 +52,7 @@
                 <Button Grid.Column="1" Style="{StaticResource Button.Secondary}" Click="CopyUrl_Click"
                         Padding="10,0" Margin="8,0,0,0" Height="28">
                     <StackPanel Orientation="Horizontal">
-                        <TextBlock Text="&#xE8C8;" FontFamily="{StaticResource Font.Icon}" FontSize="11" Margin="0,0,4,0" />
+                        <TextBlock Text="&#xF0770;" FontFamily="{StaticResource Font.Icon}" FontSize="11" Margin="0,0,4,0" />
                         <TextBlock Text="Copy" FontSize="12" />
                     </StackPanel>
                 </Button>
@@ -75,7 +75,7 @@
                 <Button Grid.Column="1" Style="{StaticResource Button.Secondary}" Click="CopyPath_Click"
                         Padding="10,0" Margin="8,0,0,0" Height="28">
                     <StackPanel Orientation="Horizontal">
-                        <TextBlock Text="&#xE8C8;" FontFamily="{StaticResource Font.Icon}" FontSize="11" Margin="0,0,4,0" />
+                        <TextBlock Text="&#xF0770;" FontFamily="{StaticResource Font.Icon}" FontSize="11" Margin="0,0,4,0" />
                         <TextBlock Text="Copy" FontSize="12" />
                     </StackPanel>
                 </Button>

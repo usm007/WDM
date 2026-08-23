@@ -46,7 +46,7 @@
             <TextBlock Grid.Row="0" Grid.Column="0" Text="Download URL" Style="{StaticResource Label.Field}" Margin="0,6" />
             <DockPanel Grid.Row="0" Grid.Column="1" Margin="0,6">
                 <Button DockPanel.Dock="Right" Style="{StaticResource Button.Icon}" Click="CopyUrlClick" ToolTip="Copy URL" Width="24" Height="24" Margin="6,0,0,0">
-                    <TextBlock Text="&#xE8C8;" FontFamily="{StaticResource Font.Icon}" FontSize="12" />
+                    <TextBlock Text="&#xF0770;" FontFamily="{StaticResource Font.Icon}" FontSize="12" />
                 </Button>
                 <TextBlock x:Name="UrlText" FontSize="12" TextWrapping="Wrap" VerticalAlignment="Center" Foreground="{DynamicResource Brush.Accent}" />
             </DockPanel>

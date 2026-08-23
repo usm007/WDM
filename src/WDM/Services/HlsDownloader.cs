@@ -262,6 +262,7 @@ public static class HlsDownloader
         string? keyIv = null;
         long mediaSequence = 0;
         bool haveMediaSequence = false;
+        long nextOffset = 0;
 
         string[] lines = text.Split('\n');
         int segmentOrdinal = 0;
@@ -323,11 +324,21 @@ public static class HlsDownloader
                 {
                     seg.Length = len;
                     seg.Start = start;
+                    nextOffset = start + len;
                 }
                 else if (long.TryParse(parts[0], out long justLen))
                 {
+                    // No explicit offset: the range continues right after the previous
+                    // byterange segment. Requesting it from byte 0 would corrupt the
+                    // concatenated output.
                     seg.Length = justLen;
+                    seg.Start = nextOffset;
+                    nextOffset += justLen;
                 }
+            }
+            else
+            {
+                nextOffset = 0;
             }
 
             // Attach the current key (if any); IV defaults to the media sequence number.

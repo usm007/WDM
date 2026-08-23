@@ -1,4 +1,4 @@
-using System.Diagnostics;
+﻿using System.Diagnostics;
 using System.IO;
 using System.Windows;
 using WDM.Models;
@@ -19,6 +19,12 @@ public partial class DownloadCompleteDialog : Window
         PathBox.Text = task.FullPath;
         SizeText.Text = task.SizeText;
         DateText.Text = task.CompletedAt?.ToString("g") ?? DateTime.Now.ToString("g");
+    }
+
+    protected override void OnSourceInitialized(EventArgs e)
+    {
+        base.OnSourceInitialized(e);
+        WDM.Services.ThemeService.ApplyTitleBar(this);
     }
 
     private void CopyUrl_Click(object sender, RoutedEventArgs e)

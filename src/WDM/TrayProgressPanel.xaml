@@ -9,7 +9,7 @@
         ResizeMode="NoResize"
         ShowInTaskbar="False"
         Topmost="True"
-        Background="#26282C"
+        Background="{DynamicResource Brush.SurfaceAlt}"
         ShowActivated="False"
         Focusable="False"
         MouseLeftButtonDown="Pill_MouseLeftButtonDown"
@@ -26,12 +26,12 @@
     <Grid Height="24">
         <!-- Content clipped to the rounded pill shape so the green fill never escapes -->
         <Grid x:Name="ClipGrid" ClipToBounds="True">
-            <!-- Green fill indicates progress: grows from the left -->
-            <Border x:Name="Fill" Background="#2E9B57" HorizontalAlignment="Left"
+            <!-- Progress fill: grows from the left -->
+            <Border x:Name="Fill" Background="{DynamicResource Brush.StatusComplete}" HorizontalAlignment="Left"
                     Width="{Binding FillWidth}" />
             <!-- % and speed on the same row, very small -->
             <TextBlock Text="{Binding StatusText}" FontSize="10" FontWeight="SemiBold"
-                       Foreground="White" HorizontalAlignment="Center" VerticalAlignment="Center" />
+                       Foreground="{DynamicResource Brush.Text}" HorizontalAlignment="Center" VerticalAlignment="Center" />
         </Grid>
     </Grid>
 </Window>

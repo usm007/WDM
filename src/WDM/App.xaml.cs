@@ -26,18 +26,31 @@ public partial class App : Application
         StartMinimized = e.Args.Any(a =>
             string.Equals(a, "/minimized", StringComparison.OrdinalIgnoreCase) ||
             string.Equals(a, "--minimized", StringComparison.OrdinalIgnoreCase));
-        // Apply dark DWM title bar to every window automatically (main + all dialogs).
-        EventManager.RegisterClassHandler(
-            typeof(Window),
-            FrameworkElement.LoadedEvent,
-            new RoutedEventHandler((s, _) => { if (s is Window w) ThemeService.ApplyTitleBar(w); }));
-        ThemeService.Apply(true);
+        var settings = TaskStore.LoadSettings();
+        ThemeService.Apply(settings.Theme, settings.UseDarkTheme);
+
+        // Create the appropriate main window for the selected theme family
+        // Default = Modern Grey (WDM-2) — WdmOriginal = Vibrant WDM (imported whole UI)
+        Window mainWindow = settings.Theme == AppTheme.WdmOriginal
+            ? new WdmOriginalMainWindow()
+            : new MainWindow();
+        mainWindow.Show();
     }
 
     public static void LogException(Exception? ex)
     {
         if (ex is null) return;
-        string logPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "wdm_error.log");
-        File.WriteAllText(logPath, $"[CRASH {DateTime.Now}]\n{ex}\n\nInner:\n{ex.InnerException}");
+        try
+        {
+            string logPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "wdm_error.log");
+            string entry = $"[CRASH {DateTime.Now:O}]\n{ex}";
+            if (ex.InnerException is not null)
+                entry += $"\nInner:\n{ex.InnerException}";
+            File.AppendAllText(logPath, entry + "\n\n");
+        }
+        catch
+        {
+            // Never let logging itself take down the crash handler.
+        }
     }
 }

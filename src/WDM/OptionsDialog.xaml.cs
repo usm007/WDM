@@ -1,4 +1,4 @@
-using System.Linq;
+﻿using System.Linq;
 using System.Windows;
 using System.Windows.Controls;
 using Microsoft.Win32;
@@ -12,12 +12,17 @@ public partial class OptionsDialog : Window
 {
     private readonly MainViewModel _viewModel;
     private ReleaseInfo? _latestRelease;
+    private readonly AppTheme _originalTheme;
+    private readonly bool _originalDark;
+    private bool _isInitializingAppearance = true;
 
     public OptionsDialog(MainViewModel viewModel)
     {
         InitializeComponent();
         _viewModel = viewModel;
         var s = viewModel.Settings;
+        _originalTheme = s.Theme;
+        _originalDark = s.UseDarkTheme;
 
         FolderBox.Text = s.DownloadFolder;
         ChunksBox.SelectedIndex = ChunkIndex(s.DefaultChunkCount);
@@ -45,7 +50,18 @@ public partial class OptionsDialog : Window
         LatestVersionText.Text = "—";
         UpdateStatusText.Text = "Click “Check now” to look for a new release on GitHub.";
 
+        // Appearance — theme family + dark mode (preview, saved on Save)
+        ThemeBox.SelectedIndex = s.Theme == AppTheme.WdmOriginal ? 1 : 0;
+        DarkModeBox.IsChecked = s.UseDarkTheme;
+        _isInitializingAppearance = false;
+
         PopulateBrowsers();
+    }
+
+    protected override void OnSourceInitialized(EventArgs e)
+    {
+        base.OnSourceInitialized(e);
+        WDM.Services.ThemeService.ApplyTitleBar(this);
     }
 
     private void PopulateBrowsers()
@@ -66,8 +82,30 @@ public partial class OptionsDialog : Window
             if (PanelFolders != null) PanelFolders.Visibility = tag == "Folders" ? Visibility.Visible : Visibility.Collapsed;
             if (PanelBrowser != null) PanelBrowser.Visibility = tag == "Browser" ? Visibility.Visible : Visibility.Collapsed;
             if (PanelBehavior != null) PanelBehavior.Visibility = tag == "Behavior" ? Visibility.Visible : Visibility.Collapsed;
+            if (PanelAppearance != null) PanelAppearance.Visibility = tag == "Appearance" ? Visibility.Visible : Visibility.Collapsed;
             if (PanelUpdates != null) PanelUpdates.Visibility = tag == "Updates" ? Visibility.Visible : Visibility.Collapsed;
         }
+    }
+
+    private void ThemeBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (_isInitializingAppearance) return;
+        PreviewAppearance();
+    }
+
+    private void DarkMode_Changed(object sender, RoutedEventArgs e)
+    {
+        if (_isInitializingAppearance) return;
+        PreviewAppearance();
+    }
+
+    private void PreviewAppearance()
+    {
+        if (ThemeBox.SelectedItem is not ComboBoxItem item || item.Tag is not string tag)
+            return;
+        var theme = tag == "WdmOriginal" ? AppTheme.WdmOriginal : AppTheme.Default;
+        bool dark = DarkModeBox.IsChecked == true;
+        ThemeService.Apply(theme, dark);
     }
 
     private async void CheckNowClick(object sender, RoutedEventArgs e)
@@ -227,6 +265,45 @@ public partial class OptionsDialog : Window
         s.RunAtStartup = RunAtStartupBox.IsChecked == true;
         s.CheckForUpdates = CheckForUpdatesBox.IsChecked == true;
 
+        // Appearance — persist theme family and dark mode (already previewed, now save)
+        var selectedTheme = s.Theme;
+        var selectedDark = s.UseDarkTheme;
+        if (ThemeBox.SelectedItem is ComboBoxItem tItem && tItem.Tag is string tTag)
+        {
+            selectedTheme = tTag == "WdmOriginal" ? AppTheme.WdmOriginal : AppTheme.Default;
+        }
+        selectedDark = DarkModeBox.IsChecked == true;
+        bool themeFamilyChanged = selectedTheme != _originalTheme;
+        s.Theme = selectedTheme;
+        s.UseDarkTheme = selectedDark;
+        // Apply via ViewModel to keep IsDarkTheme/SelectedTheme notifications in sync (palette + Theme.xaml)
+        _viewModel.SelectedTheme = s.Theme;
+        _viewModel.IsDarkTheme = s.UseDarkTheme;
+        TaskStore.SaveSettings(s);
+
+        // Whole UI (MainWindow layout, WdmWindow chrome) is family-specific — needs restart to reload the correct Window XAML
+        if (themeFamilyChanged)
+        {
+            var result = MessageBox.Show(
+                "The UI theme (layout) has changed. WDM needs to restart to apply the new window chrome and toolbar. Restart now?",
+                "Restart required",
+                MessageBoxButton.YesNo,
+                MessageBoxImage.Question);
+            if (result == MessageBoxResult.Yes)
+            {
+                // Relaunch and exit — App.OnStartup will pick the new Theme and create the correct MainWindow
+                try
+                {
+                    var exe = Environment.ProcessPath ?? System.Diagnostics.Process.GetCurrentProcess().MainModule?.FileName;
+                    if (!string.IsNullOrWhiteSpace(exe))
+                        System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(exe) { UseShellExecute = true });
+                }
+                catch { }
+                Application.Current.Shutdown();
+                return;
+            }
+        }
+
         DialogResult = true;
         Close();
     }
@@ -239,6 +316,11 @@ public partial class OptionsDialog : Window
 
     private void CancelClick(object sender, RoutedEventArgs e)
     {
+        // Revert previewed theme if user cancelled
+        if (ThemeService.CurrentTheme != _originalTheme || ThemeService.IsDark != _originalDark)
+        {
+            ThemeService.Apply(_originalTheme, _originalDark);
+        }
         DialogResult = false;
         Close();
     }

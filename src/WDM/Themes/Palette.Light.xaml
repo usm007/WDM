@@ -3,62 +3,59 @@
 
     <!-- ============ LIGHT PALETTE — Desktop Utility Design System ============ -->
     <!-- Neutral tokens -->
-    <Color x:Key="Color.Bg">#F7F9FC</Color>
+    <Color x:Key="Color.Bg">#F5F6F7</Color>
     <Color x:Key="Color.Surface">#FFFFFF</Color>
-    <Color x:Key="Color.SurfaceAlt">#F3F6FA</Color>
-    <Color x:Key="Color.SurfaceHover">#EEF3F8</Color>
-    <Color x:Key="Color.Border">#E3E8EF</Color>
-    <Color x:Key="Color.BorderStrong">#CBD4DF</Color>
-    <Color x:Key="Color.GridLine">#E8EDF3</Color>
-    <Color x:Key="Color.Text">#172033</Color>
-    <Color x:Key="Color.TextDim">#5F6B7A</Color>
-    <Color x:Key="Color.TextMuted">#8792A2</Color>
+    <Color x:Key="Color.SurfaceAlt">#F0F3F6</Color>
+    <Color x:Key="Color.SurfaceHover">#E8ECEF</Color>
+    <Color x:Key="Color.Border">#B0B6BE</Color>
+    <Color x:Key="Color.BorderStrong">#8A939C</Color>
+    <Color x:Key="Color.GridLine">#E6E9ED</Color>
+    <Color x:Key="Color.Text">#1A1C20</Color>
+    <Color x:Key="Color.TextDim">#41464F</Color>
+    <Color x:Key="Color.TextMuted">#787F88</Color>
 
     <!-- Accent — Desktop Utility Blue -->
     <Color x:Key="Color.Accent">#1677D2</Color>
-    <Color x:Key="Color.AccentDark">#0F63B5</Color>
-    <Color x:Key="Color.AccentSoft">#EAF3FF</Color>
-    <Color x:Key="Color.AccentSoftStrong">#D9EAFE</Color>
-
-    <!-- AccentFg — foreground on accent-coloured surfaces -->
-    <Color x:Key="Color.AccentFg">#FFFFFF</Color>
+    <Color x:Key="Color.AccentDark">#1268B8</Color>
+    <Color x:Key="Color.AccentSoft">#EAF3FC</Color>
+    <Color x:Key="Color.AccentSoftStrong">#D3E5F8</Color>
 
     <!-- Semantic status colors -->
     <Color x:Key="Color.StatusActive">#1677D2</Color>
-    <Color x:Key="Color.StatusComplete">#16A34A</Color>
-    <Color x:Key="Color.StatusFailed">#DC4040</Color>
-    <Color x:Key="Color.StatusPaused">#8A94A3</Color>
+    <Color x:Key="Color.StatusComplete">#2E9B57</Color>
+    <Color x:Key="Color.StatusFailed">#D64545</Color>
+    <Color x:Key="Color.StatusPaused">#9CA3AF</Color>
     <Color x:Key="Color.StatusQueued">#D99000</Color>
 
     <!-- Soft tints for status elements -->
-    <Color x:Key="Color.StatusActiveSoft">#1A1677D2</Color>
-    <Color x:Key="Color.StatusCompleteSoft">#1A16A34A</Color>
-    <Color x:Key="Color.StatusFailedSoft">#1ADC4040</Color>
-    <Color x:Key="Color.StatusPausedSoft">#1A8A94A3</Color>
-    <Color x:Key="Color.StatusQueuedSoft">#1AD99000</Color>
+    <Color x:Key="Color.StatusActiveSoft">#1F1677D2</Color>
+    <Color x:Key="Color.StatusCompleteSoft">#1F2E9B57</Color>
+    <Color x:Key="Color.StatusFailedSoft">#1FD64545</Color>
+    <Color x:Key="Color.StatusPausedSoft">#339CA3AF</Color>
+    <Color x:Key="Color.StatusQueuedSoft">#1FD99000</Color>
 
     <!-- Semantic aliases -->
-    <Color x:Key="Color.Success">#16A34A</Color>
+    <Color x:Key="Color.Success">#2E9B57</Color>
     <Color x:Key="Color.Warning">#D99000</Color>
-    <Color x:Key="Color.Danger">#DC4040</Color>
+    <Color x:Key="Color.Danger">#D64545</Color>
 
     <!-- Disabled state -->
-    <Color x:Key="Color.DisabledBg">#F1F4F8</Color>
-    <Color x:Key="Color.DisabledFg">#A8B1BD</Color>
+    <Color x:Key="Color.DisabledBg">#F0F3F6</Color>
+    <Color x:Key="Color.DisabledFg">#A0A8B0</Color>
 
     <!-- Zones -->
-    <Color x:Key="Color.Track">#E4EAF1</Color>
+    <Color x:Key="Color.Track">#E2E7ED</Color>
     <Color x:Key="Color.Sidebar">#FFFFFF</Color>
-    <Color x:Key="Color.RowAlt">#FFFFFF</Color>
-    <Color x:Key="Color.RowHover">#F5F8FC</Color>
-    <Color x:Key="Color.RowSelected">#EAF3FF</Color>
+    <Color x:Key="Color.RowAlt">#FAFAFA</Color>
+    <Color x:Key="Color.RowHover">#F0F4F8</Color>
+    <Color x:Key="Color.RowSelected">#EAF3FC</Color>
 
     <!-- Muted per-category icon tints -->
     <Color x:Key="Color.CatCompressed">#D99000</Color>
-    <Color x:Key="Color.CatDocument">#3578C8</Color>
+    <Color x:Key="Color.CatDocument">#6E7781</Color>
     <Color x:Key="Color.CatMusic">#7C3AED</Color>
-    <Color x:Key="Color.CatProgram">#16A34A</Color>
-    <Color x:Key="Color.CatVideo">#DC4040</Color>
+    <Color x:Key="Color.CatProgram">#2E9B57</Color>
+    <Color x:Key="Color.CatVideo">#D64545</Color>
 
     <!-- Palette Brushes -->
     <SolidColorBrush x:Key="Brush.Bg" Color="{StaticResource Color.Bg}" />
@@ -75,7 +72,6 @@
     <SolidColorBrush x:Key="Brush.AccentDark" Color="{StaticResource Color.AccentDark}" />
     <SolidColorBrush x:Key="Brush.AccentSoft" Color="{StaticResource Color.AccentSoft}" />
     <SolidColorBrush x:Key="Brush.AccentSoftStrong" Color="{StaticResource Color.AccentSoftStrong}" />
-    <SolidColorBrush x:Key="Brush.AccentFg"         Color="{StaticResource Color.AccentFg}" />
 
     <SolidColorBrush x:Key="Brush.StatusActive" Color="{StaticResource Color.StatusActive}" />
     <SolidColorBrush x:Key="Brush.StatusComplete" Color="{StaticResource Color.StatusComplete}" />
@@ -104,16 +100,4 @@
     <SolidColorBrush x:Key="Brush.CatMusic" Color="{StaticResource Color.CatMusic}" />
     <SolidColorBrush x:Key="Brush.CatProgram" Color="{StaticResource Color.CatProgram}" />
     <SolidColorBrush x:Key="Brush.CatVideo" Color="{StaticResource Color.CatVideo}" />
-
-    <!-- Shadow effects — soft, low-opacity for a modern flat look -->
-    <DropShadowEffect x:Key="Shadow.Button"       BlurRadius="14" ShadowDepth="2" Opacity="0.10" Color="#1B2737" />
-    <DropShadowEffect x:Key="Shadow.ButtonStrong" BlurRadius="16" ShadowDepth="2" Opacity="0.12" Color="#1B2737" />
-    <DropShadowEffect x:Key="Shadow.Input"        BlurRadius="10" ShadowDepth="1" Opacity="0.06" Color="#1B2737" />
-    <DropShadowEffect x:Key="Shadow.InputFocus"   BlurRadius="12" ShadowDepth="2" Opacity="0.10" Color="#1677D2" />
-    <DropShadowEffect x:Key="Shadow.Card"         BlurRadius="16" ShadowDepth="2" Opacity="0.09" Color="#1B2737" />
-    <DropShadowEffect x:Key="Shadow.CardDialog"   BlurRadius="20" ShadowDepth="3" Opacity="0.12" Color="#1B2737" />
-    <DropShadowEffect x:Key="Shadow.Popup"        BlurRadius="18" ShadowDepth="3" Opacity="0.10" Color="#1B2737" />
-    <DropShadowEffect x:Key="Shadow.ToolbarPill"  BlurRadius="10" ShadowDepth="1" Opacity="0.05" Color="#1B2737" />
-    <DropShadowEffect x:Key="Shadow.Logo"         BlurRadius="8"  ShadowDepth="1" Opacity="0.06" Color="#1B2737" />
-
 </ResourceDictionary>

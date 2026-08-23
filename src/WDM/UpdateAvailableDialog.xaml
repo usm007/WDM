@@ -19,7 +19,7 @@
         <!-- Header -->
         <DockPanel Grid.Row="0" Margin="0,0,0,14">
             <Border Width="44" Height="44" CornerRadius="10" Background="{DynamicResource Brush.AccentSoft}" Margin="0,0,14,0" VerticalAlignment="Center">
-                <TextBlock Text="&#xE895;" FontFamily="{StaticResource Font.Icon}" FontSize="22" Foreground="{DynamicResource Brush.Accent}" HorizontalAlignment="Center" VerticalAlignment="Center" />
+                <TextBlock Text="&#xF01DA;" FontFamily="{StaticResource Font.Icon}" FontSize="22" Foreground="{DynamicResource Brush.Accent}" HorizontalAlignment="Center" VerticalAlignment="Center" />
             </Border>
             <StackPanel VerticalAlignment="Center">
                 <TextBlock Text="A new version is available" FontWeight="Bold" FontSize="16" Foreground="{DynamicResource Brush.Text}" />

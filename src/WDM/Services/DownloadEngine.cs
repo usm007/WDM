@@ -83,6 +83,8 @@ public sealed class DownloadEngine
             AllowAutoRedirect = true,
             MaxConnectionsPerServer = 64,
             AutomaticDecompression = DecompressionMethods.None,
+            UseCookies = true,
+            CookieContainer = new CookieContainer(),
         };
         var client = new HttpClient(handler)
         {
@@ -90,6 +92,8 @@ public sealed class DownloadEngine
         };
         client.DefaultRequestHeaders.UserAgent.ParseAdd(
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0 Safari/537.36");
+        client.DefaultRequestHeaders.Accept.ParseAdd("*/*");
+        client.DefaultRequestHeaders.AcceptLanguage.ParseAdd("en-US,en;q=0.9");
         return client;
     }
 
@@ -141,9 +145,23 @@ public sealed class DownloadEngine
 
     public void Pause(DownloadTask task)
     {
-        Session? session;
-        lock (_lock) _sessions.TryGetValue(task.Id, out session);
-        session?.Cancel();
+        lock (_lock)
+        {
+            if (_sessions.TryGetValue(task.Id, out var session))
+            {
+                session.Cancel();
+                return;
+            }
+            // Queued tasks have no session yet; take them out of the queue so they
+            // don't start when a slot frees up.
+            if (_queue.Remove(task))
+            {
+                task.Status = TaskStatus.Paused;
+                task.SpeedBps = 0;
+                task.Eta = "";
+                TaskChanged?.Invoke();
+            }
+        }
     }
 
     public void PauseAll()
@@ -152,6 +170,22 @@ public sealed class DownloadEngine
         lock (_lock) snapshot = _sessions.Values.ToArray();
         foreach (var session in snapshot)
             session.Cancel();
+
+        // Also hold back queued tasks so they don't sneak in when a slot frees up.
+        DownloadTask[] queued;
+        lock (_lock)
+        {
+            queued = _queue.ToArray();
+            _queue.Clear();
+        }
+        foreach (var task in queued)
+        {
+            task.Status = TaskStatus.Paused;
+            task.SpeedBps = 0;
+            task.Eta = "";
+        }
+        if (queued.Length > 0)
+            TaskChanged?.Invoke();
     }
 
     public void ResumeAll()
@@ -192,7 +226,13 @@ public sealed class DownloadEngine
 
         _ = Task.Run(async () =>
         {
-            await Task.WhenAll(session.Chunks);
+            // Wait until the session (and every chunk worker) has fully unwound before
+            // deleting anything; otherwise deletion can race with in-flight writes.
+            if (session.RunningTask is Task running)
+            {
+                try { await running; }
+                catch { /* session state already reconciled by RunSessionAsync */ }
+            }
             // Only clean up the partial files if the task wasn't restarted in the
             // meantime (a new session for the same task would be writing there).
             lock (_lock)
@@ -230,7 +270,11 @@ public sealed class DownloadEngine
 
         _ = Task.Run(async () =>
         {
-            await Task.WhenAll(session.Chunks);
+            if (session.RunningTask is Task running)
+            {
+                try { await running; }
+                catch { /* session state already reconciled by RunSessionAsync */ }
+            }
             if (deleteFiles)
             {
                 TryDelete(task.FullPath);
@@ -275,7 +319,11 @@ public sealed class DownloadEngine
         lock (_lock) _sessions[task.Id] = session;
         task.Status = TaskStatus.Downloading;
         TaskChanged?.Invoke();
-        _ = RunSessionAsync(session);
+        // Track the run so Stop/Remove can wait for every in-flight chunk worker to
+        // unwind before touching the partial files.
+        var run = RunSessionAsync(session);
+        session.RunningTask = run;
+        _ = run;
     }
 
     private void PumpQueue()
@@ -315,6 +363,7 @@ public sealed class DownloadEngine
             var meta = await ProbeAsync(task, session.Token);
             task.TotalBytes = meta.TotalBytes;
             session.CurrentUrlIndex = meta.UrlIndex;
+            ApplyResumeCapability(task, meta);
             if (string.IsNullOrWhiteSpace(task.FileName))
             {
                 task.FileName = meta.SuggestedName ?? DeriveName(task.Url, meta.ContentType);
@@ -366,6 +415,18 @@ public sealed class DownloadEngine
         {
             if (session.Removed)
                 return;
+            // A cancel can land a hair after the last byte was written; don't mark a
+            // fully downloaded file as Paused.
+            if (IsFileComplete(task))
+            {
+                task.Status = TaskStatus.Completed;
+                task.CompletedAt = DateTime.Now;
+                task.Progress = 100;
+                task.SpeedBps = 0;
+                task.Eta = "";
+                TaskCompleted?.Invoke(task);
+                return;
+            }
             task.Status = TaskStatus.Paused;
         }
         catch (Exception ex)
@@ -380,8 +441,14 @@ public sealed class DownloadEngine
             session.Finish();
             lock (_lock)
             {
-                if (_sessions.ContainsKey(task.Id) && session.Done)
+                // Only remove the session that is actually finishing; a paused task may
+                // already have been resumed and started a brand-new session with the
+                // same Id. Removing that one would orphan it (no pause/stop, no meter).
+                if (_sessions.TryGetValue(task.Id, out var current) &&
+                    ReferenceEquals(current, session) && session.Done)
+                {
                     _sessions.Remove(task.Id);
+                }
             }
             ReleaseReservedPath(task);
             TaskChanged?.Invoke();
@@ -445,6 +512,8 @@ public sealed class DownloadEngine
             var head = await SendWithRetryAsync(() => BuildRequest(HttpMethod.Head, task, null, url), ct);
             using (head)
             {
+                if (IsCloudflareChallenge(head))
+                    throw new CloudflareBlockedException(CloudflareMessage(url));
                 if (head.IsSuccessStatusCode)
                 {
                     supportsRanges = head.Headers.AcceptRanges.Any(r => r.Equals("bytes", StringComparison.OrdinalIgnoreCase));
@@ -458,6 +527,7 @@ public sealed class DownloadEngine
                 }
             }
         }
+        catch (CloudflareBlockedException) { throw; }
         catch
         {
             // HEAD unsupported or rejected; fall through to ranged GET.
@@ -471,6 +541,12 @@ public sealed class DownloadEngine
             try
             {
                 var get = await SendWithRetryAsync(() => BuildRequest(HttpMethod.Get, task, new RangeHeaderValue(1, 1), url), ct);
+                if (IsCloudflareChallenge(get))
+                {
+                    string msg = CloudflareMessage(url);
+                    get.Dispose();
+                    throw new CloudflareBlockedException(msg);
+                }
                 if (get.StatusCode == HttpStatusCode.PartialContent)
                 {
                     supportsRanges = true;
@@ -513,11 +589,18 @@ public sealed class DownloadEngine
                 }
                 else
                 {
+                    if (get.StatusCode == HttpStatusCode.Forbidden && IsCloudflareChallenge(get))
+                    {
+                        string msg = CloudflareMessage(url);
+                        get.Dispose();
+                        throw new CloudflareBlockedException(msg);
+                    }
                     suggestedName ??= NameFromDisposition(get.Content.Headers.ContentDisposition);
                     contentType ??= get.Content.Headers.ContentType?.ToString();
                     get.Dispose();
                 }
             }
+            catch (CloudflareBlockedException) { throw; }
             catch
             {
                 // Server doesn't accept ranged GET requests.
@@ -538,6 +621,23 @@ public sealed class DownloadEngine
         if (File.Exists(session.StatePath))
             return true;
         return File.Exists(task.FullPath) && new FileInfo(task.FullPath).Length > 0;
+    }
+
+    /// <summary>True when the on-disk file already holds every byte the server
+    /// promised (used to distinguish "cancelled before finishing" from "cancelled
+    /// right after the last byte landed").</summary>
+    private static bool IsFileComplete(DownloadTask task)
+    {
+        if (task.TotalBytes <= 0)
+            return false;
+        try
+        {
+            return File.Exists(task.FullPath) && new FileInfo(task.FullPath).Length >= task.TotalBytes;
+        }
+        catch
+        {
+            return false;
+        }
     }
 
     /// <summary>Stores the server's identity (ETag/Last-Modified) on the task so a later
@@ -740,6 +840,8 @@ public sealed class DownloadEngine
         var response = await SendWithRetryAsync(() => BuildRequest(HttpMethod.Get, task, new RangeHeaderValue(from, to), session.CurrentUrl(task)), session.Token);
         using (response)
         {
+            if (IsCloudflareChallenge(response))
+                throw new CloudflareBlockedException(CloudflareMessage(session.CurrentUrl(task)));
             if (response.StatusCode != HttpStatusCode.PartialContent)
                 throw new InvalidOperationException("Server does not support range downloads.");
 
@@ -883,6 +985,8 @@ public sealed class DownloadEngine
         var response = await SendWithRetryAsync(() => BuildRequest(HttpMethod.Get, task, range, session.CurrentUrl(task)), session.Token);
         using (response)
         {
+            if (IsCloudflareChallenge(response))
+                throw new CloudflareBlockedException(CloudflareMessage(session.CurrentUrl(task)));
             // Resuming at EOF: server says the range is unsatisfiable because the file
             // is already fully downloaded. Treat that as success.
             if (response.StatusCode == HttpStatusCode.RequestedRangeNotSatisfiable && existingLength > 0)
@@ -1027,7 +1131,33 @@ public sealed class DownloadEngine
         // Ask for the raw (uncompressed) representation so Content-Length is the true
         // file size and byte ranges line up with what we actually receive.
         request.Headers.TryAddWithoutValidation("Accept-Encoding", "identity");
+        // Browser-like headers reduce Cloudflare/bot-filter false positives (testfile.org etc.)
+        request.Headers.TryAddWithoutValidation("Accept", "*/*");
+        request.Headers.TryAddWithoutValidation("Accept-Language", "en-US,en;q=0.9");
+        request.Headers.TryAddWithoutValidation("Cache-Control", "no-cache");
+        request.Headers.TryAddWithoutValidation("Pragma", "no-cache");
+        if (string.IsNullOrWhiteSpace(task.Referer) && Uri.TryCreate(url ?? task.Url, UriKind.Absolute, out var targetUri))
+            request.Headers.TryAddWithoutValidation("Referer", $"{targetUri.Scheme}://{targetUri.Host}/");
         return request;
+    }
+
+    private static bool IsCloudflareChallenge(HttpResponseMessage response)
+    {
+        if (response.StatusCode != HttpStatusCode.Forbidden)
+            return false;
+        if (response.Headers.TryGetValues("cf-mitigated", out var vals) && vals.Any(v => v.IndexOf("challenge", StringComparison.OrdinalIgnoreCase) >= 0))
+            return true;
+        bool hasCfRay = response.Headers.Contains("cf-ray") || response.Headers.Contains("CF-RAY");
+        bool isCloudflare = response.Headers.Server.Any(s => string.Equals(s.Product?.Name, "cloudflare", StringComparison.OrdinalIgnoreCase));
+        return hasCfRay && isCloudflare;
+    }
+
+    private static string CloudflareMessage(string url) =>
+        $"Cloudflare blocked this download (403). The server flagged WDM as a bot. Try: 1) Open {url} in your browser and let it download once, then paste the final direct link (copy link address) into WDM, or 2) install the WDM browser extension (Options → Browser Integration) and capture the download from the page.";
+
+    public sealed class CloudflareBlockedException : Exception
+    {
+        public CloudflareBlockedException(string message) : base(message) { }
     }
 
     internal static string FormatEta(double seconds)
@@ -1234,6 +1364,25 @@ public sealed class DownloadEngine
         HttpResponseMessage? ProbeBody,
         int UrlIndex);
 
+    /// <summary>Records whether the current source can be resumed mid-transfer. Mirrors
+    /// the branch taken in <see cref="RunSessionAsync"/>: chunked only when the size is
+    /// known and the server honors Range requests.</summary>
+    private static void ApplyResumeCapability(DownloadTask task, ProbeMeta meta)
+    {
+        task.IsResumable = false;
+        if (meta.IsHls)
+            task.ResumeCapabilityText = "No — HLS segment stream";
+        else if (meta.TotalBytes > 0 && meta.SupportsRanges)
+        {
+            task.IsResumable = true;
+            task.ResumeCapabilityText = "Yes — multithreaded chunking";
+        }
+        else if (meta.TotalBytes <= 0)
+            task.ResumeCapabilityText = "No — size unknown";
+        else
+            task.ResumeCapabilityText = "No — server doesn't support ranges";
+    }
+
     private sealed class Session : IDisposable
     {
         public Session(DownloadTask task)
@@ -1244,7 +1393,6 @@ public sealed class DownloadEngine
         public DownloadTask Task { get; }
         public CancellationTokenSource Cts { get; } = new();
         public CancellationToken Token => Cts.Token;
-        public List<Task> Chunks { get; } = new();
         public ChunkState? State { get; set; }
         public long ChunkSize;
         public int NextChunk;
@@ -1273,6 +1421,10 @@ public sealed class DownloadEngine
         }
 
         public string StatePath => $"{Task.FullPath}.wdmstate";
+
+        /// <summary>Task backing <see cref="DownloadEngine.RunSessionAsync"/>; completes
+        /// only after every chunk worker and file stream has unwound.</summary>
+        public Task? RunningTask { get; set; }
 
         public void Cancel() => Cts.Cancel();
 

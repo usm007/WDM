@@ -20,7 +20,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
     private FilterKind _filter = FilterKind.All;
     private string _searchText = "";
     private bool _isSidebarCollapsed = false;
-    private double _sidebarWidth = 230;
+    private double _sidebarWidth = 155;
 
     public ObservableCollection<DownloadTask> Tasks { get; } = new();
     public ObservableCollection<DownloadTask> SelectedTasks { get; } = new();
@@ -63,6 +63,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
     public RelayCommand BulkPriorityHighCommand { get; }
     public RelayCommand BulkPriorityNormalCommand { get; }
     public RelayCommand ToggleSidebarCommand { get; }
+    public RelayCommand ToggleThemeCommand { get; }
     public RelayCommand ClearSearchCommand { get; }
     public RelayCommand AboutCommand { get; }
     public RelayCommand StartQueueCommand { get; }
@@ -71,6 +72,11 @@ public sealed class MainViewModel : INotifyPropertyChanged
     public RelayCommand RetryAllFailedCommand { get; }
     public RelayCommand DismissFailedBannerCommand { get; }
     public RelayCommand RefreshLinkCommand { get; }
+
+    /// <summary>Raised before a destructive delete so the view can confirm with the
+    /// user. The handler shows the themed DeleteConfirmDialog and, if confirmed, sets
+    /// <see cref="DeletePromptRequest.DeleteFromDisk"/>. A null result = cancelled.</summary>
+    public event Action<DeletePromptRequest>? DeletePromptRequested;
 
     public MainViewModel()
     {
@@ -118,9 +124,19 @@ public sealed class MainViewModel : INotifyPropertyChanged
         BulkRemoveCommand = new RelayCommand(_ =>
         {
             var snapshot = SelectedTasks.ToArray();
+            if (snapshot.Length == 0)
+                return;
+            var prompt = new DeletePromptRequest
+            {
+                Message = $"Delete {snapshot.Length} selected download{(snapshot.Length == 1 ? "" : "s")}?",
+                DiskChecked = false,
+            };
+            DeletePromptRequested?.Invoke(prompt);
+            if (prompt.DeleteFromDisk is not bool disk)
+                return;
             foreach (var t in snapshot)
             {
-                Engine.Remove(t);
+                Engine.Remove(t, disk);
                 Tasks.Remove(t);
             }
             SaveTasksSoon();
@@ -129,6 +145,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
         BulkPriorityHighCommand = new RelayCommand(_ => BulkDo(t => Engine.SetPriority(t, PriorityLevel.High)));
         BulkPriorityNormalCommand = new RelayCommand(_ => BulkDo(t => Engine.SetPriority(t, PriorityLevel.Normal)));
         ToggleSidebarCommand = new RelayCommand(_ => IsSidebarCollapsed = !IsSidebarCollapsed);
+        ToggleThemeCommand = new RelayCommand(_ => IsDarkTheme = !IsDarkTheme);
         ClearSearchCommand = new RelayCommand(_ => SearchText = "");
         AboutCommand = new RelayCommand(_ => AboutRequested?.Invoke());
         StartQueueCommand = new RelayCommand(_ => Engine.ResumeAll());
@@ -214,14 +231,55 @@ public sealed class MainViewModel : INotifyPropertyChanged
     }
 
     public double SidebarWidth => IsSidebarCollapsed ? 40 : _sidebarWidth;
-    public string CollapseIcon => IsSidebarCollapsed ? "\uE76C" : "\uE76B"; // Chevron Right / Left
+    public string CollapseIcon => IsSidebarCollapsed ? char.ConvertFromUtf32(0xF0142) : char.ConvertFromUtf32(0xF0141); // Chevron Right / Left
     public string CollapseToolTip => IsSidebarCollapsed ? "Expand Sidebar" : "Collapse Sidebar";
+
+    public bool IsDarkTheme
+    {
+        get => Settings.UseDarkTheme;
+        set
+        {
+            if (Settings.UseDarkTheme == value)
+                return;
+            Settings.UseDarkTheme = value;
+            ThemeService.Apply(Settings.Theme, value);
+            TaskStore.SaveSettings(Settings);
+            OnPropertyChanged(nameof(IsDarkTheme));
+            OnPropertyChanged(nameof(ThemeButtonIcon));
+            OnPropertyChanged(nameof(ThemeButtonLabel));
+            OnPropertyChanged(nameof(ThemeButtonToolTip));
+        }
+    }
+
+    public AppTheme SelectedTheme
+    {
+        get => Settings.Theme;
+        set
+        {
+            if (Settings.Theme == value)
+                return;
+            Settings.Theme = value;
+            ThemeService.Apply(value, Settings.UseDarkTheme);
+            TaskStore.SaveSettings(Settings);
+            OnPropertyChanged(nameof(SelectedTheme));
+            OnPropertyChanged(nameof(SelectedThemeName));
+        }
+    }
+
+    public string SelectedThemeName => SelectedTheme == AppTheme.WdmOriginal ? "Vibrant (WDM Original)" : "Modern Grey (Default)";
+
+    public IReadOnlyList<AppTheme> AvailableThemes { get; } = new[] { AppTheme.Default, AppTheme.WdmOriginal };
+
+    /// <summary>Icon of the theme the button switches to: sun for light, contrast for dark.</summary>
+    public string ThemeButtonIcon => IsDarkTheme ? char.ConvertFromUtf32(0xF0599) : char.ConvertFromUtf32(0xF0594); // Sunny when dark (switch to light), Night when light
+    public string ThemeButtonLabel => IsDarkTheme ? "Light" : "Dark";
+    public string ThemeButtonToolTip => IsDarkTheme ? "Switch to light theme" : "Switch to dark theme";
 
     public void SetSidebarWidth(double width)
     {
         if (IsSidebarCollapsed)
             return;
-        _sidebarWidth = Math.Clamp(width, 140, 360);
+        _sidebarWidth = Math.Clamp(width, 110, 320);
         OnPropertyChanged(nameof(SidebarWidth));
     }
 
@@ -252,6 +310,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
             OnPropertyChanged(nameof(HasSearchText));
             OnPropertyChanged(nameof(SearchContextText));
             TasksView.Refresh();
+            UpdateEmptyState();
         }
     }
 
@@ -405,10 +464,16 @@ public sealed class MainViewModel : INotifyPropertyChanged
                 Priority = record.Priority,
                 Category = record.Category,
                 Checksum = record.Checksum,
+                Error = record.Error,
                 AddedAt = record.AddedAt == default ? DateTime.Now : record.AddedAt,
                 CompletedAt = record.CompletedAt,
             };
-            task.Status = record.Status == TaskStatus.Downloading ? TaskStatus.Paused : record.Status;
+            // The engine queue is not persisted, so nothing can ever start a task that
+            // was still queued when the app closed. Land those as Paused instead of
+            // leaving a dead "Queued" row the user cannot resume.
+            task.Status = record.Status is TaskStatus.Downloading or TaskStatus.Queued
+                ? TaskStatus.Paused
+                : record.Status;
             if (!DownloadEngine.LooksLikeFileName(task.FileName))
                 task.FileName = DownloadEngine.DeriveName(record.Url);
             Tasks.Add(task);
@@ -590,18 +655,17 @@ public sealed class MainViewModel : INotifyPropertyChanged
         if (SelectedTask is null)
             return;
         var task = SelectedTask;
-        if (deleteFiles)
+        var prompt = new DeletePromptRequest
         {
-            var result = MessageBox.Show(
-                $"Delete \"{task.FileName}\" from your disk? This permanently removes the downloaded file and cannot be undone.",
-                "Delete with file",
-                MessageBoxButton.YesNo,
-                MessageBoxImage.Warning,
-                MessageBoxResult.No);
-            if (result != MessageBoxResult.Yes)
-                return;
-        }
-        Engine.Remove(task, deleteFiles);
+            Message = deleteFiles
+                ? $"Delete \"{task.FileName}\" and its file from disk? This permanently removes the downloaded file."
+                : $"Remove \"{task.FileName}\" from the download list?",
+            DiskChecked = deleteFiles,
+        };
+        DeletePromptRequested?.Invoke(prompt);
+        if (prompt.DeleteFromDisk is not bool disk)
+            return;
+        Engine.Remove(task, disk);
         Tasks.Remove(task);
         SaveTasksSoon();
         UpdateStatus();
@@ -667,8 +731,22 @@ public sealed class MainViewModel : INotifyPropertyChanged
 
     public void ClearCompleted()
     {
-        foreach (var task in Tasks.Where(t => t.Status == TaskStatus.Completed).ToList())
+        var completed = Tasks.Where(t => t.Status == TaskStatus.Completed).ToList();
+        if (completed.Count == 0)
+            return;
+        var prompt = new DeletePromptRequest
+        {
+            Message = $"Delete {completed.Count} completed download{(completed.Count == 1 ? "" : "s")}?",
+            DiskChecked = false,
+        };
+        DeletePromptRequested?.Invoke(prompt);
+        if (prompt.DeleteFromDisk is not bool disk)
+            return;
+        foreach (var task in completed)
+        {
+            Engine.Remove(task, disk);
             Tasks.Remove(task);
+        }
         SaveTasksSoon();
         UpdateStatus();
     }
@@ -887,19 +965,32 @@ public sealed class FilterItem : INotifyPropertyChanged
     public FilterKind Kind { get; }
     public bool IsCategory => Kind is FilterKind.Video or FilterKind.Music or FilterKind.Document or FilterKind.Compressed or FilterKind.Program;
 
-    public string Icon => (IsSeparator || IsHeader) ? "" : Kind switch
+    public string Icon => (IsSeparator || IsHeader) ? "" : ThemeService.CurrentTheme == AppTheme.WdmOriginal ? Kind switch
     {
         FilterKind.All => "\uE774",
         FilterKind.Video => "\uE714",
         FilterKind.Music => "\uE8D6",
         FilterKind.Document => "\uE8A5",
-        FilterKind.Compressed => "\uF133",
-        FilterKind.Program => "\uE756",
+        FilterKind.Compressed => "\uE8B7",
+        FilterKind.Program => "\uE74C",
         FilterKind.Queue => "\uE806",
         FilterKind.Finished => "\uE73E",
         FilterKind.Paused => "\uE769",
         FilterKind.Failed => "\uEA39",
         _ => "\uE774",
+    } : Kind switch
+    {
+        FilterKind.All => char.ConvertFromUtf32(0xF003B),
+        FilterKind.Video => char.ConvertFromUtf32(0xF0381),
+        FilterKind.Music => char.ConvertFromUtf32(0xF0387),
+        FilterKind.Document => char.ConvertFromUtf32(0xF0219),
+        FilterKind.Compressed => char.ConvertFromUtf32(0xF05C4),
+        FilterKind.Program => char.ConvertFromUtf32(0xF08C6),
+        FilterKind.Queue => char.ConvertFromUtf32(0xF027B),
+        FilterKind.Finished => char.ConvertFromUtf32(0xF05E0),
+        FilterKind.Paused => char.ConvertFromUtf32(0xF03E4),
+        FilterKind.Failed => char.ConvertFromUtf32(0xF0028),
+        _ => char.ConvertFromUtf32(0xF003B),
     };
 
     public string Name => IsSeparator ? "" : IsHeader ? HeaderText : Kind switch
@@ -918,7 +1009,16 @@ public sealed class FilterItem : INotifyPropertyChanged
     };
 
     public System.Windows.Media.Brush CategoryBrush =>
-        (System.Windows.Media.Brush)System.Windows.Application.Current.Resources["Brush.TextDim"];
+        (System.Windows.Media.Brush)System.Windows.Application.Current.Resources[
+            Kind switch
+            {
+                FilterKind.Video => "Brush.CatVideo",
+                FilterKind.Music => "Brush.CatMusic",
+                FilterKind.Document => "Brush.CatDocument",
+                FilterKind.Compressed => "Brush.CatCompressed",
+                FilterKind.Program => "Brush.CatProgram",
+                _ => "Brush.Text",
+            }];
 
     public int Count
     {
@@ -952,5 +1052,14 @@ public sealed class FilterItem : INotifyPropertyChanged
         : Count.ToString();
 
     public event PropertyChangedEventHandler? PropertyChanged;
+}
+
+/// <summary>Carries a pending destructive delete to the view for confirmation.
+/// The view sets <see cref="DeleteFromDisk"/> to the user's choice; null means cancelled.</summary>
+public sealed class DeletePromptRequest
+{
+    public required string Message { get; init; }
+    public required bool DiskChecked { get; init; }
+    public bool? DeleteFromDisk { get; set; }
 }
 

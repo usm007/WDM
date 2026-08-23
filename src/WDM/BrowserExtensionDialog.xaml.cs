@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Windows;
 using WDM.Services;
 
@@ -10,6 +10,12 @@ public partial class BrowserExtensionDialog : Window
     {
         InitializeComponent();
         BrowserIntegration.DeployExtension();
+    }
+
+    protected override void OnSourceInitialized(EventArgs e)
+    {
+        base.OnSourceInitialized(e);
+        WDM.Services.ThemeService.ApplyTitleBar(this);
     }
 
     private void CopyPath_Click(object sender, RoutedEventArgs e)

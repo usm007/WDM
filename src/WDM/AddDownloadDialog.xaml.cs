@@ -49,6 +49,12 @@ public partial class AddDownloadDialog : Window
         };
     }
 
+    protected override void OnSourceInitialized(EventArgs e)
+    {
+        base.OnSourceInitialized(e);
+        WDM.Services.ThemeService.ApplyTitleBar(this);
+    }
+
     private void AutoPasteClipboardUrl()
     {
         try
@@ -148,12 +154,12 @@ public partial class AddDownloadDialog : Window
         FileCategoryLabel.Text = cat.ToString();
         FileCategoryIcon.Text = cat switch
         {
-            DownloadCategory.Video => "\uE714",
-            DownloadCategory.Music => "\uE8D6",
-            DownloadCategory.Document => "\uE8A5",
-            DownloadCategory.Compressed => "\uF133",
-            DownloadCategory.Program => "\uE756",
-            _ => "\uE7C3",
+            DownloadCategory.Video => char.ConvertFromUtf32(0xF0381),
+            DownloadCategory.Music => char.ConvertFromUtf32(0xF0387),
+            DownloadCategory.Document => char.ConvertFromUtf32(0xF0219),
+            DownloadCategory.Compressed => char.ConvertFromUtf32(0xF05C4),
+            DownloadCategory.Program => char.ConvertFromUtf32(0xF08C6),
+            _ => char.ConvertFromUtf32(0xF0224),
         };
     }
 
@@ -164,7 +170,7 @@ public partial class AddDownloadDialog : Window
         var ct = _probeCts.Token;
 
         ProbeBadge.Visibility = Visibility.Visible;
-        ProbeIcon.Text = "\uE916";
+        ProbeIcon.Text = char.ConvertFromUtf32(0xF0349);
         ProbeText.Text = "Inspecting URL capabilities...";
 
         try
@@ -218,17 +224,17 @@ public partial class AddDownloadDialog : Window
                 || url.Contains(".m3u8", StringComparison.OrdinalIgnoreCase);
             if (isHls)
             {
-                ProbeIcon.Text = "\uE946";
+                ProbeIcon.Text = char.ConvertFromUtf32(0xF05E0);
                 ProbeText.Text = $"{sizeStr} • HLS stream (downloads as one media file)";
             }
             else if (supportsRanges)
             {
-                ProbeIcon.Text = "\uE946";
+                ProbeIcon.Text = char.ConvertFromUtf32(0xF05E0);
                 ProbeText.Text = $"{sizeStr} • Multi-threaded resume supported";
             }
             else
             {
-                ProbeIcon.Text = "\uEA39";
+                ProbeIcon.Text = char.ConvertFromUtf32(0xF05D6);
                 ProbeText.Text = $"{sizeStr} • Single-thread download (Server doesn't support resuming)";
             }
         }
@@ -240,7 +246,7 @@ public partial class AddDownloadDialog : Window
         {
             if (!ct.IsCancellationRequested)
             {
-                ProbeIcon.Text = "\uE946";
+                ProbeIcon.Text = char.ConvertFromUtf32(0xF05E0);
                 ProbeText.Text = "URL ready for download";
             }
         }

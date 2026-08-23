@@ -10,7 +10,10 @@ public sealed class TaskStatusToBrushConverter : IValueConverter
     private static SolidColorBrush? Resolve(string key) =>
         System.Windows.Application.Current?.Resources[key] as SolidColorBrush;
 
-    private static readonly SolidColorBrush Fallback = new(Color.FromRgb(0x00, 0x00, 0x00));
+    /// <summary>Neutral fallback brush that stays visible on both light and dark
+    /// surfaces (a hardcoded pure black was invisible in dark mode).</summary>
+    private static SolidColorBrush Fallback =>
+        Resolve("Brush.TextMuted") ?? new SolidColorBrush(Color.FromRgb(0x90, 0x93, 0x9E));
 
     public static SolidColorBrush? BrushFor(TaskStatus status) => status switch
     {

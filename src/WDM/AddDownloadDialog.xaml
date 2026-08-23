@@ -8,6 +8,8 @@
         WindowStartupLocation="CenterScreen"
         ResizeMode="NoResize"
         ShowInTaskbar="True"
+        UseLayoutRounding="True"
+        SnapsToDevicePixels="True"
         Background="{DynamicResource Brush.Surface}">
     <Grid Margin="20,16,20,20">
         <Grid.RowDefinitions>
@@ -27,7 +29,7 @@
             <Border x:Name="FileCategoryBadge" DockPanel.Dock="Right" Background="{DynamicResource Brush.AccentSoft}"
                     CornerRadius="6" Padding="10,5" VerticalAlignment="Center" HorizontalAlignment="Right">
                 <StackPanel Orientation="Horizontal">
-                    <TextBlock x:Name="FileCategoryIcon" Text="&#xE7C3;" FontFamily="{StaticResource Font.Icon}"
+                    <TextBlock x:Name="FileCategoryIcon" Text="&#xF0224;" FontFamily="{StaticResource Font.Icon}"
                                FontSize="13" Foreground="{DynamicResource Brush.Accent}" VerticalAlignment="Center" Margin="0,0,6,0" />
                     <TextBlock x:Name="FileCategoryLabel" Text="File" FontSize="11" FontWeight="Medium"
                                Foreground="{DynamicResource Brush.Accent}" VerticalAlignment="Center" />

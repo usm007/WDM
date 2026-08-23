@@ -1,4 +1,4 @@
-using System.Windows;
+﻿using System.Windows;
 using WDM.Models;
 
 namespace WDM;
@@ -19,6 +19,12 @@ public partial class RefreshLinkDialog : Window
         UrlBox.Text = task.Url;
         UrlBox.Focus();
         UrlBox.SelectAll();
+    }
+
+    protected override void OnSourceInitialized(EventArgs e)
+    {
+        base.OnSourceInitialized(e);
+        WDM.Services.ThemeService.ApplyTitleBar(this);
     }
 
     private void OkClick(object sender, RoutedEventArgs e)

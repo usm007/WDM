@@ -1,6 +1,7 @@
 using System.ComponentModel;
 using System.Runtime.CompilerServices;
 using System.Windows.Threading;
+using WDM.Services;
 
 namespace WDM.Models;
 
@@ -212,6 +213,22 @@ public sealed class DownloadTask : INotifyPropertyChanged
         }
     }
 
+    /// <summary>Whether the download can be resumed/paused mid-transfer, as determined
+    /// by the engine's probe (server Range support, known size, non-HLS).</summary>
+    private bool _isResumable;
+    public bool IsResumable
+    {
+        get => _isResumable;
+        set => Set(ref _isResumable, value);
+    }
+
+    private string _resumeCapabilityText = "Checking server support…";
+    public string ResumeCapabilityText
+    {
+        get => _resumeCapabilityText;
+        set => Set(ref _resumeCapabilityText, value);
+    }
+
     public string SizeText => TotalBytes > 0 ? FormatBytes(TotalBytes) : "—";
 
     public string DownloadedText => FormatBytes(DownloadedBytes);
@@ -265,27 +282,61 @@ public sealed class DownloadTask : INotifyPropertyChanged
         }
     }
 
-    public string CategoryColorHex => Category switch
+    public string CategoryColorHex
     {
-        DownloadCategory.Video => "#EF4444",
-        DownloadCategory.Music => "#8B5CF6",
-        DownloadCategory.Document => "#3B82F6",
-        DownloadCategory.Compressed => "#F59E0B",
-        DownloadCategory.Program => "#10B981",
-        _ => "#000000",
-    };
+        get
+        {
+            string key = Category switch
+            {
+                DownloadCategory.Video => "Brush.CatVideo",
+                DownloadCategory.Music => "Brush.CatMusic",
+                DownloadCategory.Document => "Brush.CatDocument",
+                DownloadCategory.Compressed => "Brush.CatCompressed",
+                DownloadCategory.Program => "Brush.CatProgram",
+                _ => "Brush.TextMuted",
+            };
+            if (System.Windows.Application.Current?.Resources[key] is System.Windows.Media.SolidColorBrush brush)
+                return brush.Color.ToString();
+            return Category switch
+            {
+                DownloadCategory.Video => "#EF4444",
+                DownloadCategory.Music => "#8B5CF6",
+                DownloadCategory.Document => "#3B82F6",
+                DownloadCategory.Compressed => "#F59E0B",
+                DownloadCategory.Program => "#10B981",
+                _ => "#90939E",
+            };
+        }
+    }
 
     public System.Windows.Media.Brush CategoryBrush =>
-        (System.Windows.Media.Brush)System.Windows.Application.Current.Resources["Brush.TextDim"];
+        (System.Windows.Media.Brush)System.Windows.Application.Current.Resources[
+            Category switch
+            {
+                DownloadCategory.Video => "Brush.CatVideo",
+                DownloadCategory.Music => "Brush.CatMusic",
+                DownloadCategory.Document => "Brush.CatDocument",
+                DownloadCategory.Compressed => "Brush.CatCompressed",
+                DownloadCategory.Program => "Brush.CatProgram",
+                _ => "Brush.Text",
+            }];
 
-    public string TypeIcon => Category switch
+    public string TypeIcon => ThemeService.CurrentTheme == AppTheme.WdmOriginal ? Category switch
     {
         DownloadCategory.Video => "\uE714",
         DownloadCategory.Music => "\uE8D6",
         DownloadCategory.Document => "\uE8A5",
-        DownloadCategory.Compressed => "\uF133",
-        DownloadCategory.Program => "\uE756",
+        DownloadCategory.Compressed => "\uE8B7",
+        DownloadCategory.Program => "\uE74C",
         _ => "\uE7C3",
+    } : Category switch
+    {
+        DownloadCategory.Video => char.ConvertFromUtf32(0xF0381),
+        DownloadCategory.Music => char.ConvertFromUtf32(0xF0387),
+        DownloadCategory.Document => char.ConvertFromUtf32(0xF0219),
+        DownloadCategory.Compressed => char.ConvertFromUtf32(0xF05C4),
+        DownloadCategory.Program => char.ConvertFromUtf32(0xF08C6),
+        _ => char.ConvertFromUtf32(0xF0224),
     };
 
     public string StatusText => Status switch
