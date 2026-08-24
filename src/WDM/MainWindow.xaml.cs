@@ -1,4 +1,4 @@
-﻿using System.Collections.Generic;
+using System.Collections.Generic;
 using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Controls;
@@ -88,8 +88,6 @@ public partial class MainWindow : Window
             }
         };
         trayTimer.Start();
-
-        ApplyRoundedClip(ListCard);
 
         Loaded += (_, _) =>
         {

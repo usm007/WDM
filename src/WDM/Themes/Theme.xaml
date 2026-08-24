@@ -310,10 +310,10 @@
         <Setter Property="BorderBrush" Value="Transparent" />
         <Setter Property="BorderThickness" Value="0" />
         <Setter Property="Foreground" Value="{DynamicResource Brush.Text}" />
-        <Setter Property="Padding" Value="8,4" />
-        <Setter Property="Margin" Value="0,0" />
-        <Setter Property="Height" Value="56" />
-        <Setter Property="MinWidth" Value="50" />
+        <Setter Property="Padding" Value="9,4" />
+        <Setter Property="Margin" Value="3,0,3,0" />
+        <Setter Property="Height" Value="54" />
+        <Setter Property="MinWidth" Value="52" />
         <Setter Property="Cursor" Value="Hand" />
         <Setter Property="Template">
             <Setter.Value>
@@ -328,6 +328,52 @@
                         </Trigger>
                         <Trigger Property="IsPressed" Value="True">
                             <Setter TargetName="bd" Property="Background" Value="{DynamicResource Brush.SurfaceAlt}" />
+                        </Trigger>
+                        <Trigger Property="IsEnabled" Value="False">
+                            <Setter Property="Opacity" Value="0.4" />
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <!-- Gradient Brushes for Primary CTA Button -->
+    <LinearGradientBrush x:Key="Brush.BtnPrimaryGradient" StartPoint="0,0" EndPoint="0,1">
+        <GradientStop Color="#2563EB" Offset="0.0" />
+        <GradientStop Color="#1D4ED8" Offset="1.0" />
+    </LinearGradientBrush>
+
+    <LinearGradientBrush x:Key="Brush.BtnPrimaryGradientHover" StartPoint="0,0" EndPoint="0,1">
+        <GradientStop Color="#3B82F6" Offset="0.0" />
+        <GradientStop Color="#2563EB" Offset="1.0" />
+    </LinearGradientBrush>
+
+    <!-- Primary IDM Action Button (Add URL Call-To-Action - Slimmer & Longer Blue Gradient) -->
+    <Style x:Key="Button.IDMPrimary" TargetType="Button">
+        <Setter Property="Background" Value="{StaticResource Brush.BtnPrimaryGradient}" />
+        <Setter Property="BorderBrush" Value="#1E40AF" />
+        <Setter Property="BorderThickness" Value="1" />
+        <Setter Property="Foreground" Value="#FFFFFF" />
+        <Setter Property="Padding" Value="16,0" />
+        <Setter Property="Margin" Value="0,0,10,0" />
+        <Setter Property="Height" Value="36" />
+        <Setter Property="MinWidth" Value="115" />
+        <Setter Property="Cursor" Value="Hand" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="Button">
+                    <Border x:Name="bd" Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}"
+                            BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="6" Padding="{TemplateBinding Padding}">
+                        <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
+                    </Border>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter TargetName="bd" Property="Background" Value="{StaticResource Brush.BtnPrimaryGradientHover}" />
+                            <Setter TargetName="bd" Property="BorderBrush" Value="#2563EB" />
+                        </Trigger>
+                        <Trigger Property="IsPressed" Value="True">
+                            <Setter TargetName="bd" Property="Background" Value="{StaticResource Brush.BtnPrimaryGradient}" />
                         </Trigger>
                         <Trigger Property="IsEnabled" Value="False">
                             <Setter Property="Opacity" Value="0.4" />
@@ -565,40 +611,67 @@
         </Setter>
     </Style>
 
-    <!-- ============ SIDEBAR — dot indicator selected state ============ -->
+    <!-- ============ SIDEBAR — tighter & better styled list item ============ -->
     <Style x:Key="ListBoxItem.Sidebar" TargetType="ListBoxItem">
         <Setter Property="FocusVisualStyle" Value="{StaticResource FocusVisual.Empty}" />
         <Setter Property="Foreground" Value="{DynamicResource Brush.TextDim}" />
-        <Setter Property="Padding" Value="7,5" />
+        <Setter Property="Padding" Value="7,4" />
         <Setter Property="Margin" Value="2,1" />
         <Setter Property="Cursor" Value="Hand" />
         <Setter Property="Template">
             <Setter.Value>
                 <ControlTemplate TargetType="ListBoxItem">
                     <Border x:Name="bd" Background="Transparent" BorderBrush="Transparent"
-                            BorderThickness="0" Padding="{TemplateBinding Padding}" CornerRadius="4"
+                            BorderThickness="0" Padding="{TemplateBinding Padding}" CornerRadius="5"
                             SnapsToDevicePixels="True" UseLayoutRounding="True">
                         <Grid>
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="8" />
-                                <ColumnDefinition Width="*" />
-                            </Grid.ColumnDefinitions>
-                            <!-- Accent dot indicator, only when selected -->
-                            <Ellipse x:Name="AccentDot" Width="5" Height="5" Fill="{DynamicResource Brush.Accent}"
-                                     HorizontalAlignment="Left" VerticalAlignment="Center" Visibility="Collapsed" />
-                            <ContentPresenter Grid.Column="1" />
+                            <!-- Sleek vertical left accent indicator bar -->
+                            <Border x:Name="AccentBar" Width="3" CornerRadius="1.5" Background="{DynamicResource Brush.Accent}"
+                                    HorizontalAlignment="Left" VerticalAlignment="Stretch" Margin="-7,-4,0,-4" Visibility="Collapsed" />
+                            <ContentPresenter Margin="3,0,0,0" />
                         </Grid>
                     </Border>
                     <ControlTemplate.Triggers>
-                        <Trigger Property="IsMouseOver" Value="True">
+                        <!-- Interactive hover/selection only for regular category & view items -->
+                        <MultiDataTrigger>
+                            <MultiDataTrigger.Conditions>
+                                <Condition Binding="{Binding IsMouseOver, RelativeSource={RelativeSource Self}}" Value="True" />
+                                <Condition Binding="{Binding IsHeader}" Value="False" />
+                                <Condition Binding="{Binding IsSeparator}" Value="False" />
+                            </MultiDataTrigger.Conditions>
                             <Setter TargetName="bd" Property="Background" Value="{DynamicResource Brush.SurfaceHover}" />
                             <Setter Property="Foreground" Value="{DynamicResource Brush.Text}" />
-                        </Trigger>
-                        <Trigger Property="IsSelected" Value="True">
+                        </MultiDataTrigger>
+
+                        <MultiDataTrigger>
+                            <MultiDataTrigger.Conditions>
+                                <Condition Binding="{Binding IsSelected, RelativeSource={RelativeSource Self}}" Value="True" />
+                                <Condition Binding="{Binding IsHeader}" Value="False" />
+                                <Condition Binding="{Binding IsSeparator}" Value="False" />
+                            </MultiDataTrigger.Conditions>
                             <Setter TargetName="bd" Property="Background" Value="{DynamicResource Brush.AccentSoft}" />
-                            <Setter TargetName="AccentDot" Property="Visibility" Value="Visible" />
+                            <Setter TargetName="AccentBar" Property="Visibility" Value="Visible" />
                             <Setter Property="Foreground" Value="{DynamicResource Brush.Accent}" />
-                        </Trigger>
+                            <Setter Property="FontWeight" Value="SemiBold" />
+                        </MultiDataTrigger>
+
+                        <!-- Static section headers: non-interactive background elements -->
+                        <DataTrigger Binding="{Binding IsHeader}" Value="True">
+                            <Setter Property="Focusable" Value="False" />
+                            <Setter Property="IsHitTestVisible" Value="False" />
+                            <Setter Property="Cursor" Value="Arrow" />
+                            <Setter Property="Padding" Value="2,6,2,2" />
+                            <Setter Property="Margin" Value="0" />
+                        </DataTrigger>
+
+                        <!-- Static separators: non-interactive background lines -->
+                        <DataTrigger Binding="{Binding IsSeparator}" Value="True">
+                            <Setter Property="Focusable" Value="False" />
+                            <Setter Property="IsHitTestVisible" Value="False" />
+                            <Setter Property="Cursor" Value="Arrow" />
+                            <Setter Property="Padding" Value="0,2" />
+                            <Setter Property="Margin" Value="0" />
+                        </DataTrigger>
                     </ControlTemplate.Triggers>
                 </ControlTemplate>
             </Setter.Value>
