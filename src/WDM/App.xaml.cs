@@ -62,13 +62,9 @@ public partial class App : Application
             string.Equals(a, "/minimized", StringComparison.OrdinalIgnoreCase) ||
             string.Equals(a, "--minimized", StringComparison.OrdinalIgnoreCase));
         var settings = TaskStore.LoadSettings();
-        ThemeService.Apply(settings.Theme, settings.UseDarkTheme);
+        ThemeService.Apply(AppTheme.Default, settings.UseDarkTheme);
 
-        // Create the appropriate main window for the selected theme family
-        // Default = Modern Grey (WDM-2) — WdmOriginal = Vibrant WDM (imported whole UI)
-        Window mainWindow = settings.Theme == AppTheme.WdmOriginal
-            ? new WdmOriginalMainWindow()
-            : new MainWindow();
+        Window mainWindow = new MainWindow();
         mainWindow.Show();
     }
 

@@ -211,13 +211,7 @@
                     <!-- Panel 5: Appearance -->
                     <StackPanel x:Name="PanelAppearance" Visibility="Collapsed">
                         <TextBlock Text="Appearance" Style="{StaticResource Text.Section}" Margin="0,0,0,14" />
-                        <TextBlock Text="Choose how WDM looks. 'Vibrant' is the original WDM orange/blue gradient UI — 'Modern Grey' is the current soft theme." Style="{StaticResource Text.Muted}" FontSize="12" Margin="0,-8,0,14" TextWrapping="Wrap" />
-
-                        <TextBlock Text="UI Theme" Style="{StaticResource Label.Field}" />
-                        <ComboBox x:Name="ThemeBox" Margin="0,0,0,14" SelectionChanged="ThemeBox_SelectionChanged">
-                            <ComboBoxItem Content="Modern Grey (Default) — soft grey with blue accents" Tag="Default" />
-                            <ComboBoxItem Content="Vibrant (WDM Original) — orange/blue gradients, capsule sidebar, shadows" Tag="WdmOriginal" />
-                        </ComboBox>
+                        <TextBlock Text="Customize color mode for WDM." Style="{StaticResource Text.Muted}" FontSize="12" Margin="0,-8,0,14" TextWrapping="Wrap" />
 
                         <TextBlock Text="Color mode" Style="{StaticResource Label.Field}" />
                         <CheckBox x:Name="DarkModeBox" Content="Use dark theme" Margin="0,0,0,14" Checked="DarkMode_Changed" Unchecked="DarkMode_Changed" />

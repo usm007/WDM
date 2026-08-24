@@ -266,9 +266,9 @@ public sealed class MainViewModel : INotifyPropertyChanged
         }
     }
 
-    public string SelectedThemeName => SelectedTheme == AppTheme.WdmOriginal ? "Vibrant (WDM Original)" : "Modern Grey (Default)";
+    public string SelectedThemeName => "Default";
 
-    public IReadOnlyList<AppTheme> AvailableThemes { get; } = new[] { AppTheme.Default, AppTheme.WdmOriginal };
+    public IReadOnlyList<AppTheme> AvailableThemes { get; } = new[] { AppTheme.Default };
 
     /// <summary>Icon of the theme the button switches to: sun for light, contrast for dark.</summary>
     public string ThemeButtonIcon => IsDarkTheme ? char.ConvertFromUtf32(0xF0599) : char.ConvertFromUtf32(0xF0594); // Sunny when dark (switch to light), Night when light
@@ -966,20 +966,7 @@ public sealed class FilterItem : INotifyPropertyChanged
     public FilterKind Kind { get; }
     public bool IsCategory => Kind is FilterKind.Video or FilterKind.Music or FilterKind.Document or FilterKind.Compressed or FilterKind.Program;
 
-    public string Icon => (IsSeparator || IsHeader) ? "" : ThemeService.CurrentTheme == AppTheme.WdmOriginal ? Kind switch
-    {
-        FilterKind.All => "\uE774",
-        FilterKind.Video => "\uE714",
-        FilterKind.Music => "\uE8D6",
-        FilterKind.Document => "\uE8A5",
-        FilterKind.Compressed => "\uE8B7",
-        FilterKind.Program => "\uE74C",
-        FilterKind.Queue => "\uE806",
-        FilterKind.Finished => "\uE73E",
-        FilterKind.Paused => "\uE769",
-        FilterKind.Failed => "\uEA39",
-        _ => "\uE774",
-    } : Kind switch
+    public string Icon => (IsSeparator || IsHeader) ? "" : Kind switch
     {
         FilterKind.All => char.ConvertFromUtf32(0xF003B),
         FilterKind.Video => char.ConvertFromUtf32(0xF0381),

@@ -51,31 +51,27 @@ public static class ThemeService
 
     public static void Apply(AppTheme theme, bool dark)
     {
-        CurrentTheme = theme;
+        CurrentTheme = AppTheme.Default;
         IsDark = dark;
 
         var app = Application.Current;
         if (app is null) return;
 
-        // Swap palette (colors) — path depends on theme family and light/dark
+        // Swap palette (colors) — light/dark
         var paletteDict = app.Resources.MergedDictionaries.FirstOrDefault(d =>
             d.Source?.OriginalString?.Contains("Palette.", StringComparison.OrdinalIgnoreCase) == true);
         if (paletteDict is not null)
         {
-            string palettePath = theme == AppTheme.WdmOriginal
-                ? (dark ? "Themes/WdmOriginal/Palette.Dark.xaml" : "Themes/WdmOriginal/Palette.Light.xaml")
-                : (dark ? "Themes/Palette.Dark.xaml" : "Themes/Palette.Light.xaml");
+            string palettePath = dark ? "Themes/Palette.Dark.xaml" : "Themes/Palette.Light.xaml";
             paletteDict.Source = new Uri($"pack://application:,,,/{palettePath}", UriKind.Absolute);
         }
 
-        // Swap Theme.xaml (control styles) — family-specific, palette-independent
+        // Swap Theme.xaml (control styles)
         var themeDict = app.Resources.MergedDictionaries.FirstOrDefault(d =>
             d.Source?.OriginalString?.EndsWith("Theme.xaml", StringComparison.OrdinalIgnoreCase) == true);
         if (themeDict is not null)
         {
-            string themePath = theme == AppTheme.WdmOriginal
-                ? "Themes/WdmOriginal/Theme.xaml"
-                : "Themes/Theme.xaml";
+            string themePath = "Themes/Theme.xaml";
             var newSource = new Uri($"pack://application:,,,/{themePath}", UriKind.Absolute);
             if (!string.Equals(themeDict.Source?.OriginalString, newSource.OriginalString, StringComparison.OrdinalIgnoreCase))
                 themeDict.Source = newSource;

@@ -325,15 +325,7 @@ public sealed class DownloadTask : INotifyPropertyChanged
                 _ => "Brush.Text",
             }];
 
-    public string TypeIcon => ThemeService.CurrentTheme == AppTheme.WdmOriginal ? Category switch
-    {
-        DownloadCategory.Video => "\uE714",
-        DownloadCategory.Music => "\uE8D6",
-        DownloadCategory.Document => "\uE8A5",
-        DownloadCategory.Compressed => "\uE8B7",
-        DownloadCategory.Program => "\uE74C",
-        _ => "\uE7C3",
-    } : Category switch
+    public string TypeIcon => Category switch
     {
         DownloadCategory.Video => char.ConvertFromUtf32(0xF0381),
         DownloadCategory.Music => char.ConvertFromUtf32(0xF0387),
