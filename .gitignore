@@ -28,6 +28,13 @@ src/WDM.Setup/MainWindow.xaml
 src/WDM.Setup/MainWindow.xaml.cs
 src/WDM.Setup/WDM.Setup.csproj
 
+# Development scratch / local scripts
+eventlog.txt
+scratch_ytdlp/
+windows.txt
+RunWDM.bat
+banner.png
+
 # IDE / agent skills
 .agents/
 .claude/
