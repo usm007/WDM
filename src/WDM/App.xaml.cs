@@ -64,6 +64,15 @@ public partial class App : Application
         var settings = TaskStore.LoadSettings();
         ThemeService.Apply(AppTheme.Default, settings.UseDarkTheme);
 
+        if (!settings.HasPromptedExtensionInstall)
+        {
+            ShutdownMode = ShutdownMode.OnExplicitShutdown;
+            var welcome = new WelcomeWindow(settings);
+            welcome.ShowDialog();
+            TaskStore.SaveSettings(settings);
+            ShutdownMode = ShutdownMode.OnLastWindowClose;
+        }
+
         Window mainWindow = new MainWindow();
         mainWindow.Show();
     }
@@ -87,7 +96,7 @@ public partial class App : Application
         if (_ownsMutex && _singleInstanceMutex is not null)
         {
             try { _singleInstanceMutex.ReleaseMutex(); }
-            catch (ApplicationException) { /* mutex was not owned by this thread */ }
+            catch (Exception) { /* mutex was not owned by this thread or already released */ }
         }
         _singleInstanceMutex?.Dispose();
         base.OnExit(e);

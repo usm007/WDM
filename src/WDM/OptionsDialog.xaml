@@ -22,7 +22,7 @@
             </Grid.ColumnDefinitions>
 
             <!-- Left Tab Navigation Menu -->
-            <Border Grid.Column="0" Background="{DynamicResource Brush.Sidebar}" BorderBrush="Transparent" BorderThickness="0" Padding="8,10">
+            <Border Grid.Column="0" Background="{DynamicResource Brush.Sidebar}" BorderBrush="{DynamicResource Brush.Border}" BorderThickness="0,0,1,0" Padding="8,10">
                 <StackPanel>
                     <TextBlock Text="Settings" FontSize="12" FontWeight="Medium" Foreground="{DynamicResource Brush.TextMuted}" Margin="10,0,0,10" />
                     <RadioButton Style="{StaticResource Button.SettingsTab}" IsChecked="True" Checked="Tab_Checked" Tag="Connection">
@@ -41,6 +41,12 @@
                         <StackPanel Orientation="Horizontal">
                             <TextBlock Text="&#xF059F;" FontFamily="pack://application:,,,/Fonts/materialdesignicons-webfont.ttf#Material Design Icons" FontSize="13" Margin="0,0,8,0" VerticalAlignment="Center" />
                             <TextBlock Text="Browser Integration" VerticalAlignment="Center" />
+                        </StackPanel>
+                    </RadioButton>
+                    <RadioButton Style="{StaticResource Button.SettingsTab}" Checked="Tab_Checked" Tag="YouTube">
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="&#xF0381;" FontFamily="pack://application:,,,/Fonts/materialdesignicons-webfont.ttf#Material Design Icons" FontSize="13" Margin="0,0,8,0" VerticalAlignment="Center" />
+                            <TextBlock Text="YouTube &amp; Media" VerticalAlignment="Center" />
                         </StackPanel>
                     </RadioButton>
                     <RadioButton Style="{StaticResource Button.SettingsTab}" Checked="Tab_Checked" Tag="Behavior">
@@ -65,8 +71,9 @@
             </Border>
 
             <!-- Right Content Panels -->
-            <Border Grid.Column="1" Padding="20,10">
-                <Grid>
+            <Border Grid.Column="1" Padding="0,10,0,10">
+                <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="20,0,20,0">
+                    <Grid>
                     <!-- Panel 1: Connection -->
                     <StackPanel x:Name="PanelConnection" Visibility="Visible">
                         <TextBlock Text="Connection &amp; speed" Style="{StaticResource Text.Section}" Margin="0,0,0,14" />
@@ -208,6 +215,96 @@
                         <CheckBox x:Name="RunAtStartupBox" Content="Launch WDM when Windows starts" Margin="0,0,0,6" />
                     </StackPanel>
 
+                    <!-- Panel: YouTube & Media -->
+                    <StackPanel x:Name="PanelYouTube" Visibility="Collapsed">
+                        <TextBlock Text="YouTube &amp; Media Downloader" Style="{StaticResource Text.Section}" Margin="0,0,0,10" />
+                        <TextBlock Text="Activate media downloading powered by yt-dlp, FFmpeg, and QuickJS engines." Style="{StaticResource Text.Muted}" FontSize="12" Margin="0,-6,0,10" TextWrapping="Wrap" />
+
+                        <!-- Activation Switch Card -->
+                        <Border Background="{DynamicResource Brush.SurfaceAlt}" CornerRadius="8" Padding="12,10" Margin="0,0,0,10" BorderBrush="{DynamicResource Brush.Border}" BorderThickness="1">
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <StackPanel Grid.Column="0" VerticalAlignment="Center" Margin="0,0,12,0">
+                                    <TextBlock x:Name="YtStatusBadgeTitle" Text="YouTube Downloader Engine" FontWeight="Bold" FontSize="13" Foreground="{DynamicResource Brush.Text}" />
+                                    <TextBlock x:Name="YtStatusBadgeSub" Text="Inactive — Click Activate to enable" FontSize="11" Foreground="{DynamicResource Brush.TextDim}" Margin="0,3,0,0" TextWrapping="Wrap" />
+                                </StackPanel>
+
+                                <Button x:Name="YtActivateBtn" Grid.Column="1" Content="Activate" Style="{StaticResource Button.Accent}" Padding="16,0" Height="32" VerticalAlignment="Center" Click="YtActivateBtn_Click" />
+                            </Grid>
+                        </Border>
+
+                        <!-- Live Download / Installation Progress Bar Card (Visible while downloading) -->
+                        <Border x:Name="YtProgressCard" Background="{DynamicResource Brush.SurfaceAlt}" CornerRadius="8" Padding="12,10" Margin="0,0,0,10" BorderBrush="{DynamicResource Brush.Border}" BorderThickness="1" Visibility="Collapsed">
+                            <StackPanel>
+                                <DockPanel Margin="0,0,0,6">
+                                    <TextBlock x:Name="YtProgressStatusText" Text="Downloading plugins..." FontSize="11" FontWeight="SemiBold" Foreground="{DynamicResource Brush.Text}" DockPanel.Dock="Left" />
+                                    <TextBlock x:Name="YtProgressPctText" Text="0%" FontSize="11" FontWeight="Bold" Foreground="{DynamicResource Brush.Accent}" DockPanel.Dock="Right" />
+                                </DockPanel>
+                                <ProgressBar x:Name="YtProgressBar" Height="6" Minimum="0" Maximum="100" Value="0" Foreground="{DynamicResource Brush.Accent}" Background="{DynamicResource Brush.Surface}" />
+                            </StackPanel>
+                        </Border>
+
+                        <!-- Active Plugins Info Card (Visible when activated) -->
+                        <Border x:Name="YtPluginsCard" Background="{DynamicResource Brush.SurfaceAlt}" CornerRadius="8" Padding="12,10" Margin="0,0,0,10" BorderBrush="{DynamicResource Brush.Border}" BorderThickness="1" Visibility="Collapsed">
+                            <StackPanel>
+                                <TextBlock Text="Active Plugins &amp; Executables" FontWeight="Bold" FontSize="12" Foreground="{DynamicResource Brush.Text}" Margin="0,0,0,6" />
+
+                                <Grid Margin="0,0,0,4">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="140" />
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Text="• yt-dlp Engine" FontSize="11" FontWeight="Medium" Foreground="{DynamicResource Brush.Text}" />
+                                    <TextBlock x:Name="YtDlpVersionText" Grid.Column="1" Text="v2026.01.15" FontSize="11" Foreground="{DynamicResource Brush.TextDim}" />
+                                    <TextBlock Text="Active" Grid.Column="2" FontSize="11" FontWeight="SemiBold" Foreground="{DynamicResource Brush.StatusActive}" />
+                                </Grid>
+
+                                <Grid Margin="0,0,0,4">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="140" />
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Text="• FFmpeg Converter" FontSize="11" FontWeight="Medium" Foreground="{DynamicResource Brush.Text}" />
+                                    <TextBlock Text="Essentials Build" Grid.Column="1" FontSize="11" Foreground="{DynamicResource Brush.TextDim}" />
+                                    <TextBlock Text="Active" Grid.Column="2" FontSize="11" FontWeight="SemiBold" Foreground="{DynamicResource Brush.StatusActive}" />
+                                </Grid>
+
+                                <Grid Margin="0,0,0,0">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="140" />
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Text="• QuickJS Runtime" FontSize="11" FontWeight="Medium" Foreground="{DynamicResource Brush.Text}" />
+                                    <TextBlock Text="JS Engine" Grid.Column="1" FontSize="11" Foreground="{DynamicResource Brush.TextDim}" />
+                                    <TextBlock Text="Active" Grid.Column="2" FontSize="11" FontWeight="SemiBold" Foreground="{DynamicResource Brush.StatusActive}" />
+                                </Grid>
+                            </StackPanel>
+                        </Border>
+
+                        <!-- YouTube Authentication Card -->
+                        <Border x:Name="YtAuthCard" Background="{DynamicResource Brush.SurfaceAlt}" CornerRadius="8" Padding="12,10" Margin="0,0,0,4" BorderBrush="{DynamicResource Brush.Border}" BorderThickness="1" Visibility="Collapsed">
+                            <StackPanel>
+                                <TextBlock Text="YouTube Authentication" FontWeight="Bold" FontSize="12" Foreground="{DynamicResource Brush.Text}" Margin="0,0,0,2" />
+                                <TextBlock Text="Sign in directly to extract a secure YouTube session. This unlocks age-restricted and member-only videos automatically." FontSize="11" Foreground="{DynamicResource Brush.TextDim}" Margin="0,0,0,10" TextWrapping="Wrap" />
+
+                                <Button x:Name="NativeSignInBtn"
+                                        Content="Sign in to YouTube..."
+                                        Style="{StaticResource Button.Secondary}"
+                                        HorizontalAlignment="Left"
+                                        Margin="0,0,0,0"
+                                        Padding="16,6"
+                                        Click="NativeSignInBtn_Click"
+                                        Visibility="Visible" />
+                            </StackPanel>
+                        </Border>
+                    </StackPanel>
+
                     <!-- Panel 5: Appearance -->
                     <StackPanel x:Name="PanelAppearance" Visibility="Collapsed">
                         <TextBlock Text="Appearance" Style="{StaticResource Text.Section}" Margin="0,0,0,14" />
@@ -238,23 +335,24 @@
                                 </StackPanel>
                                 <TextBlock x:Name="UpdateStatusText" TextWrapping="Wrap" FontSize="12" Foreground="{DynamicResource Brush.TextDim}" Margin="0,4,0,10" />
                                 <StackPanel>
-                                    <Button x:Name="CheckNowButton" Content="Check now" Style="{StaticResource Button.Secondary}" Click="CheckNowClick" Height="30" MinWidth="110" HorizontalAlignment="Left" />
-                                    <Button x:Name="OpenReleaseButton" Content="Open download page" Style="{StaticResource Button.Secondary}" Click="OpenReleaseClick" Height="30" MinWidth="130" Margin="0,8,0,0" Visibility="Collapsed" HorizontalAlignment="Left" />
-                                    <Button x:Name="DownloadInstallButton" Content="⬇ Download &amp; Install" Style="{StaticResource Button.Accent}" Click="DownloadInstallClick" Height="30" MinWidth="150" Margin="0,8,0,0" Visibility="Collapsed" HorizontalAlignment="Left" />
+                                    <Button x:Name="CheckNowButton" Content="Check now" Style="{StaticResource Button.Secondary}" Click="CheckNowClick" Height="32" MinWidth="110" HorizontalAlignment="Left" />
+                                    <Button x:Name="OpenReleaseButton" Content="Open download page" Style="{StaticResource Button.Secondary}" Click="OpenReleaseClick" Height="32" MinWidth="130" Margin="0,8,0,0" Visibility="Collapsed" HorizontalAlignment="Left" />
+                                    <Button x:Name="DownloadInstallButton" Content="⬇ Download &amp; Install" Style="{StaticResource Button.Accent}" Click="DownloadInstallClick" Height="32" MinWidth="150" Margin="0,8,0,0" Visibility="Collapsed" HorizontalAlignment="Left" />
                                 </StackPanel>
                             </StackPanel>
                         </Border>
                     </StackPanel>
-                </Grid>
+                    </Grid>
+                </ScrollViewer>
             </Border>
         </Grid>
 
         <!-- Bottom Action Buttons -->
         <Border Grid.Row="1" Padding="0,12,0,0">
-            <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
-                <Button Content="Cancel" Style="{StaticResource Button.Secondary}" IsCancel="True" Click="CancelClick" MinWidth="90" Height="30" />
-                <Button Content="Save changes" Style="{StaticResource Button.Accent}" Click="SaveClick" MinWidth="120" Height="30" Margin="10,0,0,0" />
-            </StackPanel>
+            <DockPanel LastChildFill="False">
+                <TextBlock Text="Changes apply automatically as you make them" FontSize="11" Foreground="{DynamicResource Brush.TextMuted}" VerticalAlignment="Center" DockPanel.Dock="Left" />
+                <Button Content="Close" Style="{StaticResource Button.Secondary}" IsCancel="True" Click="CloseClick" DockPanel.Dock="Right" MinWidth="95" Height="32" />
+            </DockPanel>
         </Border>
     </Grid>
 </Window>

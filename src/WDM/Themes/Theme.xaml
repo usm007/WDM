@@ -289,14 +289,13 @@
         <Setter Property="CornerRadius" Value="8" />
     </Style>
 
-    <!-- Icon glyph inside IDM stacked action buttons: sizes/position shared by all;
-         per-button colors are set locally so each icon keeps its own tint. -->
+    <!-- Icon glyph inside action buttons: 20% bigger (26px) & center alignment -->
     <Style x:Key="Toolbar.Icon" TargetType="TextBlock">
         <Setter Property="FontFamily" Value="{StaticResource Font.Icon}" />
-        <Setter Property="FontSize" Value="18" />
+        <Setter Property="FontSize" Value="26" />
         <Setter Property="Foreground" Value="{DynamicResource Brush.Text}" />
         <Setter Property="HorizontalAlignment" Value="Center" />
-        <Setter Property="Margin" Value="0,0,0,1" />
+        <Setter Property="VerticalAlignment" Value="Center" />
         <Style.Triggers>
             <DataTrigger Binding="{Binding IsEnabled, RelativeSource={RelativeSource AncestorType=Button}}" Value="False">
                 <Setter Property="Foreground" Value="{DynamicResource Brush.DisabledFg}" />
@@ -304,22 +303,22 @@
         </Style.Triggers>
     </Style>
 
-    <!-- IDM Stacked Action Button (Icon on top, Label underneath) -->
+    <!-- Sleek Icon Action Button (20% bigger symbol, label in tooltip on hover) -->
     <Style x:Key="Button.IDMStacked" TargetType="Button">
         <Setter Property="Background" Value="Transparent" />
         <Setter Property="BorderBrush" Value="Transparent" />
         <Setter Property="BorderThickness" Value="0" />
         <Setter Property="Foreground" Value="{DynamicResource Brush.Text}" />
-        <Setter Property="Padding" Value="9,4" />
-        <Setter Property="Margin" Value="3,0,3,0" />
-        <Setter Property="Height" Value="54" />
-        <Setter Property="MinWidth" Value="52" />
+        <Setter Property="Padding" Value="0" />
+        <Setter Property="Margin" Value="3,0" />
+        <Setter Property="Height" Value="50" />
+        <Setter Property="Width" Value="50" />
         <Setter Property="Cursor" Value="Hand" />
         <Setter Property="Template">
             <Setter.Value>
                 <ControlTemplate TargetType="Button">
                     <Border x:Name="bd" Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}"
-                            BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="4" Padding="{TemplateBinding Padding}">
+                            BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="6" Padding="{TemplateBinding Padding}">
                         <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
                     </Border>
                     <ControlTemplate.Triggers>
@@ -349,16 +348,16 @@
         <GradientStop Color="#2563EB" Offset="1.0" />
     </LinearGradientBrush>
 
-    <!-- Primary IDM Action Button (Add URL Call-To-Action - Slimmer & Longer Blue Gradient) -->
+    <!-- Primary IDM Action Button (Add Download Call-To-Action - Blue Gradient) -->
     <Style x:Key="Button.IDMPrimary" TargetType="Button">
         <Setter Property="Background" Value="{StaticResource Brush.BtnPrimaryGradient}" />
         <Setter Property="BorderBrush" Value="#1E40AF" />
         <Setter Property="BorderThickness" Value="1" />
         <Setter Property="Foreground" Value="#FFFFFF" />
         <Setter Property="Padding" Value="16,0" />
-        <Setter Property="Margin" Value="0,0,10,0" />
+        <Setter Property="Margin" Value="0,0,8,0" />
         <Setter Property="Height" Value="36" />
-        <Setter Property="MinWidth" Value="115" />
+        <Setter Property="MinWidth" Value="120" />
         <Setter Property="Cursor" Value="Hand" />
         <Setter Property="Template">
             <Setter.Value>
@@ -539,7 +538,7 @@
                 <ControlTemplate TargetType="CheckBox">
                     <StackPanel Orientation="Horizontal" Background="Transparent">
                         <Border x:Name="Box" Width="16" Height="16" CornerRadius="4"
-                                Background="{DynamicResource Brush.SurfaceAlt}"
+                                Background="{DynamicResource Brush.CheckboxBg}"
                                 BorderBrush="{DynamicResource Brush.BorderStrong}"
                                 BorderThickness="1" VerticalAlignment="Center">
                             <TextBlock x:Name="Check" Text="&#xF012C;" FontFamily="{StaticResource Font.Icon}"
@@ -556,8 +555,9 @@
                             <Setter TargetName="Box" Property="BorderBrush" Value="{DynamicResource Brush.Accent}" />
                         </Trigger>
                         <Trigger Property="IsChecked" Value="True">
-                            <Setter TargetName="Box" Property="Background" Value="{DynamicResource Brush.Accent}" />
-                            <Setter TargetName="Box" Property="BorderBrush" Value="{DynamicResource Brush.Accent}" />
+                            <Setter TargetName="Box" Property="Background" Value="{DynamicResource Brush.CheckboxCheckedBg}" />
+                            <Setter TargetName="Box" Property="BorderBrush" Value="{DynamicResource Brush.CheckboxCheckedBorder}" />
+                            <Setter TargetName="Check" Property="Foreground" Value="{DynamicResource Brush.CheckboxCheckedFg}" />
                             <Setter TargetName="Check" Property="Visibility" Value="Visible" />
                         </Trigger>
                         <Trigger Property="IsEnabled" Value="False">
@@ -581,7 +581,7 @@
                 <ControlTemplate TargetType="RadioButton">
                     <StackPanel Orientation="Horizontal" Background="Transparent">
                         <Border x:Name="Circle" Width="16" Height="16" CornerRadius="8"
-                                Background="{DynamicResource Brush.SurfaceAlt}"
+                                Background="{DynamicResource Brush.CheckboxBg}"
                                 BorderBrush="{DynamicResource Brush.BorderStrong}"
                                 BorderThickness="1" VerticalAlignment="Center">
                             <Ellipse x:Name="Dot" Width="8" Height="8" Fill="{DynamicResource Brush.AccentFg}"
@@ -597,8 +597,9 @@
                             <Setter TargetName="Circle" Property="BorderBrush" Value="{DynamicResource Brush.Accent}" />
                         </Trigger>
                         <Trigger Property="IsChecked" Value="True">
-                            <Setter TargetName="Circle" Property="Background" Value="{DynamicResource Brush.Accent}" />
-                            <Setter TargetName="Circle" Property="BorderBrush" Value="{DynamicResource Brush.Accent}" />
+                            <Setter TargetName="Circle" Property="Background" Value="{DynamicResource Brush.CheckboxCheckedBg}" />
+                            <Setter TargetName="Circle" Property="BorderBrush" Value="{DynamicResource Brush.CheckboxCheckedBorder}" />
+                            <Setter TargetName="Dot" Property="Fill" Value="{DynamicResource Brush.CheckboxCheckedFg}" />
                             <Setter TargetName="Dot" Property="Visibility" Value="Visible" />
                         </Trigger>
                         <Trigger Property="IsEnabled" Value="False">

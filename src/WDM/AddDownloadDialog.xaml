@@ -104,8 +104,13 @@
                 <ComboBoxItem Content="Other" Tag="Other" />
             </ComboBox>
 
+            <!-- YouTube Quality Selector -->
+            <TextBlock Grid.Row="4" Grid.Column="0" x:Name="QualityLabel" Text="Quality" FontSize="11" FontWeight="Medium"
+                       Foreground="{DynamicResource Brush.TextDim}" VerticalAlignment="Center" Margin="0,0,10,10" Visibility="Collapsed" />
+            <ComboBox Grid.Row="4" Grid.Column="1" x:Name="QualityBox" Height="28" Margin="0,0,0,10" Visibility="Collapsed" />
+
             <!-- Advanced options -->
-            <Expander Grid.Row="4" Grid.Column="0" Grid.ColumnSpan="2"
+            <Expander Grid.Row="5" Grid.Column="0" Grid.ColumnSpan="2"
                       Header="Advanced options" Foreground="{DynamicResource Brush.TextDim}"
                       FontSize="11" FontWeight="Medium" Margin="0,0,0,10">
                 <StackPanel Margin="0,10,0,0">
@@ -158,9 +163,9 @@
                        FontSize="11" Foreground="{DynamicResource Brush.TextMuted}"
                        VerticalAlignment="Center" Visibility="Visible" />
             <Button Content="Cancel" Style="{StaticResource Button.Secondary}" IsCancel="True" Click="CancelClick"
-                    DockPanel.Dock="Right" MinWidth="85" Height="30" />
+                    DockPanel.Dock="Right" MinWidth="85" Height="32" />
             <Button x:Name="OkButton" Content="Start download" Style="{StaticResource Button.Accent}"
-                    Click="OkClick" DockPanel.Dock="Right" MinWidth="130" Height="30" Margin="0,0,8,0" IsEnabled="False" />
+                    Click="OkClick" DockPanel.Dock="Right" MinWidth="130" Height="32" Margin="0,0,8,0" IsEnabled="False" IsDefault="True" />
         </DockPanel>
     </Grid>
 </Window>

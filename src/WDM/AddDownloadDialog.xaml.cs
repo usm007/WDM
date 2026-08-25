@@ -149,7 +149,64 @@ public partial class AddDownloadDialog : Window
         }
 
         UpdateCategoryBadge();
-        ProbeUrlAsync(url);
+        if (_viewModel.Settings.EnableYouTubeDownloads && MediaResolver.IsYoutubeUrl(url))
+        {
+            ProbeYouTubeUrlAsync(url);
+        }
+        else
+        {
+            if (QualityLabel != null) QualityLabel.Visibility = Visibility.Collapsed;
+            if (QualityBox != null) QualityBox.Visibility = Visibility.Collapsed;
+            ProbeUrlAsync(url);
+        }
+    }
+
+    private async void ProbeYouTubeUrlAsync(string url)
+    {
+        _probeCts?.Cancel();
+        _probeCts = new CancellationTokenSource();
+        var ct = _probeCts.Token;
+
+        ProbeBadge.Visibility = Visibility.Visible;
+        ProbeIcon.Text = char.ConvertFromUtf32(0xF0349);
+        ProbeText.Text = "Resolving YouTube video metadata...";
+
+        try
+        {
+            var res = await MediaResolver.ResolveAsync(url, ct);
+            if (ct.IsCancellationRequested) return;
+
+            if (res.Items.Count > 0)
+            {
+                var item = res.Items[0];
+                string cleanTitle = DownloadEngine.SanitizeFileName(item.Title);
+                if (string.IsNullOrWhiteSpace(cleanTitle)) cleanTitle = "YouTube_Video";
+                _lastDerivedName = cleanTitle + ".mp4";
+                NameBox.Text = _lastDerivedName;
+
+                if (QualityLabel != null && QualityBox != null && res.QualityOptions.Count > 0)
+                {
+                    QualityLabel.Visibility = Visibility.Visible;
+                    QualityBox.Visibility = Visibility.Visible;
+                    QualityBox.ItemsSource = res.QualityOptions.Select(q => q.Label).ToList();
+                    QualityBox.Tag = res.QualityOptions;
+                    QualityBox.SelectedIndex = 0;
+                }
+
+                ProbeIcon.Text = char.ConvertFromUtf32(0xF0381);
+                string durStr = item.Duration.HasValue ? $" ({item.Duration.Value:mm\\:ss})" : "";
+                ProbeText.Text = $"YouTube Media • {item.Title}{durStr}";
+                CategoryBox.SelectedIndex = 1; // Video
+            }
+        }
+        catch (Exception ex)
+        {
+            if (!ct.IsCancellationRequested)
+            {
+                ProbeIcon.Text = char.ConvertFromUtf32(0xF0028);
+                ProbeText.Text = "YouTube analysis: " + ex.Message;
+            }
+        }
     }
 
     private void NameBox_TextChanged(object sender, TextChangedEventArgs e)
@@ -189,21 +246,23 @@ public partial class AddDownloadDialog : Window
             http.DefaultRequestHeaders.UserAgent.ParseAdd("Mozilla/5.0 (Windows NT 10.0; Win64; x64) WDM/1.0");
 
             var req = new HttpRequestMessage(HttpMethod.Head, url);
-            var resp = await http.SendAsync(req, HttpCompletionOption.ResponseHeadersRead, ct);
+            using var resp = await http.SendAsync(req, HttpCompletionOption.ResponseHeadersRead, ct);
 
             long totalBytes = resp.Content.Headers.ContentLength ?? -1;
             bool supportsRanges = resp.Headers.AcceptRanges.Any(r => r.Equals("bytes", StringComparison.OrdinalIgnoreCase));
-            HttpResponseMessage? rangeResp = null;
+            string? rangeDispositionRaw = null;
 
             if (!supportsRanges && resp.IsSuccessStatusCode)
             {
                 // Range test with byte=0-0 fallback probe
                 var rangeReq = new HttpRequestMessage(HttpMethod.Get, url);
                 rangeReq.Headers.Range = new RangeHeaderValue(0, 0);
-                rangeResp = await http.SendAsync(rangeReq, HttpCompletionOption.ResponseHeadersRead, ct);
+                using HttpResponseMessage rangeResp = await http.SendAsync(rangeReq, HttpCompletionOption.ResponseHeadersRead, ct);
                 supportsRanges = rangeResp.StatusCode == System.Net.HttpStatusCode.PartialContent;
                 if (totalBytes <= 0 && rangeResp.Content.Headers.ContentRange?.Length is long len)
                     totalBytes = len;
+                string? rangeRaw = rangeResp.Content.Headers.TryGetValues("Content-Disposition", out var rvals) ? rvals.FirstOrDefault() : null;
+                rangeDispositionRaw = rangeRaw;
             }
 
             // If the server announces a real filename via Content-Disposition, use it —
@@ -211,11 +270,8 @@ public partial class AddDownloadDialog : Window
             // extension, so DeriveName would otherwise fall back to a meaningless .bin.
             string? dispositionRaw = resp.Content.Headers.TryGetValues("Content-Disposition", out var vals) ? vals.FirstOrDefault() : null;
             string? dispositionName = FileNameHelper.ParseDispositionFileName(dispositionRaw);
-            if (string.IsNullOrWhiteSpace(dispositionName) && rangeResp is not null)
-            {
-                string? rangeRaw = rangeResp.Content.Headers.TryGetValues("Content-Disposition", out var rvals) ? rvals.FirstOrDefault() : null;
-                dispositionName = FileNameHelper.ParseDispositionFileName(rangeRaw);
-            }
+            if (string.IsNullOrWhiteSpace(dispositionName))
+                dispositionName = FileNameHelper.ParseDispositionFileName(rangeDispositionRaw);
             if (string.IsNullOrWhiteSpace(dispositionName))
                 dispositionName = FileNameHelper.FileNameFromS3Query(url);
             if (!string.IsNullOrWhiteSpace(dispositionName)
@@ -301,6 +357,13 @@ public partial class AddDownloadDialog : Window
         var mirrors = ParseMirrors();
         var headers = ParseHeaders();
 
+        bool isYouTube = _viewModel.Settings.EnableYouTubeDownloads && MediaResolver.IsYoutubeUrl(url);
+        string? formatArg = null;
+        if (isYouTube && QualityBox?.Tag is List<QualityOption> opts && QualityBox.SelectedIndex >= 0 && QualityBox.SelectedIndex < opts.Count)
+        {
+            formatArg = opts[QualityBox.SelectedIndex].FormatArg;
+        }
+
         var task = new DownloadTask(Application.Current.Dispatcher)
         {
             Url = url,
@@ -312,6 +375,8 @@ public partial class AddDownloadDialog : Window
             ChunkCount = Math.Max(0, chunks),
             SpeedLimitKbps = speedLimit,
             Category = SelectedCategory(),
+            IsYouTube = isYouTube,
+            YouTubeFormatArg = formatArg,
         };
 
         _viewModel.AddTask(task);

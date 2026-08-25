@@ -98,6 +98,7 @@ public static class BrowserIntegration
             {
                 Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "Mozilla Firefox", "firefox.exe"),
                 Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86), "Mozilla Firefox", "firefox.exe"),
+                Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Mozilla Firefox", "firefox.exe"),
             }),
         };
 
@@ -115,32 +116,27 @@ public static class BrowserIntegration
     {
         try
         {
-            if (browser is not null && File.Exists(browser.ExePath))
+            var chromium = browser ?? DetectInstalledBrowsers().FirstOrDefault(b => b.Kind == BrowserKind.Chromium);
+            if (chromium is not null && File.Exists(chromium.ExePath))
             {
-                Process.Start(new ProcessStartInfo(browser.ExePath)
+                string url = ExtensionsPageFor(chromium);
+                try
                 {
-                    Arguments = ExtensionsPageFor(browser),
-                    UseShellExecute = true
-                });
-                return;
-            }
+                    if (System.Windows.Application.Current?.Dispatcher.CheckAccess() == true)
+                        System.Windows.Clipboard.SetText(url);
+                }
+                catch { }
 
-            // No browser specified: open the extensions page of the first installed
-            // Chromium browser (Chrome, Edge, Brave, Opera), preferring Edge to match
-            // the manual install guide's chrome://extensions step.
-            var chromium = DetectInstalledBrowsers().FirstOrDefault(b => b.Kind == BrowserKind.Chromium);
-            if (chromium is not null)
-            {
                 Process.Start(new ProcessStartInfo(chromium.ExePath)
                 {
-                    Arguments = ExtensionsPageFor(chromium),
+                    Arguments = url,
                     UseShellExecute = true
                 });
                 return;
             }
 
-            // No Chromium browser installed — nothing else can open chrome://extensions.
-            throw new InvalidOperationException("No Chromium browser (Chrome, Edge, Brave, Opera) was found on this system.");
+            // No Chromium browser found — fallback
+            Process.Start(new ProcessStartInfo("cmd.exe", "/c start chrome://extensions") { UseShellExecute = true });
         }
         catch
         {
@@ -161,7 +157,27 @@ public static class BrowserIntegration
 
     public static void OpenFirefoxAddonPage()
     {
-        Process.Start(new ProcessStartInfo(FirefoxAddonUrl) { UseShellExecute = true });
+        var firefox = DetectInstalledBrowsers().FirstOrDefault(b => b.Kind == BrowserKind.Firefox);
+        if (firefox is not null && File.Exists(firefox.ExePath))
+        {
+            Process.Start(new ProcessStartInfo(firefox.ExePath)
+            {
+                Arguments = $"\"{FirefoxAddonUrl}\"",
+                UseShellExecute = true
+            });
+            return;
+        }
+
+        try
+        {
+            Process.Start(new ProcessStartInfo("firefox", $"\"{FirefoxAddonUrl}\"") { UseShellExecute = true });
+            return;
+        }
+        catch
+        {
+            // Fallback to default browser if Firefox executable cannot be found
+            Process.Start(new ProcessStartInfo(FirefoxAddonUrl) { UseShellExecute = true });
+        }
     }
 
     public static void OpenExtensionFolder()

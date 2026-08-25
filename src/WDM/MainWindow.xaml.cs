@@ -289,9 +289,17 @@ public partial class MainWindow : Window
 
     private void ShowOptions()
     {
-        var dialog = new OptionsDialog(_viewModel);
-        if (dialog.ShowDialog() == true)
-            _viewModel.PersistSettings();
+        try
+        {
+            var dialog = new OptionsDialog(_viewModel);
+            if (dialog.ShowDialog() == true)
+                _viewModel.PersistSettings();
+        }
+        catch (Exception ex)
+        {
+            System.Windows.MessageBox.Show(ex.ToString());
+            throw;
+        }
     }
 
     private void RestoreWindow()

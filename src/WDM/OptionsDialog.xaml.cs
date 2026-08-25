@@ -45,12 +45,21 @@ public partial class OptionsDialog : Window
         MinimizeToTrayBox.IsChecked = s.MinimizeToTray;
         RunAtStartupBox.IsChecked = s.RunAtStartup;
 
+        UpdateYouTubeUI();
+
+        if (NativeSignInBtn != null)
+        {
+            NativeSignInBtn.Content = s.YouTubeBrowserCookies == "wdm-native" 
+                ? "Signed in — Click to re-authenticate..." 
+                : "Sign in to YouTube...";
+        }
+
         CheckForUpdatesBox.IsChecked = s.CheckForUpdates;
         CurrentVersionText.Text = UpdateChecker.CurrentVersion.ToString();
         LatestVersionText.Text = "—";
         UpdateStatusText.Text = "Click “Check now” to look for a new release on GitHub.";
 
-        // Appearance — dark mode (preview, saved on Save)
+        // Appearance — dark mode (instant auto-save)
         DarkModeBox.IsChecked = s.UseDarkTheme;
         _isInitializingAppearance = false;
 
@@ -80,6 +89,7 @@ public partial class OptionsDialog : Window
             if (PanelConnection != null) PanelConnection.Visibility = tag == "Connection" ? Visibility.Visible : Visibility.Collapsed;
             if (PanelFolders != null) PanelFolders.Visibility = tag == "Folders" ? Visibility.Visible : Visibility.Collapsed;
             if (PanelBrowser != null) PanelBrowser.Visibility = tag == "Browser" ? Visibility.Visible : Visibility.Collapsed;
+            if (PanelYouTube != null) PanelYouTube.Visibility = tag == "YouTube" ? Visibility.Visible : Visibility.Collapsed;
             if (PanelBehavior != null) PanelBehavior.Visibility = tag == "Behavior" ? Visibility.Visible : Visibility.Collapsed;
             if (PanelAppearance != null) PanelAppearance.Visibility = tag == "Appearance" ? Visibility.Visible : Visibility.Collapsed;
             if (PanelUpdates != null) PanelUpdates.Visibility = tag == "Updates" ? Visibility.Visible : Visibility.Collapsed;
@@ -90,12 +100,181 @@ public partial class OptionsDialog : Window
     {
         if (_isInitializingAppearance) return;
         PreviewAppearance();
+        SaveCurrentSettings();
     }
 
     private void PreviewAppearance()
     {
         bool dark = DarkModeBox.IsChecked == true;
         ThemeService.Apply(AppTheme.Default, dark);
+    }
+
+    private void SaveCurrentSettingsEvent(object sender, System.Windows.Controls.SelectionChangedEventArgs e)
+    {
+        SaveCurrentSettings();
+    }
+
+    private async void YtActivateBtn_Click(object sender, RoutedEventArgs e)
+    {
+        var s = _viewModel.Settings;
+        bool isCurrentlyActive = s.EnableYouTubeDownloads && EngineManager.IsReady;
+
+        if (isCurrentlyActive)
+        {
+            s.EnableYouTubeDownloads = false;
+            TaskStore.SaveSettings(s);
+            UpdateYouTubeUI();
+            return;
+        }
+
+        s.EnableYouTubeDownloads = true;
+        TaskStore.SaveSettings(s);
+        if (YtActivateBtn != null) YtActivateBtn.IsEnabled = false;
+        if (YtProgressCard != null) YtProgressCard.Visibility = Visibility.Visible;
+        if (YtProgressBar != null) YtProgressBar.Value = 0;
+        if (YtProgressPctText != null) YtProgressPctText.Text = "0%";
+        if (YtProgressStatusText != null) YtProgressStatusText.Text = "Initializing plugin setup...";
+
+        try
+        {
+            var progress = new Progress<EngineProgress>(p =>
+            {
+                Dispatcher.Invoke(() =>
+                {
+                    if (YtProgressStatusText != null) YtProgressStatusText.Text = p.StatusText;
+                    double pct = Math.Clamp(p.ProgressFraction * 100, 0, 100);
+                    if (YtProgressBar != null) YtProgressBar.Value = pct;
+                    if (YtProgressPctText != null) YtProgressPctText.Text = $"{pct:F0}%";
+                });
+            });
+
+            await EngineManager.EnsureAsync(progress);
+            string version = await EngineManager.GetVersionAsync();
+            if (YtDlpVersionText != null) YtDlpVersionText.Text = $"v{version}";
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show(this, "Failed to download YouTube engine plugins:\n" + ex.Message, "Engine Setup Error", MessageBoxButton.OK, MessageBoxImage.Error);
+            s.EnableYouTubeDownloads = false;
+            TaskStore.SaveSettings(s);
+        }
+        finally
+        {
+            if (YtProgressCard != null) YtProgressCard.Visibility = Visibility.Collapsed;
+            if (YtActivateBtn != null) YtActivateBtn.IsEnabled = true;
+            UpdateYouTubeUI();
+        }
+    }
+
+    private async void UpdateYouTubeUI()
+    {
+        var s = _viewModel.Settings;
+        bool active = s.EnableYouTubeDownloads && EngineManager.IsReady;
+
+        if (active)
+        {
+            if (YtStatusBadgeTitle != null) YtStatusBadgeTitle.Text = "YouTube Downloader Active";
+            if (YtStatusBadgeSub != null) YtStatusBadgeSub.Text = "Engine ready — yt-dlp & FFmpeg plugins loaded";
+            if (YtActivateBtn != null) YtActivateBtn.Content = "Deactivate";
+            if (YtPluginsCard != null) YtPluginsCard.Visibility = Visibility.Visible;
+            if (YtAuthCard != null) YtAuthCard.Visibility = Visibility.Visible;
+            if (YtDlpVersionText != null)
+            {
+                var versionLabel = YtDlpVersionText;
+                try
+                {
+                    string ver = await EngineManager.GetVersionAsync();
+                    versionLabel.Text = $"v{ver}";
+                }
+                catch (Exception ex)
+                {
+                    versionLabel.Text = "version unknown";
+                    if (YtStatusBadgeSub != null)
+                        YtStatusBadgeSub.Text = $"Engine ready, version check failed: {ex.Message}";
+                }
+            }
+        }
+        else
+        {
+            if (YtStatusBadgeTitle != null) YtStatusBadgeTitle.Text = "YouTube Downloader Inactive";
+            if (YtStatusBadgeSub != null) YtStatusBadgeSub.Text = "Click Activate to download required plugins & enable YouTube links";
+            if (YtActivateBtn != null) YtActivateBtn.Content = "Activate";
+            if (YtPluginsCard != null) YtPluginsCard.Visibility = Visibility.Collapsed;
+            if (YtAuthCard != null) YtAuthCard.Visibility = Visibility.Collapsed;
+        }
+    }
+
+    private void NativeSignInBtn_Click(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            var window = new YouTubeSignInWindow { Owner = this };
+            if (window.ShowDialog() == true)
+            {
+                if (NativeSignInBtn != null)
+                {
+                    NativeSignInBtn.Content = "Signed in — Click to re-authenticate...";
+                }
+                MessageBox.Show(this, "Successfully signed in to YouTube natively and exported your session. Private and age-restricted videos should now download normally.", "Sign-In Complete", MessageBoxButton.OK, MessageBoxImage.Information);
+            }
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show(this, "Could not open YouTube Sign-In window: " + ex.Message, "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+        }
+    }
+
+    private void SaveCurrentSettings()
+    {
+        if (_isInitializingAppearance) return;
+
+        var s = _viewModel.Settings;
+        s.DownloadFolder = string.IsNullOrWhiteSpace(FolderBox?.Text) ? DownloadTask.DefaultSaveFolder : FolderBox.Text.Trim();
+
+        s.DefaultChunkCount = ChunksBox?.SelectedItem is ComboBoxItem chunks && chunks.Tag is string tag && int.TryParse(tag, out int c) ? c : 0;
+        s.MaxConcurrentDownloads = MaxConcurrentBox?.SelectedItem is ComboBoxItem mc && int.TryParse(mc.Content.ToString(), out int m) ? m : 3;
+        s.MaxRetries = RetriesBox?.SelectedItem is ComboBoxItem r && int.TryParse(ExtractFirstDigit(r.Content.ToString()!), out int retries) ? retries : 3;
+        s.GlobalSpeedLimitKbps = long.TryParse(SpeedBox?.Text?.Trim(), out long speed) && speed >= 0 ? speed : 0;
+
+        s.RouteByCategory = RouteBox?.IsChecked == true;
+        if (VideoFolderBox != null)
+        {
+            s.CategoryFolders = new Dictionary<string, string>
+            {
+                [DownloadCategory.Video.ToString()] = VideoFolderBox.Text.Trim(),
+                [DownloadCategory.Music.ToString()] = MusicFolderBox.Text.Trim(),
+                [DownloadCategory.Document.ToString()] = DocumentFolderBox.Text.Trim(),
+                [DownloadCategory.Compressed.ToString()] = CompressedFolderBox.Text.Trim(),
+                [DownloadCategory.Program.ToString()] = ProgramFolderBox.Text.Trim(),
+            };
+        }
+
+        if (ChecksumBox != null) s.ComputeChecksum = ChecksumBox.IsChecked == true;
+        if (ScriptBox != null) s.PostDownloadScript = string.IsNullOrWhiteSpace(ScriptBox.Text) ? null : ScriptBox.Text.Trim();
+
+        if (NotifyBox != null) s.NotifyOnCompletion = NotifyBox.IsChecked == true;
+        if (TrayProgressBox != null) s.ShowTrayProgress = TrayProgressBox.IsChecked == true;
+        if (MinimizeToTrayBox != null) s.MinimizeToTray = MinimizeToTrayBox.IsChecked == true;
+        if (RunAtStartupBox != null) s.RunAtStartup = RunAtStartupBox.IsChecked == true;
+        if (CheckForUpdatesBox != null) s.CheckForUpdates = CheckForUpdatesBox.IsChecked == true;
+        
+
+        if (DarkModeBox != null)
+        {
+            s.Theme = AppTheme.Default;
+            s.UseDarkTheme = DarkModeBox.IsChecked == true;
+            _viewModel.SelectedTheme = AppTheme.Default;
+            _viewModel.IsDarkTheme = s.UseDarkTheme;
+        }
+
+        TaskStore.SaveSettings(s);
+    }
+
+    private void CloseClick(object sender, RoutedEventArgs e)
+    {
+        SaveCurrentSettings();
+        DialogResult = true;
+        Close();
     }
 
     private async void CheckNowClick(object sender, RoutedEventArgs e)
@@ -123,6 +302,12 @@ public partial class OptionsDialog : Window
                 LatestVersionText.Text = _latestRelease.TagName;
                 UpdateStatusText.Text = "You are running the latest version.";
             }
+        }
+        catch (Exception ex)
+        {
+            _latestRelease = null;
+            LatestVersionText.Text = "—";
+            UpdateStatusText.Text = $"Check failed: {ex.Message}";
         }
         finally
         {
@@ -186,7 +371,10 @@ public partial class OptionsDialog : Window
     {
         var dialog = new OpenFolderDialog { InitialDirectory = FolderBox.Text };
         if (dialog.ShowDialog() == true)
+        {
             FolderBox.Text = dialog.FolderName;
+            SaveCurrentSettings();
+        }
     }
 
     private void ScriptBrowseClick(object sender, RoutedEventArgs e)
@@ -196,7 +384,10 @@ public partial class OptionsDialog : Window
             Filter = "Programs and scripts (*.exe;*.bat;*.cmd;*.ps1;*.py)|*.exe;*.bat;*.cmd;*.ps1;*.py|All files (*.*)|*.*",
         };
         if (dialog.ShowDialog() == true)
+        {
             ScriptBox.Text = dialog.FileName;
+            SaveCurrentSettings();
+        }
     }
 
     private void OpenExtensionHelper_Click(object sender, RoutedEventArgs e)
@@ -213,73 +404,9 @@ public partial class OptionsDialog : Window
         }
     }
 
-    private void SaveClick(object sender, RoutedEventArgs e)
-    {
-        var s = _viewModel.Settings;
-        s.DownloadFolder = string.IsNullOrWhiteSpace(FolderBox.Text)
-            ? DownloadTask.DefaultSaveFolder
-            : FolderBox.Text;
-
-        s.DefaultChunkCount = ChunksBox.SelectedItem is ComboBoxItem chunks && chunks.Tag is string tag && int.TryParse(tag, out int c)
-            ? c
-            : 0;
-
-        s.MaxConcurrentDownloads = MaxConcurrentBox.SelectedItem is ComboBoxItem mc && int.TryParse(mc.Content.ToString(), out int m)
-            ? m
-            : 3;
-
-        s.MaxRetries = RetriesBox.SelectedItem is ComboBoxItem r && int.TryParse(ExtractFirstDigit(r.Content.ToString()!), out int retries)
-            ? retries
-            : 3;
-
-        s.GlobalSpeedLimitKbps = long.TryParse(SpeedBox.Text.Trim(), out long speed) && speed >= 0
-            ? speed
-            : 0;
-
-        s.RouteByCategory = RouteBox.IsChecked == true;
-        s.CategoryFolders = new Dictionary<string, string>
-        {
-            [DownloadCategory.Video.ToString()] = VideoFolderBox.Text.Trim(),
-            [DownloadCategory.Music.ToString()] = MusicFolderBox.Text.Trim(),
-            [DownloadCategory.Document.ToString()] = DocumentFolderBox.Text.Trim(),
-            [DownloadCategory.Compressed.ToString()] = CompressedFolderBox.Text.Trim(),
-            [DownloadCategory.Program.ToString()] = ProgramFolderBox.Text.Trim(),
-        };
-
-        s.ComputeChecksum = ChecksumBox.IsChecked == true;
-        s.PostDownloadScript = string.IsNullOrWhiteSpace(ScriptBox.Text) ? null : ScriptBox.Text.Trim();
-
-        s.NotifyOnCompletion = NotifyBox.IsChecked == true;
-        s.ShowTrayProgress = TrayProgressBox.IsChecked == true;
-        s.MinimizeToTray = MinimizeToTrayBox.IsChecked == true;
-        s.RunAtStartup = RunAtStartupBox.IsChecked == true;
-        s.CheckForUpdates = CheckForUpdatesBox.IsChecked == true;
-
-        // Appearance — dark mode (already previewed, now save)
-        s.Theme = AppTheme.Default;
-        s.UseDarkTheme = DarkModeBox.IsChecked == true;
-        _viewModel.SelectedTheme = AppTheme.Default;
-        _viewModel.IsDarkTheme = s.UseDarkTheme;
-        TaskStore.SaveSettings(s);
-
-        DialogResult = true;
-        Close();
-    }
-
     private static string ExtractFirstDigit(string input)
     {
         var match = System.Text.RegularExpressions.Regex.Match(input, @"\d+");
         return match.Success ? match.Value : "0";
-    }
-
-    private void CancelClick(object sender, RoutedEventArgs e)
-    {
-        // Revert previewed dark mode if user cancelled
-        if (ThemeService.IsDark != _originalDark)
-        {
-            ThemeService.Apply(AppTheme.Default, _originalDark);
-        }
-        DialogResult = false;
-        Close();
     }
 }

@@ -60,6 +60,10 @@
     <SolidColorBrush x:Key="Brush.Bg" Color="{StaticResource Color.Bg}" />
     <SolidColorBrush x:Key="Brush.Surface" Color="{StaticResource Color.Surface}" />
     <SolidColorBrush x:Key="Brush.SurfaceAlt" Color="{StaticResource Color.SurfaceAlt}" />
+    <SolidColorBrush x:Key="Brush.CheckboxBg" Color="{StaticResource Color.SurfaceAlt}" />
+    <SolidColorBrush x:Key="Brush.CheckboxCheckedBg" Color="{StaticResource Color.Accent}" />
+    <SolidColorBrush x:Key="Brush.CheckboxCheckedFg" Color="#FFFFFF" />
+    <SolidColorBrush x:Key="Brush.CheckboxCheckedBorder" Color="{StaticResource Color.Accent}" />
     <SolidColorBrush x:Key="Brush.SurfaceHover" Color="{StaticResource Color.SurfaceHover}" />
     <SolidColorBrush x:Key="Brush.Border" Color="{StaticResource Color.Border}" />
     <SolidColorBrush x:Key="Brush.BorderStrong" Color="{StaticResource Color.BorderStrong}" />

@@ -309,10 +309,10 @@
         <Setter Property="BorderBrush" Value="Transparent" />
         <Setter Property="BorderThickness" Value="0" />
         <Setter Property="Foreground" Value="{DynamicResource Brush.Text}" />
-        <Setter Property="Padding" Value="6,3" />
-        <Setter Property="Margin" Value="2,0" />
-        <Setter Property="Height" Value="54" />
-        <Setter Property="MinWidth" Value="64" />
+        <Setter Property="Padding" Value="0" />
+        <Setter Property="Margin" Value="3,0" />
+        <Setter Property="Height" Value="58" />
+        <Setter Property="Width" Value="58" />
         <Setter Property="Cursor" Value="Hand" />
         <Setter Property="Template">
             <Setter.Value>

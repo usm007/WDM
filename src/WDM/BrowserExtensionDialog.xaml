@@ -1,7 +1,7 @@
-﻿<Window x:Class="WDM.BrowserExtensionDialog"
+<Window x:Class="WDM.BrowserExtensionDialog"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="Install Browser Extension â€” WDM"
+        Title="Install Browser Extension - WDM"
         Icon="Assets/WDM.ico"
         Width="620"
         SizeToContent="Height"
@@ -31,15 +31,15 @@
                     <TextBlock Text="Chrome, Edge &amp; other Chromium browsers" FontWeight="SemiBold" FontSize="13" Foreground="{DynamicResource Brush.Text}" Margin="0,0,0,8" />
 
                     <StackPanel Orientation="Horizontal" Margin="0,2,0,10">
-                        <Button x:Name="CopyPathButton" Content="Copy Extension Path" Style="{StaticResource Button.Secondary}" Click="CopyPath_Click" Height="30" Padding="14,0" />
-                        <Button Content="Open Extensions Page" Style="{StaticResource Button.Secondary}" Click="OpenExtensions_Click" Height="30" Padding="14,0" Margin="10,0,0,0" />
+                        <Button x:Name="CopyPathButton" Content="Copy Extension Path" Style="{StaticResource Button.Secondary}" Click="CopyPath_Click" Height="32" Padding="14,0" />
+                        <Button Content="Open Extensions Page" Style="{StaticResource Button.Secondary}" Click="OpenExtensions_Click" Height="32" Padding="14,0" Margin="10,0,0,0" />
                     </StackPanel>
 
-                    <TextBlock Text="1.  Click â€œCopy Extension Pathâ€." FontSize="12" Foreground="{DynamicResource Brush.TextDim}" Margin="0,0,0,4" />
-                    <TextBlock Text="2.  Click â€œOpen Extensions Pageâ€ (chrome://extensions or edge://extensions)." FontSize="12" Foreground="{DynamicResource Brush.TextDim}" Margin="0,0,0,4" />
-                    <TextBlock Text="3.  Turn on â€œDeveloper modeâ€ (switch in the top-right corner)." FontSize="12" Foreground="{DynamicResource Brush.TextDim}" Margin="0,0,0,4" />
-                    <TextBlock Text="4.  Click â€œLoad unpackedâ€." FontSize="12" Foreground="{DynamicResource Brush.TextDim}" Margin="0,0,0,4" />
-                    <TextBlock Text="5.  Select the extension folder you copied and click â€œSelect Folderâ€." FontSize="12" Foreground="{DynamicResource Brush.TextDim}" />
+                    <TextBlock Text="1. Click 'Copy Extension Path'." FontSize="12" Foreground="{DynamicResource Brush.TextDim}" Margin="0,0,0,4" />
+                    <TextBlock Text="2. Click 'Open Extensions Page' (chrome://extensions or edge://extensions)." FontSize="12" Foreground="{DynamicResource Brush.TextDim}" Margin="0,0,0,4" />
+                    <TextBlock Text="3. Turn on 'Developer mode' (switch in the top-right corner)." FontSize="12" Foreground="{DynamicResource Brush.TextDim}" Margin="0,0,0,4" />
+                    <TextBlock Text="4. Click 'Load unpacked'." FontSize="12" Foreground="{DynamicResource Brush.TextDim}" Margin="0,0,0,4" />
+                    <TextBlock Text="5. Select the extension folder you copied and click 'Select Folder'." FontSize="12" Foreground="{DynamicResource Brush.TextDim}" />
                 </StackPanel>
             </Border>
 
@@ -48,14 +48,14 @@
                 <StackPanel>
                     <TextBlock Text="Firefox" FontWeight="SemiBold" FontSize="13" Foreground="{DynamicResource Brush.Text}" Margin="0,0,0,8" />
 
-                    <TextBlock Text="Recommended â€” install from the Firefox Add-ons store (permanent):" FontWeight="Medium" FontSize="12" Foreground="{DynamicResource Brush.Text}" Margin="0,2,0,4" />
+                    <TextBlock Text="Recommended - install from the Firefox Add-ons store (permanent):" FontWeight="Medium" FontSize="12" Foreground="{DynamicResource Brush.Text}" Margin="0,2,0,4" />
                     <StackPanel Orientation="Horizontal" Margin="0,0,0,10">
-                        <Button Content="Open Firefox Add-ons page" Style="{StaticResource Button.Accent}" Click="OpenFirefoxAddonPage_Click" Height="30" Padding="14,0" />
+                        <Button Content="Open Firefox Add-ons page" Style="{StaticResource Button.Accent}" Click="OpenFirefoxAddonPage_Click" Height="32" Padding="14,0" />
                     </StackPanel>
 
-                    <TextBlock Text="Temporary option â€” load it manually (session only):" FontWeight="Medium" FontSize="12" Foreground="{DynamicResource Brush.Text}" Margin="0,6,0,4" />
-                    <TextBlock Text="1.  Open about:debugging#/runtime/this-firefox in Firefox." FontSize="12" Foreground="{DynamicResource Brush.TextDim}" Margin="0,0,0,4" />
-                    <TextBlock Text="2.  Click â€œLoad Temporary Add-onâ€." FontSize="12" Foreground="{DynamicResource Brush.TextDim}" Margin="0,0,0,4" />
+                    <TextBlock Text="Temporary option - load it manually (session only):" FontWeight="Medium" FontSize="12" Foreground="{DynamicResource Brush.Text}" Margin="0,6,0,4" />
+                    <TextBlock Text="1. Open about:debugging#/runtime/this-firefox in Firefox." FontSize="12" Foreground="{DynamicResource Brush.TextDim}" Margin="0,0,0,4" />
+                    <TextBlock Text="2. Click 'Load Temporary Add-on'." FontSize="12" Foreground="{DynamicResource Brush.TextDim}" Margin="0,0,0,4" />
                     <TextBlock Text="3.  Select the manifest.json file inside the extension folder." FontSize="12" Foreground="{DynamicResource Brush.TextDim}" />
                 </StackPanel>
             </Border>
@@ -63,7 +63,7 @@
             <!-- Bottom Action -->
             <DockPanel LastChildFill="False">
                 <TextBlock x:Name="FeedbackText" Text="" FontSize="11" Foreground="{DynamicResource Brush.Accent}" VerticalAlignment="Center" DockPanel.Dock="Left" />
-                <Button Content="Done" Style="{StaticResource Button.Accent}" IsCancel="True" Click="CloseClick" MinWidth="100" Height="30" DockPanel.Dock="Right" />
+                <Button Content="Done" Style="{StaticResource Button.Accent}" IsCancel="True" IsDefault="True" Click="CloseClick" MinWidth="100" Height="32" DockPanel.Dock="Right" />
             </DockPanel>
 
         </StackPanel>

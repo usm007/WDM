@@ -26,6 +26,10 @@ public sealed class AppSettings
     public bool UseDarkTheme { get; set; }
     public AppTheme Theme { get; set; } = AppTheme.Default;
 
+    // YouTube & Media downloads
+    public bool EnableYouTubeDownloads { get; set; } = false;
+    public string? YouTubeBrowserCookies { get; set; } = "none";
+
     // Updates
     public bool CheckForUpdates { get; set; } = true;
     public string? LastUpdateCheckUtc { get; set; }
@@ -52,7 +56,7 @@ public sealed class AppSettings
 
 public sealed class TaskStore
 {
-    private static readonly string AppDir = Path.Combine(
+    public static readonly string AppDir = Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "WDM");
     private static readonly string SettingsPath = Path.Combine(AppDir, "settings.json");
     private static readonly string TasksPath = Path.Combine(AppDir, "tasks.json");

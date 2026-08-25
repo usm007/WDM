@@ -355,6 +355,12 @@ public sealed class DownloadEngine
     private async Task RunSessionAsync(Session session)
     {
         var task = session.Task;
+        if (task.IsYouTube)
+        {
+            await RunYouTubeSessionAsync(session);
+            return;
+        }
+
         bool linkRefreshed = task.LinkRefreshed;
         task.LinkRefreshed = false;
         try
@@ -1623,5 +1629,190 @@ public sealed class DownloadEngine
             public int ChunkCount { get; set; }
             public string Bits { get; set; } = "";
         }
+    }
+
+    private async Task RunYouTubeSessionAsync(Session session)
+    {
+        var task = session.Task;
+        task.Status = TaskStatus.Downloading;
+        TaskChanged?.Invoke();
+
+        try
+        {
+            Directory.CreateDirectory(task.SaveFolder);
+            var outFile = task.FullPath;
+
+            var args = new List<string>
+            {
+                "--no-warnings",
+                "--no-color",
+                "--newline",
+                "-o", outFile,
+                task.Url
+            };
+
+            if (!string.IsNullOrWhiteSpace(task.YouTubeFormatArg))
+            {
+                args.Add("-f");
+                args.Add(task.YouTubeFormatArg);
+            }
+
+            if (File.Exists(EngineManager.FfmpegPath))
+            {
+                args.Add("--ffmpeg-location");
+                args.Add(EngineManager.FfmpegPath);
+            }
+
+            var psi = YtDlpRunner.CreateInfo(args);
+            using var proc = Process.Start(psi);
+            if (proc is null)
+                throw new Exception("Failed to start yt-dlp process.");
+
+            session.Token.Register(() => YtDlpRunner.KillTree(proc));
+
+            var outTask = Task.Run(async () =>
+            {
+                using var reader = proc.StandardOutput;
+                while (await reader.ReadLineAsync() is { } line)
+                {
+                    ParseYtDlpOutputLine(line, task);
+                    TaskChanged?.Invoke();
+                }
+            });
+
+            var errTask = Task.Run(async () =>
+            {
+                using var reader = proc.StandardError;
+                while (await reader.ReadLineAsync() is { } line)
+                {
+                    ParseYtDlpOutputLine(line, task);
+                    TaskChanged?.Invoke();
+                }
+            });
+
+            await proc.WaitForExitAsync(session.Token);
+            await Task.WhenAll(outTask, errTask);
+
+            if (session.Token.IsCancellationRequested)
+            {
+                task.Status = TaskStatus.Paused;
+                task.SpeedBps = 0;
+                task.Eta = "";
+            }
+            else if (proc.ExitCode == 0)
+            {
+                task.DownloadedBytes = task.TotalBytes > 0 ? task.TotalBytes : (File.Exists(outFile) ? new FileInfo(outFile).Length : 0);
+                if (task.TotalBytes <= 0) task.TotalBytes = task.DownloadedBytes;
+                task.Status = TaskStatus.Completed;
+                task.CompletedAt = DateTime.Now;
+                task.SpeedBps = 0;
+                task.Eta = "";
+                TaskCompleted?.Invoke(task);
+            }
+            else
+            {
+                task.Status = TaskStatus.Failed;
+                task.Error = "yt-dlp exited with error code " + proc.ExitCode;
+                task.SpeedBps = 0;
+                task.Eta = "";
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            task.Status = TaskStatus.Paused;
+            task.SpeedBps = 0;
+            task.Eta = "";
+        }
+        catch (Exception ex)
+        {
+            task.Status = TaskStatus.Failed;
+            task.Error = ex.Message;
+            task.SpeedBps = 0;
+            task.Eta = "";
+        }
+        finally
+        {
+            lock (_lock) _sessions.Remove(task.Id);
+            TaskChanged?.Invoke();
+            PumpQueue();
+        }
+    }
+
+    private static void ParseYtDlpOutputLine(string line, DownloadTask task)
+    {
+        if (line.StartsWith("[download]") && line.Contains("%"))
+        {
+            try
+            {
+                var parts = line.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+                for (int i = 0; i < parts.Length; i++)
+                {
+                    if (parts[i] == "of" && i + 1 < parts.Length)
+                    {
+                        long bytes = ParseSizeToBytes(parts[i + 1]);
+                        if (bytes > 0)
+                        {
+                            task.TotalBytes = bytes;
+                        }
+                    }
+                    if (parts[i] == "at" && i + 1 < parts.Length)
+                    {
+                        long bps = ParseSpeedToBps(parts[i + 1]);
+                        if (bps >= 0)
+                        {
+                            task.SpeedBps = bps;
+                        }
+                    }
+                    if (parts[i] == "ETA" && i + 1 < parts.Length)
+                    {
+                        task.Eta = parts[i + 1];
+                    }
+                }
+                if (task.TotalBytes > 0 && line.Contains("%"))
+                {
+                    int pctIdx = line.IndexOf('%');
+                    int startIdx = line.LastIndexOf(' ', pctIdx);
+                    if (startIdx >= 0 && double.TryParse(line.Substring(startIdx, pctIdx - startIdx).Trim(), out double p))
+                    {
+                        task.DownloadedBytes = (long)(task.TotalBytes * (p / 100.0));
+                    }
+                }
+            }
+            catch
+            {
+                // ignore parsing errors
+            }
+        }
+    }
+
+    private static long ParseSizeToBytes(string sizeStr)
+    {
+        try
+        {
+            double mult = 1;
+            if (sizeStr.EndsWith("GiB", StringComparison.OrdinalIgnoreCase)) mult = 1024L * 1024 * 1024;
+            else if (sizeStr.EndsWith("MiB", StringComparison.OrdinalIgnoreCase)) mult = 1024L * 1024;
+            else if (sizeStr.EndsWith("KiB", StringComparison.OrdinalIgnoreCase)) mult = 1024L;
+            else if (sizeStr.EndsWith("GB", StringComparison.OrdinalIgnoreCase)) mult = 1000L * 1000 * 1000;
+            else if (sizeStr.EndsWith("MB", StringComparison.OrdinalIgnoreCase)) mult = 1000L * 1000;
+            else if (sizeStr.EndsWith("KB", StringComparison.OrdinalIgnoreCase)) mult = 1000L;
+
+            var numStr = new string(sizeStr.Where(c => char.IsDigit(c) || c == '.').ToArray());
+            if (double.TryParse(numStr, out double val))
+                return (long)(val * mult);
+        }
+        catch { }
+        return 0;
+    }
+
+    private static long ParseSpeedToBps(string speedStr)
+    {
+        try
+        {
+            var clean = speedStr.Replace("/s", "", StringComparison.OrdinalIgnoreCase);
+            return ParseSizeToBytes(clean);
+        }
+        catch { }
+        return 0;
     }
 }

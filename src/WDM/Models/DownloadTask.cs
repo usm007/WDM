@@ -72,6 +72,11 @@ public sealed class DownloadTask : INotifyPropertyChanged
         set => Set(ref _chunkCount, Math.Max(0, value));
     }
 
+    public bool IsYouTube { get; set; }
+    public string? YouTubeFormatArg { get; set; }
+    public string? YouTubeVideoId { get; set; }
+    public string? ThumbnailUrl { get; set; }
+
     public long SpeedLimitKbps { get; set; }
     public DownloadCategory Category { get; set; } = DownloadCategory.Other;
     public string? Checksum { get; set; }

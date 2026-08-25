@@ -20,7 +20,8 @@
         <!-- Header -->
         <DockPanel Grid.Row="0" Margin="0,0,0,14">
             <TextBlock x:Name="StatusText" DockPanel.Dock="Right" FontSize="13" FontWeight="Medium" VerticalAlignment="Center" />
-            <TextBlock x:Name="FileNameText" Style="{StaticResource Text.Section}" FontSize="16" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
+            <TextBlock x:Name="FileNameText" Style="{StaticResource Text.Section}" FontSize="16" TextTrimming="CharacterEllipsis" VerticalAlignment="Center"
+                       ToolTip="{Binding Text, RelativeSource={RelativeSource Self}}" />
         </DockPanel>
 
         <!-- Properties Body Grid -->
@@ -97,8 +98,8 @@
 
         <!-- Dialog Buttons -->
         <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,16,0,0">
-            <Button Content="Open folder" Style="{StaticResource Button.Secondary}" Click="FolderClick" MinWidth="110" Height="30" />
-            <Button Content="Close" Style="{StaticResource Button.Secondary}" IsCancel="True" Click="CloseClick" MinWidth="90" Height="30" Margin="10,0,0,0" />
+            <Button Content="Open folder" Style="{StaticResource Button.Secondary}" Click="FolderClick" MinWidth="110" Height="32" />
+            <Button Content="Close" Style="{StaticResource Button.Secondary}" IsCancel="True" IsDefault="True" Click="CloseClick" MinWidth="90" Height="32" Margin="10,0,0,0" />
         </StackPanel>
     </Grid>
 </Window>
