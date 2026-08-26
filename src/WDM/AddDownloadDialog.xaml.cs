@@ -349,10 +349,29 @@ public partial class AddDownloadDialog : Window
 
         try
         {
-            using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(4) };
-            http.DefaultRequestHeaders.UserAgent.ParseAdd("Mozilla/5.0 (Windows NT 10.0; Win64; x64) WDM/1.0");
+            var handler = new SocketsHttpHandler
+            {
+                AllowAutoRedirect = true,
+                UseCookies = false,
+            };
+            using var http = new HttpClient(handler) { Timeout = TimeSpan.FromSeconds(6) };
+            http.DefaultRequestHeaders.UserAgent.ParseAdd("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0 Safari/537.36");
 
             var req = new HttpRequestMessage(HttpMethod.Head, url);
+
+            // Apply custom headers from dialog (Cookie, Referer, Authorization)
+            var customHeaders = ParseHeaders();
+            if (!string.IsNullOrWhiteSpace(_prefillReferer) && !customHeaders.ContainsKey("Referer"))
+            {
+                customHeaders["Referer"] = _prefillReferer;
+            }
+
+            foreach (var kv in customHeaders)
+            {
+                if (!string.IsNullOrWhiteSpace(kv.Key) && !string.IsNullOrWhiteSpace(kv.Value))
+                    req.Headers.TryAddWithoutValidation(kv.Key, kv.Value);
+            }
+
             using var resp = await http.SendAsync(req, HttpCompletionOption.ResponseHeadersRead, ct);
 
             long totalBytes = resp.Content.Headers.ContentLength ?? -1;
@@ -364,6 +383,11 @@ public partial class AddDownloadDialog : Window
                 // Range test with byte=0-0 fallback probe
                 var rangeReq = new HttpRequestMessage(HttpMethod.Get, url);
                 rangeReq.Headers.Range = new RangeHeaderValue(0, 0);
+                foreach (var kv in customHeaders)
+                {
+                    if (!string.IsNullOrWhiteSpace(kv.Key) && !string.IsNullOrWhiteSpace(kv.Value))
+                        rangeReq.Headers.TryAddWithoutValidation(kv.Key, kv.Value);
+                }
                 using HttpResponseMessage rangeResp = await http.SendAsync(rangeReq, HttpCompletionOption.ResponseHeadersRead, ct);
                 supportsRanges = rangeResp.StatusCode == System.Net.HttpStatusCode.PartialContent;
                 if (totalBytes <= 0 && rangeResp.Content.Headers.ContentRange?.Length is long len)

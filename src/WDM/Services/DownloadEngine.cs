@@ -83,8 +83,7 @@ public sealed class DownloadEngine
             AllowAutoRedirect = true,
             MaxConnectionsPerServer = 64,
             AutomaticDecompression = DecompressionMethods.None,
-            UseCookies = true,
-            CookieContainer = new CookieContainer(),
+            UseCookies = false, // Must be false so custom Cookie headers are sent raw without .NET stripping them
         };
         var client = new HttpClient(handler)
         {
@@ -1134,21 +1133,12 @@ public sealed class DownloadEngine
             request.Headers.Range = range;
         if (!string.IsNullOrWhiteSpace(task.Referer) && Uri.TryCreate(task.Referer, UriKind.Absolute, out var referer))
             request.Headers.Referrer = referer;
-        // Apply per-task custom headers (e.g. Cookie, Authorization).
+        // Apply per-task custom headers (e.g. Cookie, Authorization, Referer).
         foreach (var kv in task.Headers)
         {
             if (string.IsNullOrWhiteSpace(kv.Key) || string.IsNullOrWhiteSpace(kv.Value))
                 continue;
-            // Cookie header must go through the cookie container, not raw headers.
-            if (kv.Key.Equals("Cookie", StringComparison.OrdinalIgnoreCase))
-            {
-                foreach (var part in kv.Value.Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
-                    request.Headers.TryAddWithoutValidation("Cookie", part);
-            }
-            else
-            {
-                request.Headers.TryAddWithoutValidation(kv.Key, kv.Value);
-            }
+            request.Headers.TryAddWithoutValidation(kv.Key, kv.Value);
         }
         // Ask for the raw (uncompressed) representation so Content-Length is the true
         // file size and byte ranges line up with what we actually receive.
