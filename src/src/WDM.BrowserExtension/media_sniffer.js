@@ -87,23 +87,21 @@
     `;
 
     const iconColor = type === "hls" ? "#f59e0b" : type === "dash" ? "#8b5cf6" : "#3b82f6";
-    const typeLabel = type === "hls" ? "HLS" : type === "dash" ? "DASH" : "Media";
+    const iconUrl = (webext.runtime && webext.runtime.getURL) ? webext.runtime.getURL("icon32.png") : "";
 
     badge.innerHTML = `
       <style>
         @keyframes wdm-slide-in { from { opacity:0; transform:translateX(20px); } to { opacity:1; transform:translateX(0); } }
       </style>
       <div style="width:34px;height:34px;border-radius:8px;background:${iconColor}22;display:flex;align-items:center;justify-content:center;flex-shrink:0;">
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="${iconColor}" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
-          <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>
-        </svg>
+        <img src="${iconUrl}" width="22" height="22" style="width:22px;height:22px;border-radius:4px;object-fit:contain;" alt="WDM" onerror="this.style.display='none'" />
       </div>
       <div style="flex:1;min-width:0;">
-        <div style="font-size:11px;font-weight:600;color:#a1a1aa;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:2px;">${typeLabel} Stream Detected</div>
+        <div style="font-size:11px;font-weight:700;color:#38bdf8;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:2px;">WDM · ${typeLabel} Detected</div>
         <div style="font-size:12px;color:#e4e4e7;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" title="${label}">${label}</div>
       </div>
-      <button data-wdm-dl style="background:#3b82f6;color:#fff;border:none;border-radius:7px;padding:6px 12px;font-size:12px;font-weight:600;cursor:pointer;flex-shrink:0;white-space:nowrap;">Download</button>
-      <button data-wdm-close style="background:none;border:none;color:#71717a;cursor:pointer;font-size:16px;padding:2px 4px;flex-shrink:0;line-height:1;">✕</button>
+      <button data-wdm-dl style="background:#2563eb;color:#fff;border:none;border-radius:7px;padding:6px 12px;font-size:12px;font-weight:600;cursor:pointer;flex-shrink:0;white-space:nowrap;transition:background 0.2s;">Download with WDM</button>
+      <button data-wdm-close style="background:none;border:none;color:#71717a;cursor:pointer;font-size:16px;padding:2px 4px;flex-shrink:0;line-height:1;" title="Dismiss">✕</button>
     `;
 
     badge.querySelector("[data-wdm-dl]").addEventListener("click", () => {

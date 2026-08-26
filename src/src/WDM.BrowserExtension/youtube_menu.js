@@ -1,5 +1,5 @@
 // WDM YouTube Integration — Content Script
-// Injects a subtle, native-styled "Download" pill into YouTube's action bar.
+// Injects a branded native-styled "WDM Download" pill with WDM logo into YouTube's action bar.
 // Clicking it sends the video to WDM to open the Add Download Dialog (where the user chooses quality).
 
 (function () {
@@ -22,34 +22,43 @@
       #${BUTTON_ID} {
         display: inline-flex !important;
         align-items: center !important;
-        gap: 6px !important;
+        gap: 7px !important;
         height: 36px !important;
-        padding: 0 16px !important;
+        padding: 0 14px !important;
         border-radius: 18px !important;
         font-family: Roboto, Arial, sans-serif !important;
         font-size: 14px !important;
         font-weight: 500 !important;
         margin-left: 8px !important;
         cursor: pointer !important;
-        border: none !important;
+        border: 1px solid rgba(0, 0, 0, 0.08) !important;
         outline: none !important;
         flex-shrink: 0 !important;
         background: rgba(0, 0, 0, 0.05) !important;
         color: #0f0f0f !important;
-        transition: background 0.2s ease, opacity 0.2s ease !important;
+        transition: background 0.2s ease, opacity 0.2s ease, transform 0.1s ease !important;
       }
       #${BUTTON_ID}:hover {
         background: rgba(0, 0, 0, 0.1) !important;
       }
+      #${BUTTON_ID}:active {
+        transform: scale(0.97) !important;
+      }
       html[dark] #${BUTTON_ID}, [dark] #${BUTTON_ID} {
         background: rgba(255, 255, 255, 0.1) !important;
+        border: 1px solid rgba(255, 255, 255, 0.12) !important;
         color: #f1f1f1 !important;
       }
       html[dark] #${BUTTON_ID}:hover, [dark] #${BUTTON_ID}:hover {
-        background: rgba(255, 255, 255, 0.2) !important;
+        background: rgba(255, 255, 255, 0.18) !important;
       }
-      #${BUTTON_ID} svg {
-        stroke: currentColor !important;
+      #${BUTTON_ID} .wdm-btn-icon {
+        width: 18px !important;
+        height: 18px !important;
+        border-radius: 4px !important;
+        object-fit: contain !important;
+        flex-shrink: 0 !important;
+        display: inline-block !important;
       }
     `;
     document.head.appendChild(style);
@@ -91,13 +100,14 @@
 
     injectGlobalStyles();
 
+    const iconUrl = (webext.runtime && webext.runtime.getURL) ? webext.runtime.getURL("icon32.png") : "";
+
     const btn = document.createElement("button");
     btn.id = BUTTON_ID;
+    btn.title = "Download video with WDM (Windows Download Manager)";
     btn.innerHTML = `
-      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
-        <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>
-      </svg>
-      <span>Download</span>
+      <img src="${iconUrl}" class="wdm-btn-icon" alt="WDM" onerror="this.style.display='none'" />
+      <span>WDM Download</span>
     `;
 
     btn.addEventListener("click", (e) => {
@@ -120,7 +130,7 @@
       if (span) span.textContent = "Opening in WDM…";
       btn.style.opacity = "0.7";
       setTimeout(() => {
-        if (span) span.textContent = "Download";
+        if (span) span.textContent = "WDM Download";
         btn.style.opacity = "1";
       }, 2000);
     });
