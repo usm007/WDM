@@ -14,6 +14,9 @@ public sealed class MainViewModel : INotifyPropertyChanged
 {
     private readonly Dispatcher _dispatcher;
     private readonly System.Timers.Timer _saveTimer;
+    /// <summary>Tasks that already had one automatic solver run; prevents a
+    /// challenge→solve→challenge loop. Manual "Bypass Cloudflare" clears the entry.</summary>
+    private readonly HashSet<Guid> _cfAutoSolved = new();
     private DownloadTask? _selectedTask;
     private string _statusText = "WDM — ready";
     private string _statusRightText = "";
@@ -90,11 +93,13 @@ public sealed class MainViewModel : INotifyPropertyChanged
         Engine.TaskChanged += () => _dispatcher.BeginInvoke(OnTasksChanged);
         Engine.TaskCompleted += task => _dispatcher.BeginInvoke(() =>
         {
+            _cfAutoSolved.Remove(task.Id);
             task.CompletedAt ??= DateTime.Now;
             TaskCompleted?.Invoke(task);
             HandlePostDownload(task);
             SaveTasksSoon();
         });
+        Engine.CloudflareBlocked += task => _dispatcher.BeginInvoke(() => AutoSolveCloudflare(task));
 
         OpenAddDialogCommand = new RelayCommand(_ => OpenAddDialog());
         PauseCommand = new RelayCommand(_ => PauseSelected(), _ => CanPause);
@@ -531,9 +536,29 @@ public sealed class MainViewModel : INotifyPropertyChanged
         return candidate;
     }
 
+    /// <summary>Automatic one-shot solver invoked when the engine reports a
+    /// Cloudflare block. Runs once per task; further blocks leave the task Failed
+    /// (the manual "Bypass Cloudflare" command remains available).</summary>
+    private void AutoSolveCloudflare(DownloadTask task)
+    {
+        if (task.Status != TaskStatus.Failed)
+            return;
+        if (!_cfAutoSolved.Add(task.Id))
+            return;
+        RunCloudflareSolver(task);
+    }
+
+    /// <summary>Manual "Bypass Cloudflare / protection..." entry point — unlimited
+    /// runs, and it resets the automatic one-shot marker.</summary>
     public void SolveCloudflare(DownloadTask? task)
     {
         if (task is null) return;
+        _cfAutoSolved.Remove(task.Id);
+        RunCloudflareSolver(task);
+    }
+
+    private void RunCloudflareSolver(DownloadTask task)
+    {
         var window = new CloudflareChallengeWindow(task)
         {
             Owner = Application.Current.MainWindow

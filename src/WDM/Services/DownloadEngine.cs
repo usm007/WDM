@@ -25,6 +25,11 @@ public sealed class DownloadEngine
     public event Action<DownloadTask>? TaskCompleted;
     public event Action<DownloadTask, double[]>? ChunkProgressUpdated;
 
+    /// <summary>Raised when a download was blocked by a Cloudflare-style managed
+    /// challenge. The UI layer may open its embedded-browser solver and requeue
+    /// the task; the engine itself takes no further action for that task.</summary>
+    public event Action<DownloadTask>? CloudflareBlocked;
+
     public DownloadEngine()
     {
         _http = CreateClient();
@@ -438,8 +443,20 @@ public sealed class DownloadEngine
         {
             if (session.Removed)
                 return;
-            task.Status = ex is FileChangedException ? TaskStatus.Paused : TaskStatus.Failed;
-            task.Error = ex.Message;
+            if (ex is CloudflareBlockedException)
+            {
+                // Hand the task to the UI layer's auto-solver instead of dead-ending
+                // as Failed. The solver requeues via Engine.Start when it succeeds;
+                // a repeat block falls through to the normal failure path.
+                task.Status = TaskStatus.Failed;
+                task.Error = "Blocked by Cloudflare — opening built-in browser to solve…";
+                CloudflareBlocked?.Invoke(task);
+            }
+            else
+            {
+                task.Status = ex is FileChangedException ? TaskStatus.Paused : TaskStatus.Failed;
+                task.Error = ex.Message;
+            }
         }
         finally
         {
@@ -1141,11 +1158,11 @@ public sealed class DownloadEngine
         request.Headers.TryAddWithoutValidation("Upgrade-Insecure-Requests", "1");
         if (string.IsNullOrWhiteSpace(task.Referer) && Uri.TryCreate(url ?? task.Url, UriKind.Absolute, out var targetUri))
         {
-            string host = targetUri.Host;
-            string refUrl = host.StartsWith("link.", StringComparison.OrdinalIgnoreCase) 
-                ? $"{targetUri.Scheme}://{host[5..]}/" 
-                : $"{targetUri.Scheme}://{host}/";
-            request.Headers.TryAddWithoutValidation("Referer", refUrl);
+            // ponytail: label-count heuristic, not a real registrable-domain table
+            // (no PSL); wrong for multi-part TLDs like co.uk — fine for a Referer hint.
+            string[] labels = targetUri.Host.Split('.');
+            string host = labels.Length >= 3 ? string.Join('.', labels.AsSpan(1).ToArray()) : targetUri.Host;
+            request.Headers.TryAddWithoutValidation("Referer", $"{targetUri.Scheme}://{host}/");
         }
         return request;
     }

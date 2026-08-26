@@ -75,8 +75,13 @@ public partial class CloudflareChallengeWindow : Window
     {
         // If WebView2 triggers a browser download, cancel the browser download and capture the clearance!
         e.Cancel = true;
-        FinalRedirectUrl = e.ResultFilePath ?? WebView.Source.ToString();
+        // e.ResultFilePath is a suggested LOCAL file path, not a URL — swapping the
+        // task's Url to it would corrupt the download. Use the download's remote URI
+        // (the post-redirect direct link) instead.
+        string? remoteUri = e.DownloadOperation.Uri;
+        FinalRedirectUrl = string.IsNullOrWhiteSpace(remoteUri) ? WebView.Source.ToString() : remoteUri;
 
+        // Clearance cookies live on the original host, not the redirect target.
         await CaptureCookiesAsync(WebView.Source.ToString());
         ClearanceCaptured = true;
         DialogResult = true;
