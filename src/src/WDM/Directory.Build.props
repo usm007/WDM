@@ -1,0 +1,6 @@
+<Project>
+  <PropertyGroup>
+    <MSBuildProjectExtensionsPath>$(MSBuildProjectDirectory)\obj_bld\</MSBuildProjectExtensionsPath>
+    <BaseIntermediateOutputPath>$(MSBuildProjectDirectory)\obj_bld\</BaseIntermediateOutputPath>
+  </PropertyGroup>
+</Project>

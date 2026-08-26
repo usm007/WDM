@@ -7,6 +7,10 @@ obj/
 output/
 publish/
 staging/
+obj_bld/
+temp_git_index
+src/WDM/obj_bld/
+src/WDM/Directory.Build.props
 WDM_Payload.zip
 idman643build8.exe
 *.bak

@@ -1,0 +1,43 @@
+<Window x:Class="WDM.UpdateAvailableDialog"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Update Available - WDM"
+        Icon="Assets/WDM.ico"
+        Width="440"
+        SizeToContent="Height"
+        UseLayoutRounding="True"
+        SnapsToDevicePixels="True"
+        WindowStartupLocation="CenterOwner"
+        ResizeMode="NoResize"
+        ShowInTaskbar="False"
+        Background="{DynamicResource Brush.Surface}">
+    <Grid Margin="22,18,22,20">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+
+        <!-- Header -->
+        <DockPanel Grid.Row="0" Margin="0,0,0,14">
+            <Border Width="44" Height="44" CornerRadius="10" Background="{DynamicResource Brush.AccentSoft}" Margin="0,0,14,0" VerticalAlignment="Center">
+                <TextBlock Text="&#xF01DA;" FontFamily="{StaticResource Font.Icon}" FontSize="22" Foreground="{DynamicResource Brush.Accent}" HorizontalAlignment="Center" VerticalAlignment="Center" />
+            </Border>
+            <StackPanel VerticalAlignment="Center">
+                <TextBlock Text="A new version is available" FontWeight="Bold" FontSize="16" Foreground="{DynamicResource Brush.Text}" />
+                <TextBlock x:Name="VersionLine" FontSize="12" Foreground="{DynamicResource Brush.TextDim}" Margin="0,2,0,0" />
+            </StackPanel>
+        </DockPanel>
+
+        <!-- Details -->
+        <ScrollViewer Grid.Row="1" MaxHeight="240" VerticalScrollBarVisibility="Auto" Margin="0,0,0,18">
+            <TextBlock x:Name="DetailsText" TextWrapping="Wrap" FontSize="12" Foreground="{DynamicResource Brush.TextDim}" LineHeight="18" />
+        </ScrollViewer>
+
+        <!-- Actions -->
+        <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Right">
+            <Button x:Name="LaterButton" Content="Later" Style="{StaticResource Button.Secondary}" IsCancel="True" Click="LaterClick" MinWidth="90" Height="30" />
+            <Button x:Name="InstallButton" Content="Download &amp; Install" Style="{StaticResource Button.Accent}" Click="InstallClick" MinWidth="150" Height="30" Margin="10,0,0,0" />
+        </StackPanel>
+    </Grid>
+</Window>
