@@ -82,7 +82,7 @@ public sealed class DownloadEngine
         {
             AllowAutoRedirect = true,
             MaxConnectionsPerServer = 64,
-            AutomaticDecompression = DecompressionMethods.None,
+            AutomaticDecompression = DecompressionMethods.All,
             UseCookies = false, // Must be false so custom Cookie headers are sent raw without .NET stripping them
         };
         var client = new HttpClient(handler)
@@ -1131,16 +1131,22 @@ public sealed class DownloadEngine
                 continue;
             request.Headers.TryAddWithoutValidation(kv.Key, kv.Value);
         }
-        // Ask for the raw (uncompressed) representation so Content-Length is the true
-        // file size and byte ranges line up with what we actually receive.
-        request.Headers.TryAddWithoutValidation("Accept-Encoding", "identity");
-        // Browser-like headers reduce Cloudflare/bot-filter false positives (testfile.org etc.)
-        request.Headers.TryAddWithoutValidation("Accept", "*/*");
+        // Standard Chrome browser headers reduce Cloudflare/bot-filter false positives (testfile.org etc.)
+        request.Headers.TryAddWithoutValidation("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8");
         request.Headers.TryAddWithoutValidation("Accept-Language", "en-US,en;q=0.9");
-        request.Headers.TryAddWithoutValidation("Cache-Control", "no-cache");
-        request.Headers.TryAddWithoutValidation("Pragma", "no-cache");
+        request.Headers.TryAddWithoutValidation("Sec-Fetch-Dest", "document");
+        request.Headers.TryAddWithoutValidation("Sec-Fetch-Mode", "navigate");
+        request.Headers.TryAddWithoutValidation("Sec-Fetch-Site", "cross-site");
+        request.Headers.TryAddWithoutValidation("Sec-Fetch-User", "?1");
+        request.Headers.TryAddWithoutValidation("Upgrade-Insecure-Requests", "1");
         if (string.IsNullOrWhiteSpace(task.Referer) && Uri.TryCreate(url ?? task.Url, UriKind.Absolute, out var targetUri))
-            request.Headers.TryAddWithoutValidation("Referer", $"{targetUri.Scheme}://{targetUri.Host}/");
+        {
+            string host = targetUri.Host;
+            string refUrl = host.StartsWith("link.", StringComparison.OrdinalIgnoreCase) 
+                ? $"{targetUri.Scheme}://{host[5..]}/" 
+                : $"{targetUri.Scheme}://{host}/";
+            request.Headers.TryAddWithoutValidation("Referer", refUrl);
+        }
         return request;
     }
 

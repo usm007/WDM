@@ -18,70 +18,82 @@ async function checkWdm() {
 checkWdm();
 setInterval(checkWdm, 4000);
 
-// Gather all cookies for a URL's domain and build a "Cookie: ..." header string.
-async function getCookieHeaderForUrl(url) {
+// Gather all cookies for a URL's domain, referrer, and parent domains to build a complete "Cookie: ..." header string.
+async function getCookieHeaderForUrl(url, referrer) {
   try {
-    const cookies = await webext.cookies.getAll({ url });
-    if (!cookies || cookies.length === 0) return null;
-    cookies.sort((a, b) => b.path.length - a.path.length || a.name.localeCompare(b.name));
-    return cookies.map(c => `${c.name}=${c.value}`).join("; ");
+    const cookieMap = new Map();
+    const urls = [url];
+    if (referrer && /^https?:\/\//i.test(referrer)) {
+      urls.push(referrer);
+    }
+    
+    for (const u of urls) {
+      try {
+        const cookies = await webext.cookies.getAll({ url: u });
+        if (cookies) {
+          for (const c of cookies) {
+            cookieMap.set(c.name, c.value);
+          }
+        }
+      } catch {}
+
+      try {
+        const parsed = new URL(u);
+        const hostParts = parsed.hostname.split(".");
+        while (hostParts.length >= 2) {
+          const domain = hostParts.join(".");
+          const domainCookies = await webext.cookies.getAll({ domain });
+          if (domainCookies) {
+            for (const c of domainCookies) {
+              cookieMap.set(c.name, c.value);
+            }
+          }
+          hostParts.shift();
+        }
+      } catch {}
+    }
+
+    if (cookieMap.size === 0) return null;
+    return Array.from(cookieMap.entries()).map(([k, v]) => `${k}=${v}`).join("; ");
   } catch {
     return null;
   }
 }
 
 webext.downloads.onCreated.addListener(async (item) => {
-  // 1. Ignore historical/restored items when browser/PC restarts
-  if (item.state && item.state !== "in_progress") {
+  if (!captureEnabled) return;
+  if (item.state && item.state !== "in_progress") return;
+  if (item.startTime && (Date.now() - new Date(item.startTime).getTime()) > 10000) return;
+
+  const downloadUrl = item.finalUrl || item.url;
+  if (!downloadUrl || !/^https?:\/\//i.test(downloadUrl)) return;
+
+  if (loopGuard.get(downloadUrl) > Date.now()) {
+    loopGuard.delete(downloadUrl);
     return;
   }
 
-  // 2. Ignore items created in the past (more than 10 seconds ago)
-  if (item.startTime && (Date.now() - new Date(item.startTime).getTime()) > 10000) {
-    return;
-  }
-
-  // 3. Ignore non-downloadable protocols (file:, blob:, data:, chrome:, about:)
-  if (!item.url || !/^https?:\/\//i.test(item.url)) {
-    return;
-  }
-
-  // 4. Ignore URLs in loop guard
-  if (loopGuard.get(item.url) > Date.now()) {
-    loopGuard.delete(item.url);
-    return;
-  }
-
-  // 5. Ping WDM first BEFORE cancelling the browser download.
-  // If WDM is not running, let the browser download naturally!
   await checkWdm();
-  if (!isWdmActive) {
-    return;
-  }
+  if (!isWdmActive) return;
 
-  // Mark URL in loop guard
-  loopGuard.set(item.url, Date.now() + 15000);
+  loopGuard.set(downloadUrl, Date.now() + 15000);
 
-  // Cancel browser download and hand over to WDM
   try {
     await webext.downloads.cancel(item.id);
     await webext.downloads.erase({ id: item.id }).catch(() => {});
-  } catch {
-    // If cancel failed, continue anyway
-  }
+  } catch {}
 
   try {
-    // Capture cookies for the download URL's domain automatically
     const headers = {};
     headers["User-Agent"] = navigator.userAgent;
-    const cookieHeader = await getCookieHeaderForUrl(item.url);
+    const cookieHeader = await getCookieHeaderForUrl(downloadUrl, item.referrer);
     if (cookieHeader) {
       headers["Cookie"] = cookieHeader;
     }
     if (item.referrer) {
       headers["Referer"] = item.referrer;
     }
-    await sendToWdm(item.url, item.filename, item.referrer, headers);
+    await sendToWdm(downloadUrl, item.filename, item.referrer, headers);
   } catch (err) {
     console.warn("WDM handoff failed:", err);
   }
