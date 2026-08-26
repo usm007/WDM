@@ -61,6 +61,7 @@ public partial class App : Application
         StartMinimized = e.Args.Any(a =>
             string.Equals(a, "/minimized", StringComparison.OrdinalIgnoreCase) ||
             string.Equals(a, "--minimized", StringComparison.OrdinalIgnoreCase));
+        BrowserIntegration.DeployExtension();
         var settings = TaskStore.LoadSettings();
         ThemeService.Apply(AppTheme.Default, settings.UseDarkTheme);
 
