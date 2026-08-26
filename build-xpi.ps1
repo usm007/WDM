@@ -11,7 +11,7 @@ if (-not (Test-Path (Split-Path $out))) {
     New-Item -ItemType Directory -Path (Split-Path $out) -Force | Out-Null
 }
 
-if (Test-Path $out) { Remove-Item $out -Force }
+if (Test-Path $out) { Remove-Item $out -Force -ErrorAction SilentlyContinue }
 
 if ($SignedXpi -and (Test-Path $SignedXpi)) {
     Copy-Item $SignedXpi $out
@@ -25,10 +25,13 @@ if (-not (Test-Path $src)) {
 
 Add-Type -AssemblyName System.IO.Compression.FileSystem
 Add-Type -AssemblyName System.IO.Compression
-$zip = [System.IO.Compression.ZipFile]::Open($out, [System.IO.Compression.ZipArchiveMode]::Create)
+$mode = if (Test-Path $out) { [System.IO.Compression.ZipArchiveMode]::Update } else { [System.IO.Compression.ZipArchiveMode]::Create }
+$zip = [System.IO.Compression.ZipFile]::Open($out, $mode)
 try {
     Get-ChildItem -LiteralPath $src -Recurse -File | ForEach-Object {
         $rel = $_.FullName.Substring($src.Length + 1).Replace('\', '/')
+        $existing = $zip.GetEntry($rel)
+        if ($null -ne $existing) { $existing.Delete() }
         [System.IO.Compression.ZipFileExtensions]::CreateEntryFromFile($zip, $_.FullName, $rel, [System.IO.Compression.CompressionLevel]::Optimal) | Out-Null
     }
 }

@@ -69,7 +69,9 @@
     <Window.InputBindings>
         <KeyBinding Key="N" Modifiers="Control" Command="{Binding OpenAddDialogCommand}" />
         <KeyBinding Key="OemComma" Modifiers="Control" Command="{Binding OptionsCommand}" />
-        <KeyBinding Key="Delete" Command="{Binding RemoveCommand}" />
+        <KeyBinding Key="Delete" Command="{Binding BulkRemoveCommand}" />
+        <KeyBinding Key="Enter" Command="{Binding BulkResumeCommand}" />
+        <KeyBinding Key="Return" Command="{Binding BulkResumeCommand}" />
         <KeyBinding Key="Space" Command="{Binding TogglePauseCommand}" />
         <KeyBinding Key="F5" Command="{Binding RetryCommand}" />
     </Window.InputBindings>

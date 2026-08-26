@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "WDM Download Catcher",
-  "version": "1.0.0",
-  "description": "Catch browser downloads and send them to WDM (Windows Download Manager).",
+  "version": "1.1.0",
+  "description": "Catch browser downloads and stream media — send them to WDM (Windows Download Manager).",
   "permissions": [
     "downloads",
     "storage",
@@ -32,6 +32,25 @@
   "background": {
     "scripts": ["background.js"]
   },
+  "content_scripts": [
+    {
+      "matches": ["https://www.youtube.com/watch*", "https://youtube.com/watch*"],
+      "js": ["youtube_menu.js"],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": ["<all_urls>"],
+      "exclude_matches": [
+        "https://www.youtube.com/*",
+        "https://youtube.com/*",
+        "http://127.0.0.1:17530/*",
+        "http://localhost:17530/*"
+      ],
+      "js": ["media_sniffer.js"],
+      "run_at": "document_start",
+      "all_frames": false
+    }
+  ],
   "browser_specific_settings": {
     "gecko": {
       "id": "wdm-catcher@wdm.app",

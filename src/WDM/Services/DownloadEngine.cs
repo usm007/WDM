@@ -645,7 +645,7 @@ public sealed class DownloadEngine
             return false;
         try
         {
-            return File.Exists(task.FullPath) && new FileInfo(task.FullPath).Length >= task.TotalBytes;
+            return task.DownloadedBytes >= task.TotalBytes;
         }
         catch
         {

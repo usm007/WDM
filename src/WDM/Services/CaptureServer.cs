@@ -4,6 +4,7 @@ using System.Net;
 using System.Net.Sockets;
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 
 namespace WDM.Services;
 
@@ -13,6 +14,11 @@ public sealed class CaptureServer : IDisposable
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
         PropertyNameCaseInsensitive = true,
+    };
+    private static readonly JsonSerializerOptions JsonWriteOptions = new()
+    {
+        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+        DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
     };
     private readonly TcpListener _listener;
     private readonly Action<string, string?, string?, Dictionary<string, string>> _onCapture;
@@ -80,7 +86,17 @@ public sealed class CaptureServer : IDisposable
                 if (parts.Length < 2)
                     return;
                 string method = parts[0];
-                string path = parts[1];
+                string fullPath = parts[1];
+
+                // Split path from query string
+                string path = fullPath;
+                string queryString = "";
+                int qIdx = fullPath.IndexOf('?');
+                if (qIdx >= 0)
+                {
+                    path = fullPath[..qIdx];
+                    queryString = fullPath[(qIdx + 1)..];
+                }
 
                 long contentLength = 0;
                 bool expectContinue = false;
@@ -127,7 +143,7 @@ public sealed class CaptureServer : IDisposable
                 {
                     IsConnected = true;
                     ExtensionConnected?.Invoke();
-                    await WriteResponseAsync(stream, HttpStatusCode.OK, "{\"status\":\"ok\"}");
+                    await WriteResponseAsync(stream, HttpStatusCode.OK, "{\"status\":\"ok\",\"version\":\"2.4.2\"}");
                     return;
                 }
 
@@ -150,6 +166,62 @@ public sealed class CaptureServer : IDisposable
                     return;
                 }
 
+                // GET /resolve?url=<encoded-url>
+                // Returns available quality tiers for a YouTube (or any yt-dlp-supported) URL.
+                if (method == "GET" && path == "/resolve")
+                {
+                    string? videoUrl = null;
+                    foreach (var pair in queryString.Split('&'))
+                    {
+                        var kv = pair.Split('=', 2);
+                        if (kv.Length == 2 && kv[0].Equals("url", StringComparison.OrdinalIgnoreCase))
+                        {
+                            videoUrl = Uri.UnescapeDataString(kv[1]);
+                            break;
+                        }
+                    }
+
+                    if (string.IsNullOrWhiteSpace(videoUrl))
+                    {
+                        await WriteResponseAsync(stream, HttpStatusCode.BadRequest, "{\"error\":\"missing url param\"}");
+                        return;
+                    }
+
+                    try
+                    {
+                        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+                        var resolved = await MediaResolver.ResolveAsync(videoUrl, cts.Token);
+
+                        var responseObj = new ResolveResponse
+                        {
+                            Title = resolved.Items.FirstOrDefault()?.Title ?? "",
+                            Channel = resolved.Items.FirstOrDefault()?.Channel ?? "",
+                            ThumbnailUrl = resolved.Items.FirstOrDefault()?.ThumbnailUrl ?? "",
+                            IsPlaylist = resolved.IsPlaylist,
+                            PlaylistTitle = resolved.PlaylistTitle,
+                            ItemCount = resolved.Items.Count,
+                            Qualities = resolved.QualityOptions.Select(q => new QualityResponse
+                            {
+                                Label = q.Label,
+                                FormatArg = q.FormatArg,
+                                EstimatedBytes = q.EstimatedBytes,
+                                EstimatedSizeText = q.EstimatedBytes.HasValue
+                                    ? FormatBytes(q.EstimatedBytes.Value)
+                                    : null,
+                            }).ToList(),
+                        };
+
+                        string json = JsonSerializer.Serialize(responseObj, JsonWriteOptions);
+                        await WriteResponseAsync(stream, HttpStatusCode.OK, json);
+                    }
+                    catch (Exception ex)
+                    {
+                        string errJson = JsonSerializer.Serialize(new { error = ex.Message }, JsonWriteOptions);
+                        await WriteResponseAsync(stream, HttpStatusCode.InternalServerError, errJson);
+                    }
+                    return;
+                }
+
                 await WriteResponseAsync(stream, HttpStatusCode.NotFound, "");
             }
             catch
@@ -157,6 +229,15 @@ public sealed class CaptureServer : IDisposable
                 // Client hung up mid-request; nothing to do.
             }
         }
+    }
+
+    private static string FormatBytes(long bytes)
+    {
+        string[] units = { "B", "KB", "MB", "GB" };
+        double value = bytes;
+        int unit = 0;
+        while (value >= 1024 && unit < units.Length - 1) { value /= 1024; unit++; }
+        return unit == 0 ? $"{value:0} {units[unit]}" : $"{value:0.0} {units[unit]}";
     }
 
     private static async Task WriteResponseAsync(Stream stream, HttpStatusCode status, string body)
@@ -203,5 +284,24 @@ public sealed class CaptureServer : IDisposable
         public string? FileName { get; set; }
         public string? Referer { get; set; }
         public Dictionary<string, string> Headers { get; set; } = new(StringComparer.OrdinalIgnoreCase);
+    }
+
+    private sealed class ResolveResponse
+    {
+        public string Title { get; set; } = "";
+        public string Channel { get; set; } = "";
+        public string ThumbnailUrl { get; set; } = "";
+        public bool IsPlaylist { get; set; }
+        public string? PlaylistTitle { get; set; }
+        public int ItemCount { get; set; }
+        public List<QualityResponse> Qualities { get; set; } = new();
+    }
+
+    private sealed class QualityResponse
+    {
+        public string Label { get; set; } = "";
+        public string FormatArg { get; set; } = "";
+        public long? EstimatedBytes { get; set; }
+        public string? EstimatedSizeText { get; set; }
     }
 }

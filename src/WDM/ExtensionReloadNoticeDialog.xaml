@@ -46,14 +46,18 @@
             </Border>
 
             <!-- Footer Action Buttons -->
-            <DockPanel LastChildFill="False">
-                <TextBlock x:Name="FeedbackText" Text="" FontSize="11" Foreground="{DynamicResource Brush.Accent}" VerticalAlignment="Center" DockPanel.Dock="Left" />
-                <StackPanel Orientation="Horizontal" DockPanel.Dock="Right">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+                <TextBlock x:Name="FeedbackText" Text="" FontSize="11" Foreground="{DynamicResource Brush.Accent}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" Margin="0,0,10,0" />
+                <StackPanel Grid.Column="1" Orientation="Horizontal" HorizontalAlignment="Right">
                     <Button Content="Open Extensions Page" Style="{StaticResource Button.Accent}" Click="OpenExtensions_Click" Height="32" Padding="14,0" Margin="0,0,8,0" />
                     <Button Content="Copy Extension Path" Style="{StaticResource Button.Secondary}" Click="CopyPath_Click" Height="32" Padding="12,0" Margin="0,0,8,0" />
                     <Button Content="Got It" Style="{StaticResource Button.Secondary}" IsCancel="True" IsDefault="True" Click="Close_Click" MinWidth="80" Height="32" />
                 </StackPanel>
-            </DockPanel>
+            </Grid>
         </StackPanel>
     </Grid>
 </Window>

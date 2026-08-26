@@ -126,7 +126,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
             SelectedTask.Status is TaskStatus.Downloading or TaskStatus.Queued or TaskStatus.Paused);
         RetryCommand = new RelayCommand(_ => RetrySelected(), _ => SelectedTask?.Status == TaskStatus.Failed);
         BulkPauseCommand = new RelayCommand(_ => BulkDo(t => Engine.Pause(t)));
-        BulkResumeCommand = new RelayCommand(_ => BulkDo(t => { if (t.Status == TaskStatus.Paused) Engine.Start(t); }));
+        BulkResumeCommand = new RelayCommand(_ => BulkDo(t => { if (t.Status is TaskStatus.Paused or TaskStatus.Failed or TaskStatus.Queued) Engine.Start(t); }));
         BulkRemoveCommand = new RelayCommand(_ =>
         {
             var snapshot = SelectedTasks.ToArray();
