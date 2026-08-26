@@ -124,18 +124,15 @@ begin
 end;
 
 procedure CurStepChanged(CurStep: TSetupStep);
-var
-  AppDir: String;
 begin
   if CurStep = ssInstall then
   begin
     KillAllProcesses;
-    AppDir := ExpandConstant('{app}');
-    if DirExists(AppDir) then
-    begin
-      DelTree(AppDir, True, True, True);
-      CreateDir(AppDir);
-    end;
+    // Do NOT delete AppDir on updates!
+    // AppDir ({app}) holds runtime user data: YouTube sign-in profile (WebView2),
+    // YouTube cookies (youtube_cookies.txt), downloaded engine plugins (bin/yt-dlp.exe, etc.),
+    // and user tasks/settings (tasks.json/settings.json).
+    // Inno Setup safely overwrites app binaries from [Files] while leaving user data untouched.
   end;
 end;
 
