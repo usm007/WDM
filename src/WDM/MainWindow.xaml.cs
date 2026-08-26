@@ -98,6 +98,28 @@ public partial class MainWindow : Window
                 _viewModel.PersistSettings();
                 _dispatcher.BeginInvoke(ShowExtensionInstallerDialog);
             }
+            else if (!App.StartMinimized)
+            {
+                // Check if application was updated to a newer version.
+                // Prompt user to reload Chromium browser extensions so latest version loads.
+                string currentVer = UpdateChecker.CurrentVersion.ToString();
+                string? lastVer = _viewModel.Settings.LastRunVersion;
+                if (!string.IsNullOrWhiteSpace(lastVer) && lastVer != currentVer)
+                {
+                    _dispatcher.BeginInvoke(() =>
+                    {
+                        var notice = new ExtensionReloadNoticeDialog(lastVer, currentVer)
+                        {
+                            Owner = this
+                        };
+                        notice.ShowDialog();
+                    });
+                }
+            }
+
+            _viewModel.Settings.LastRunVersion = UpdateChecker.CurrentVersion.ToString();
+            _viewModel.PersistSettings();
+
             // Started via the Windows-startup shortcut: run in the background and only
             // surface the window when the user clicks the tray icon.
             if (App.StartMinimized)

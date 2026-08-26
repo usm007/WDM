@@ -25,6 +25,7 @@ public sealed class AppSettings
     public bool StartInBackground { get; set; }
     public bool UseDarkTheme { get; set; }
     public AppTheme Theme { get; set; } = AppTheme.Default;
+    public string? LastRunVersion { get; set; }
 
     // YouTube & Media downloads
     public bool EnableYouTubeDownloads { get; set; } = false;
