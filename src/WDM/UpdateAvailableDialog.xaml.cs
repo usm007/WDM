@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Windows;
 using WDM.Services;
 
@@ -12,11 +12,13 @@ public partial class UpdateAvailableDialog : Window
     {
         InitializeComponent();
         _release = release;
-        VersionLine.Text = $"WDM {release.Version} → click Download & Install to update.";
-        DetailsText.Text = $"Current version: {UpdateChecker.CurrentVersion}{Environment.NewLine}" +
-                           $"New version: {release.Version}{Environment.NewLine}{Environment.NewLine}" +
-                           (string.IsNullOrWhiteSpace(release.Body) ? "" : release.Body.Trim() + Environment.NewLine + Environment.NewLine) +
-                            "The installer downloads to your Temp folder and WDM restarts automatically after installation.";
+        VersionLine.Text = $"WDM {release.Version} is available";
+        DetailsText.Text = string.IsNullOrWhiteSpace(release.Body)
+            ? $"Current version: {UpdateChecker.CurrentVersion}{Environment.NewLine}" +
+              $"New version: {release.Version}{Environment.NewLine}{Environment.NewLine}" +
+              "Click Download & Install to automatically update and restart WDM."
+            : $"{release.Body.Trim()}{Environment.NewLine}{Environment.NewLine}" +
+              $"Current: {UpdateChecker.CurrentVersion}  →  New: {release.Version}";
     }
 
     protected override void OnSourceInitialized(EventArgs e)

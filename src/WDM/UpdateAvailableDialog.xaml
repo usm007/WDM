@@ -30,7 +30,9 @@
         </DockPanel>
 
         <!-- Details -->
-        <TextBlock x:Name="DetailsText" Grid.Row="1" TextWrapping="Wrap" FontSize="12" Foreground="{DynamicResource Brush.TextDim}" Margin="0,0,0,18" />
+        <ScrollViewer Grid.Row="1" MaxHeight="240" VerticalScrollBarVisibility="Auto" Margin="0,0,0,18">
+            <TextBlock x:Name="DetailsText" TextWrapping="Wrap" FontSize="12" Foreground="{DynamicResource Brush.TextDim}" LineHeight="18" />
+        </ScrollViewer>
 
         <!-- Actions -->
         <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Right">
