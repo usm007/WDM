@@ -382,7 +382,7 @@
                       RowHeight="36"
                       HeadersVisibility="Column"
                       SelectionMode="Extended"
-                      CanUserSortColumns="True"
+                      CanUserSortColumns="False"
                       CanUserReorderColumns="False"
                       GridLinesVisibility="Horizontal"
                       HorizontalGridLinesBrush="{DynamicResource Brush.GridLine}"
@@ -476,7 +476,7 @@
 
                 <DataGrid.Columns>
                     <!-- File Name + Icon -->
-                    <DataGridTemplateColumn Header="File Name" Width="*" MinWidth="220" SortMemberPath="DisplayFileName">
+                    <DataGridTemplateColumn Header="File Name" Width="*" MinWidth="260">
                         <DataGridTemplateColumn.CellTemplate>
                             <DataTemplate>
                                 <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="10,0,6,0">
@@ -487,27 +487,8 @@
                         </DataGridTemplateColumn.CellTemplate>
                     </DataGridTemplateColumn>
 
-                    <!-- Progress -->
-                    <DataGridTemplateColumn Header="Progress" Width="100" HeaderStyle="{StaticResource Header.Center}" SortMemberPath="Progress">
-                        <DataGridTemplateColumn.CellTemplate>
-                            <DataTemplate>
-                                <Grid Margin="6,0">
-                                    <Grid.RowDefinitions>
-                                        <RowDefinition Height="*" />
-                                        <RowDefinition Height="Auto" />
-                                    </Grid.RowDefinitions>
-                                    <ProgressBar Grid.Row="0" Value="{Binding Progress}" Maximum="100"
-                                                 Style="{StaticResource ProgressBar.IDM}" Height="5"
-                                                 VerticalAlignment="Center" Margin="0,0,0,2" />
-                                    <TextBlock Grid.Row="1" Text="{Binding Progress, StringFormat='{}{0}%'}" FontSize="10"
-                                               Foreground="{DynamicResource Brush.TextDim}" HorizontalAlignment="Center" />
-                                </Grid>
-                            </DataTemplate>
-                        </DataGridTemplateColumn.CellTemplate>
-                    </DataGridTemplateColumn>
-
                     <!-- Size -->
-                    <DataGridTemplateColumn Header="Size" Width="85" HeaderStyle="{StaticResource Header.Center}" SortMemberPath="TotalBytes">
+                    <DataGridTemplateColumn Header="Size" Width="85" HeaderStyle="{StaticResource Header.Center}">
                         <DataGridTemplateColumn.CellTemplate>
                             <DataTemplate>
                                 <TextBlock Text="{Binding SizeText}" FontFamily="Consolas, monospace" FontSize="11.5"
@@ -517,7 +498,7 @@
                     </DataGridTemplateColumn>
 
                     <!-- Status Column -->
-                    <DataGridTemplateColumn Header="Status" Width="110" HeaderStyle="{StaticResource Header.Center}" SortMemberPath="Status">
+                    <DataGridTemplateColumn Header="Status" Width="115" HeaderStyle="{StaticResource Header.Center}">
                         <DataGridTemplateColumn.CellTemplate>
                             <DataTemplate>
                                 <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" VerticalAlignment="Center" Margin="6,0">
@@ -532,7 +513,7 @@
                     </DataGridTemplateColumn>
 
                     <!-- Time left -->
-                    <DataGridTemplateColumn Header="Time left" Width="75" HeaderStyle="{StaticResource Header.Right}">
+                    <DataGridTemplateColumn Header="Time left" Width="80" HeaderStyle="{StaticResource Header.Right}">
                         <DataGridTemplateColumn.CellTemplate>
                             <DataTemplate>
                                 <TextBlock Text="{Binding Eta}" FontFamily="Consolas, monospace" FontSize="11.5"
@@ -542,7 +523,7 @@
                     </DataGridTemplateColumn>
 
                     <!-- Transfer rate -->
-                    <DataGridTemplateColumn Header="Transfer rate" Width="100" HeaderStyle="{StaticResource Header.Right}" SortMemberPath="SpeedBps">
+                    <DataGridTemplateColumn Header="Transfer rate" Width="105" HeaderStyle="{StaticResource Header.Right}">
                         <DataGridTemplateColumn.CellTemplate>
                             <DataTemplate>
                                 <TextBlock Text="{Binding SpeedText}" FontFamily="Consolas, monospace" FontSize="11.5"
@@ -551,8 +532,13 @@
                         </DataGridTemplateColumn.CellTemplate>
                     </DataGridTemplateColumn>
 
-                    <!-- Date Added (was "Last Try Date" — bound to AddedAt which is creation time, not last attempt) -->
-                    <DataGridTemplateColumn Header="Date Added" Width="110" HeaderStyle="{StaticResource Header.Right}" SortMemberPath="AddedAt">
+                    <!-- Last Try Date -->
+                    <DataGridTemplateColumn Width="110" HeaderStyle="{StaticResource Header.Right}">
+                        <DataGridTemplateColumn.HeaderTemplate>
+                            <DataTemplate>
+                                <TextBlock Text="Last Try Date" />
+                            </DataTemplate>
+                        </DataGridTemplateColumn.HeaderTemplate>
                         <DataGridTemplateColumn.CellTemplate>
                             <DataTemplate>
                                 <TextBlock Text="{Binding AddedAt, StringFormat='{}{0:MMM dd HH:mm}'}"
