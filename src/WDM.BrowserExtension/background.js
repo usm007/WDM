@@ -8,6 +8,7 @@ const loopGuard = new Map();
 // Capture on/off, persisted in storage so the toggle survives restarts.
 const STORAGE_KEY = "captureEnabled";
 let captureEnabled = true;
+
 async function loadCaptureState() {
   try {
     const data = await webext.storage.local.get(STORAGE_KEY);
@@ -17,6 +18,7 @@ async function loadCaptureState() {
     captureEnabled = true;
   }
 }
+
 function updateBadge() {
   if (!captureEnabled) {
     try { webext.action.setBadgeText({ text: "OFF" }); } catch {}
@@ -24,6 +26,7 @@ function updateBadge() {
     try { webext.action.setBadgeText({ text: "" }); } catch {}
   }
 }
+
 webext.storage.onChanged.addListener((changes, area) => {
   if (area === "local" && changes[STORAGE_KEY]) {
     captureEnabled = changes[STORAGE_KEY].newValue !== false;
@@ -44,6 +47,37 @@ async function checkWdm() {
 }
 checkWdm();
 setInterval(checkWdm, 4000);
+
+// RPC message handler for content scripts to prevent Private Network Access browser permission popups
+webext.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  if (!message || typeof message !== "object") return false;
+
+  if (message.action === "ping") {
+    checkWdm().then(() => sendResponse({ active: isWdmActive }));
+    return true;
+  }
+
+  if (message.action === "resolve") {
+    fetch(`${WDM_HOST}/resolve?url=${encodeURIComponent(message.url)}`)
+      .then(r => r.ok ? r.json() : { error: `HTTP ${r.status}` })
+      .then(data => sendResponse({ success: true, data }))
+      .catch(err => sendResponse({ success: false, error: err.message }));
+    return true;
+  }
+
+  if (message.action === "download") {
+    fetch(`${WDM_HOST}/download`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(message.payload || {})
+    })
+      .then(r => sendResponse({ success: r.ok }))
+      .catch(err => sendResponse({ success: false, error: err.message }));
+    return true;
+  }
+
+  return false;
+});
 
 // Gather all cookies for a URL's domain, referrer, and parent domains to build a complete "Cookie: ..." header string.
 async function getCookieHeaderForUrl(url, referrer) {
@@ -88,63 +122,34 @@ async function getCookieHeaderForUrl(url, referrer) {
 }
 
 webext.downloads.onCreated.addListener(async (item) => {
-  // 0. If capturing is switched off, let the browser download naturally.
-  if (!captureEnabled) {
-    return;
-  }
+  if (!captureEnabled) return;
+  if (item.state && item.state !== "in_progress") return;
+  if (item.startTime && (Date.now() - new Date(item.startTime).getTime()) > 10000) return;
 
-  // 1. Ignore historical/restored items when browser/PC restarts
-  if (item.state && item.state !== "in_progress") {
-    return;
-  }
-
-  // 2. Ignore items created in the past (more than 10 seconds ago)
-  if (item.startTime && (Date.now() - new Date(item.startTime).getTime()) > 10000) {
-    return;
-  }
-
-  // 3. Ignore non-downloadable protocols (file:, blob:, data:, chrome:, about:)
   const downloadUrl = item.finalUrl || item.url;
-  if (!downloadUrl || !/^https?:\/\//i.test(downloadUrl)) {
-    return;
-  }
+  if (!downloadUrl || !/^https?:\/\//i.test(downloadUrl)) return;
 
-  // 4. Ignore URLs in loop guard
   if (loopGuard.get(downloadUrl) > Date.now()) {
     loopGuard.delete(downloadUrl);
     return;
   }
 
-  // 5. Ping WDM first BEFORE cancelling the browser download.
-  // If WDM is not running, let the browser download naturally!
   await checkWdm();
-  if (!isWdmActive) {
-    return;
-  }
+  if (!isWdmActive) return;
 
-  // Mark URL in loop guard
   loopGuard.set(downloadUrl, Date.now() + 15000);
 
-  // Cancel browser download and hand over to WDM
   try {
     await webext.downloads.cancel(item.id);
     await webext.downloads.erase({ id: item.id }).catch(() => {});
-  } catch {
-    // If cancel failed, continue anyway
-  }
+  } catch {}
 
   try {
-    // Capture cookies for target URL domain & parent domains automatically
     const headers = {};
     headers["User-Agent"] = navigator.userAgent;
     const cookieHeader = await getCookieHeaderForUrl(downloadUrl, item.referrer);
-    if (cookieHeader) {
-      headers["Cookie"] = cookieHeader;
-    }
-    // Also capture the Referer as a header if the browser provides one
-    if (item.referrer) {
-      headers["Referer"] = item.referrer;
-    }
+    if (cookieHeader) headers["Cookie"] = cookieHeader;
+    if (item.referrer) headers["Referer"] = item.referrer;
     await sendToWdm(downloadUrl, item.filename, item.referrer, headers);
   } catch (err) {
     console.warn("WDM handoff failed:", err);

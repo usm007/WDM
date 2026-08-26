@@ -134,6 +134,7 @@ public partial class AddDownloadDialog : Window
                        (uri.Scheme == Uri.UriSchemeHttp || uri.Scheme == Uri.UriSchemeHttps || uri.Scheme == Uri.UriSchemeFtp);
 
         OkButton.IsEnabled = isValid;
+        if (DownloadLaterButton != null) DownloadLaterButton.IsEnabled = isValid;
         StartHint.Visibility = isValid ? Visibility.Collapsed : Visibility.Visible;
         DuplicateWarning.Visibility = _viewModel.ExistingUrl(url) ? Visibility.Visible : Visibility.Collapsed;
 
@@ -461,7 +462,11 @@ public partial class AddDownloadDialog : Window
             FolderBox.Text = dialog.FolderName;
     }
 
-    private void OkClick(object sender, RoutedEventArgs e)
+    private void OkClick(object sender, RoutedEventArgs e) => CreateAndAddTask(startImmediately: true);
+
+    private void DownloadLaterClick(object sender, RoutedEventArgs e) => CreateAndAddTask(startImmediately: false);
+
+    private void CreateAndAddTask(bool startImmediately)
     {
         string url = UrlBox.Text.Trim();
         if (!Uri.TryCreate(url, UriKind.Absolute, out var uri) ||
@@ -580,6 +585,7 @@ public partial class AddDownloadDialog : Window
             IsYouTube = isYouTube,
             YouTubeFormatArg = formatArg,
             YouTubeExtraArgs = extraArgs.Count > 0 ? string.Join("\n", extraArgs) : null,
+            Status = startImmediately ? TaskStatus.Queued : TaskStatus.Paused,
         };
 
         _viewModel.AddTask(task);

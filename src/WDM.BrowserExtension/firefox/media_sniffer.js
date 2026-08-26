@@ -1,27 +1,28 @@
 // WDM Media Sniffer — Content Script
 // Detects media streams on any web page and offers to download them via WDM.
-// Intercepts <video>/<audio> elements and patches XHR/fetch to catch stream URLs.
+// Communicates with background script to eliminate browser PNA local network access prompts.
 
 (function () {
   "use strict";
 
-  const WDM_HOST = "http://127.0.0.1:17530";
   const MEDIA_EXTS = /\.(mp4|webm|mkv|avi|mov|flv|m4v|mp3|m4a|aac|ogg|opus|flac|wav|ts|m2ts|mts)(\?|$)/i;
   const HLS_RE = /\.(m3u8)(\?|$)/i;
   const DASH_RE = /\.(mpd)(\?|$)/i;
-  const MIN_SIZE_HINT = 1024 * 1024; // ignore tiny blobs (<1MB)
+  const MIN_SIZE_HINT = 1024 * 1024;
 
-  // Tracks found media URLs to avoid duplicate badges
   const foundUrls = new Set();
   let wdmActive = false;
   let badgeContainer = null;
-  let badgeList = [];
 
-  // --- Check WDM ping ---
-  async function checkWdm() {
+  const webext = typeof browser !== "undefined" ? browser : (typeof chrome !== "undefined" ? chrome : null);
+  if (!webext || !webext.runtime) return;
+
+  function checkWdm() {
     try {
-      const r = await fetch(`${WDM_HOST}/ping`, { method: "GET" });
-      wdmActive = r.ok;
+      webext.runtime.sendMessage({ action: "ping" }, (res) => {
+        if (webext.runtime.lastError) { wdmActive = false; return; }
+        wdmActive = !!res?.active;
+      });
     } catch {
       wdmActive = false;
     }
@@ -29,28 +30,24 @@
   checkWdm();
   setInterval(checkWdm, 5000);
 
-  // --- Send URL to WDM for download ---
-  async function sendToWdm(url, label) {
+  function sendToWdm(url, label) {
     try {
-      await fetch(`${WDM_HOST}/download`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
+      webext.runtime.sendMessage({
+        action: "download",
+        payload: {
           url,
           fileName: null,
           referer: location.href,
           headers: { Referer: location.href },
-        }),
+        }
       });
     } catch (e) {
-      console.warn("[WDM] Failed to send to WDM:", e);
+      console.warn("[WDM] Failed to send to WDM via background:", e);
     }
   }
 
-  // --- Media badge UI ---
   function ensureBadgeContainer() {
     if (badgeContainer) return;
-
     badgeContainer = document.createElement("div");
     badgeContainer.id = "wdm-media-badge";
     badgeContainer.style.cssText = `
@@ -89,7 +86,6 @@
       animation: wdm-slide-in 0.2s ease-out;
     `;
 
-    // Type icon color
     const iconColor = type === "hls" ? "#f59e0b" : type === "dash" ? "#8b5cf6" : "#3b82f6";
     const typeLabel = type === "hls" ? "HLS" : type === "dash" ? "DASH" : "Media";
 
@@ -119,36 +115,24 @@
     badge.querySelector("[data-wdm-close]").addEventListener("click", () => badge.remove());
 
     badgeContainer.appendChild(badge);
-    badgeList.push(badge);
-
-    // Auto-dismiss after 15s
-    setTimeout(() => {
-      if (badge.parentNode) badge.remove();
-    }, 15000);
+    setTimeout(() => { if (badge.parentNode) badge.remove(); }, 15000);
   }
 
-  // --- Classify and report a URL ---
   function reportUrl(url, size) {
     if (!url || url.startsWith("blob:") || url.startsWith("data:")) return;
     if (foundUrls.has(url)) return;
-
     try { new URL(url); } catch { return; }
 
     let name = "";
     try { name = new URL(url).pathname.split("/").pop() || url; } catch { name = url; }
 
-    if (HLS_RE.test(url)) {
-      addBadge(url, name, "hls");
-    } else if (DASH_RE.test(url)) {
-      addBadge(url, name, "dash");
-    } else if (MEDIA_EXTS.test(url)) {
-      if (!size || size > MIN_SIZE_HINT) {
-        addBadge(url, name, "media");
-      }
+    if (HLS_RE.test(url)) addBadge(url, name, "hls");
+    else if (DASH_RE.test(url)) addBadge(url, name, "dash");
+    else if (MEDIA_EXTS.test(url)) {
+      if (!size || size > MIN_SIZE_HINT) addBadge(url, name, "media");
     }
   }
 
-  // --- Observe <video> and <audio> elements ---
   function observeMediaElements() {
     const handle = (el) => {
       const src = el.src || el.currentSrc;
@@ -172,7 +156,6 @@
     observer.observe(document.documentElement, { childList: true, subtree: true });
   }
 
-  // --- Patch XMLHttpRequest to sniff media URLs ---
   function patchXHR() {
     const OrigXHR = window.XMLHttpRequest;
     function PatchedXHR() {
@@ -188,7 +171,6 @@
     Object.defineProperty(window, "XMLHttpRequest", { value: PatchedXHR });
   }
 
-  // --- Patch fetch() to sniff media URLs ---
   function patchFetch() {
     const origFetch = window.fetch.bind(window);
     window.fetch = function (input, init) {
@@ -198,7 +180,6 @@
     };
   }
 
-  // Don't run on YouTube (handled by youtube_menu.js)
   if (!location.hostname.includes("youtube.com")) {
     patchXHR();
     patchFetch();

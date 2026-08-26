@@ -220,9 +220,11 @@
                        FontSize="11" Foreground="{DynamicResource Brush.TextMuted}"
                        VerticalAlignment="Center" Visibility="Visible" />
             <Button x:Name="OkButton" Content="Start download" Style="{StaticResource Button.Accent}"
-                    Click="OkClick" DockPanel.Dock="Right" MinWidth="130" Height="32" Margin="0,0,8,0" IsEnabled="False" IsDefault="True" />
+                    Click="OkClick" DockPanel.Dock="Right" MinWidth="120" Height="32" Margin="0,0,8,0" IsEnabled="False" IsDefault="True" />
+            <Button x:Name="DownloadLaterButton" Content="Download later" Style="{StaticResource Button.Secondary}"
+                    Click="DownloadLaterClick" DockPanel.Dock="Right" MinWidth="110" Height="32" Margin="0,0,8,0" IsEnabled="False" />
             <Button Content="Cancel" Style="{StaticResource Button.Secondary}" IsCancel="True" Click="CancelClick"
-                    DockPanel.Dock="Right" MinWidth="85" Height="32" Margin="0,0,8,0" />
+                    DockPanel.Dock="Right" MinWidth="75" Height="32" Margin="0,0,8,0" />
         </DockPanel>
     </Grid>
 </Window>

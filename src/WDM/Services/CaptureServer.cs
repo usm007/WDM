@@ -189,7 +189,7 @@ public sealed class CaptureServer : IDisposable
 
                     try
                     {
-                        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+                        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(15));
                         var resolved = await MediaResolver.ResolveAsync(videoUrl, cts.Token);
 
                         var responseObj = new ResolveResponse
@@ -214,10 +214,23 @@ public sealed class CaptureServer : IDisposable
                         string json = JsonSerializer.Serialize(responseObj, JsonWriteOptions);
                         await WriteResponseAsync(stream, HttpStatusCode.OK, json);
                     }
-                    catch (Exception ex)
+                    catch (Exception)
                     {
-                        string errJson = JsonSerializer.Serialize(new { error = ex.Message }, JsonWriteOptions);
-                        await WriteResponseAsync(stream, HttpStatusCode.InternalServerError, errJson);
+                        // Fallback response with default quality options when yt-dlp analysis fails/times out
+                        var fallbackObj = new ResolveResponse
+                        {
+                            Title = "YouTube Video",
+                            Qualities = new List<QualityResponse>
+                            {
+                                new() { Label = "1080p (Full HD)", FormatArg = "bestvideo[height<=1080]+bestaudio/best" },
+                                new() { Label = "720p (HD)", FormatArg = "bestvideo[height<=720]+bestaudio/best" },
+                                new() { Label = "480p", FormatArg = "bestvideo[height<=480]+bestaudio/best" },
+                                new() { Label = "360p", FormatArg = "bestvideo[height<=360]+bestaudio/best" },
+                                new() { Label = "Audio Only (MP3)", FormatArg = "bestaudio/best" },
+                            }
+                        };
+                        string fallbackJson = JsonSerializer.Serialize(fallbackObj, JsonWriteOptions);
+                        await WriteResponseAsync(stream, HttpStatusCode.OK, fallbackJson);
                     }
                     return;
                 }

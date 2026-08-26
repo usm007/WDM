@@ -38,8 +38,12 @@ public static class YtDlpRunner
         {
             if (s.YouTubeBrowserCookies == "wdm-native")
             {
-                psi.ArgumentList.Add("--cookies");
-                psi.ArgumentList.Add(Path.Combine(TaskStore.AppDir, "youtube_cookies.txt"));
+                string cookieFile = Path.Combine(TaskStore.AppDir, "youtube_cookies.txt");
+                if (File.Exists(cookieFile))
+                {
+                    psi.ArgumentList.Add("--cookies");
+                    psi.ArgumentList.Add(cookieFile);
+                }
             }
             else
             {
