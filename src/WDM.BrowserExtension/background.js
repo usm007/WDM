@@ -106,6 +106,7 @@ webext.downloads.onCreated.addListener(async (item) => {
   try {
     // Capture cookies for the download URL's domain automatically
     const headers = {};
+    headers["User-Agent"] = navigator.userAgent;
     const cookieHeader = await getCookieHeaderForUrl(item.url);
     if (cookieHeader) {
       headers["Cookie"] = cookieHeader;

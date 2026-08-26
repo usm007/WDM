@@ -378,7 +378,7 @@ public partial class AddDownloadDialog : Window
             bool supportsRanges = resp.Headers.AcceptRanges.Any(r => r.Equals("bytes", StringComparison.OrdinalIgnoreCase));
             string? rangeDispositionRaw = null;
 
-            if (!supportsRanges && resp.IsSuccessStatusCode)
+            if (!supportsRanges || !resp.IsSuccessStatusCode)
             {
                 // Range test with byte=0-0 fallback probe
                 var rangeReq = new HttpRequestMessage(HttpMethod.Get, url);
@@ -484,6 +484,29 @@ public partial class AddDownloadDialog : Window
         string finalFileName = DownloadEngine.SanitizeFileName(nameInput);
         if (string.IsNullOrWhiteSpace(finalFileName))
             finalFileName = derivedName;
+
+        string saveFolder = string.IsNullOrWhiteSpace(FolderBox.Text) ? DownloadTask.DefaultSaveFolder : FolderBox.Text;
+
+        if (_viewModel.ExistingUrl(url) || _viewModel.IsDuplicateFile(finalFileName, saveFolder))
+        {
+            string numberedFileName = _viewModel.GetNumberedFileName(finalFileName, saveFolder);
+            var dupDialog = new DuplicateDownloadDialog(url, finalFileName, numberedFileName)
+            {
+                Owner = this
+            };
+
+            bool? dupResult = dupDialog.ShowDialog();
+            if (dupResult == true && dupDialog.SelectedAction == DuplicateAction.RenameAndDownload)
+            {
+                finalFileName = dupDialog.NumberedFileName;
+                NameBox.Text = finalFileName;
+            }
+            else
+            {
+                // User chose to Skip
+                return;
+            }
+        }
 
         var mirrors = ParseMirrors();
         var headers = ParseHeaders();

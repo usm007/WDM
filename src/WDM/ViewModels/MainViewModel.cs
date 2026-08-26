@@ -72,6 +72,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
     public RelayCommand RetryAllFailedCommand { get; }
     public RelayCommand DismissFailedBannerCommand { get; }
     public RelayCommand RefreshLinkCommand { get; }
+    public RelayCommand SolveCloudflareCommand { get; }
 
     /// <summary>Raised before a destructive delete so the view can confirm with the
     /// user. The handler shows the themed DeleteConfirmDialog and, if confirmed, sets
@@ -174,6 +175,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
             if (SelectedTask is not null)
                 RefreshLinkRequested?.Invoke(SelectedTask);
         }, _ => SelectedTask is { Status: TaskStatus.Failed or TaskStatus.Paused });
+        SolveCloudflareCommand = new RelayCommand(_ => SolveCloudflare(SelectedTask), _ => SelectedTask is not null);
 
         TasksView = CollectionViewSource.GetDefaultView(Tasks);
         TasksView.Filter = FilterTask;
@@ -485,6 +487,75 @@ public sealed class MainViewModel : INotifyPropertyChanged
     {
         string needle = url.Trim();
         return Tasks.Any(t => string.Equals(t.Url, needle, StringComparison.OrdinalIgnoreCase));
+    }
+
+    public bool IsDuplicateFile(string fileName, string folderPath)
+    {
+        if (string.IsNullOrWhiteSpace(fileName))
+            return false;
+        string fullPath = Path.Combine(folderPath, fileName);
+        if (File.Exists(fullPath))
+            return true;
+        return Tasks.Any(t => string.Equals(t.FileName, fileName, StringComparison.OrdinalIgnoreCase) &&
+                              string.Equals(t.SaveFolder, folderPath, StringComparison.OrdinalIgnoreCase));
+    }
+
+    public string GetNumberedFileName(string fileName, string folderPath)
+    {
+        if (string.IsNullOrWhiteSpace(fileName))
+            fileName = "download";
+
+        string extension = Path.GetExtension(fileName);
+        string nameWithoutExt = Path.GetFileNameWithoutExtension(fileName);
+
+        if (fileName.EndsWith(".tar.gz", StringComparison.OrdinalIgnoreCase))
+        {
+            extension = ".tar.gz";
+            nameWithoutExt = fileName[..^7];
+        }
+        else if (fileName.EndsWith(".tar.bz2", StringComparison.OrdinalIgnoreCase))
+        {
+            extension = ".tar.bz2";
+            nameWithoutExt = fileName[..^8];
+        }
+
+        int counter = 1;
+        string candidate = $"{nameWithoutExt} ({counter}){extension}";
+
+        while (IsDuplicateFile(candidate, folderPath))
+        {
+            counter++;
+            candidate = $"{nameWithoutExt} ({counter}){extension}";
+        }
+
+        return candidate;
+    }
+
+    public void SolveCloudflare(DownloadTask? task)
+    {
+        if (task is null) return;
+        var window = new CloudflareChallengeWindow(task)
+        {
+            Owner = Application.Current.MainWindow
+        };
+        if (window.ShowDialog() == true)
+        {
+            if (!string.IsNullOrWhiteSpace(window.ExtractedCookies))
+            {
+                task.Headers["Cookie"] = window.ExtractedCookies;
+            }
+            if (!string.IsNullOrWhiteSpace(window.ExtractedUserAgent))
+            {
+                task.Headers["User-Agent"] = window.ExtractedUserAgent;
+            }
+            if (!string.IsNullOrWhiteSpace(window.FinalRedirectUrl) && window.FinalRedirectUrl != task.Url)
+            {
+                task.Url = window.FinalRedirectUrl;
+            }
+            task.Status = TaskStatus.Queued;
+            task.Error = null;
+            Engine.Start(task);
+        }
     }
 
     public void AddTask(string url, string? fileName = null, string? referer = null, int chunkCount = 0, IEnumerable<string>? mirrors = null)

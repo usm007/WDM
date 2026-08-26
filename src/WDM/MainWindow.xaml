@@ -430,6 +430,11 @@
                                 <TextBlock Text="&#xF0339;" FontFamily="{StaticResource Font.Icon}" FontSize="12" Foreground="{DynamicResource Brush.TextDim}" />
                             </MenuItem.Icon>
                         </MenuItem>
+                        <MenuItem Header="Bypass Cloudflare / protection..." Command="{Binding SolveCloudflareCommand}">
+                            <MenuItem.Icon>
+                                <TextBlock Text="&#xF0026;" FontFamily="{StaticResource Font.Icon}" FontSize="12" Foreground="{DynamicResource Brush.Accent}" />
+                            </MenuItem.Icon>
+                        </MenuItem>
                         <Separator />
                         <MenuItem Header="Copy URL" Command="{Binding CopyUrlCommand}">
                             <MenuItem.Icon>

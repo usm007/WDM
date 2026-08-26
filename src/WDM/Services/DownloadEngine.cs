@@ -517,8 +517,6 @@ public sealed class DownloadEngine
             var head = await SendWithRetryAsync(() => BuildRequest(HttpMethod.Head, task, null, url), ct);
             using (head)
             {
-                if (IsCloudflareChallenge(head))
-                    throw new CloudflareBlockedException(CloudflareMessage(url));
                 if (head.IsSuccessStatusCode)
                 {
                     supportsRanges = head.Headers.AcceptRanges.Any(r => r.Equals("bytes", StringComparison.OrdinalIgnoreCase));
@@ -532,20 +530,19 @@ public sealed class DownloadEngine
                 }
             }
         }
-        catch (CloudflareBlockedException) { throw; }
         catch
         {
-            // HEAD unsupported or rejected; fall through to ranged GET.
+            // HEAD unsupported or rejected (e.g. Cloudflare blocks HEAD); fall through to ranged GET probe.
         }
 
-        // 2) Ranged GET probe (bytes=1-1) - authoritative for size via Content-Range
+        // 2) Ranged GET probe (bytes=0-0) - authoritative for size via Content-Range
         //    and proves range support. Sends Accept-Encoding: identity so Content-Length
         //    reflects the real size (a compressed body would corrupt chunk math).
         if (totalBytes <= 0 || !supportsRanges)
         {
             try
             {
-                var get = await SendWithRetryAsync(() => BuildRequest(HttpMethod.Get, task, new RangeHeaderValue(1, 1), url), ct);
+                var get = await SendWithRetryAsync(() => BuildRequest(HttpMethod.Get, task, new RangeHeaderValue(0, 0), url), ct);
                 if (IsCloudflareChallenge(get))
                 {
                     string msg = CloudflareMessage(url);
@@ -563,7 +560,7 @@ public sealed class DownloadEngine
                     contentType ??= get.Content.Headers.ContentType?.ToString();
                     get.Dispose();
                 }
-                else if (get.StatusCode == HttpStatusCode.OK)
+                else if (get.IsSuccessStatusCode)
                 {
                     // Server ignored the Range header; use Content-Length if present.
                     long len = get.Content.Headers.ContentLength ?? -1;
@@ -594,12 +591,6 @@ public sealed class DownloadEngine
                 }
                 else
                 {
-                    if (get.StatusCode == HttpStatusCode.Forbidden && IsCloudflareChallenge(get))
-                    {
-                        string msg = CloudflareMessage(url);
-                        get.Dispose();
-                        throw new CloudflareBlockedException(msg);
-                    }
                     suggestedName ??= NameFromDisposition(get.Content.Headers.ContentDisposition);
                     contentType ??= get.Content.Headers.ContentType?.ToString();
                     get.Dispose();

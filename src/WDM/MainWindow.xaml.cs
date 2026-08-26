@@ -217,8 +217,29 @@ public partial class MainWindow : Window
 
     private void ShowAddDialog(string? prefillUrl = null, string? prefillFileName = null, string? prefillReferer = null, Dictionary<string, string>? prefillHeaders = null, bool fromCapture = false)
     {
-        if (!string.IsNullOrWhiteSpace(prefillUrl) && _viewModel.ExistingUrl(prefillUrl))
-            return;
+        string targetFolder = _viewModel.Settings.DownloadFolder;
+        string initialFileName = prefillFileName ?? (!string.IsNullOrWhiteSpace(prefillUrl) ? DownloadEngine.DeriveName(prefillUrl) : "");
+
+        if (!string.IsNullOrWhiteSpace(prefillUrl) && (_viewModel.ExistingUrl(prefillUrl) || _viewModel.IsDuplicateFile(initialFileName, targetFolder)))
+        {
+            string numberedFileName = _viewModel.GetNumberedFileName(initialFileName, targetFolder);
+            var dupDialog = new DuplicateDownloadDialog(prefillUrl, initialFileName, numberedFileName)
+            {
+                Topmost = fromCapture,
+                Owner = this
+            };
+
+            bool? dupResult = dupDialog.ShowDialog();
+            if (dupResult == true && dupDialog.SelectedAction == DuplicateAction.RenameAndDownload)
+            {
+                prefillFileName = dupDialog.NumberedFileName;
+            }
+            else
+            {
+                // User chose to Skip or closed dialog
+                return;
+            }
+        }
 
         // When a link is captured from the browser extension, show the dialog on
         // top of every window without surfacing the main WDM window.
