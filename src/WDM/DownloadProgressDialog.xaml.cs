@@ -1,4 +1,4 @@
-﻿using System.Collections.ObjectModel;
+using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Runtime.CompilerServices;
 using System.Windows;
@@ -253,6 +253,22 @@ public partial class DownloadProgressDialog : Window, INotifyPropertyChanged
     private void MinimizeClick(object sender, RoutedEventArgs e)
     {
         WindowState = WindowState.Minimized;
+    }
+
+    private void RevealClick(object sender, RoutedEventArgs e)
+    {
+        string path = Task.FullPath;
+        try
+        {
+            if (!string.IsNullOrWhiteSpace(path))
+            {
+                if (System.IO.File.Exists(path))
+                    System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo("explorer.exe", $"/select,\"{path}\"") { UseShellExecute = true });
+                else if (System.IO.Directory.Exists(Task.SaveFolder))
+                    System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(Task.SaveFolder) { UseShellExecute = true });
+            }
+        }
+        catch { }
     }
 
     private void CancelClick(object sender, RoutedEventArgs e)

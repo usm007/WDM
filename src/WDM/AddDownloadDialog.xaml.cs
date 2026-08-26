@@ -2,6 +2,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Net.Http;
 using System.Net.Http.Headers;
+using System.Windows.Media.Imaging;
 using System.Windows;
 using System.Windows.Controls;
 using Microsoft.Win32;
@@ -20,11 +21,13 @@ public partial class AddDownloadDialog : Window
     private readonly Dictionary<string, string>? _prefillHeaders;
     private string _lastDerivedName = "";
     private CancellationTokenSource? _probeCts;
+    private ResolvedQuery? _lastResolved;
+    private List<QualityOption> _ytQualityOptions = new();
 
     public AddDownloadDialog(MainViewModel viewModel, string? prefillUrl = null, string? prefillFileName = null, string? prefillReferer = null, Dictionary<string, string>? prefillHeaders = null)
     {
-        InitializeComponent();
         _viewModel = viewModel;
+        InitializeComponent();
         _prefillUrl = prefillUrl;
         _prefillFileName = prefillFileName;
         _prefillReferer = prefillReferer;
@@ -88,6 +91,8 @@ public partial class AddDownloadDialog : Window
 
     private void ApplyRouting()
     {
+        if (_viewModel == null)
+            return;
         if (!_viewModel.Settings.RouteByCategory)
             return;
         var category = SelectedCategory();
@@ -155,8 +160,7 @@ public partial class AddDownloadDialog : Window
         }
         else
         {
-            if (QualityLabel != null) QualityLabel.Visibility = Visibility.Collapsed;
-            if (QualityBox != null) QualityBox.Visibility = Visibility.Collapsed;
+            if (YouTubePanel != null) YouTubePanel.Visibility = Visibility.Collapsed;
             ProbeUrlAsync(url);
         }
     }
@@ -184,19 +188,35 @@ public partial class AddDownloadDialog : Window
                 _lastDerivedName = cleanTitle + ".mp4";
                 NameBox.Text = _lastDerivedName;
 
-                if (QualityLabel != null && QualityBox != null && res.QualityOptions.Count > 0)
-                {
-                    QualityLabel.Visibility = Visibility.Visible;
-                    QualityBox.Visibility = Visibility.Visible;
-                    QualityBox.ItemsSource = res.QualityOptions.Select(q => q.Label).ToList();
-                    QualityBox.Tag = res.QualityOptions;
-                    QualityBox.SelectedIndex = 0;
-                }
+                _lastResolved = res;
+                _ytQualityOptions = res.QualityOptions;
+                ShowYouTubePanel(res.IsPlaylist);
 
                 ProbeIcon.Text = char.ConvertFromUtf32(0xF0381);
                 string durStr = item.Duration.HasValue ? $" ({item.Duration.Value:mm\\:ss})" : "";
                 ProbeText.Text = $"YouTube Media • {item.Title}{durStr}";
                 CategoryBox.SelectedIndex = 1; // Video
+
+                // Load thumbnail asynchronously.
+                if (!string.IsNullOrWhiteSpace(item.ThumbnailUrl) && YtThumbnail != null)
+                {
+                    try
+                    {
+                        var bmp = new BitmapImage();
+                        bmp.BeginInit();
+                        bmp.UriSource = new Uri(item.ThumbnailUrl);
+                        bmp.DecodePixelWidth = 144; // 2x for HiDPI
+                        bmp.CacheOption = BitmapCacheOption.OnLoad;
+                        bmp.EndInit();
+                        bmp.Freeze();
+                        YtThumbnail.Source = bmp;
+                        YtThumbnail.Visibility = Visibility.Visible;
+                    }
+                    catch
+                    {
+                        YtThumbnail.Visibility = Visibility.Collapsed;
+                    }
+                }
             }
         }
         catch (Exception ex)
@@ -205,6 +225,12 @@ public partial class AddDownloadDialog : Window
             {
                 ProbeIcon.Text = char.ConvertFromUtf32(0xF0028);
                 ProbeText.Text = "YouTube analysis: " + ex.Message;
+                if (YtThumbnail != null) YtThumbnail.Visibility = Visibility.Collapsed;
+                // Still show the options panel with fallback tiers so the user
+                // can pick a quality even when metadata resolution fails.
+                _lastResolved = null;
+                _ytQualityOptions = new List<QualityOption>();
+                ShowYouTubePanel(isPlaylist: false);
             }
         }
     }
@@ -212,6 +238,87 @@ public partial class AddDownloadDialog : Window
     private void NameBox_TextChanged(object sender, TextChangedEventArgs e)
     {
         UpdateCategoryBadge();
+    }
+
+    // ── YouTube options panel ──────────────────────────────────────────
+    private bool IsAudioOnly => YtTypeAudioOnly?.IsChecked == true;
+    private bool IsVideoOnly => YtTypeVideoOnly?.IsChecked == true;
+
+    private void ShowYouTubePanel(bool isPlaylist)
+    {
+        if (YouTubePanel == null) return;
+        YouTubePanel.Visibility = Visibility.Visible;
+        YtPlaylist.Visibility = isPlaylist ? Visibility.Visible : Visibility.Collapsed;
+        if (_ytQualityOptions.Count == 0 && _lastResolved?.QualityOptions.Count > 0)
+            _ytQualityOptions = _lastResolved.QualityOptions;
+        PopulateYtQuality();
+    }
+
+    private static List<QualityOption> BuildFallbackQuality() =>
+        MediaResolver.Tiers.Where(t => t.Height >= 0).Select(t => new QualityOption
+        {
+            Label = t.Label,
+            FormatArg = t.Height == 0 ? "bestvideo+bestaudio/best" : $"bestvideo[height<={t.Height}]+bestaudio/best[height<={t.Height}]",
+        }).ToList();
+
+    private void PopulateYtQuality()
+    {
+        if (YtQualityBox == null) return;
+        if (IsAudioOnly)
+        {
+            YtQualityLabel.Text = "Audio quality";
+            YtQualityBox.ItemsSource = new List<string> { "Best available", "320 kbps", "192 kbps", "128 kbps", "70 kbps" };
+            YtQualityBox.Tag = null;
+            YtQualityBox.SelectedIndex = 0;
+            return;
+        }
+        YtQualityLabel.Text = "Quality";
+        var opts = _ytQualityOptions.Count > 0 ? _ytQualityOptions : BuildFallbackQuality();
+        YtQualityBox.ItemsSource = opts.Select(q => q.Label).ToList();
+        YtQualityBox.Tag = opts;
+        YtQualityBox.SelectedIndex = 0;
+    }
+
+    private void YtType_Changed(object sender, RoutedEventArgs e)
+    {
+        if (YouTubePanel == null || CategoryBox == null || NameBox == null)
+            return;
+        if (YtAudioFormatPanel == null || YtContainerPanel == null)
+            return;
+        bool audio = IsAudioOnly;
+        YtAudioFormatPanel.Visibility = audio ? Visibility.Visible : Visibility.Collapsed;
+        YtContainerPanel.Visibility = audio ? Visibility.Collapsed : Visibility.Visible;
+        PopulateYtQuality();
+        if (audio) CategoryBox.SelectedIndex = 2; // Music
+        else if (CategoryBox.SelectedIndex == 2 && (sender == YtTypeVideoOnly || sender == YtTypeVideoAudio))
+            CategoryBox.SelectedIndex = 1; // Video
+        UpdateExtensionForType();
+        UpdateCategoryBadge();
+    }
+
+    private void YtAudioFormat_Changed(object sender, SelectionChangedEventArgs e) => UpdateExtensionForType();
+
+    private void UpdateExtensionForType()
+    {
+        if (YtAudioFormatBox == null || NameBox == null) return;
+        string want = ".mp4";
+        if (IsAudioOnly)
+        {
+            string fmt = YtAudioFormatBox.SelectedItem is ComboBoxItem it && it.Tag is string tg && tg != "best" ? tg : "mp3";
+            want = "." + fmt;
+            if (fmt == "opus") want = ".opus";
+        }
+        var known = new[] { ".mp4", ".mp3", ".m4a", ".opus", ".webm", ".mkv" };
+        string name = NameBox.Text;
+        foreach (var ext in known)
+        {
+            if (name.EndsWith(ext, StringComparison.OrdinalIgnoreCase))
+            {
+                NameBox.Text = name.Substring(0, name.Length - ext.Length) + want;
+                _lastDerivedName = NameBox.Text;
+                return;
+            }
+        }
     }
 
     private void UpdateCategoryBadge()
@@ -359,9 +466,57 @@ public partial class AddDownloadDialog : Window
 
         bool isYouTube = _viewModel.Settings.EnableYouTubeDownloads && MediaResolver.IsYoutubeUrl(url);
         string? formatArg = null;
-        if (isYouTube && QualityBox?.Tag is List<QualityOption> opts && QualityBox.SelectedIndex >= 0 && QualityBox.SelectedIndex < opts.Count)
+        var extraArgs = new List<string>();
+        if (isYouTube)
         {
-            formatArg = opts[QualityBox.SelectedIndex].FormatArg;
+            bool audioOnly = IsAudioOnly;
+            bool videoOnly = IsVideoOnly;
+
+            if (audioOnly)
+            {
+                formatArg = "bestaudio/best";
+                string fmt = YtAudioFormatBox?.SelectedItem is ComboBoxItem ai && ai.Tag is string at ? at : "best";
+                extraArgs.Add("--extract-audio");
+                if (fmt != "best")
+                {
+                    extraArgs.Add("--audio-format");
+                    extraArgs.Add(fmt);
+                }
+                int qIdx = YtQualityBox?.SelectedIndex ?? 0;
+                if (qIdx > 0)
+                {
+                    string[] rates = { "0", "320K", "192K", "128K", "70K" };
+                    extraArgs.Add("--audio-quality");
+                    extraArgs.Add(rates[Math.Min(qIdx, rates.Length - 1)]);
+                }
+            }
+            else
+            {
+                string? fa = null;
+                if (YtQualityBox?.Tag is List<QualityOption> opts && YtQualityBox.SelectedIndex >= 0 && YtQualityBox.SelectedIndex < opts.Count)
+                    fa = opts[YtQualityBox.SelectedIndex].FormatArg;
+                if (string.IsNullOrWhiteSpace(fa))
+                    fa = videoOnly ? "bestvideo/best" : "bestvideo+bestaudio/best";
+                if (videoOnly)
+                {
+                    int plus = fa.IndexOf("+bestaudio", StringComparison.OrdinalIgnoreCase);
+                    if (plus > 0) fa = fa.Substring(0, plus);
+                    if (!fa.StartsWith("bestvideo", StringComparison.OrdinalIgnoreCase))
+                        fa = "bestvideo/best";
+                }
+                formatArg = fa;
+
+                if (YtContainerBox?.SelectedItem is ComboBoxItem ci && ci.Tag is string ct && !string.IsNullOrWhiteSpace(ct))
+                {
+                    extraArgs.Add("--merge-output-format");
+                    extraArgs.Add(ct);
+                }
+            }
+
+            if (YtEmbedThumb?.IsChecked == true) extraArgs.Add("--embed-thumbnail");
+            if (YtEmbedSubs?.IsChecked == true) extraArgs.Add("--embed-subs");
+            if (YtPlaylist?.IsChecked == true) extraArgs.Add("--yes-playlist");
+            else extraArgs.Add("--no-playlist");
         }
 
         var task = new DownloadTask(Application.Current.Dispatcher)
@@ -377,6 +532,7 @@ public partial class AddDownloadDialog : Window
             Category = SelectedCategory(),
             IsYouTube = isYouTube,
             YouTubeFormatArg = formatArg,
+            YouTubeExtraArgs = extraArgs.Count > 0 ? string.Join("\n", extraArgs) : null,
         };
 
         _viewModel.AddTask(task);

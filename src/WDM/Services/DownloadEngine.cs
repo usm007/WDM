@@ -1657,6 +1657,12 @@ public sealed class DownloadEngine
                 args.Add(task.YouTubeFormatArg);
             }
 
+            if (!string.IsNullOrWhiteSpace(task.YouTubeExtraArgs))
+            {
+                foreach (var a in task.YouTubeExtraArgs.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+                    args.Add(a);
+            }
+
             if (File.Exists(EngineManager.FfmpegPath))
             {
                 args.Add("--ffmpeg-location");

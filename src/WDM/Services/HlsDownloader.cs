@@ -59,6 +59,11 @@ public static class HlsDownloader
         Directory.CreateDirectory(tempDir);
         try
         {
+            // Use a linked CTS so that any segment failure cancels the remaining
+            // concurrent downloads immediately rather than wasting bandwidth.
+            using var failCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            var segCt = failCts.Token;
+
             using var semaphore = new SemaphoreSlim(MaxConcurrentSegments);
             var tasks = new List<Task>();
             for (int i = 0; i < playlist.Segments.Count; i++)
@@ -66,19 +71,25 @@ public static class HlsDownloader
                 int index = i;
                 tasks.Add(Task.Run(async () =>
                 {
-                    await semaphore.WaitAsync(ct);
+                    await semaphore.WaitAsync(segCt);
                     try
                     {
                         var seg = playlist.Segments[index];
                         string tempFile = Path.Combine(tempDir, $"seg_{index:D6}.part");
-                        long length = await DownloadSegmentAsync(http, seg, referer, tempFile, ct, throttle);
+                        long length = await DownloadSegmentAsync(http, seg, referer, tempFile, segCt, throttle);
                         addBytes(length);
+                    }
+                    catch when (!segCt.IsCancellationRequested)
+                    {
+                        // Signal all sibling segments to stop on first error.
+                        failCts.Cancel();
+                        throw;
                     }
                     finally
                     {
                         semaphore.Release();
                     }
-                }, ct));
+                }, segCt));
             }
             await Task.WhenAll(tasks);
             ct.ThrowIfCancellationRequested();

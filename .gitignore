@@ -39,3 +39,11 @@ banner.png
 .agents/
 .claude/
 .opencode/
+
+# Local debug / scratch files
+AutoFlow.ps1
+Test-DownloadFlow.ps1
+debug-x64dbg.ps1
+x64dbg-test.txt
+x64dbg/
+

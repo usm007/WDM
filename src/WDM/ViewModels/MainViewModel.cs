@@ -888,8 +888,10 @@ public sealed class MainViewModel : INotifyPropertyChanged
         }
 
         string speed = DownloadTask.FormatBytes((long)totalSpeedBps);
+        int downloadingCount = Tasks.Count(t => t.Status == TaskStatus.Downloading);
+        string countLabel = downloadingCount == 1 ? "1 downloading" : $"{downloadingCount} downloading";
         StatusText = $"{active} active · {speed}/s";
-        StatusRightText = $"Total: {speed}/s";
+        StatusRightText = $"{countLabel} · {speed}/s";
     }
 
     private void UpdateEmptyState()

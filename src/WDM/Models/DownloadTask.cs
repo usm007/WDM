@@ -74,6 +74,7 @@ public sealed class DownloadTask : INotifyPropertyChanged
 
     public bool IsYouTube { get; set; }
     public string? YouTubeFormatArg { get; set; }
+    public string? YouTubeExtraArgs { get; set; }
     public string? YouTubeVideoId { get; set; }
     public string? ThumbnailUrl { get; set; }
 

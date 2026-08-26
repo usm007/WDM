@@ -1,4 +1,4 @@
-﻿using System.Diagnostics;
+using System.Diagnostics;
 using System.IO;
 using System.Windows;
 using WDM.Models;
@@ -26,6 +26,7 @@ public partial class TaskPropertiesDialog : Window
         PercentText.Text = $"{task.Progress}%";
         SpeedText.Text = task.SpeedText;
         ChunksText.Text = task.ChunkCount > 0 ? $"{task.ChunkCount} threads" : "Auto";
+        ResumeCapText.Text = task.ResumeCapabilityText;
         AddedText.Text = task.AddedAt.ToString("yyyy-MM-dd HH:mm");
         CategoryText.Text = task.Category.ToString();
         PriorityText.Text = task.Priority.ToString();

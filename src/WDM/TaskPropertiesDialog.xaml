@@ -41,6 +41,7 @@
                 <RowDefinition Height="Auto" />
                 <RowDefinition Height="Auto" />
                 <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
             </Grid.RowDefinitions>
 
             <!-- URL -->
@@ -75,25 +76,29 @@
             <TextBlock Grid.Row="5" Grid.Column="0" Text="Connections" Style="{StaticResource Label.Field}" Margin="0,6" />
             <TextBlock Grid.Row="5" Grid.Column="1" x:Name="ChunksText" FontSize="12" Margin="0,6" VerticalAlignment="Center" />
 
+            <!-- Resume Capability -->
+            <TextBlock Grid.Row="6" Grid.Column="0" Text="Resume" Style="{StaticResource Label.Field}" Margin="0,6" />
+            <TextBlock Grid.Row="6" Grid.Column="1" x:Name="ResumeCapText" FontSize="12" Margin="0,6" VerticalAlignment="Center" />
+
             <!-- Added Date -->
-            <TextBlock Grid.Row="6" Grid.Column="0" Text="Added" Style="{StaticResource Label.Field}" Margin="0,6" />
-            <TextBlock Grid.Row="6" Grid.Column="1" x:Name="AddedText" FontSize="12" Margin="0,6" VerticalAlignment="Center" />
+            <TextBlock Grid.Row="7" Grid.Column="0" Text="Added" Style="{StaticResource Label.Field}" Margin="0,6" />
+            <TextBlock Grid.Row="7" Grid.Column="1" x:Name="AddedText" FontSize="12" Margin="0,6" VerticalAlignment="Center" />
 
             <!-- Category -->
-            <TextBlock Grid.Row="7" Grid.Column="0" Text="Category" Style="{StaticResource Label.Field}" Margin="0,6" />
-            <TextBlock Grid.Row="7" Grid.Column="1" x:Name="CategoryText" FontSize="12" Margin="0,6" VerticalAlignment="Center" />
+            <TextBlock Grid.Row="8" Grid.Column="0" Text="Category" Style="{StaticResource Label.Field}" Margin="0,6" />
+            <TextBlock Grid.Row="8" Grid.Column="1" x:Name="CategoryText" FontSize="12" Margin="0,6" VerticalAlignment="Center" />
 
             <!-- Priority -->
-            <TextBlock Grid.Row="8" Grid.Column="0" Text="Priority" Style="{StaticResource Label.Field}" Margin="0,6" />
-            <TextBlock Grid.Row="8" Grid.Column="1" x:Name="PriorityText" FontSize="12" Margin="0,6" VerticalAlignment="Center" />
+            <TextBlock Grid.Row="9" Grid.Column="0" Text="Priority" Style="{StaticResource Label.Field}" Margin="0,6" />
+            <TextBlock Grid.Row="9" Grid.Column="1" x:Name="PriorityText" FontSize="12" Margin="0,6" VerticalAlignment="Center" />
 
             <!-- Custom Headers -->
-            <TextBlock Grid.Row="9" Grid.Column="0" Text="Custom headers" Style="{StaticResource Label.Field}" Margin="0,6" />
-            <TextBlock Grid.Row="9" Grid.Column="1" x:Name="HeadersText" FontSize="11" TextWrapping="Wrap" Margin="0,6" VerticalAlignment="Center" />
+            <TextBlock Grid.Row="10" Grid.Column="0" Text="Custom headers" Style="{StaticResource Label.Field}" Margin="0,6" />
+            <TextBlock Grid.Row="10" Grid.Column="1" x:Name="HeadersText" FontSize="11" TextWrapping="Wrap" Margin="0,6" VerticalAlignment="Center" />
 
             <!-- Checksum -->
-            <TextBlock Grid.Row="10" Grid.Column="0" Text="SHA-256 checksum" Foreground="{DynamicResource Brush.TextDim}" FontSize="11" FontWeight="Medium" Margin="0,6" />
-            <TextBlock Grid.Row="10" Grid.Column="1" x:Name="ChecksumText" FontSize="11" TextWrapping="Wrap" Margin="0,6" VerticalAlignment="Center" FontFamily="Consolas, monospace" />
+            <TextBlock Grid.Row="11" Grid.Column="0" Text="SHA-256 checksum" Foreground="{DynamicResource Brush.TextDim}" FontSize="11" FontWeight="Medium" Margin="0,6" />
+            <TextBlock Grid.Row="11" Grid.Column="1" x:Name="ChecksumText" FontSize="11" TextWrapping="Wrap" Margin="0,6" VerticalAlignment="Center" FontFamily="Consolas, monospace" />
         </Grid>
 
         <!-- Dialog Buttons -->

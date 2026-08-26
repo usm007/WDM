@@ -49,6 +49,7 @@
                 <RowDefinition Height="Auto" />
                 <RowDefinition Height="Auto" />
                 <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
             </Grid.RowDefinitions>
 
             <!-- URL -->
@@ -59,10 +60,18 @@
                          Padding="8,0" Height="28" FontSize="12" />
                 <Border x:Name="ProbeBadge" CornerRadius="4" Padding="8,3" Margin="0,3,0,0" Visibility="Collapsed">
                     <DockPanel>
+                        <!-- YouTube thumbnail: shown only after a successful YouTube probe -->
+                        <Image x:Name="YtThumbnail" DockPanel.Dock="Left" Width="72" Height="40"
+                               Stretch="UniformToFill" Margin="0,0,8,0" Visibility="Collapsed"
+                               RenderOptions.BitmapScalingMode="HighQuality">
+                            <Image.Clip>
+                                <RectangleGeometry RadiusX="3" RadiusY="3" Rect="0,0,72,40" />
+                            </Image.Clip>
+                        </Image>
                         <TextBlock x:Name="ProbeIcon" FontFamily="{StaticResource Font.Icon}" FontSize="12"
                                    Margin="0,0,6,0" VerticalAlignment="Center" Foreground="{DynamicResource Brush.Accent}" />
                         <TextBlock x:Name="ProbeText" Text="Analyzing link..." FontSize="11"
-                                   Foreground="{DynamicResource Brush.TextDim}" VerticalAlignment="Center" />
+                                   Foreground="{DynamicResource Brush.TextDim}" VerticalAlignment="Center" TextWrapping="Wrap" />
                     </DockPanel>
                 </Border>
                 <TextBlock x:Name="DuplicateWarning" Visibility="Collapsed" FontSize="11"
@@ -104,10 +113,58 @@
                 <ComboBoxItem Content="Other" Tag="Other" />
             </ComboBox>
 
-            <!-- YouTube Quality Selector -->
-            <TextBlock Grid.Row="4" Grid.Column="0" x:Name="QualityLabel" Text="Quality" FontSize="11" FontWeight="Medium"
-                       Foreground="{DynamicResource Brush.TextDim}" VerticalAlignment="Center" Margin="0,0,10,10" Visibility="Collapsed" />
-            <ComboBox Grid.Row="4" Grid.Column="1" x:Name="QualityBox" Height="28" Margin="0,0,0,10" Visibility="Collapsed" />
+            <!-- YouTube Download Options -->
+            <Border Grid.Row="4" Grid.Column="0" Grid.ColumnSpan="2" x:Name="YouTubePanel"
+                    Background="{DynamicResource Brush.SurfaceAlt}" CornerRadius="6" Padding="12,10"
+                    Margin="0,0,0,10" Visibility="Collapsed">
+                <StackPanel>
+                    <TextBlock Text="YouTube download options" FontSize="12" FontWeight="SemiBold"
+                               Foreground="{DynamicResource Brush.Text}" Margin="0,0,0,8" />
+                    <TextBlock Text="Download type" FontSize="11" Foreground="{DynamicResource Brush.TextDim}" Margin="0,0,0,4" />
+                    <StackPanel Orientation="Horizontal" Margin="0,0,0,10">
+                        <RadioButton x:Name="YtTypeVideoAudio" Content="Video + audio" GroupName="YtType" IsChecked="True" Checked="YtType_Changed" Margin="0,0,18,0" />
+                        <RadioButton x:Name="YtTypeVideoOnly" Content="Video only" GroupName="YtType" Checked="YtType_Changed" Margin="0,0,18,0" />
+                        <RadioButton x:Name="YtTypeAudioOnly" Content="Audio only" GroupName="YtType" Checked="YtType_Changed" />
+                    </StackPanel>
+
+                    <Grid Margin="0,0,0,10">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="12" />
+                            <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
+                        <StackPanel Grid.Column="0">
+                            <TextBlock x:Name="YtQualityLabel" Text="Quality" FontSize="11" Foreground="{DynamicResource Brush.TextDim}" Margin="0,0,0,4" />
+                            <ComboBox x:Name="YtQualityBox" Height="28" />
+                        </StackPanel>
+                        <StackPanel Grid.Column="2" x:Name="YtContainerPanel">
+                            <TextBlock Text="Container" FontSize="11" Foreground="{DynamicResource Brush.TextDim}" Margin="0,0,0,4" />
+                            <ComboBox x:Name="YtContainerBox" Height="28" SelectedIndex="0">
+                                <ComboBoxItem Content="Auto (recommended)" Tag="" />
+                                <ComboBoxItem Content="MP4" Tag="mp4" />
+                                <ComboBoxItem Content="WebM" Tag="webm" />
+                                <ComboBoxItem Content="MKV" Tag="mkv" />
+                            </ComboBox>
+                        </StackPanel>
+                    </Grid>
+
+                    <StackPanel x:Name="YtAudioFormatPanel" Orientation="Horizontal" Margin="0,0,0,10" Visibility="Collapsed">
+                        <TextBlock Text="Audio format" FontSize="11" Foreground="{DynamicResource Brush.TextDim}" VerticalAlignment="Center" Margin="0,0,8,0" />
+                        <ComboBox x:Name="YtAudioFormatBox" Height="28" Width="160" SelectedIndex="0" SelectionChanged="YtAudioFormat_Changed">
+                            <ComboBoxItem Content="Best (original)" Tag="best" />
+                            <ComboBoxItem Content="MP3" Tag="mp3" />
+                            <ComboBoxItem Content="M4A" Tag="m4a" />
+                            <ComboBoxItem Content="Opus" Tag="opus" />
+                        </ComboBox>
+                    </StackPanel>
+
+                    <StackPanel Orientation="Horizontal">
+                        <CheckBox x:Name="YtEmbedThumb" Content="Embed thumbnail" IsChecked="True" Margin="0,0,16,0" />
+                        <CheckBox x:Name="YtEmbedSubs" Content="Embed subtitles" Margin="0,0,16,0" />
+                        <CheckBox x:Name="YtPlaylist" Content="Download whole playlist" Visibility="Collapsed" />
+                    </StackPanel>
+                </StackPanel>
+            </Border>
 
             <!-- Advanced options -->
             <Expander Grid.Row="5" Grid.Column="0" Grid.ColumnSpan="2"
@@ -157,15 +214,15 @@
         <!-- Divider -->
         <Border Grid.Row="2" Height="1" Background="{DynamicResource Brush.Border}" Margin="0,0,0,14" />
 
-        <!-- Bottom Buttons -->
+        <!-- Bottom Buttons: Start first in tab order, then Cancel -->
         <DockPanel Grid.Row="3" LastChildFill="False">
             <TextBlock x:Name="StartHint" DockPanel.Dock="Left" Text="Enter a valid URL above to continue"
                        FontSize="11" Foreground="{DynamicResource Brush.TextMuted}"
                        VerticalAlignment="Center" Visibility="Visible" />
-            <Button Content="Cancel" Style="{StaticResource Button.Secondary}" IsCancel="True" Click="CancelClick"
-                    DockPanel.Dock="Right" MinWidth="85" Height="32" />
             <Button x:Name="OkButton" Content="Start download" Style="{StaticResource Button.Accent}"
                     Click="OkClick" DockPanel.Dock="Right" MinWidth="130" Height="32" Margin="0,0,8,0" IsEnabled="False" IsDefault="True" />
+            <Button Content="Cancel" Style="{StaticResource Button.Secondary}" IsCancel="True" Click="CancelClick"
+                    DockPanel.Dock="Right" MinWidth="85" Height="32" Margin="0,0,8,0" />
         </DockPanel>
     </Grid>
 </Window>

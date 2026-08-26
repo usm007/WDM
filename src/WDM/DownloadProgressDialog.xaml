@@ -222,6 +222,10 @@
 
         <!-- 4. Action Buttons Footer -->
         <DockPanel Grid.Row="3" LastChildFill="False">
+            <!-- Left side: reveal action -->
+            <Button DockPanel.Dock="Left" Content="Open folder" Style="{StaticResource Button.Secondary}"
+                    Click="RevealClick" MinWidth="100" Height="32" />
+
             <StackPanel Orientation="Horizontal" DockPanel.Dock="Right">
                 <Button x:Name="BtnPause" Content="{Binding PauseButtonText}" Style="{StaticResource Button.Accent}"
                         Click="PauseClick" MinWidth="100" Height="32" Margin="0,0,8,0" />

@@ -20,16 +20,25 @@ public static class UpdateChecker
     public static Version CurrentVersion =>
         System.Reflection.Assembly.GetExecutingAssembly().GetName().Version ?? new Version(1, 0, 0, 0);
 
+    /// <summary>Shared HttpClient — creating one per call causes socket exhaustion under
+    /// repeated update checks. Headers are set once at construction time.</summary>
+    private static readonly HttpClient _http = CreateHttpClient();
+
+    private static HttpClient CreateHttpClient()
+    {
+        var client = new HttpClient { Timeout = TimeSpan.FromSeconds(8) };
+        client.DefaultRequestHeaders.UserAgent.ParseAdd($"WDM/{CurrentVersion}");
+        client.DefaultRequestHeaders.Accept.ParseAdd("application/vnd.github+json");
+        return client;
+    }
+
     /// <summary>Fetches the latest release. Returns null when the repo is unreachable,
     /// the request fails, or there is no tagged release yet.</summary>
     public static async Task<ReleaseInfo?> CheckLatestAsync(CancellationToken ct = default)
     {
         try
         {
-            using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(8) };
-            http.DefaultRequestHeaders.UserAgent.ParseAdd($"WDM/{CurrentVersion}");
-            http.DefaultRequestHeaders.Accept.ParseAdd("application/vnd.github+json");
-            string json = await http.GetStringAsync(LatestReleaseApi, ct);
+            string json = await _http.GetStringAsync(LatestReleaseApi, ct);
 
             using var doc = JsonDocument.Parse(json);
             var root = doc.RootElement;

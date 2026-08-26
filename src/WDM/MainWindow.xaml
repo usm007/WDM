@@ -86,32 +86,36 @@
         <!-- 1. Top Menu Bar -->
         <Border Grid.Row="0" Background="Transparent" Margin="2,0,2,0" Padding="0">
             <Menu Background="Transparent">
-                <MenuItem Header="Tasks" Style="{StaticResource MenuItem.Top}">
+                <!-- Downloads: primary actions -->
+                <MenuItem Header="Downloads" Style="{StaticResource MenuItem.Top}">
                     <MenuItem Header="Add New Download..." Command="{Binding OpenAddDialogCommand}" InputGestureText="Ctrl+N" />
                     <Separator />
                     <MenuItem Header="Pause All" Command="{Binding PauseAllCommand}" />
                     <MenuItem Header="Resume All" Command="{Binding StartQueueCommand}" />
                     <Separator />
-                    <MenuItem Header="Exit" Click="MenuExit_Click" InputGestureText="Alt+F4" />
+                    <MenuItem Header="Start Queue" Command="{Binding StartQueueCommand}" />
+                    <MenuItem Header="Stop Queue" Command="{Binding StopQueueCommand}" />
                 </MenuItem>
 
+                <!-- File: per-task and destructive actions + exit -->
                 <MenuItem Header="File" Style="{StaticResource MenuItem.Top}">
-                    <MenuItem Header="Show Progress Window..." Command="{Binding ShowProgressDialogCommand}" />
-                    <MenuItem Header="Properties..." Command="{Binding PropertiesCommand}" />
-                    <Separator />
                     <MenuItem Header="Open File" Command="{Binding OpenFileCommand}" />
                     <MenuItem Header="Open Folder" Command="{Binding RevealCommand}" />
                     <Separator />
+                    <MenuItem Header="Show Progress Window..." Command="{Binding ShowProgressDialogCommand}" />
+                    <MenuItem Header="Properties..." Command="{Binding PropertiesCommand}" />
+                    <Separator />
                     <MenuItem Header="Delete Selected" Command="{Binding RemoveCommand}" InputGestureText="Del" />
                     <MenuItem Header="Delete All Completed" Command="{Binding ClearCompletedCommand}" />
+                    <Separator />
+                    <MenuItem Header="Exit" Click="MenuExit_Click" InputGestureText="Alt+F4" />
                 </MenuItem>
 
-                <MenuItem Header="Downloads" Style="{StaticResource MenuItem.Top}">
-                    <MenuItem Header="Start Queue" Command="{Binding StartQueueCommand}" />
-                    <MenuItem Header="Stop Queue" Command="{Binding StopQueueCommand}" />
+                <!-- Tools: settings and integrations -->
+                <MenuItem Header="Tools" Style="{StaticResource MenuItem.Top}">
+                    <MenuItem Header="Options..." Command="{Binding OptionsCommand}" InputGestureText="Ctrl+," />
                     <Separator />
                     <MenuItem Header="Browser Extension Setup..." Click="MenuExtension_Click" />
-                    <MenuItem Header="Options..." Command="{Binding OptionsCommand}" InputGestureText="Ctrl+," />
                 </MenuItem>
 
                 <MenuItem Header="View" Style="{StaticResource MenuItem.Top}">
@@ -180,24 +184,18 @@
                     <Border Width="1" Height="28" Background="{DynamicResource Brush.Border}" Opacity="0.35" Margin="4,0,6,0" VerticalAlignment="Center" />
 
                     <!-- Group 2. Download Execution Controls -->
-                    <Button Style="{StaticResource Button.IDMStacked}" Command="{Binding ResumeCommand}" ToolTip="Resume (Space)">
+                    <!-- Single toggle button: resumes when paused, pauses when downloading -->
+                    <Button Style="{StaticResource Button.IDMStacked}" Command="{Binding TogglePauseCommand}" ToolTip="Resume / Pause selected download (Space)">
                         <StackPanel Orientation="Vertical" VerticalAlignment="Center" Margin="0,2,0,0">
                             <TextBlock Text="&#xF040A;" Style="{StaticResource Toolbar.Icon}" Foreground="{DynamicResource Brush.StatusActive}" HorizontalAlignment="Center" Margin="0,0,0,0" />
-                            <TextBlock Text="Resume" FontSize="10" FontWeight="SemiBold" Foreground="{DynamicResource Brush.Text}" HorizontalAlignment="Center" />
+                            <TextBlock Text="Resume/Pause" FontSize="10" FontWeight="SemiBold" Foreground="{DynamicResource Brush.Text}" HorizontalAlignment="Center" />
                         </StackPanel>
                     </Button>
 
-                    <Button Style="{StaticResource Button.IDMStacked}" Command="{Binding PauseCommand}" ToolTip="Pause (Space)">
-                        <StackPanel Orientation="Vertical" VerticalAlignment="Center" Margin="0,2,0,0">
-                            <TextBlock Text="&#xF03E4;" Style="{StaticResource Toolbar.Icon}" Foreground="{DynamicResource Brush.StatusPaused}" HorizontalAlignment="Center" Margin="0,0,0,0" />
-                            <TextBlock Text="Pause" FontSize="10" FontWeight="SemiBold" Foreground="{DynamicResource Brush.Text}" HorizontalAlignment="Center" />
-                        </StackPanel>
-                    </Button>
-
-                    <Button Style="{StaticResource Button.IDMStacked}" Command="{Binding PauseAllCommand}" ToolTip="Stop All">
+                    <Button Style="{StaticResource Button.IDMStacked}" Command="{Binding PauseAllCommand}" ToolTip="Pause all active downloads">
                         <StackPanel Orientation="Vertical" VerticalAlignment="Center" Margin="0,2,0,0">
                             <TextBlock Text="&#xF04DB;" Style="{StaticResource Toolbar.Icon}" Foreground="{DynamicResource Brush.StatusPaused}" HorizontalAlignment="Center" Margin="0,0,0,0" />
-                            <TextBlock Text="Stop All" FontSize="10" FontWeight="SemiBold" Foreground="{DynamicResource Brush.Text}" HorizontalAlignment="Center" />
+                            <TextBlock Text="Pause All" FontSize="10" FontWeight="SemiBold" Foreground="{DynamicResource Brush.Text}" HorizontalAlignment="Center" />
                         </StackPanel>
                     </Button>
 
@@ -211,9 +209,9 @@
                         </StackPanel>
                     </Button>
 
-                    <Button Style="{StaticResource Button.IDMStacked}" Command="{Binding ClearCompletedCommand}" ToolTip="Delete Completed">
+                    <Button Style="{StaticResource Button.IDMStacked}" Command="{Binding ClearCompletedCommand}" ToolTip="Remove completed downloads from list">
                         <StackPanel Orientation="Vertical" VerticalAlignment="Center" Margin="0,2,0,0">
-                            <TextBlock Text="&#xF0C62;" Style="{StaticResource Toolbar.Icon}" Foreground="{DynamicResource Brush.StatusFailed}" HorizontalAlignment="Center" Margin="0,0,0,0" />
+                            <TextBlock Text="&#xF0C62;" Style="{StaticResource Toolbar.Icon}" Foreground="{DynamicResource Brush.TextMuted}" HorizontalAlignment="Center" Margin="0,0,0,0" />
                             <TextBlock Text="Clear" FontSize="10" FontWeight="SemiBold" Foreground="{DynamicResource Brush.Text}" HorizontalAlignment="Center" />
                         </StackPanel>
                     </Button>
@@ -384,7 +382,7 @@
                       RowHeight="36"
                       HeadersVisibility="Column"
                       SelectionMode="Extended"
-                      CanUserSortColumns="False"
+                      CanUserSortColumns="True"
                       CanUserReorderColumns="False"
                       GridLinesVisibility="Horizontal"
                       HorizontalGridLinesBrush="{DynamicResource Brush.GridLine}"
@@ -478,7 +476,7 @@
 
                 <DataGrid.Columns>
                     <!-- File Name + Icon -->
-                    <DataGridTemplateColumn Header="File Name" Width="*" MinWidth="260">
+                    <DataGridTemplateColumn Header="File Name" Width="*" MinWidth="220" SortMemberPath="DisplayFileName">
                         <DataGridTemplateColumn.CellTemplate>
                             <DataTemplate>
                                 <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="10,0,6,0">
@@ -489,8 +487,27 @@
                         </DataGridTemplateColumn.CellTemplate>
                     </DataGridTemplateColumn>
 
+                    <!-- Progress -->
+                    <DataGridTemplateColumn Header="Progress" Width="100" HeaderStyle="{StaticResource Header.Center}" SortMemberPath="Progress">
+                        <DataGridTemplateColumn.CellTemplate>
+                            <DataTemplate>
+                                <Grid Margin="6,0">
+                                    <Grid.RowDefinitions>
+                                        <RowDefinition Height="*" />
+                                        <RowDefinition Height="Auto" />
+                                    </Grid.RowDefinitions>
+                                    <ProgressBar Grid.Row="0" Value="{Binding Progress}" Maximum="100"
+                                                 Style="{StaticResource ProgressBar.IDM}" Height="5"
+                                                 VerticalAlignment="Center" Margin="0,0,0,2" />
+                                    <TextBlock Grid.Row="1" Text="{Binding Progress, StringFormat='{}{0}%'}" FontSize="10"
+                                               Foreground="{DynamicResource Brush.TextDim}" HorizontalAlignment="Center" />
+                                </Grid>
+                            </DataTemplate>
+                        </DataGridTemplateColumn.CellTemplate>
+                    </DataGridTemplateColumn>
+
                     <!-- Size -->
-                    <DataGridTemplateColumn Header="Size" Width="85" HeaderStyle="{StaticResource Header.Center}">
+                    <DataGridTemplateColumn Header="Size" Width="85" HeaderStyle="{StaticResource Header.Center}" SortMemberPath="TotalBytes">
                         <DataGridTemplateColumn.CellTemplate>
                             <DataTemplate>
                                 <TextBlock Text="{Binding SizeText}" FontFamily="Consolas, monospace" FontSize="11.5"
@@ -500,7 +517,7 @@
                     </DataGridTemplateColumn>
 
                     <!-- Status Column -->
-                    <DataGridTemplateColumn Header="Status" Width="115" HeaderStyle="{StaticResource Header.Center}">
+                    <DataGridTemplateColumn Header="Status" Width="110" HeaderStyle="{StaticResource Header.Center}" SortMemberPath="Status">
                         <DataGridTemplateColumn.CellTemplate>
                             <DataTemplate>
                                 <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" VerticalAlignment="Center" Margin="6,0">
@@ -515,7 +532,7 @@
                     </DataGridTemplateColumn>
 
                     <!-- Time left -->
-                    <DataGridTemplateColumn Header="Time left" Width="80" HeaderStyle="{StaticResource Header.Right}">
+                    <DataGridTemplateColumn Header="Time left" Width="75" HeaderStyle="{StaticResource Header.Right}">
                         <DataGridTemplateColumn.CellTemplate>
                             <DataTemplate>
                                 <TextBlock Text="{Binding Eta}" FontFamily="Consolas, monospace" FontSize="11.5"
@@ -525,7 +542,7 @@
                     </DataGridTemplateColumn>
 
                     <!-- Transfer rate -->
-                    <DataGridTemplateColumn Header="Transfer rate" Width="105" HeaderStyle="{StaticResource Header.Right}">
+                    <DataGridTemplateColumn Header="Transfer rate" Width="100" HeaderStyle="{StaticResource Header.Right}" SortMemberPath="SpeedBps">
                         <DataGridTemplateColumn.CellTemplate>
                             <DataTemplate>
                                 <TextBlock Text="{Binding SpeedText}" FontFamily="Consolas, monospace" FontSize="11.5"
@@ -534,13 +551,8 @@
                         </DataGridTemplateColumn.CellTemplate>
                     </DataGridTemplateColumn>
 
-                    <!-- Last Try Date -->
-                    <DataGridTemplateColumn Width="110" HeaderStyle="{StaticResource Header.Right}">
-                        <DataGridTemplateColumn.HeaderTemplate>
-                            <DataTemplate>
-                                <TextBlock Text="Last Try Date" />
-                            </DataTemplate>
-                        </DataGridTemplateColumn.HeaderTemplate>
+                    <!-- Date Added (was "Last Try Date" — bound to AddedAt which is creation time, not last attempt) -->
+                    <DataGridTemplateColumn Header="Date Added" Width="110" HeaderStyle="{StaticResource Header.Right}" SortMemberPath="AddedAt">
                         <DataGridTemplateColumn.CellTemplate>
                             <DataTemplate>
                                 <TextBlock Text="{Binding AddedAt, StringFormat='{}{0:MMM dd HH:mm}'}"
