@@ -50,4 +50,6 @@ Test-DownloadFlow.ps1
 debug-x64dbg.ps1
 x64dbg-test.txt
 x64dbg/
+push_and_update_release.ps1
+publish_and_release.ps1
 

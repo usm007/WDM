@@ -4,7 +4,7 @@
 
 #define MyAppName "WDM"
 #define MyAppShortName "WDM"
-#define MyAppVersion "2.4.3.0"
+#define MyAppVersion "2.4.4.0"
 #define MyAppPublisher "WDM Team"
 #define MyAppExeName "WDM.exe"
 #define MyAppIcon "..\WDM\Assets\WDM.ico"

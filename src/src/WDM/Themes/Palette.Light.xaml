@@ -2,20 +2,22 @@
                     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
 
     <!-- ============ LIGHT PALETTE — Desktop Utility Design System ============ -->
-    <!-- Neutral tokens -->
-    <Color x:Key="Color.Bg">#F5F6F7</Color>
+    <!-- Three-layer surface: Bg (toolbar/chrome) → Sidebar → Surface (rows) -->
+    <Color x:Key="Color.Bg">#F4F6F8</Color>
     <Color x:Key="Color.Surface">#FFFFFF</Color>
-    <Color x:Key="Color.SurfaceAlt">#F0F3F6</Color>
-    <Color x:Key="Color.SurfaceHover">#E8ECEF</Color>
-    <Color x:Key="Color.Border">#B0B6BE</Color>
+    <Color x:Key="Color.SurfaceAlt">#F1F3F6</Color>
+    <Color x:Key="Color.SurfaceHover">#E9EEF3</Color>
+    <Color x:Key="Color.Border">#C4C9D0</Color>
     <Color x:Key="Color.BorderStrong">#8A939C</Color>
-    <Color x:Key="Color.GridLine">#ECF0F4</Color>
+    <Color x:Key="Color.GridLine">#EAEDF1</Color>
     <Color x:Key="Color.Text">#1A1C20</Color>
     <Color x:Key="Color.TextDim">#41464F</Color>
-    <Color x:Key="Color.TextMuted">#787F88</Color>
+    <Color x:Key="Color.TextMuted">#838A93</Color>
 
     <!-- Accent — Desktop Utility Blue -->
     <Color x:Key="Color.Accent">#1677D2</Color>
+    <Color x:Key="Color.AccentHover">#1265BC</Color>
+    <Color x:Key="Color.AccentActive">#0E57A8</Color>
     <Color x:Key="Color.AccentDark">#1268B8</Color>
     <Color x:Key="Color.AccentSoft">#EAF3FC</Color>
     <Color x:Key="Color.AccentSoftStrong">#D3E5F8</Color>
@@ -43,12 +45,12 @@
     <Color x:Key="Color.DisabledBg">#F0F3F6</Color>
     <Color x:Key="Color.DisabledFg">#A0A8B0</Color>
 
-    <!-- Zones -->
+    <!-- Zones — three deliberate surface levels -->
     <Color x:Key="Color.Track">#E2E7ED</Color>
-    <Color x:Key="Color.Sidebar">#FFFFFF</Color>
+    <Color x:Key="Color.Sidebar">#F7F9FB</Color>
     <Color x:Key="Color.RowAlt">#FAFAFA</Color>
-    <Color x:Key="Color.RowHover">#F0F4F8</Color>
-    <Color x:Key="Color.RowSelected">#EEF2F7</Color>
+    <Color x:Key="Color.RowHover">#EEF3F8</Color>
+    <Color x:Key="Color.RowSelected">#E4EEF8</Color>
 
     <!-- Muted per-category icon tints -->
     <Color x:Key="Color.CatCompressed">#D99000</Color>
@@ -73,6 +75,8 @@
     <SolidColorBrush x:Key="Brush.TextDim" Color="{StaticResource Color.TextDim}" />
     <SolidColorBrush x:Key="Brush.TextMuted" Color="{StaticResource Color.TextMuted}" />
     <SolidColorBrush x:Key="Brush.Accent" Color="{StaticResource Color.Accent}" />
+    <SolidColorBrush x:Key="Brush.AccentHover" Color="{StaticResource Color.AccentHover}" />
+    <SolidColorBrush x:Key="Brush.AccentActive" Color="{StaticResource Color.AccentActive}" />
     <SolidColorBrush x:Key="Brush.AccentDark" Color="{StaticResource Color.AccentDark}" />
     <SolidColorBrush x:Key="Brush.AccentSoft" Color="{StaticResource Color.AccentSoft}" />
     <SolidColorBrush x:Key="Brush.AccentSoftStrong" Color="{StaticResource Color.AccentSoftStrong}" />

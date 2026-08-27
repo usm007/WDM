@@ -140,6 +140,7 @@ public sealed class DownloadTask : INotifyPropertyChanged
             {
                 Raise(nameof(StatusText));
                 Raise(nameof(ProgressText));
+                Raise(nameof(IsDownloading));
                 Raise(nameof(SpeedText));
                 Raise(nameof(ProgressSpeedText));
                 Raise(nameof(Eta));
@@ -244,6 +245,8 @@ public sealed class DownloadTask : INotifyPropertyChanged
     public string DownloadedText => FormatBytes(DownloadedBytes);
 
     public string ProgressText => Status == TaskStatus.Downloading ? $"{Progress}%" : "";
+
+    public bool IsDownloading => Status == TaskStatus.Downloading;
 
     public string SpeedText => Status == TaskStatus.Downloading && SpeedBps >= 1
         ? $"{FormatBytes((long)SpeedBps)}/s"

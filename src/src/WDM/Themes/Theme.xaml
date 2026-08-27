@@ -302,10 +302,10 @@
         <Setter Property="CornerRadius" Value="8" />
     </Style>
 
-    <!-- Icon glyph inside action buttons: 20% bigger (26px) & center alignment -->
+    <!-- Icon glyph inside action buttons: sized for compact stacked layout -->
     <Style x:Key="Toolbar.Icon" TargetType="TextBlock">
         <Setter Property="FontFamily" Value="{StaticResource Font.Icon}" />
-        <Setter Property="FontSize" Value="26" />
+        <Setter Property="FontSize" Value="19" />
         <Setter Property="Foreground" Value="{DynamicResource Brush.Text}" />
         <Setter Property="HorizontalAlignment" Value="Center" />
         <Setter Property="VerticalAlignment" Value="Center" />
@@ -316,27 +316,62 @@
         </Style.Triggers>
     </Style>
 
-    <!-- Sleek Icon Action Button (20% bigger symbol, label in tooltip on hover) -->
+    <!-- Stacked Action Toolbar Button (icon + label, compact) -->
     <Style x:Key="Button.IDMStacked" TargetType="Button">
         <Setter Property="Background" Value="Transparent" />
         <Setter Property="BorderBrush" Value="Transparent" />
         <Setter Property="BorderThickness" Value="0" />
         <Setter Property="Foreground" Value="{DynamicResource Brush.Text}" />
         <Setter Property="Padding" Value="0" />
-        <Setter Property="Margin" Value="3,0" />
-        <Setter Property="Height" Value="50" />
-        <Setter Property="Width" Value="50" />
+        <Setter Property="Margin" Value="2,0" />
+        <Setter Property="Height" Value="38" />
+        <Setter Property="Width" Value="44" />
         <Setter Property="Cursor" Value="Hand" />
         <Setter Property="Template">
             <Setter.Value>
                 <ControlTemplate TargetType="Button">
                     <Border x:Name="bd" Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}"
-                            BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="6" Padding="{TemplateBinding Padding}">
+                            BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="5" Padding="{TemplateBinding Padding}">
                         <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
                     </Border>
                     <ControlTemplate.Triggers>
                         <Trigger Property="IsMouseOver" Value="True">
                             <Setter TargetName="bd" Property="Background" Value="{DynamicResource Brush.SurfaceHover}" />
+                        </Trigger>
+                        <Trigger Property="IsPressed" Value="True">
+                            <Setter TargetName="bd" Property="Background" Value="{DynamicResource Brush.SurfaceAlt}" />
+                        </Trigger>
+                        <Trigger Property="IsEnabled" Value="False">
+                            <Setter Property="Opacity" Value="0.4" />
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <!-- Utility Toolbar Button (icon-only, no label — for Settings, Theme, About) -->
+    <Style x:Key="Button.IDMUtil" TargetType="Button">
+        <Setter Property="Background" Value="Transparent" />
+        <Setter Property="BorderBrush" Value="Transparent" />
+        <Setter Property="BorderThickness" Value="0" />
+        <Setter Property="Foreground" Value="{DynamicResource Brush.TextMuted}" />
+        <Setter Property="Padding" Value="0" />
+        <Setter Property="Margin" Value="1,0" />
+        <Setter Property="Height" Value="32" />
+        <Setter Property="Width" Value="32" />
+        <Setter Property="Cursor" Value="Hand" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="Button">
+                    <Border x:Name="bd" Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}"
+                            BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="5" Padding="{TemplateBinding Padding}">
+                        <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
+                    </Border>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter TargetName="bd" Property="Background" Value="{DynamicResource Brush.SurfaceHover}" />
+                            <Setter Property="Foreground" Value="{DynamicResource Brush.TextDim}" />
                         </Trigger>
                         <Trigger Property="IsPressed" Value="True">
                             <Setter TargetName="bd" Property="Background" Value="{DynamicResource Brush.SurfaceAlt}" />
@@ -369,14 +404,14 @@
         <Setter Property="Foreground" Value="#FFFFFF" />
         <Setter Property="Padding" Value="16,0" />
         <Setter Property="Margin" Value="0,0,8,0" />
-        <Setter Property="Height" Value="36" />
+        <Setter Property="Height" Value="34" />
         <Setter Property="MinWidth" Value="120" />
         <Setter Property="Cursor" Value="Hand" />
         <Setter Property="Template">
             <Setter.Value>
                 <ControlTemplate TargetType="Button">
                     <Border x:Name="bd" Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}"
-                            BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="6" Padding="{TemplateBinding Padding}">
+                            BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="5" Padding="{TemplateBinding Padding}">
                         <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
                     </Border>
                     <ControlTemplate.Triggers>
@@ -782,12 +817,12 @@
     </Style>
 
     <Style x:Key="Header.Default" TargetType="DataGridColumnHeader">
-        <Setter Property="Background" Value="{DynamicResource Brush.Surface}" />
-        <Setter Property="Foreground" Value="{DynamicResource Brush.TextDim}" />
-        <Setter Property="FontSize" Value="11.5" />
+        <Setter Property="Background" Value="{DynamicResource Brush.SurfaceAlt}" />
+        <Setter Property="Foreground" Value="{DynamicResource Brush.TextMuted}" />
+        <Setter Property="FontSize" Value="11" />
         <Setter Property="FontWeight" Value="SemiBold" />
         <Setter Property="Padding" Value="10,0" />
-        <Setter Property="Height" Value="32" />
+        <Setter Property="Height" Value="28" />
         <Setter Property="Margin" Value="0" />
         <Setter Property="HorizontalContentAlignment" Value="Center" />
         <Setter Property="VerticalContentAlignment" Value="Center" />
@@ -807,7 +842,7 @@
                     <ControlTemplate.Triggers>
                         <Trigger Property="IsMouseOver" Value="True">
                             <Setter TargetName="HeaderBorder" Property="Background" Value="{DynamicResource Brush.SurfaceHover}" />
-                            <Setter Property="Foreground" Value="{DynamicResource Brush.Text}" />
+                            <Setter Property="Foreground" Value="{DynamicResource Brush.TextDim}" />
                         </Trigger>
                     </ControlTemplate.Triggers>
                 </ControlTemplate>
@@ -835,7 +870,7 @@
         <Setter Property="SelectionMode" Value="Extended" />
         <Setter Property="CanUserAddRows" Value="False" />
         <Setter Property="CanUserDeleteRows" Value="False" />
-        <Setter Property="RowHeight" Value="38" />
+        <Setter Property="RowHeight" Value="40" />
         <Setter Property="AlternationCount" Value="0" />
         <Setter Property="RowBackground" Value="{DynamicResource Brush.Surface}" />
         <Setter Property="AlternatingRowBackground" Value="{DynamicResource Brush.Surface}" />
