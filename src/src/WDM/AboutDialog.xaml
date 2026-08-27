@@ -8,8 +8,13 @@
         WindowStartupLocation="CenterScreen"
         ResizeMode="NoResize"
         ShowInTaskbar="True"
+        UseLayoutRounding="True"
+        SnapsToDevicePixels="True"
+        TextOptions.TextFormattingMode="Display"
+        TextOptions.TextRenderingMode="ClearType"
+        TextOptions.TextHintingMode="Fixed"
         Background="{DynamicResource Brush.Surface}">
-<Grid Margin="20,16,20,20">
+    <Grid Margin="20,16,20,20">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />
             <RowDefinition Height="Auto" />
@@ -36,12 +41,20 @@
         <Border Grid.Row="1" Background="{DynamicResource Brush.SurfaceAlt}" CornerRadius="6" Padding="14,10" Margin="0,0,0,14">
             <StackPanel>
                 <Grid Margin="0,2">
-                    <TextBlock Text="Browser integration:" FontSize="11" Foreground="{DynamicResource Brush.TextDim}" />
-                    <TextBlock Text="Active (127.0.0.1:17530)" FontSize="11" FontWeight="Medium" HorizontalAlignment="Right" Foreground="{DynamicResource Brush.Accent}" />
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="*" />
+                    </Grid.ColumnDefinitions>
+                    <TextBlock Grid.Column="0" Text="Browser integration:" FontSize="11" Foreground="{DynamicResource Brush.TextDim}" />
+                    <TextBlock Grid.Column="1" Text="Active (127.0.0.1:17530)" FontSize="11" FontWeight="Medium" HorizontalAlignment="Right" Foreground="{DynamicResource Brush.Accent}" />
                 </Grid>
                 <Grid Margin="0,4">
-                    <TextBlock Text="Engine capabilities:" FontSize="11" Foreground="{DynamicResource Brush.TextDim}" />
-                    <TextBlock Text="Multithreaded chunks, resume, speed limiter" FontSize="11" HorizontalAlignment="Right" />
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="*" />
+                    </Grid.ColumnDefinitions>
+                    <TextBlock Grid.Column="0" Text="Engine capabilities:" FontSize="11" Foreground="{DynamicResource Brush.TextDim}" />
+                    <TextBlock Grid.Column="1" Text="Multithreaded chunks, resume, speed limiter" FontSize="11" HorizontalAlignment="Right" TextTrimming="CharacterEllipsis" ToolTip="Multithreaded chunks, resume, speed limiter" />
                 </Grid>
             </StackPanel>
         </Border>
@@ -51,8 +64,12 @@
             <TextBlock Text="Other projects by me" FontSize="11" FontWeight="SemiBold"
                        Foreground="{DynamicResource Brush.TextDim}" Margin="0,0,0,8" />
             <Grid Margin="0,2">
-                <TextBlock Text="Kivoy — YouTube downloader" FontSize="11" Foreground="{DynamicResource Brush.TextDim}" />
-                <TextBlock HorizontalAlignment="Right" VerticalAlignment="Center">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="*" />
+                </Grid.ColumnDefinitions>
+                <TextBlock Grid.Column="0" Text="Kivoy — YouTube downloader" FontSize="11" Foreground="{DynamicResource Brush.TextDim}" Margin="0,0,8,0" />
+                <TextBlock Grid.Column="1" HorizontalAlignment="Right" VerticalAlignment="Center">
                     <Hyperlink x:Name="KivoyLink" NavigateUri="https://github.com/usm007/Kivoy/releases" Click="Link_Click"
                                Foreground="{DynamicResource Brush.Accent}" FontSize="11">
                         <Run Text="github.com/usm007/Kivoy/releases" />
@@ -60,8 +77,12 @@
                 </TextBlock>
             </Grid>
             <Grid Margin="0,6,0,0">
-                <TextBlock Text="Teleflow — Telegram downloader" FontSize="11" Foreground="{DynamicResource Brush.TextDim}" />
-                <TextBlock HorizontalAlignment="Right" VerticalAlignment="Center">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="*" />
+                </Grid.ColumnDefinitions>
+                <TextBlock Grid.Column="0" Text="Teleflow — Telegram downloader" FontSize="11" Foreground="{DynamicResource Brush.TextDim}" Margin="0,0,8,0" />
+                <TextBlock Grid.Column="1" HorizontalAlignment="Right" VerticalAlignment="Center">
                     <Hyperlink x:Name="TeleflowLink" NavigateUri="https://github.com/usm007/Teleflow/releases" Click="Link_Click"
                                Foreground="{DynamicResource Brush.Accent}" FontSize="11">
                         <Run Text="github.com/usm007/Teleflow/releases" />

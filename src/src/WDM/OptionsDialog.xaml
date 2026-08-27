@@ -318,7 +318,7 @@
                         <TextBlock Text="Color mode" Style="{StaticResource Label.Field}" />
                         <CheckBox x:Name="DarkModeBox" Content="Use dark theme" Margin="0,0,0,14" Checked="DarkMode_Changed" Unchecked="DarkMode_Changed" />
 
-                        <TextBlock Text="Changes preview immediately. They are saved when you click Save." FontSize="11" Foreground="{DynamicResource Brush.TextDim}" TextWrapping="Wrap" />
+                        <TextBlock Text="Changes apply immediately and are saved automatically." FontSize="11" Foreground="{DynamicResource Brush.TextDim}" TextWrapping="Wrap" />
                     </StackPanel>
 
                     <!-- Panel 6: Updates -->

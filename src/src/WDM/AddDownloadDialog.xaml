@@ -215,16 +215,18 @@
         <Border Grid.Row="2" Height="1" Background="{DynamicResource Brush.Border}" Margin="0,0,0,14" />
 
         <!-- Bottom Buttons: Start first in tab order, then Cancel -->
-        <DockPanel Grid.Row="3" LastChildFill="False">
-            <TextBlock x:Name="StartHint" DockPanel.Dock="Left" Text="Enter a valid URL above to continue"
+        <DockPanel Grid.Row="3" LastChildFill="True">
+            <StackPanel Orientation="Horizontal" DockPanel.Dock="Right">
+                <Button Content="Cancel" Style="{StaticResource Button.Secondary}" IsCancel="True" Click="CancelClick"
+                        MinWidth="75" Height="32" Margin="0,0,8,0" />
+                <Button x:Name="DownloadLaterButton" Content="Download later" Style="{StaticResource Button.Secondary}"
+                        Click="DownloadLaterClick" MinWidth="110" Height="32" Margin="0,0,8,0" IsEnabled="False" />
+                <Button x:Name="OkButton" Content="Start download" Style="{StaticResource Button.Accent}"
+                        Click="OkClick" MinWidth="120" Height="32" IsEnabled="False" IsDefault="True" />
+            </StackPanel>
+            <TextBlock x:Name="StartHint" Text="Enter a valid URL above to continue"
                        FontSize="11" Foreground="{DynamicResource Brush.TextMuted}"
-                       VerticalAlignment="Center" Visibility="Visible" />
-            <Button x:Name="OkButton" Content="Start download" Style="{StaticResource Button.Accent}"
-                    Click="OkClick" DockPanel.Dock="Right" MinWidth="120" Height="32" Margin="0,0,8,0" IsEnabled="False" IsDefault="True" />
-            <Button x:Name="DownloadLaterButton" Content="Download later" Style="{StaticResource Button.Secondary}"
-                    Click="DownloadLaterClick" DockPanel.Dock="Right" MinWidth="110" Height="32" Margin="0,0,8,0" IsEnabled="False" />
-            <Button Content="Cancel" Style="{StaticResource Button.Secondary}" IsCancel="True" Click="CancelClick"
-                    DockPanel.Dock="Right" MinWidth="75" Height="32" Margin="0,0,8,0" />
+                       VerticalAlignment="Center" Visibility="Visible" TextTrimming="CharacterEllipsis" Margin="0,0,12,0" />
         </DockPanel>
     </Grid>
 </Window>
