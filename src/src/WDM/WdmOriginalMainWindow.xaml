@@ -71,7 +71,8 @@
 
         <!-- ==================== SINGLE WINDOW TITLE BAR ==================== -->
         <Grid Grid.Row="0" Background="{DynamicResource Brush.Bg}">
-            <DockPanel LastChildFill="True" Margin="10,0">
+            <Border BorderThickness="0,0,0,1" BorderBrush="{DynamicResource Brush.Border}">
+                <DockPanel LastChildFill="True" Margin="10,0">
                 <!-- Right: Window Controls (HitTestVisible for WindowChrome) -->
                 <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center" WindowChrome.IsHitTestVisibleInChrome="True">
                     <!-- Minimize -->
@@ -95,6 +96,7 @@
                     <TextBlock Text="Windows Download Manager" FontSize="12.5" FontWeight="SemiBold" Foreground="{DynamicResource Brush.Text}" VerticalAlignment="Center" />
                 </StackPanel>
             </DockPanel>
+            </Border>
         </Grid>
 
         <!-- ==================== MAIN TOOLBAR ==================== -->

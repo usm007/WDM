@@ -917,7 +917,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
             if (Settings.RunAtStartup)
             {
                 string exe = Environment.ProcessPath ?? ApplicationPath;
-                key.SetValue(appName, $"\"{exe}\"");
+                key.SetValue(appName, $"\"{exe}\" /minimized");
             }
             else
             {
