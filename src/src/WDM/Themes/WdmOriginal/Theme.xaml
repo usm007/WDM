@@ -19,6 +19,9 @@
         <Setter Property="FontSize" Value="12" />
         <Setter Property="TextOptions.TextFormattingMode" Value="Display" />
         <Setter Property="TextOptions.TextRenderingMode" Value="ClearType" />
+        <Setter Property="TextOptions.TextHintingMode" Value="Fixed" />
+        <Setter Property="SnapsToDevicePixels" Value="True" />
+        <Setter Property="UseLayoutRounding" Value="True" />
     </Style>
 
     <!-- Empty focus visual to definitively prevent dotted focus lines anywhere -->
@@ -33,11 +36,21 @@
     <!-- Global Control FocusVisualStyle override -->
     <Style TargetType="Control">
         <Setter Property="FocusVisualStyle" Value="{StaticResource FocusVisual.Empty}" />
+        <Setter Property="TextOptions.TextFormattingMode" Value="Display" />
+        <Setter Property="TextOptions.TextRenderingMode" Value="ClearType" />
+        <Setter Property="TextOptions.TextHintingMode" Value="Fixed" />
+        <Setter Property="SnapsToDevicePixels" Value="True" />
+        <Setter Property="UseLayoutRounding" Value="True" />
     </Style>
 
     <!-- ============ TEXT ============ -->
     <Style TargetType="TextBlock">
         <Setter Property="VerticalAlignment" Value="Center" />
+        <Setter Property="TextOptions.TextFormattingMode" Value="Display" />
+        <Setter Property="TextOptions.TextRenderingMode" Value="ClearType" />
+        <Setter Property="TextOptions.TextHintingMode" Value="Fixed" />
+        <Setter Property="SnapsToDevicePixels" Value="True" />
+        <Setter Property="UseLayoutRounding" Value="True" />
     </Style>
 
     <Style x:Key="Text.Muted" TargetType="TextBlock">
