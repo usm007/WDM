@@ -105,10 +105,21 @@
     const btn = document.createElement("button");
     btn.id = BUTTON_ID;
     btn.title = "Download video with WDM (Windows Download Manager)";
-    btn.innerHTML = `
-      <img src="${iconUrl}" class="wdm-btn-icon" alt="WDM" onerror="this.style.display='none'" />
-      <span>WDM Download</span>
-    `;
+
+    if (iconUrl) {
+      const img = document.createElement("img");
+      img.src = iconUrl;
+      img.className = "wdm-btn-icon";
+      img.alt = "WDM";
+      img.addEventListener("error", () => {
+        img.style.display = "none";
+      });
+      btn.appendChild(img);
+    }
+
+    const span = document.createElement("span");
+    span.textContent = "WDM Download";
+    btn.appendChild(span);
 
     btn.addEventListener("click", (e) => {
       e.stopPropagation();
@@ -126,11 +137,10 @@
         }
       });
 
-      const span = btn.querySelector("span");
-      if (span) span.textContent = "Opening in WDM…";
+      span.textContent = "Opening in WDM…";
       btn.style.opacity = "0.7";
       setTimeout(() => {
-        if (span) span.textContent = "WDM Download";
+        span.textContent = "WDM Download";
         btn.style.opacity = "1";
       }, 2000);
     });

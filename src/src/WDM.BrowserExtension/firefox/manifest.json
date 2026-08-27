@@ -60,10 +60,7 @@
   "browser_specific_settings": {
     "gecko": {
       "id": "wdm-catcher@wdm.app",
-      "strict_min_version": "109.0",
-      "data_collection_permissions": {
-        "required": ["websiteActivity"]
-      }
+      "strict_min_version": "109.0"
     }
   }
 }
