@@ -1,5 +1,4 @@
 # WDM — Windows Download Manager
-<img width="1774" height="887" alt="dkdtjgj" src="https://github.com/user-attachments/assets/3d26f837-04c3-4e7b-b5b1-7f4a48a76d8c" />
 
 An IDM-inspired no-nonsense download manager for Windows, written in C# / WPF / .NET 8.
 

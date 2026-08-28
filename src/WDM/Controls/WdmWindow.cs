@@ -13,8 +13,8 @@ public class WdmWindow : Window
         {
             CaptionHeight = 38,
             ResizeBorderThickness = new Thickness(6),
-            GlassFrameThickness = new Thickness(1),
-            CornerRadius = new CornerRadius(8),
+            GlassFrameThickness = new Thickness(0),
+            CornerRadius = new CornerRadius(0),
             UseAeroCaptionButtons = false,
         });
         CommandBindings.Add(new CommandBinding(SystemCommands.CloseWindowCommand, CloseWindow));

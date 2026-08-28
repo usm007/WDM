@@ -27,21 +27,21 @@
         <!-- 1. Header: Category Icon + File Name + Progress Pill -->
         <DockPanel Grid.Row="0" Margin="0,0,0,16">
             <Border DockPanel.Dock="Right" Background="{DynamicResource Brush.AccentSoft}"
-                    CornerRadius="12" Padding="12,4" VerticalAlignment="Center">
+                    CornerRadius="12" Padding="12,4" VerticalAlignment="Center" Margin="12,0,0,0">
                 <TextBlock Text="{Binding ProgressTitleText}" FontSize="12" FontWeight="Bold"
                            Foreground="{DynamicResource Brush.Accent}" />
             </Border>
 
             <!-- Category Icon & File Name (Left) -->
-            <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                <TextBlock Text="{Binding Task.TypeIcon}" FontFamily="{StaticResource Font.Icon}"
+            <DockPanel VerticalAlignment="Center">
+                <TextBlock DockPanel.Dock="Left" Text="{Binding Task.TypeIcon}" FontFamily="{StaticResource Font.Icon}"
                            FontSize="16" Foreground="{DynamicResource Brush.Accent}"
                            VerticalAlignment="Center" Margin="0,0,10,0" />
                 <TextBlock Text="{Binding Task.FileName}" FontWeight="SemiBold" FontSize="15"
                            Foreground="{DynamicResource Brush.Text}" VerticalAlignment="Center"
-                           TextTrimming="CharacterEllipsis" MaxWidth="340"
+                           TextTrimming="CharacterEllipsis"
                            ToolTip="{Binding Task.FileName}" />
-            </StackPanel>
+            </DockPanel>
         </DockPanel>
 
         <!-- 2. Tab Bar Navigation -->
@@ -227,8 +227,10 @@
                     Click="RevealClick" MinWidth="100" Height="32" />
 
             <StackPanel Orientation="Horizontal" DockPanel.Dock="Right">
-                <Button x:Name="BtnPause" Content="{Binding PauseButtonText}" Style="{StaticResource Button.Accent}"
-                        Click="PauseClick" MinWidth="100" Height="32" Margin="0,0,8,0" />
+                <Button x:Name="BtnPause" Content="Pause" Style="{StaticResource Button.Secondary}"
+                        Click="PauseClick" IsEnabled="{Binding CanPause}" MinWidth="90" Height="32" Margin="0,0,8,0" />
+                <Button x:Name="BtnResume" Content="Resume" Style="{StaticResource Button.Accent}"
+                        Click="ResumeClick" IsEnabled="{Binding CanResume}" MinWidth="90" Height="32" Margin="0,0,8,0" />
                 <Button Content="Cancel" Style="{StaticResource Button.Secondary}"
                         Click="CancelClick" MinWidth="90" Height="32" IsCancel="True" ToolTip="Pause and close (Esc)" />
             </StackPanel>

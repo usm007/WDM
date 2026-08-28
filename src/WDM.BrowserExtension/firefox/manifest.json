@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "WDM Download Catcher",
-  "version": "1.1.0",
+  "version": "1.1.2",
   "description": "Catch browser downloads and stream media — send them to WDM (Windows Download Manager).",
   "permissions": [
     "downloads",
@@ -51,13 +51,22 @@
       "all_frames": false
     }
   ],
+  "web_accessible_resources": [
+    {
+      "resources": ["icon16.png", "icon32.png", "icon48.png", "icon128.png"],
+      "matches": ["<all_urls>"]
+    }
+  ],
   "browser_specific_settings": {
     "gecko": {
       "id": "wdm-catcher@wdm.app",
-      "strict_min_version": "109.0",
+      "strict_min_version": "140.0",
       "data_collection_permissions": {
         "required": ["websiteActivity"]
       }
+    },
+    "gecko_android": {
+      "strict_min_version": "142.0"
     }
   }
 }

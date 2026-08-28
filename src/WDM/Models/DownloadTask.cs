@@ -140,10 +140,13 @@ public sealed class DownloadTask : INotifyPropertyChanged
             {
                 Raise(nameof(StatusText));
                 Raise(nameof(ProgressText));
+                Raise(nameof(Progress));
+                Raise(nameof(IsDownloading));
                 Raise(nameof(SpeedText));
                 Raise(nameof(ProgressSpeedText));
                 Raise(nameof(Eta));
                 Raise(nameof(DownloadedOfTotalText));
+                Raise(nameof(DisplaySizeText));
             }
         }
     }
@@ -156,8 +159,18 @@ public sealed class DownloadTask : INotifyPropertyChanged
         {
             if (Set(ref _totalBytes, value))
             {
+                if (_totalBytes > 0 && DownloadedBytes > 0 && Status != TaskStatus.Completed)
+                {
+                    int pct = (int)Math.Clamp((double)DownloadedBytes * 100.0 / _totalBytes, 0, 100);
+                    if (_progress != pct)
+                    {
+                        _progress = pct;
+                        Raise(nameof(Progress));
+                    }
+                }
                 Raise(nameof(SizeText));
                 Raise(nameof(DownloadedOfTotalText));
+                Raise(nameof(DisplaySizeText));
             }
         }
     }
@@ -170,9 +183,19 @@ public sealed class DownloadTask : INotifyPropertyChanged
         {
             if (Set(ref _downloadedBytes, value))
             {
+                if (TotalBytes > 0 && Status != TaskStatus.Completed)
+                {
+                    int pct = (int)Math.Clamp((double)_downloadedBytes * 100.0 / TotalBytes, 0, 100);
+                    if (_progress != pct)
+                    {
+                        _progress = pct;
+                        Raise(nameof(Progress));
+                    }
+                }
                 Raise(nameof(DownloadedText));
                 Raise(nameof(ProgressSpeedText));
                 Raise(nameof(DownloadedOfTotalText));
+                Raise(nameof(DisplaySizeText));
             }
         }
     }
@@ -180,11 +203,24 @@ public sealed class DownloadTask : INotifyPropertyChanged
     private int _progress;
     public int Progress
     {
-        get => Status == TaskStatus.Completed ? 100 : _progress;
+        get
+        {
+            if (Status == TaskStatus.Completed)
+                return 100;
+            if (TotalBytes > 0 && DownloadedBytes > 0)
+            {
+                int calc = (int)Math.Clamp((double)DownloadedBytes * 100.0 / TotalBytes, 0, 100);
+                return Math.Max(_progress, calc);
+            }
+            return _progress;
+        }
         set
         {
             if (Set(ref _progress, value))
+            {
+                Raise(nameof(ProgressText));
                 Raise(nameof(ProgressSpeedText));
+            }
         }
     }
 
@@ -241,9 +277,27 @@ public sealed class DownloadTask : INotifyPropertyChanged
 
     public string SizeText => TotalBytes > 0 ? FormatBytes(TotalBytes) : "—";
 
+    public string DisplaySizeText
+    {
+        get
+        {
+            if (Status == TaskStatus.Downloading)
+                return DownloadedBytes > 0 ? DownloadedText : (TotalBytes > 0 ? $"0 B" : "—");
+
+            // Paused, Done/Completed, Queued, Failed
+            if (TotalBytes > 0)
+                return SizeText;
+            if (DownloadedBytes > 0)
+                return DownloadedText;
+            return "—";
+        }
+    }
+
     public string DownloadedText => FormatBytes(DownloadedBytes);
 
     public string ProgressText => Status == TaskStatus.Downloading ? $"{Progress}%" : "";
+
+    public bool IsDownloading => Status == TaskStatus.Downloading;
 
     public string SpeedText => Status == TaskStatus.Downloading && SpeedBps >= 1
         ? $"{FormatBytes((long)SpeedBps)}/s"
@@ -271,11 +325,25 @@ public sealed class DownloadTask : INotifyPropertyChanged
         ? $"{Progress}% · {SpeedText}".TrimEnd('·', ' ')
         : "";
 
-    public string DownloadedOfTotalText => Status == TaskStatus.Downloading
-        ? TotalBytes > 0
-            ? $"{DownloadedText} of {SizeText}"
-            : DownloadedText
-        : "";
+    public string DownloadedOfTotalText
+    {
+        get
+        {
+            if (Status == TaskStatus.Completed)
+            {
+                if (TotalBytes > 0)
+                    return $"{SizeText} / {SizeText}";
+                if (DownloadedBytes > 0)
+                    return $"{DownloadedText} / {DownloadedText}";
+                return SizeText;
+            }
+            if (TotalBytes > 0)
+                return $"{DownloadedText} / {SizeText}";
+            if (DownloadedBytes > 0)
+                return DownloadedText;
+            return "—";
+        }
+    }
 
     public string QueueText => Status == TaskStatus.Queued ? (QueuePosition > 0 ? QueuePosition.ToString() : "Q") : "";
 

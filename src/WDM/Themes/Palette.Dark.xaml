@@ -2,6 +2,18 @@
                     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
 
     <!-- ============ DARK PALETTE — Greyish Charcoal Dark Theme ============ -->
+    <!-- Requested Explicit Named Color Tokens (Calibrated for Dark Theme) -->
+    <Color x:Key="Color.AccentBlue">#388BFD</Color>
+    <Color x:Key="Color.AccentBlueBg">#152A4A</Color>
+    <Color x:Key="Color.SuccessGreen">#34D399</Color>
+    <Color x:Key="Color.SuccessBg">#132E1E</Color>
+    <Color x:Key="Color.WarningAmber">#FBBF24</Color>
+    <Color x:Key="Color.WarningBg">#332508</Color>
+    <Color x:Key="Color.DangerRed">#F87171</Color>
+    <Color x:Key="Color.DangerBg">#351515</Color>
+    <Color x:Key="Color.MutedText">#9A9A9A</Color>
+    <Color x:Key="Color.RowAlt">#191919</Color>
+
     <!-- Neutral tokens — pure neutral greys (no blue slate) -->
     <Color x:Key="Color.Bg">#121212</Color>
     <Color x:Key="Color.Surface">#1E1E1E</Color>
@@ -14,25 +26,27 @@
     <Color x:Key="Color.TextDim">#C2C2C2</Color>
     <Color x:Key="Color.TextMuted">#9A9A9A</Color>
 
-    <!-- Accent — vibrant blue for dark mode -->
-    <Color x:Key="Color.Accent">#3B82F6</Color>
-    <Color x:Key="Color.AccentDark">#2563EB</Color>
-    <Color x:Key="Color.AccentSoft">#1E3A8A</Color>
-    <Color x:Key="Color.AccentSoftStrong">#1E40AF</Color>
+    <!-- Accent — vibrant, radiant blue for dark mode -->
+    <Color x:Key="Color.Accent">#388BFD</Color>
+    <Color x:Key="Color.AccentHover">#58A6FF</Color>
+    <Color x:Key="Color.AccentActive">#79C0FF</Color>
+    <Color x:Key="Color.AccentDark">#1F6FEB</Color>
+    <Color x:Key="Color.AccentSoft">#152A4A</Color>
+    <Color x:Key="Color.AccentSoftStrong">#1C3B68</Color>
 
     <!-- Semantic status colors -->
-    <Color x:Key="Color.StatusActive">#60A5FA</Color>
+    <Color x:Key="Color.StatusActive">#388BFD</Color>
     <Color x:Key="Color.StatusComplete">#34D399</Color>
     <Color x:Key="Color.StatusFailed">#F87171</Color>
     <Color x:Key="Color.StatusPaused">#94A3B8</Color>
     <Color x:Key="Color.StatusQueued">#FBBF24</Color>
 
     <!-- Soft tints for pill badge backgrounds -->
-    <Color x:Key="Color.StatusActiveSoft">#2E60A5FA</Color>
-    <Color x:Key="Color.StatusCompleteSoft">#2E34D399</Color>
-    <Color x:Key="Color.StatusFailedSoft">#2EF87171</Color>
-    <Color x:Key="Color.StatusPausedSoft">#2E94A3B8</Color>
-    <Color x:Key="Color.StatusQueuedSoft">#2EFBBF24</Color>
+    <Color x:Key="Color.StatusActiveSoft">#152A4A</Color>
+    <Color x:Key="Color.StatusCompleteSoft">#132E1E</Color>
+    <Color x:Key="Color.StatusFailedSoft">#351515</Color>
+    <Color x:Key="Color.StatusPausedSoft">#2C2C2C</Color>
+    <Color x:Key="Color.StatusQueuedSoft">#332508</Color>
 
     <Color x:Key="Color.Success">#34D399</Color>
     <Color x:Key="Color.Warning">#FBBF24</Color>
@@ -45,9 +59,8 @@
     <!-- Zones -->
     <Color x:Key="Color.Track">#2C2C2C</Color>
     <Color x:Key="Color.Sidebar">#1A1A1A</Color>
-    <Color x:Key="Color.RowAlt">#1E1E1E</Color>
-    <Color x:Key="Color.RowHover">#2C2C2C</Color>
-    <Color x:Key="Color.RowSelected">#252A35</Color>
+    <Color x:Key="Color.RowHover">#22272E</Color>
+    <Color x:Key="Color.RowSelected">#263D5E</Color>
 
     <!-- Muted per-category icon tints -->
     <Color x:Key="Color.CatCompressed">#FBBF24</Color>
@@ -56,7 +69,19 @@
     <Color x:Key="Color.CatProgram">#34D399</Color>
     <Color x:Key="Color.CatVideo">#F87171</Color>
 
-    <!-- Palette Brushes -->
+    <!-- Explicit Required Brushes -->
+    <SolidColorBrush x:Key="AccentBlueBrush" Color="{StaticResource Color.AccentBlue}" />
+    <SolidColorBrush x:Key="AccentBlueBgBrush" Color="{StaticResource Color.AccentBlueBg}" />
+    <SolidColorBrush x:Key="SuccessGreenBrush" Color="{StaticResource Color.SuccessGreen}" />
+    <SolidColorBrush x:Key="SuccessBgBrush" Color="{StaticResource Color.SuccessBg}" />
+    <SolidColorBrush x:Key="WarningAmberBrush" Color="{StaticResource Color.WarningAmber}" />
+    <SolidColorBrush x:Key="WarningBgBrush" Color="{StaticResource Color.WarningBg}" />
+    <SolidColorBrush x:Key="DangerRedBrush" Color="{StaticResource Color.DangerRed}" />
+    <SolidColorBrush x:Key="DangerBgBrush" Color="{StaticResource Color.DangerBg}" />
+    <SolidColorBrush x:Key="MutedTextBrush" Color="{StaticResource Color.MutedText}" />
+    <SolidColorBrush x:Key="RowAltBrush" Color="{StaticResource Color.RowAlt}" />
+
+    <!-- Standard Palette Brushes -->
     <SolidColorBrush x:Key="Brush.Bg" Color="{StaticResource Color.Bg}" />
     <SolidColorBrush x:Key="Brush.Surface" Color="{StaticResource Color.Surface}" />
     <SolidColorBrush x:Key="Brush.SurfaceAlt" Color="{StaticResource Color.SurfaceAlt}" />
@@ -72,6 +97,8 @@
     <SolidColorBrush x:Key="Brush.TextDim" Color="{StaticResource Color.TextDim}" />
     <SolidColorBrush x:Key="Brush.TextMuted" Color="{StaticResource Color.TextMuted}" />
     <SolidColorBrush x:Key="Brush.Accent" Color="{StaticResource Color.Accent}" />
+    <SolidColorBrush x:Key="Brush.AccentHover" Color="{StaticResource Color.AccentHover}" />
+    <SolidColorBrush x:Key="Brush.AccentActive" Color="{StaticResource Color.AccentActive}" />
     <SolidColorBrush x:Key="Brush.AccentDark" Color="{StaticResource Color.AccentDark}" />
     <SolidColorBrush x:Key="Brush.AccentSoft" Color="{StaticResource Color.AccentSoft}" />
     <SolidColorBrush x:Key="Brush.AccentSoftStrong" Color="{StaticResource Color.AccentSoftStrong}" />

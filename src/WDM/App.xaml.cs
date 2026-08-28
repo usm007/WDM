@@ -57,15 +57,24 @@ public partial class App : Application
             _ownsMutex = true;
         }
 
-        base.OnStartup(e);
         StartMinimized = e.Args.Any(a =>
             string.Equals(a, "/minimized", StringComparison.OrdinalIgnoreCase) ||
-            string.Equals(a, "--minimized", StringComparison.OrdinalIgnoreCase));
+            string.Equals(a, "--minimized", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(a, "/autostart", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(a, "--autostart", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(a, "/tray", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(a, "--tray", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(a, "/silent", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(a, "--silent", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(a, "/background", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(a, "-minimized", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(a, "-silent", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(a, "-tray", StringComparison.OrdinalIgnoreCase));
         BrowserIntegration.DeployExtension();
         var settings = TaskStore.LoadSettings();
         ThemeService.Apply(AppTheme.Default, settings.UseDarkTheme);
 
-        if (!settings.HasPromptedExtensionInstall)
+        if (!settings.HasPromptedExtensionInstall && !StartMinimized)
         {
             ShutdownMode = ShutdownMode.OnExplicitShutdown;
             var welcome = new WelcomeWindow(settings);
@@ -75,7 +84,15 @@ public partial class App : Application
         }
 
         Window mainWindow = new MainWindow();
-        mainWindow.Show();
+        if (!StartMinimized)
+        {
+            mainWindow.Show();
+        }
+        else
+        {
+            // When started on Windows startup, stay silently in the taskbar tray.
+            mainWindow.Hide();
+        }
     }
 
     /// <summary>Finds a running WDM main window and restores + focuses it.</summary>

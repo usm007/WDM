@@ -80,7 +80,8 @@ public partial class DownloadProgressDialog : Window, INotifyPropertyChanged
     public string ProgressTitleText => $"{Task.Progress}%";
     public string DownloadedDetailText => $"{Task.DownloadedText} ({Task.Progress}%)";
     public string ChunkCountText => Task.ChunkCount > 0 ? $"{Task.ChunkCount} threads" : "Auto";
-    public string PauseButtonText => Task.Status == TaskStatus.Paused ? "Resume" : "Pause";
+    public bool CanPause => Task.Status is TaskStatus.Downloading or TaskStatus.Queued;
+    public bool CanResume => Task.Status is TaskStatus.Paused or TaskStatus.Failed;
 
     public bool IsSpeedLimitEnabled
     {
@@ -110,9 +111,49 @@ public partial class DownloadProgressDialog : Window, INotifyPropertyChanged
         }
     }
 
-    public bool CloseOnComplete { get; set; } = true;
-    public bool OpenOnComplete { get; set; } = false;
-    public bool ShutdownOnComplete { get; set; } = false;
+    private bool _closeOnComplete = true;
+    public bool CloseOnComplete
+    {
+        get => _closeOnComplete;
+        set
+        {
+            if (_closeOnComplete != value)
+            {
+                _closeOnComplete = value;
+                OnPropertyChanged();
+            }
+        }
+    }
+
+    private bool _openOnComplete = false;
+    public bool OpenOnComplete
+    {
+        get => _openOnComplete;
+        set
+        {
+            if (_openOnComplete != value)
+            {
+                _openOnComplete = value;
+                OnPropertyChanged();
+            }
+        }
+    }
+
+    private bool _shutdownOnComplete = false;
+    public bool ShutdownOnComplete
+    {
+        get => _shutdownOnComplete;
+        set
+        {
+            if (_shutdownOnComplete != value)
+            {
+                _shutdownOnComplete = value;
+                OnPropertyChanged();
+            }
+        }
+    }
+
+    private bool _completionHandled = false;
 
     private void SetupChunkVisuals()
     {
@@ -184,7 +225,8 @@ public partial class DownloadProgressDialog : Window, INotifyPropertyChanged
         {
             OnPropertyChanged(nameof(ProgressTitleText));
             OnPropertyChanged(nameof(DownloadedDetailText));
-            OnPropertyChanged(nameof(PauseButtonText));
+            OnPropertyChanged(nameof(CanPause));
+            OnPropertyChanged(nameof(CanResume));
             if (e.PropertyName == nameof(DownloadTask.ChunkCount))
             {
                 OnPropertyChanged(nameof(ChunkCountText));
@@ -195,14 +237,54 @@ public partial class DownloadProgressDialog : Window, INotifyPropertyChanged
             if (Task.Status == TaskStatus.Completed)
             {
                 Title = "100% — Done";
-                if (CloseOnComplete)
-                    Close();
+                if (!_completionHandled)
+                {
+                    _completionHandled = true;
+                    HandleCompletionOptions();
+                }
             }
             else
             {
                 Title = $"{Task.Progress}% {Task.FileName}";
             }
         });
+    }
+
+    private void HandleCompletionOptions()
+    {
+        if (OpenOnComplete)
+        {
+            string fullPath = Task.FullPath;
+            if (string.IsNullOrWhiteSpace(fullPath) || !System.IO.File.Exists(fullPath))
+                fullPath = System.IO.Path.Combine(Task.SaveFolder, Task.FileName);
+
+            if (System.IO.File.Exists(fullPath))
+            {
+                try
+                {
+                    System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(fullPath) { UseShellExecute = true });
+                }
+                catch { }
+            }
+        }
+
+        if (ShutdownOnComplete)
+        {
+            try
+            {
+                System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo("shutdown", "/s /t 30 /c \"WDM: Download completed. Shutting down system in 30 seconds.\"")
+                {
+                    CreateNoWindow = true,
+                    UseShellExecute = false
+                });
+            }
+            catch { }
+        }
+
+        if (CloseOnComplete)
+        {
+            Close();
+        }
     }
 
     private void UpdateState()
@@ -241,8 +323,20 @@ public partial class DownloadProgressDialog : Window, INotifyPropertyChanged
 
     private void PauseClick(object sender, RoutedEventArgs e)
     {
-        _mainViewModel.ToggleTask(Task);
-        OnPropertyChanged(nameof(PauseButtonText));
+        _mainViewModel.Engine.Pause(Task);
+        _mainViewModel.SaveTasksSoon();
+        OnPropertyChanged(nameof(CanPause));
+        OnPropertyChanged(nameof(CanResume));
+    }
+
+    private void ResumeClick(object sender, RoutedEventArgs e)
+    {
+        Task.Error = null;
+        Task.Eta = "";
+        _mainViewModel.Engine.Start(Task);
+        _mainViewModel.SaveTasksSoon();
+        OnPropertyChanged(nameof(CanPause));
+        OnPropertyChanged(nameof(CanResume));
     }
 
     private void SpeedLimit_Changed(object sender, RoutedEventArgs e)

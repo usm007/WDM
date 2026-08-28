@@ -16,7 +16,7 @@ namespace WDM;
 /// </summary>
 public partial class TrayProgressPanel : Window, INotifyPropertyChanged
 {
-    private const double PillWidth = 173;
+    private const double PillWidth = 118;
 
     private readonly MainViewModel _viewModel;
     private readonly DispatcherTimer _refreshTimer;
@@ -114,7 +114,7 @@ public partial class TrayProgressPanel : Window, INotifyPropertyChanged
     private void Window_SizeChanged(object sender, SizeChangedEventArgs e)
     {
         var r = new Rect(0, 0, ClipGrid.ActualWidth, ClipGrid.ActualHeight);
-        var clip = new System.Windows.Media.RectangleGeometry(r, 15, 15);
+        var clip = new System.Windows.Media.RectangleGeometry(r, 10, 10);
         clip.Freeze();
         ClipGrid.Clip = clip;
     }

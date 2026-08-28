@@ -629,11 +629,14 @@ public sealed class MainViewModel : INotifyPropertyChanged
         task.Category = DownloadTask.Categorize(task.FileName);
         Tasks.Add(task);
         ApplyCategoryRouting(task);
-        Engine.Start(task);
+        if (task.Status != TaskStatus.Paused)
+        {
+            Engine.Start(task);
+            ShowProgressDialogRequested?.Invoke(task);
+        }
         SelectedFilter = FilterKind.All;
         SaveTasksSoon();
         UpdateStatus();
-        ShowProgressDialogRequested?.Invoke(task);
     }
 
     private void ApplyCategoryRouting(DownloadTask task)
@@ -914,7 +917,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
             if (Settings.RunAtStartup)
             {
                 string exe = Environment.ProcessPath ?? ApplicationPath;
-                key.SetValue(appName, $"\"{exe}\"");
+                key.SetValue(appName, $"\"{exe}\" /minimized");
             }
             else
             {

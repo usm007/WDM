@@ -1644,7 +1644,9 @@ public sealed class DownloadEngine
         try
         {
             Directory.CreateDirectory(task.SaveFolder);
-            var outFile = task.FullPath;
+            var outFile = (string.IsNullOrWhiteSpace(task.FileName) || task.FileName == "YouTube Video" || task.FileName.StartsWith("download_") || task.FileName == "watch")
+                ? Path.Combine(task.SaveFolder, "%(title)s.%(ext)s")
+                : task.FullPath;
 
             var args = new List<string>
             {
@@ -1750,6 +1752,29 @@ public sealed class DownloadEngine
 
     private static void ParseYtDlpOutputLine(string line, DownloadTask task)
     {
+        if (line.StartsWith("[download] Destination: "))
+        {
+            var dest = line.Substring("[download] Destination: ".Length).Trim();
+            var name = Path.GetFileName(dest);
+            if (!string.IsNullOrWhiteSpace(name))
+            {
+                task.FileName = name;
+            }
+        }
+        else if (line.StartsWith("[Merger] Merging formats into \""))
+        {
+            var end = line.LastIndexOf('"');
+            if (end > 31)
+            {
+                var dest = line.Substring(31, end - 31);
+                var name = Path.GetFileName(dest);
+                if (!string.IsNullOrWhiteSpace(name))
+                {
+                    task.FileName = name;
+                }
+            }
+        }
+
         if (line.StartsWith("[download]") && line.Contains("%"))
         {
             try

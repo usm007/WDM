@@ -19,6 +19,9 @@
         <Setter Property="FontSize" Value="13" />
         <Setter Property="TextOptions.TextFormattingMode" Value="Display" />
         <Setter Property="TextOptions.TextRenderingMode" Value="ClearType" />
+        <Setter Property="TextOptions.TextHintingMode" Value="Fixed" />
+        <Setter Property="SnapsToDevicePixels" Value="True" />
+        <Setter Property="UseLayoutRounding" Value="True" />
     </Style>
 
     <!-- Empty focus visual to definitively prevent dotted focus lines anywhere -->
@@ -33,12 +36,22 @@
     <!-- Global Control FocusVisualStyle override -->
     <Style TargetType="Control">
         <Setter Property="FocusVisualStyle" Value="{StaticResource FocusVisual.Empty}" />
+        <Setter Property="TextOptions.TextFormattingMode" Value="Display" />
+        <Setter Property="TextOptions.TextRenderingMode" Value="ClearType" />
+        <Setter Property="TextOptions.TextHintingMode" Value="Fixed" />
+        <Setter Property="SnapsToDevicePixels" Value="True" />
+        <Setter Property="UseLayoutRounding" Value="True" />
     </Style>
 
     <!-- ============ TEXT ============ -->
     <Style TargetType="TextBlock">
         <Setter Property="Foreground" Value="{DynamicResource Brush.Text}" />
         <Setter Property="VerticalAlignment" Value="Center" />
+        <Setter Property="TextOptions.TextFormattingMode" Value="Display" />
+        <Setter Property="TextOptions.TextRenderingMode" Value="ClearType" />
+        <Setter Property="TextOptions.TextHintingMode" Value="Fixed" />
+        <Setter Property="SnapsToDevicePixels" Value="True" />
+        <Setter Property="UseLayoutRounding" Value="True" />
     </Style>
 
     <Style x:Key="Text.Muted" TargetType="TextBlock">
@@ -289,10 +302,10 @@
         <Setter Property="CornerRadius" Value="8" />
     </Style>
 
-    <!-- Icon glyph inside action buttons: 20% bigger (26px) & center alignment -->
+    <!-- Icon glyph inside action buttons: sized for compact stacked layout (+20% size total) -->
     <Style x:Key="Toolbar.Icon" TargetType="TextBlock">
         <Setter Property="FontFamily" Value="{StaticResource Font.Icon}" />
-        <Setter Property="FontSize" Value="26" />
+        <Setter Property="FontSize" Value="19.5" />
         <Setter Property="Foreground" Value="{DynamicResource Brush.Text}" />
         <Setter Property="HorizontalAlignment" Value="Center" />
         <Setter Property="VerticalAlignment" Value="Center" />
@@ -303,16 +316,16 @@
         </Style.Triggers>
     </Style>
 
-    <!-- Sleek Icon Action Button (20% bigger symbol, label in tooltip on hover) -->
+    <!-- Stacked Action Toolbar Button (icon + label, +20% size total) -->
     <Style x:Key="Button.IDMStacked" TargetType="Button">
         <Setter Property="Background" Value="Transparent" />
         <Setter Property="BorderBrush" Value="Transparent" />
         <Setter Property="BorderThickness" Value="0" />
         <Setter Property="Foreground" Value="{DynamicResource Brush.Text}" />
         <Setter Property="Padding" Value="0" />
-        <Setter Property="Margin" Value="3,0" />
-        <Setter Property="Height" Value="50" />
-        <Setter Property="Width" Value="50" />
+        <Setter Property="Margin" Value="2,0" />
+        <Setter Property="Height" Value="46" />
+        <Setter Property="Width" Value="53" />
         <Setter Property="Cursor" Value="Hand" />
         <Setter Property="Template">
             <Setter.Value>
@@ -337,6 +350,41 @@
         </Setter>
     </Style>
 
+    <!-- Utility Toolbar Button (icon-only, +20% size total) -->
+    <Style x:Key="Button.IDMUtil" TargetType="Button">
+        <Setter Property="Background" Value="Transparent" />
+        <Setter Property="BorderBrush" Value="Transparent" />
+        <Setter Property="BorderThickness" Value="0" />
+        <Setter Property="Foreground" Value="{DynamicResource Brush.TextMuted}" />
+        <Setter Property="Padding" Value="0" />
+        <Setter Property="Margin" Value="1,0" />
+        <Setter Property="Height" Value="38" />
+        <Setter Property="Width" Value="38" />
+        <Setter Property="Cursor" Value="Hand" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="Button">
+                    <Border x:Name="bd" Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}"
+                            BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="6" Padding="{TemplateBinding Padding}">
+                        <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
+                    </Border>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter TargetName="bd" Property="Background" Value="{DynamicResource Brush.SurfaceHover}" />
+                            <Setter Property="Foreground" Value="{DynamicResource Brush.TextDim}" />
+                        </Trigger>
+                        <Trigger Property="IsPressed" Value="True">
+                            <Setter TargetName="bd" Property="Background" Value="{DynamicResource Brush.SurfaceAlt}" />
+                        </Trigger>
+                        <Trigger Property="IsEnabled" Value="False">
+                            <Setter Property="Opacity" Value="0.4" />
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
     <!-- Gradient Brushes for Primary CTA Button -->
     <LinearGradientBrush x:Key="Brush.BtnPrimaryGradient" StartPoint="0,0" EndPoint="0,1">
         <GradientStop Color="#2563EB" Offset="0.0" />
@@ -348,34 +396,43 @@
         <GradientStop Color="#2563EB" Offset="1.0" />
     </LinearGradientBrush>
 
-    <!-- Primary IDM Action Button (Add Download Call-To-Action - Blue Gradient) -->
+    <!-- Primary IDM Action Button (Add Download — subtle gray border with smooth drop shadow) -->
     <Style x:Key="Button.IDMPrimary" TargetType="Button">
-        <Setter Property="Background" Value="{StaticResource Brush.BtnPrimaryGradient}" />
-        <Setter Property="BorderBrush" Value="#1E40AF" />
+        <Setter Property="Background" Value="{DynamicResource Brush.AccentSoft}" />
+        <Setter Property="BorderBrush" Value="{DynamicResource Brush.Border}" />
         <Setter Property="BorderThickness" Value="1" />
-        <Setter Property="Foreground" Value="#FFFFFF" />
+        <Setter Property="Foreground" Value="{DynamicResource Brush.Accent}" />
         <Setter Property="Padding" Value="16,0" />
         <Setter Property="Margin" Value="0,0,8,0" />
-        <Setter Property="Height" Value="36" />
-        <Setter Property="MinWidth" Value="120" />
+        <Setter Property="Height" Value="33" />
+        <Setter Property="MinWidth" Value="145" />
         <Setter Property="Cursor" Value="Hand" />
+        <Setter Property="FontWeight" Value="SemiBold" />
         <Setter Property="Template">
             <Setter.Value>
                 <ControlTemplate TargetType="Button">
-                    <Border x:Name="bd" Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}"
-                            BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="6" Padding="{TemplateBinding Padding}">
-                        <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
+                    <Border x:Name="bd"
+                            Background="{TemplateBinding Background}"
+                            BorderBrush="{TemplateBinding BorderBrush}"
+                            BorderThickness="{TemplateBinding BorderThickness}"
+                            CornerRadius="6" Padding="{TemplateBinding Padding}">
+                        <Border.Effect>
+                            <DropShadowEffect BlurRadius="6" ShadowDepth="1.5"
+                                              Opacity="0.12" Direction="270" Color="#000000" />
+                        </Border.Effect>
+                        <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"
+                                          TextElement.Foreground="{TemplateBinding Foreground}" />
                     </Border>
                     <ControlTemplate.Triggers>
                         <Trigger Property="IsMouseOver" Value="True">
-                            <Setter TargetName="bd" Property="Background" Value="{StaticResource Brush.BtnPrimaryGradientHover}" />
-                            <Setter TargetName="bd" Property="BorderBrush" Value="#2563EB" />
+                            <Setter TargetName="bd" Property="Background" Value="{DynamicResource Brush.AccentSoftStrong}" />
+                            <Setter TargetName="bd" Property="BorderBrush" Value="{DynamicResource Brush.BorderStrong}" />
                         </Trigger>
                         <Trigger Property="IsPressed" Value="True">
-                            <Setter TargetName="bd" Property="Background" Value="{StaticResource Brush.BtnPrimaryGradient}" />
+                            <Setter TargetName="bd" Property="Background" Value="{DynamicResource Brush.AccentSoftStrong}" />
                         </Trigger>
                         <Trigger Property="IsEnabled" Value="False">
-                            <Setter Property="Opacity" Value="0.4" />
+                            <Setter Property="Opacity" Value="0.45" />
                         </Trigger>
                     </ControlTemplate.Triggers>
                 </ControlTemplate>
@@ -623,14 +680,9 @@
             <Setter.Value>
                 <ControlTemplate TargetType="ListBoxItem">
                     <Border x:Name="bd" Background="Transparent" BorderBrush="Transparent"
-                            BorderThickness="0" Padding="{TemplateBinding Padding}" CornerRadius="5"
+                            BorderThickness="2,0,0,0" Padding="{TemplateBinding Padding}" CornerRadius="4"
                             SnapsToDevicePixels="True" UseLayoutRounding="True">
-                        <Grid>
-                            <!-- Sleek vertical left accent indicator bar -->
-                            <Border x:Name="AccentBar" Width="3" CornerRadius="1.5" Background="{DynamicResource Brush.Accent}"
-                                    HorizontalAlignment="Left" VerticalAlignment="Stretch" Margin="-7,-4,0,-4" Visibility="Collapsed" />
-                            <ContentPresenter Margin="3,0,0,0" />
-                        </Grid>
+                        <ContentPresenter Margin="3,0,0,0" />
                     </Border>
                     <ControlTemplate.Triggers>
                         <!-- Interactive hover/selection only for regular category & view items -->
@@ -650,9 +702,9 @@
                                 <Condition Binding="{Binding IsHeader}" Value="False" />
                                 <Condition Binding="{Binding IsSeparator}" Value="False" />
                             </MultiDataTrigger.Conditions>
-                            <Setter TargetName="bd" Property="Background" Value="{DynamicResource Brush.AccentSoft}" />
-                            <Setter TargetName="AccentBar" Property="Visibility" Value="Visible" />
-                            <Setter Property="Foreground" Value="{DynamicResource Brush.Accent}" />
+                            <Setter TargetName="bd" Property="BorderBrush" Value="Transparent" />
+                            <Setter TargetName="bd" Property="Background" Value="{DynamicResource Brush.RowAlt}" />
+                            <Setter Property="Foreground" Value="{DynamicResource AccentBrush}" />
                             <Setter Property="FontWeight" Value="SemiBold" />
                         </MultiDataTrigger>
 
@@ -770,14 +822,14 @@
     </Style>
 
     <Style x:Key="Header.Default" TargetType="DataGridColumnHeader">
-        <Setter Property="Background" Value="{DynamicResource Brush.Surface}" />
-        <Setter Property="Foreground" Value="{DynamicResource Brush.TextDim}" />
-        <Setter Property="FontSize" Value="11.5" />
+        <Setter Property="Background" Value="{DynamicResource Brush.SurfaceAlt}" />
+        <Setter Property="Foreground" Value="{DynamicResource Brush.TextMuted}" />
+        <Setter Property="FontSize" Value="11" />
         <Setter Property="FontWeight" Value="SemiBold" />
         <Setter Property="Padding" Value="10,0" />
-        <Setter Property="Height" Value="32" />
+        <Setter Property="Height" Value="28" />
         <Setter Property="Margin" Value="0" />
-        <Setter Property="HorizontalContentAlignment" Value="Center" />
+        <Setter Property="HorizontalContentAlignment" Value="Left" />
         <Setter Property="VerticalContentAlignment" Value="Center" />
         <Setter Property="BorderThickness" Value="0,0,0,1" />
         <Setter Property="BorderBrush" Value="{DynamicResource Brush.GridLine}" />
@@ -795,7 +847,7 @@
                     <ControlTemplate.Triggers>
                         <Trigger Property="IsMouseOver" Value="True">
                             <Setter TargetName="HeaderBorder" Property="Background" Value="{DynamicResource Brush.SurfaceHover}" />
-                            <Setter Property="Foreground" Value="{DynamicResource Brush.Text}" />
+                            <Setter Property="Foreground" Value="{DynamicResource Brush.TextDim}" />
                         </Trigger>
                     </ControlTemplate.Triggers>
                 </ControlTemplate>
@@ -803,12 +855,13 @@
         </Setter>
     </Style>
 
-    <Style x:Key="Header.Right" TargetType="DataGridColumnHeader" BasedOn="{StaticResource Header.Default}">
-        <Setter Property="HorizontalContentAlignment" Value="Right" />
-    </Style>
-
     <Style x:Key="Header.Center" TargetType="DataGridColumnHeader" BasedOn="{StaticResource Header.Default}">
         <Setter Property="HorizontalContentAlignment" Value="Center" />
+    </Style>
+
+    <Style x:Key="Header.Right" TargetType="DataGridColumnHeader" BasedOn="{StaticResource Header.Default}">
+        <Setter Property="HorizontalContentAlignment" Value="Right" />
+        <Setter Property="Padding" Value="6,0,10,0" />
     </Style>
 
     <!-- ============ DATAGRID ============ -->
@@ -823,10 +876,10 @@
         <Setter Property="SelectionMode" Value="Extended" />
         <Setter Property="CanUserAddRows" Value="False" />
         <Setter Property="CanUserDeleteRows" Value="False" />
-        <Setter Property="RowHeight" Value="38" />
-        <Setter Property="AlternationCount" Value="0" />
+        <Setter Property="RowHeight" Value="40" />
+        <Setter Property="AlternationCount" Value="2" />
         <Setter Property="RowBackground" Value="{DynamicResource Brush.Surface}" />
-        <Setter Property="AlternatingRowBackground" Value="{DynamicResource Brush.Surface}" />
+        <Setter Property="AlternatingRowBackground" Value="{DynamicResource RowAltBrush}" />
         <Setter Property="ScrollViewer.VerticalScrollBarVisibility" Value="Auto" />
         <Setter Property="ScrollViewer.HorizontalScrollBarVisibility" Value="Disabled" />
         <Setter Property="ScrollViewer.CanContentScroll" Value="False" />
@@ -858,6 +911,48 @@
                         </Trigger>
                     </Style.Triggers>
                 </Style>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <!-- 3px Thin Retemplated Progress Bar (Quiet minimalist styling) -->
+    <Style x:Key="ProgressBar.Thin" TargetType="ProgressBar">
+        <Setter Property="Height" Value="3" />
+        <Setter Property="Background" Value="{DynamicResource Brush.Border}" />
+        <Setter Property="Foreground" Value="{DynamicResource AccentBrush}" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="ProgressBar">
+                    <Border Background="{TemplateBinding Background}" CornerRadius="1.5" ClipToBounds="True" Height="{TemplateBinding Height}">
+                        <Grid x:Name="PART_Track">
+                            <Border x:Name="PART_Indicator"
+                                    Background="{TemplateBinding Foreground}"
+                                    CornerRadius="1.5"
+                                    HorizontalAlignment="Left" />
+                        </Grid>
+                    </Border>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <!-- Status Cell Rounded ProgressBar (3px height, neutral border background, AccentBrush foreground) -->
+    <Style x:Key="ProgressBar.Status" TargetType="ProgressBar">
+        <Setter Property="Height" Value="3" />
+        <Setter Property="Background" Value="{DynamicResource Brush.Border}" />
+        <Setter Property="Foreground" Value="{DynamicResource AccentBrush}" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="ProgressBar">
+                    <Border Background="{TemplateBinding Background}" CornerRadius="1.5" ClipToBounds="True" Height="{TemplateBinding Height}">
+                        <Grid x:Name="PART_Track">
+                            <Border x:Name="PART_Indicator"
+                                    Background="{TemplateBinding Foreground}"
+                                    CornerRadius="1.5"
+                                    HorizontalAlignment="Left" />
+                        </Grid>
+                    </Border>
+                </ControlTemplate>
             </Setter.Value>
         </Setter>
     </Style>

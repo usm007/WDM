@@ -297,6 +297,8 @@ public sealed class CaptureServer : IDisposable
         public string? FileName { get; set; }
         public string? Referer { get; set; }
         public Dictionary<string, string> Headers { get; set; } = new(StringComparer.OrdinalIgnoreCase);
+        public bool DirectDownload { get; set; }
+        public string? YoutubeFormatArg { get; set; }
     }
 
     private sealed class ResolveResponse

@@ -28,7 +28,7 @@ public sealed class AppSettings
     public string? LastRunVersion { get; set; }
 
     // YouTube & Media downloads
-    public bool EnableYouTubeDownloads { get; set; } = false;
+    public bool EnableYouTubeDownloads { get; set; } = true;
     public string? YouTubeBrowserCookies { get; set; } = "none";
 
     // Updates
