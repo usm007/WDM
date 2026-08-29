@@ -13,6 +13,9 @@ public static class ThemeService
     private const int DwmwaUseImmersiveDarkMode = 20;
     private const int DwmwaUseImmersiveDarkModeBefore20H1 = 19;
     private const int DwmwaWindowCornerPreference = 33;
+    private const int DwmwaBorderColor = 34;
+    private const int DwmwaCaptionColor = 35;
+    private const int DwmwaTextColor = 36;
     private const int DwmwcpRound = 2;
 
     [DllImport("dwmapi.dll")]
@@ -81,8 +84,8 @@ public static class ThemeService
         Apply(theme, IsDark);
     }
 
-    /// <summary>Paints the native window title bar dark (or light) to match the theme,
-    /// applies smooth DWM rounded window corners, and removes any artificial border lines.</summary>
+    /// <summary>Paints the native window title bar to seamlessly match the window background color,
+    /// applies smooth DWM rounded window corners, and configures title bar text color.</summary>
     public static void ApplyTitleBar(Window window)
     {
         if (window is null || window.WindowStyle == WindowStyle.None)
@@ -94,6 +97,27 @@ public static class ThemeService
         int dark = IsDark ? 1 : 0;
         if (DwmSetWindowAttribute(hwnd, DwmwaUseImmersiveDarkMode, ref dark, sizeof(int)) != 0)
             DwmSetWindowAttribute(hwnd, DwmwaUseImmersiveDarkModeBefore20H1, ref dark, sizeof(int));
+
+        // Synchronize title bar caption color and text color with window background
+        var app = Application.Current;
+        var bg = app?.TryFindResource("Color.Bg") is System.Windows.Media.Color c
+            ? c
+            : (IsDark ? System.Windows.Media.Color.FromRgb(0x12, 0x12, 0x12) : System.Windows.Media.Color.FromRgb(0xF4, 0xF6, 0xF8));
+        var fg = app?.TryFindResource("Color.Text") is System.Windows.Media.Color tc
+            ? tc
+            : (IsDark ? System.Windows.Media.Color.FromRgb(0xF1, 0xF1, 0xF1) : System.Windows.Media.Color.FromRgb(0x1A, 0x1C, 0x20));
+        var border = app?.TryFindResource("Color.Border") is System.Windows.Media.Color bc
+            ? bc
+            : (IsDark ? System.Windows.Media.Color.FromRgb(0x2E, 0x2E, 0x2E) : System.Windows.Media.Color.FromRgb(0xC4, 0xC9, 0xD0));
+
+        int captionColor = (bg.B << 16) | (bg.G << 8) | bg.R;
+        int textColor = (fg.B << 16) | (fg.G << 8) | fg.R;
+        int borderColor = (border.B << 16) | (border.G << 8) | border.R;
+
+        // Windows 11 Build 22000+ caption, text, and border customization
+        DwmSetWindowAttribute(hwnd, DwmwaCaptionColor, ref captionColor, sizeof(int));
+        DwmSetWindowAttribute(hwnd, DwmwaTextColor, ref textColor, sizeof(int));
+        DwmSetWindowAttribute(hwnd, DwmwaBorderColor, ref borderColor, sizeof(int));
 
         // Apply smooth Windows 11 hardware-anti-aliased rounded corners
         int round = DwmwcpRound;

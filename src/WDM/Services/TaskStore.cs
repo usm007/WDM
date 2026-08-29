@@ -5,8 +5,7 @@ namespace WDM.Services;
 
 public enum AppTheme
 {
-    Default,
-    WdmOriginal
+    Default
 }
 
 public sealed class AppSettings

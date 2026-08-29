@@ -37,6 +37,14 @@ public partial class App : Application
             LogException(args.Exception);
         };
 
+        if (e.Args.Any(a => string.Equals(a, "--capture-screenshots", StringComparison.OrdinalIgnoreCase)))
+        {
+            ShutdownMode = ShutdownMode.OnExplicitShutdown;
+            ScreenshotGenerator.Run();
+            Shutdown();
+            return;
+        }
+
         // Single instance: if another WDM is already running, surface its window
         // instead of starting a second copy.
         try

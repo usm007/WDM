@@ -35,4 +35,11 @@
     <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.4129.50" />
   </ItemGroup>
 
+  <ItemGroup>
+    <Compile Remove="WdmOriginalMainWindow.xaml.cs" />
+    <Page Remove="WdmOriginalMainWindow.xaml" />
+    <Page Remove="Themes\WdmOriginal\**\*" />
+    <None Remove="Themes\WdmOriginal\**\*" />
+  </ItemGroup>
+
 </Project>

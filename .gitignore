@@ -9,6 +9,7 @@ publish/
 staging/
 obj_bld/
 temp_git_index
+temp_index*
 src/WDM/obj_bld/
 src/WDM/Directory.Build.props
 WDM_Payload.zip
