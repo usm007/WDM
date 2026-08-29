@@ -64,7 +64,7 @@ public sealed class TaskStore
 
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
-        WriteIndented = true,
+        WriteIndented = false,
         Converters = { new System.Text.Json.Serialization.JsonStringEnumConverter() },
     };
 

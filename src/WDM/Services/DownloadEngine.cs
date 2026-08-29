@@ -33,7 +33,7 @@ public sealed class DownloadEngine
     public DownloadEngine()
     {
         _http = CreateClient();
-        _meter = new System.Timers.Timer(500);
+        _meter = new System.Timers.Timer(250);
         _meter.AutoReset = true;
         _meter.Elapsed += (_, _) => RefreshSpeeds();
     }
@@ -336,12 +336,14 @@ public sealed class DownloadEngine
         lock (_lock)
         {
             var ordered = _queue
-                .OrderByDescending(t => t.Priority)
-                .ThenBy(t => _queue.IndexOf(t))
+                .Select((t, i) => (Task: t, Index: i))
+                .OrderByDescending(x => x.Task.Priority)
+                .ThenBy(x => x.Index)
+                .Select(x => x.Task)
                 .ToList();
             foreach (var task in ordered)
             {
-                if (_sessions.Count >= _maxConcurrent)
+                if (_sessions.Count + toStart.Count >= _maxConcurrent)
                     break;
                 _queue.Remove(task);
                 toStart.Add(task);
@@ -759,6 +761,7 @@ public sealed class DownloadEngine
 
         session.State = ChunkState.Load(session.StatePath, totalBytes, chunkSize, chunkCount);
         session.ChunkSize = chunkSize;
+        session.NextChunk = session.State.GetNextIncomplete(0);
         Interlocked.Exchange(ref session.BytesDownloaded, session.State.CompletedBytes);
         session.LastBytes = session.State.CompletedBytes;
 
@@ -795,7 +798,15 @@ public sealed class DownloadEngine
             if (index >= state.ChunkCount)
                 return;
             if (state.IsCompleted(index))
-                continue;
+            {
+                int nextIncomplete = state.GetNextIncomplete(index);
+                if (nextIncomplete >= state.ChunkCount)
+                    return;
+                Interlocked.CompareExchange(ref session.NextChunk, nextIncomplete + 1, index + 1);
+                index = nextIncomplete;
+                if (state.IsCompleted(index))
+                    continue;
+            }
 
             long from = (long)index * session.ChunkSize;
             long to = Math.Min(from + session.ChunkSize, task.TotalBytes) - 1;
@@ -1057,7 +1068,7 @@ public sealed class DownloadEngine
         foreach (var session in snapshot)
         {
             long now = Interlocked.Read(ref session.BytesDownloaded);
-            double speed = (now - session.LastBytes) * 2.0;
+            double speed = Math.Max(0, (now - session.LastBytes) * 4.0);
             session.LastBytes = now;
             session.Task.SpeedBps = speed;
             session.Task.DownloadedBytes = now;
@@ -1490,23 +1501,56 @@ public sealed class DownloadEngine
         {
             get
             {
-                int completed = (int)Interlocked.Read(ref _completed);
-                if (completed <= 0)
-                    return 0;
-                // The final chunk is usually smaller than _chunkSize, so count it by its real length.
-                long lastChunkSize = _totalBytes - ((long)_chunkCount - 1) * _chunkSize;
-                if (lastChunkSize <= 0 || lastChunkSize > _chunkSize)
-                    lastChunkSize = _chunkSize;
                 lock (_lock)
                 {
+                    int completed = (int)_completed;
+                    if (completed <= 0)
+                        return 0;
+                    // The final chunk is usually smaller than _chunkSize, so count it by its real length.
+                    long lastChunkSize = _totalBytes - ((long)_chunkCount - 1) * _chunkSize;
+                    if (lastChunkSize <= 0 || lastChunkSize > _chunkSize)
+                        lastChunkSize = _chunkSize;
+
                     bool lastCompleted = (_bits[(_chunkCount - 1) >> 3] & (1 << ((_chunkCount - 1) & 7))) != 0;
                     if (lastCompleted)
                         return ((long)completed - 1) * _chunkSize + lastChunkSize;
+
+                    return (long)completed * _chunkSize;
                 }
-                return (long)completed * _chunkSize;
             }
         }
         public int Completed { get { lock (_lock) return CountBits(); } }
+
+        public int GetNextIncomplete(int fromIndex)
+        {
+            lock (_lock)
+            {
+                if (fromIndex >= _chunkCount)
+                    return _chunkCount;
+
+                int byteIndex = fromIndex >> 3;
+                int bitIndex = fromIndex & 7;
+
+                while (byteIndex < _bits.Length)
+                {
+                    byte b = _bits[byteIndex];
+                    if (b != 0xFF)
+                    {
+                        for (int bit = bitIndex; bit < 8; bit++)
+                        {
+                            int chunk = (byteIndex << 3) + bit;
+                            if (chunk >= _chunkCount)
+                                return _chunkCount;
+                            if ((b & (1 << bit)) == 0)
+                                return chunk;
+                        }
+                    }
+                    byteIndex++;
+                    bitIndex = 0;
+                }
+                return _chunkCount;
+            }
+        }
 
         public static ChunkState Load(string path, long totalBytes, long chunkSize, int chunkCount)
         {

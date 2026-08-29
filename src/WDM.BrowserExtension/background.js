@@ -4,6 +4,12 @@ const WDM_HOST = "http://127.0.0.1:17530";
 
 // Re-entrance guard for URLs handed off to WDM
 const loopGuard = new Map();
+setInterval(() => {
+  const now = Date.now();
+  for (const [url, exp] of loopGuard.entries()) {
+    if (exp <= now) loopGuard.delete(url);
+  }
+}, 30000);
 
 // Capture on/off, persisted in storage so the toggle survives restarts.
 const STORAGE_KEY = "captureEnabled";
@@ -134,7 +140,6 @@ webext.downloads.onCreated.addListener(async (item) => {
     return;
   }
 
-  await checkWdm();
   if (!isWdmActive) return;
 
   loopGuard.set(downloadUrl, Date.now() + 15000);

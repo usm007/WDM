@@ -143,7 +143,8 @@ public sealed class CaptureServer : IDisposable
                 {
                     IsConnected = true;
                     ExtensionConnected?.Invoke();
-                    await WriteResponseAsync(stream, HttpStatusCode.OK, "{\"status\":\"ok\",\"version\":\"2.4.2\"}");
+                    string ver = typeof(CaptureServer).Assembly.GetName().Version?.ToString(3) ?? "2.5.1";
+                    await WriteResponseAsync(stream, HttpStatusCode.OK, $"{{\"status\":\"ok\",\"version\":\"{ver}\"}}");
                     return;
                 }
 

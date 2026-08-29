@@ -55,7 +55,7 @@ public static class HlsDownloader
 
         string tempDir = Path.Combine(
             Path.GetDirectoryName(outputFile) ?? Directory.GetCurrentDirectory(),
-            $".wdmseg_{Path.GetFileNameWithoutExtension(outputFile)}_{Environment.ProcessId}");
+            $".wdmseg_{Path.GetFileNameWithoutExtension(outputFile)}");
         Directory.CreateDirectory(tempDir);
         try
         {
@@ -111,6 +111,27 @@ public static class HlsDownloader
         {
             try { Directory.Delete(tempDir, true); } catch { }
         }
+    }
+
+    /// <summary>Deletes orphaned .wdmseg_* temporary directories left by crashed or terminated downloads.</summary>
+    public static void CleanStaleTempDirs(string folder)
+    {
+        try
+        {
+            if (!Directory.Exists(folder))
+                return;
+            foreach (var dir in Directory.GetDirectories(folder, ".wdmseg_*"))
+            {
+                try
+                {
+                    var info = new DirectoryInfo(dir);
+                    if (DateTime.Now - info.LastWriteTime > TimeSpan.FromMinutes(30))
+                        Directory.Delete(dir, true);
+                }
+                catch { }
+            }
+        }
+        catch { }
     }
 
     private static async Task ProbeSegmentSizesAsync(
@@ -436,6 +457,13 @@ public static class HlsDownloader
         CancellationToken ct,
         Func<long, CancellationToken, Task> throttle)
     {
+        if (File.Exists(tempFile))
+        {
+            var existingInfo = new FileInfo(tempFile);
+            if (existingInfo.Length > 0 && (seg.Length <= 0 || existingInfo.Length == seg.Length))
+                return existingInfo.Length;
+        }
+
         int attempt = 0;
         while (true)
         {
