@@ -22,6 +22,14 @@ public partial class DeleteConfirmDialog : Window
         ThemeService.ApplyTitleBar(this);
     }
 
+    private void Window_MouseLeftButtonDown(object sender, System.Windows.Input.MouseButtonEventArgs e)
+    {
+        if (e.ButtonState == System.Windows.Input.MouseButtonState.Pressed)
+        {
+            DragMove();
+        }
+    }
+
     private void DeleteClick(object sender, RoutedEventArgs e)
     {
         DialogResult = true;

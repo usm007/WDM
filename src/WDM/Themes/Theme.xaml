@@ -282,6 +282,41 @@
         <Setter Property="ToolTipService.ShowOnDisabled" Value="True" />
     </Style>
 
+    <!-- Dialog Header Close (✕) Button -->
+    <Style x:Key="Button.DialogClose" TargetType="Button" BasedOn="{StaticResource Button.Base}">
+        <Setter Property="Width" Value="28" />
+        <Setter Property="Height" Value="28" />
+        <Setter Property="Padding" Value="0" />
+        <Setter Property="Foreground" Value="{DynamicResource Brush.TextDim}" />
+        <Setter Property="ToolTip" Value="Close (Esc)" />
+        <Setter Property="Content" Value="&#xF0156;" />
+        <Setter Property="FontFamily" Value="{StaticResource Font.Icon}" />
+        <Setter Property="FontSize" Value="16" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="Button">
+                    <Grid Background="Transparent">
+                        <Border x:Name="bd"
+                                Background="Transparent"
+                                CornerRadius="4"
+                                SnapsToDevicePixels="True">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
+                        </Border>
+                    </Grid>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter TargetName="bd" Property="Background" Value="{DynamicResource Brush.SurfaceHover}" />
+                            <Setter Property="Foreground" Value="{DynamicResource Brush.Text}" />
+                        </Trigger>
+                        <Trigger Property="IsPressed" Value="True">
+                            <Setter TargetName="bd" Property="Background" Value="{DynamicResource Brush.SurfaceAlt}" />
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
     <!-- PRIMARY CTA — Windows 11 Accent Button (28px height, 4px radius) -->
     <Style x:Key="Button.Accent" TargetType="Button">
         <Setter Property="Background" Value="{DynamicResource Brush.AccentSoft}" />

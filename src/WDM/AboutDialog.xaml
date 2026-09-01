@@ -3,100 +3,86 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         Title="About WDM"
         Icon="Assets/WDM.ico"
-        Width="440"
+        Width="380"
         SizeToContent="Height"
         WindowStartupLocation="CenterScreen"
         ResizeMode="NoResize"
         ShowInTaskbar="False"
+        WindowStyle="None"
+        AllowsTransparency="True"
+        Background="Transparent"
+        MouseLeftButtonDown="Window_MouseLeftButtonDown"
         UseLayoutRounding="True"
         SnapsToDevicePixels="True"
         TextOptions.TextFormattingMode="Ideal"
         TextOptions.TextRenderingMode="Auto"
-        RenderOptions.ClearTypeHint="Enabled"
-        Background="{DynamicResource Brush.Surface}">
-    <Grid>
-        <Grid.RowDefinitions>
-            <RowDefinition Height="*" />    <!-- Content Body -->
-            <RowDefinition Height="Auto" /> <!-- Bottom Action Strip -->
-        </Grid.RowDefinitions>
+        RenderOptions.ClearTypeHint="Enabled">
+    <Border Background="{DynamicResource Brush.Surface}"
+            BorderBrush="{DynamicResource Brush.BorderStrong}"
+            BorderThickness="1"
+            CornerRadius="8"
+            SnapsToDevicePixels="True">
+        <Grid>
+            <Grid.RowDefinitions>
+                <RowDefinition Height="*" />    <!-- Content Body -->
+                <RowDefinition Height="Auto" /> <!-- Bottom Action Strip -->
+            </Grid.RowDefinitions>
 
-        <!-- Main Body -->
-        <StackPanel Grid.Row="0" Margin="16,14,16,12">
-            <!-- 1. Header with Logo & Identity -->
-            <DockPanel Margin="0,0,0,12" LastChildFill="True">
-                <Border Width="38" Height="38" CornerRadius="6" Background="{DynamicResource Brush.SurfaceAlt}" BorderBrush="{DynamicResource Brush.Border}" BorderThickness="1" Margin="0,0,10,0" VerticalAlignment="Center">
-                    <Image Source="pack://application:,,,/Assets/logo.png" Width="30" Height="30" Stretch="Uniform" RenderOptions.BitmapScalingMode="HighQuality" HorizontalAlignment="Center" VerticalAlignment="Center" />
+            <!-- Top Close Button -->
+            <Button Style="{StaticResource Button.DialogClose}" Click="CloseClick"
+                    HorizontalAlignment="Right" VerticalAlignment="Top" Margin="0,10,10,0" Panel.ZIndex="10" />
+
+            <!-- Main Body (Clean Branding) -->
+            <StackPanel Grid.Row="0" Margin="24,24,24,18" HorizontalAlignment="Center">
+                <Border Width="56" Height="56" CornerRadius="12"
+                        Background="{DynamicResource Brush.SurfaceAlt}"
+                        BorderBrush="{DynamicResource Brush.Border}"
+                        BorderThickness="1"
+                        HorizontalAlignment="Center" Margin="0,0,0,12">
+                    <Image Source="pack://application:,,,/Assets/logo.png" Width="42" Height="42"
+                           Stretch="Uniform" RenderOptions.BitmapScalingMode="HighQuality"
+                           HorizontalAlignment="Center" VerticalAlignment="Center" />
                 </Border>
-                <StackPanel VerticalAlignment="Center">
-                    <TextBlock Text="Windows Download Manager" FontSize="16" FontWeight="SemiBold" Foreground="{DynamicResource Brush.Text}" />
-                    <TextBlock x:Name="VersionText" Text="Version 1.0" FontSize="11.5" FontFamily="{StaticResource Font.App}" Foreground="{DynamicResource Brush.TextDim}" Margin="0,1.5,0,0" />
-                    <TextBlock Text="Native Windows 11 high-throughput download manager." FontSize="11.5" Foreground="{DynamicResource Brush.TextMuted}" Margin="0,1.5,0,0" />
-                </StackPanel>
-            </DockPanel>
 
-            <!-- 2. Technical Capabilities -->
-            <TextBlock Text="Engine capabilities" FontSize="13" FontWeight="SemiBold" Foreground="{DynamicResource Brush.Text}" Margin="0,0,0,6" />
-            <Grid Margin="0,2,0,4">
-                <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="140" />
-                    <ColumnDefinition Width="*" />
-                </Grid.ColumnDefinitions>
-                <TextBlock Grid.Column="0" Text="Browser integration:" FontSize="12.5" Foreground="{DynamicResource Brush.TextMuted}" />
-                <TextBlock Grid.Column="1" Text="Active (127.0.0.1:17530)" FontSize="12.5" FontFamily="{StaticResource Font.App}" Foreground="{DynamicResource Brush.Accent}" />
-            </Grid>
+                <TextBlock Text="Windows Download Manager" FontSize="16" FontWeight="SemiBold"
+                           Foreground="{DynamicResource Brush.Text}" HorizontalAlignment="Center" Margin="0,0,0,3" />
 
-            <Grid Margin="0,2,0,14">
-                <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="140" />
-                    <ColumnDefinition Width="*" />
-                </Grid.ColumnDefinitions>
-                <TextBlock Grid.Column="0" Text="Architecture:" FontSize="12.5" Foreground="{DynamicResource Brush.TextMuted}" />
-                <TextBlock Grid.Column="1" Text=".NET 8.0 · Multithreaded HTTP 206 range streams" FontSize="12.5" Foreground="{DynamicResource Brush.TextDim}" TextTrimming="CharacterEllipsis" />
-            </Grid>
+                <TextBlock x:Name="VersionText" Text="Version 2.5" FontSize="12.5" FontFamily="{StaticResource Font.App}"
+                           Foreground="{DynamicResource Brush.Accent}" HorizontalAlignment="Center" Margin="0,0,0,6" />
 
-            <!-- 3. Related Projects -->
-            <TextBlock Text="Open source ecosystem" FontSize="13" FontWeight="SemiBold" Foreground="{DynamicResource Brush.Text}" Margin="0,0,0,6" />
-            <Grid Margin="0,2,0,4">
-                <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="Auto" />
-                    <ColumnDefinition Width="*" />
-                </Grid.ColumnDefinitions>
-                <TextBlock Grid.Column="0" Text="Kivoy — YouTube Downloader" FontSize="12.5" Foreground="{DynamicResource Brush.TextDim}" Margin="0,0,8,0" />
-                <TextBlock Grid.Column="1" HorizontalAlignment="Right" VerticalAlignment="Center">
-                    <Hyperlink x:Name="KivoyLink" NavigateUri="https://github.com/usm007/Kivoy/releases" Click="Link_Click" Foreground="{DynamicResource Brush.Accent}" FontSize="12.5">
-                        <Run Text="github.com/usm007/Kivoy" />
+                <TextBlock Text="Native Windows 11 high-throughput download manager."
+                           FontSize="12" Foreground="{DynamicResource Brush.TextMuted}"
+                           TextAlignment="Center" TextWrapping="Wrap" LineHeight="16" Margin="0,0,0,10" />
+
+                <TextBlock HorizontalAlignment="Center">
+                    <Hyperlink NavigateUri="https://github.com/usm007/WDM" Click="Link_Click"
+                               Foreground="{DynamicResource Brush.Accent}" FontSize="12">
+                        <Run Text="github.com/usm007/WDM" />
                     </Hyperlink>
                 </TextBlock>
-            </Grid>
-            <Grid Margin="0,2,0,0">
-                <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="Auto" />
-                    <ColumnDefinition Width="*" />
-                </Grid.ColumnDefinitions>
-                <TextBlock Grid.Column="0" Text="Teleflow — Telegram Downloader" FontSize="12.5" Foreground="{DynamicResource Brush.TextDim}" Margin="0,0,8,0" />
-                <TextBlock Grid.Column="1" HorizontalAlignment="Right" VerticalAlignment="Center">
-                    <Hyperlink x:Name="TeleflowLink" NavigateUri="https://github.com/usm007/Teleflow/releases" Click="Link_Click" Foreground="{DynamicResource Brush.Accent}" FontSize="12.5">
-                        <Run Text="github.com/usm007/Teleflow" />
-                    </Hyperlink>
-                </TextBlock>
-            </Grid>
-        </StackPanel>
+            </StackPanel>
 
-        <!-- Bottom Action Strip -->
-        <Border Grid.Row="1" Background="{DynamicResource Brush.SurfaceAlt}" BorderBrush="{DynamicResource Brush.Border}" BorderThickness="0,1,0,0" Padding="16,10">
-            <Grid>
-                <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="*" />
-                    <ColumnDefinition Width="Auto" />
-                </Grid.ColumnDefinitions>
+            <!-- Bottom Action Strip -->
+            <Border Grid.Row="1" Background="{DynamicResource Brush.SurfaceAlt}" BorderBrush="{DynamicResource Brush.Border}"
+                    BorderThickness="0,1,0,0" CornerRadius="0,0,7,7" Padding="16,10">
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
 
-                <TextBlock x:Name="UpdateStatusText" Grid.Column="0" Text="" FontSize="12" Foreground="{DynamicResource Brush.Accent}" TextWrapping="Wrap" VerticalAlignment="Center" Margin="0,0,12,0" />
+                    <TextBlock x:Name="UpdateStatusText" Grid.Column="0" Text="" FontSize="11.5"
+                               Foreground="{DynamicResource Brush.Accent}" TextTrimming="CharacterEllipsis"
+                               VerticalAlignment="Center" Margin="0,0,8,0" />
 
-                <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
-                    <Button x:Name="CheckUpdateButton" Content="Check for updates" Style="{StaticResource Button.Secondary}" MinWidth="115" Height="28" Margin="0,0,8,0" Click="CheckUpdateClick" />
-                    <Button Content="Close" Style="{StaticResource Button.Accent}" IsDefault="True" IsCancel="True" MinWidth="85" Height="28" Click="CloseClick" />
-                </StackPanel>
-            </Grid>
-        </Border>
-    </Grid>
+                    <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                        <Button x:Name="CheckUpdateButton" Content="Check for updates" Style="{StaticResource Button.Secondary}"
+                                MinWidth="110" Height="28" Margin="0,0,8,0" Click="CheckUpdateClick" />
+                        <Button Content="Close" Style="{StaticResource Button.Accent}" IsDefault="True" IsCancel="True"
+                                MinWidth="75" Height="28" Click="CloseClick" />
+                    </StackPanel>
+                </Grid>
+            </Border>
+        </Grid>
+    </Border>
 </Window>

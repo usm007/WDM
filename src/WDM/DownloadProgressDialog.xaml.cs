@@ -77,6 +77,19 @@ public partial class DownloadProgressDialog : Window, INotifyPropertyChanged
         WDM.Services.ThemeService.ApplyTitleBar(this);
     }
 
+    private void Window_MouseLeftButtonDown(object sender, System.Windows.Input.MouseButtonEventArgs e)
+    {
+        if (e.ButtonState == System.Windows.Input.MouseButtonState.Pressed)
+        {
+            DragMove();
+        }
+    }
+
+    private void CloseClick(object sender, RoutedEventArgs e)
+    {
+        Close();
+    }
+
     public string ProgressTitleText => $"{Task.Progress}%";
     public string DownloadedDetailText => $"{Task.DownloadedText} ({Task.Progress}%)";
     public string ChunkCountText => Task.ChunkCount > 0 ? $"{Task.ChunkCount} threads" : "Auto";

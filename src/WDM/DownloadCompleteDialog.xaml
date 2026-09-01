@@ -8,84 +8,96 @@
         WindowStartupLocation="CenterScreen"
         ResizeMode="NoResize"
         ShowInTaskbar="False"
+        WindowStyle="None"
+        AllowsTransparency="True"
+        Background="Transparent"
+        MouseLeftButtonDown="Window_MouseLeftButtonDown"
         UseLayoutRounding="True"
         SnapsToDevicePixels="True"
         TextOptions.TextFormattingMode="Ideal"
         TextOptions.TextRenderingMode="Auto"
-        RenderOptions.ClearTypeHint="Enabled"
-        Background="{DynamicResource Brush.Surface}">
-    <Grid>
-        <Grid.RowDefinitions>
-            <RowDefinition Height="*" />    <!-- Content Body -->
-            <RowDefinition Height="Auto" /> <!-- Bottom Action Strip -->
-        </Grid.RowDefinitions>
+        RenderOptions.ClearTypeHint="Enabled">
+    <Border Background="{DynamicResource Brush.Surface}"
+            BorderBrush="{DynamicResource Brush.BorderStrong}"
+            BorderThickness="1"
+            CornerRadius="8"
+            SnapsToDevicePixels="True">
+        <Grid>
+            <Grid.RowDefinitions>
+                <RowDefinition Height="*" />    <!-- Content Body -->
+                <RowDefinition Height="Auto" /> <!-- Bottom Action Strip -->
+            </Grid.RowDefinitions>
 
-        <!-- Main Body -->
-        <StackPanel Grid.Row="0" Margin="20,18,20,16">
-            <!-- Header with Success Icon -->
-            <StackPanel Orientation="Horizontal" Margin="0,0,0,4">
-                <TextBlock Text="&#xF05E0;" FontFamily="{StaticResource Font.Icon}" FontSize="20"
-                           Foreground="{DynamicResource Brush.Success}" Margin="0,0,8,0" VerticalAlignment="Center" />
-                <TextBlock Text="Download Complete" FontSize="20" FontWeight="SemiBold"
-                           Foreground="{DynamicResource Brush.Text}" VerticalAlignment="Center" />
+            <!-- Main Body -->
+            <StackPanel Grid.Row="0" Margin="20,18,20,16">
+                <!-- Header with Success Icon + Close Button -->
+                <DockPanel Margin="0,0,0,4" LastChildFill="True">
+                    <Button DockPanel.Dock="Right" Style="{StaticResource Button.DialogClose}" Click="CloseClick" VerticalAlignment="Center" Margin="6,-6,-6,0" />
+                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                        <TextBlock Text="&#xF05E0;" FontFamily="{StaticResource Font.Icon}" FontSize="20"
+                                   Foreground="{DynamicResource Brush.Success}" Margin="0,0,8,0" VerticalAlignment="Center" />
+                        <TextBlock Text="Download Complete" FontSize="20" FontWeight="SemiBold"
+                                   Foreground="{DynamicResource Brush.Text}" VerticalAlignment="Center" />
+                    </StackPanel>
+                </DockPanel>
+
+                <TextBlock x:Name="FileTitleText" Text="filename.ext" FontSize="13"
+                           Foreground="{DynamicResource Brush.TextMuted}" TextTrimming="CharacterEllipsis" Margin="0,0,0,14" />
+
+                <!-- Address Field -->
+                <TextBlock Text="Source address" FontSize="12.5" Foreground="{DynamicResource Brush.TextMuted}" Margin="0,0,0,4" />
+                <Grid Margin="0,0,0,10">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <TextBox x:Name="UrlBox" IsReadOnly="True" Height="28" VerticalContentAlignment="Center"
+                             FontFamily="{StaticResource Font.App}" FontSize="12.5"
+                             Foreground="{DynamicResource Brush.Accent}" />
+                    <Button Grid.Column="1" Content="Copy" Style="{StaticResource Button.Secondary}" Click="CopyUrl_Click"
+                            Height="28" Padding="12,0" Margin="6,0,0,0" />
+                </Grid>
+
+                <!-- Destination Field -->
+                <TextBlock Text="Saved file location" FontSize="12.5" Foreground="{DynamicResource Brush.TextMuted}" Margin="0,0,0,4" />
+                <Grid Margin="0,0,0,14">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <TextBox x:Name="PathBox" IsReadOnly="True" Height="28" VerticalContentAlignment="Center"
+                             FontFamily="{StaticResource Font.App}" FontSize="12.5" />
+                    <Button Grid.Column="1" Content="Copy" Style="{StaticResource Button.Secondary}" Click="CopyPath_Click"
+                            Height="28" Padding="12,0" Margin="6,0,0,0" />
+                </Grid>
+
+                <!-- Metrics Summary (Size & Date) -->
+                <Grid Margin="0,0,0,4">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="*" />
+                    </Grid.ColumnDefinitions>
+                    <StackPanel Grid.Column="0">
+                        <TextBlock Text="Total file size" FontSize="12" Foreground="{DynamicResource Brush.TextMuted}" Margin="0,0,0,2" />
+                        <TextBlock x:Name="SizeText" Text="0 MB" FontSize="13" FontFamily="{StaticResource Font.App}" FontWeight="SemiBold" Foreground="{DynamicResource Brush.Text}" />
+                    </StackPanel>
+                    <StackPanel Grid.Column="1">
+                        <TextBlock Text="Finished at" FontSize="12" Foreground="{DynamicResource Brush.TextMuted}" Margin="0,0,0,2" />
+                        <TextBlock x:Name="DateText" Text="Just now" FontSize="13" FontFamily="{StaticResource Font.App}" Foreground="{DynamicResource Brush.TextDim}" />
+                    </StackPanel>
+                </Grid>
             </StackPanel>
 
-            <TextBlock x:Name="FileTitleText" Text="filename.ext" FontSize="13"
-                       Foreground="{DynamicResource Brush.TextMuted}" TextTrimming="CharacterEllipsis" Margin="0,0,0,14" />
-
-            <!-- Address Field -->
-            <TextBlock Text="Source address" FontSize="12.5" Foreground="{DynamicResource Brush.TextMuted}" Margin="0,0,0,4" />
-            <Grid Margin="0,0,0,10">
-                <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="*" />
-                    <ColumnDefinition Width="Auto" />
-                </Grid.ColumnDefinitions>
-                <TextBox x:Name="UrlBox" IsReadOnly="True" Height="28" VerticalContentAlignment="Center"
-                         FontFamily="{StaticResource Font.App}" FontSize="12.5"
-                         Foreground="{DynamicResource Brush.Accent}" />
-                <Button Grid.Column="1" Content="Copy" Style="{StaticResource Button.Secondary}" Click="CopyUrl_Click"
-                        Height="28" Padding="12,0" Margin="6,0,0,0" />
-            </Grid>
-
-            <!-- Destination Field -->
-            <TextBlock Text="Saved file location" FontSize="12.5" Foreground="{DynamicResource Brush.TextMuted}" Margin="0,0,0,4" />
-            <Grid Margin="0,0,0,14">
-                <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="*" />
-                    <ColumnDefinition Width="Auto" />
-                </Grid.ColumnDefinitions>
-                <TextBox x:Name="PathBox" IsReadOnly="True" Height="28" VerticalContentAlignment="Center"
-                         FontFamily="{StaticResource Font.App}" FontSize="12.5" />
-                <Button Grid.Column="1" Content="Copy" Style="{StaticResource Button.Secondary}" Click="CopyPath_Click"
-                        Height="28" Padding="12,0" Margin="6,0,0,0" />
-            </Grid>
-
-            <!-- Metrics Summary (Size & Date) -->
-            <Grid Margin="0,0,0,4">
-                <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="*" />
-                    <ColumnDefinition Width="*" />
-                </Grid.ColumnDefinitions>
-                <StackPanel Grid.Column="0">
-                    <TextBlock Text="Total file size" FontSize="12" Foreground="{DynamicResource Brush.TextMuted}" Margin="0,0,0,2" />
-                    <TextBlock x:Name="SizeText" Text="0 MB" FontSize="13" FontFamily="{StaticResource Font.App}" FontWeight="SemiBold" Foreground="{DynamicResource Brush.Text}" />
-                </StackPanel>
-                <StackPanel Grid.Column="1">
-                    <TextBlock Text="Finished at" FontSize="12" Foreground="{DynamicResource Brush.TextMuted}" Margin="0,0,0,2" />
-                    <TextBlock x:Name="DateText" Text="Just now" FontSize="13" FontFamily="{StaticResource Font.App}" Foreground="{DynamicResource Brush.TextDim}" />
-                </StackPanel>
-            </Grid>
-        </StackPanel>
-
-        <!-- Bottom Action Strip -->
-        <Border Grid.Row="1" Background="{DynamicResource Brush.SurfaceAlt}" BorderBrush="{DynamicResource Brush.Border}" BorderThickness="0,1,0,0" Padding="16,10">
-            <DockPanel LastChildFill="False">
-                <Button Content="Open Folder" Style="{StaticResource Button.Secondary}" Click="OpenFolder_Click" Height="28" Padding="12,0" DockPanel.Dock="Left" />
-                <StackPanel Orientation="Horizontal" DockPanel.Dock="Right">
-                    <Button Content="Close" Style="{StaticResource Button.Secondary}" Click="CloseClick" Height="28" MinWidth="85" Margin="0,0,8,0" IsCancel="True" />
-                    <Button Content="Open File" Style="{StaticResource Button.Accent}" Click="OpenFile_Click" Height="28" MinWidth="95" IsDefault="True" />
-                </StackPanel>
-            </DockPanel>
-        </Border>
-    </Grid>
+            <!-- Bottom Action Strip -->
+            <Border Grid.Row="1" Background="{DynamicResource Brush.SurfaceAlt}" BorderBrush="{DynamicResource Brush.Border}" BorderThickness="0,1,0,0" CornerRadius="0,0,7,7" Padding="16,10">
+                <DockPanel LastChildFill="False">
+                    <Button Content="Open Folder" Style="{StaticResource Button.Secondary}" Click="OpenFolder_Click" Height="28" Padding="12,0" DockPanel.Dock="Left" />
+                    <StackPanel Orientation="Horizontal" DockPanel.Dock="Right">
+                        <Button Content="Close" Style="{StaticResource Button.Secondary}" Click="CloseClick" Height="28" MinWidth="85" Margin="0,0,8,0" IsCancel="True" />
+                        <Button Content="Open File" Style="{StaticResource Button.Accent}" Click="OpenFile_Click" Height="28" MinWidth="95" IsDefault="True" />
+                    </StackPanel>
+                </DockPanel>
+            </Border>
+        </Grid>
+    </Border>
 </Window>

@@ -9,39 +9,53 @@
         WindowStartupLocation="CenterScreen"
         ResizeMode="CanMinimize"
         ShowInTaskbar="True"
+        WindowStyle="None"
+        AllowsTransparency="True"
+        Background="Transparent"
+        MouseLeftButtonDown="Window_MouseLeftButtonDown"
         UseLayoutRounding="True"
         SnapsToDevicePixels="True"
         TextOptions.TextFormattingMode="Ideal"
         TextOptions.TextRenderingMode="Auto"
-        RenderOptions.ClearTypeHint="Enabled"
-        Background="{DynamicResource Brush.Surface}">
+        RenderOptions.ClearTypeHint="Enabled">
     <Window.Resources>
         <vm:TaskStatusToBrushConverter x:Key="StatusBrush" />
     </Window.Resources>
 
-    <Grid>
-        <Grid.RowDefinitions>
-            <RowDefinition Height="*" />    <!-- Content Body -->
-            <RowDefinition Height="Auto" /> <!-- Bottom Action Strip -->
-        </Grid.RowDefinitions>
+    <Border Background="{DynamicResource Brush.Surface}"
+            BorderBrush="{DynamicResource Brush.BorderStrong}"
+            BorderThickness="1"
+            CornerRadius="8"
+            SnapsToDevicePixels="True">
+        <Grid>
+            <Grid.RowDefinitions>
+                <RowDefinition Height="*" />    <!-- Content Body -->
+                <RowDefinition Height="Auto" /> <!-- Bottom Action Strip -->
+            </Grid.RowDefinitions>
 
-        <!-- Main Body -->
-        <StackPanel Grid.Row="0" Margin="16,14,16,12">
-            <!-- 1. Header: Icon + File Name + Progress Percentage -->
-            <DockPanel Margin="0,0,0,10" LastChildFill="True">
-                <TextBlock DockPanel.Dock="Right" Text="{Binding ProgressTitleText}"
-                           FontSize="13" FontFamily="{StaticResource Font.App}" FontWeight="SemiBold"
-                           Foreground="{DynamicResource Brush.TextDim}" VerticalAlignment="Center" Margin="10,0,0,0" />
+            <!-- Main Body -->
+            <StackPanel Grid.Row="0" Margin="16,14,16,12">
+                <!-- 1. Header: Icon + File Name + Progress Percentage + Caption Buttons -->
+                <DockPanel Margin="0,0,0,10" LastChildFill="True">
+                    <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center">
+                        <TextBlock Text="{Binding ProgressTitleText}"
+                                   FontSize="13" FontFamily="{StaticResource Font.App}" FontWeight="SemiBold"
+                                   Foreground="{DynamicResource Brush.TextDim}" VerticalAlignment="Center" Margin="10,0,8,0" />
+                        <Button Style="{StaticResource Button.DialogClose}" ToolTip="Minimize" Click="MinimizeClick" Margin="0,-4,2,0">
+                            <TextBlock Text="&#xF0374;" FontFamily="{StaticResource Font.Icon}" FontSize="13" Foreground="{DynamicResource Brush.TextDim}" />
+                        </Button>
+                        <Button Style="{StaticResource Button.DialogClose}" ToolTip="Close (Esc)" Click="CloseClick" Margin="0,-4,-6,0" />
+                    </StackPanel>
 
-                <DockPanel VerticalAlignment="Center">
-                    <TextBlock DockPanel.Dock="Left" Text="{Binding Task.TypeIcon}" FontFamily="{StaticResource Font.Icon}"
-                               FontSize="15" Foreground="{DynamicResource Brush.TextDim}"
-                               VerticalAlignment="Center" Margin="0,0,6,0" />
-                    <TextBlock Text="{Binding Task.FileName}" FontWeight="SemiBold" FontSize="13.5"
-                               Foreground="{DynamicResource Brush.Text}" VerticalAlignment="Center"
-                               TextTrimming="CharacterEllipsis" ToolTip="{Binding Task.FileName}" />
+                    <DockPanel VerticalAlignment="Center">
+                        <TextBlock DockPanel.Dock="Left" Text="{Binding Task.TypeIcon}" FontFamily="{StaticResource Font.Icon}"
+                                   FontSize="15" Foreground="{DynamicResource Brush.TextDim}"
+                                   VerticalAlignment="Center" Margin="0,0,6,0" />
+                        <TextBlock Text="{Binding Task.FileName}" FontWeight="SemiBold" FontSize="13.5"
+                                   Foreground="{DynamicResource Brush.Text}" VerticalAlignment="Center"
+                                   TextTrimming="CharacterEllipsis" ToolTip="{Binding Task.FileName}" />
+                    </DockPanel>
                 </DockPanel>
-            </DockPanel>
 
             <!-- 2. Tab Navigation Strip -->
             <StackPanel Orientation="Horizontal" Margin="0,0,0,10">
@@ -182,7 +196,7 @@
         </StackPanel>
 
         <!-- Bottom Action Strip -->
-        <Border Grid.Row="1" Background="{DynamicResource Brush.SurfaceAlt}" BorderBrush="{DynamicResource Brush.Border}" BorderThickness="0,1,0,0" Padding="16,10">
+        <Border Grid.Row="1" Background="{DynamicResource Brush.SurfaceAlt}" BorderBrush="{DynamicResource Brush.Border}" BorderThickness="0,1,0,0" CornerRadius="0,0,7,7" Padding="16,10">
             <DockPanel LastChildFill="False">
                 <Button Content="Open Folder" Style="{StaticResource Button.Secondary}" Click="RevealClick" Height="28" Padding="12,0" DockPanel.Dock="Left" />
                 <StackPanel Orientation="Horizontal" DockPanel.Dock="Right">
@@ -196,4 +210,5 @@
             </DockPanel>
         </Border>
     </Grid>
+    </Border>
 </Window>

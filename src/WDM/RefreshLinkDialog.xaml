@@ -8,95 +8,101 @@
         WindowStartupLocation="CenterOwner"
         ResizeMode="NoResize"
         ShowInTaskbar="False"
+        WindowStyle="None"
+        AllowsTransparency="True"
+        Background="Transparent"
+        MouseLeftButtonDown="Window_MouseLeftButtonDown"
         UseLayoutRounding="True"
         SnapsToDevicePixels="True"
         TextOptions.TextFormattingMode="Ideal"
         TextOptions.TextRenderingMode="Auto"
-        RenderOptions.ClearTypeHint="Enabled"
-        Background="{DynamicResource Brush.Surface}">
-    <Grid>
-        <Grid.RowDefinitions>
-            <RowDefinition Height="*" />    <!-- Content Body -->
-            <RowDefinition Height="Auto" /> <!-- Bottom Action Strip -->
-        </Grid.RowDefinitions>
+        RenderOptions.ClearTypeHint="Enabled">
+    <Border Background="{DynamicResource Brush.Surface}"
+            BorderBrush="{DynamicResource Brush.BorderStrong}"
+            BorderThickness="1"
+            CornerRadius="8"
+            SnapsToDevicePixels="True">
+        <Grid>
+            <Grid.RowDefinitions>
+                <RowDefinition Height="*" />    <!-- Content Body -->
+                <RowDefinition Height="Auto" /> <!-- Bottom Action Strip -->
+            </Grid.RowDefinitions>
 
-        <!-- Main Body -->
-        <StackPanel Grid.Row="0" Margin="20,18,20,16">
-            <!-- Header with Refresh Icon -->
-            <StackPanel Orientation="Horizontal" Margin="0,0,0,6">
-                <TextBlock Text="&#xF0339;" FontFamily="{StaticResource Font.Icon}" FontSize="20"
-                           Foreground="{DynamicResource Brush.Accent}" Margin="0,0,8,0" VerticalAlignment="Center" />
-                <TextBlock Text="Refresh Download Link" FontSize="20" FontWeight="SemiBold"
-                           Foreground="{DynamicResource Brush.Text}" VerticalAlignment="Center" />
-            </StackPanel>
+            <!-- Main Body -->
+            <StackPanel Grid.Row="0" Margin="18,16,18,14">
+                <!-- Header with Refresh Icon + Close Button -->
+                <DockPanel Margin="0,0,0,12" LastChildFill="True">
+                    <Button DockPanel.Dock="Right" Style="{StaticResource Button.DialogClose}" Click="CancelClick" VerticalAlignment="Center" Margin="6,-6,-6,0" />
+                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                        <TextBlock Text="&#xF0339;" FontFamily="{StaticResource Font.Icon}" FontSize="18"
+                                   Foreground="{DynamicResource Brush.Accent}" Margin="0,0,8,0" VerticalAlignment="Center" />
+                        <TextBlock Text="Refresh Download Link" FontSize="16" FontWeight="SemiBold"
+                                   Foreground="{DynamicResource Brush.Text}" VerticalAlignment="Center" />
+                    </StackPanel>
+                </DockPanel>
 
-            <TextBlock Text="Replace expired temporary links or renewed sessions to resume without loss."
-                       FontSize="13" Foreground="{DynamicResource Brush.TextMuted}" Margin="0,0,0,14" />
+                <!-- Instruction & Capture Status Banner -->
+                <Border x:Name="InstructionBanner" Background="{DynamicResource Brush.SurfaceAlt}" BorderBrush="{DynamicResource Brush.Border}"
+                        BorderThickness="1" CornerRadius="6" Padding="12,9" Margin="0,0,0,12">
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
+                        <TextBlock x:Name="BannerIcon" Text="&#xF059F;" FontFamily="{StaticResource Font.Icon}" FontSize="16"
+                                   Foreground="{DynamicResource Brush.Accent}" Margin="0,1,8,0" VerticalAlignment="Top" />
+                        <StackPanel Grid.Column="1">
+                            <TextBlock x:Name="BannerTitle" Text="Download page opened in browser" FontSize="12" FontWeight="SemiBold"
+                                       Foreground="{DynamicResource Brush.Text}" Margin="0,0,0,2" />
+                            <TextBlock x:Name="BannerDescription"
+                                       Text="Click download on the page. WDM will intercept the renewed link."
+                                       FontSize="11.5" Foreground="{DynamicResource Brush.TextMuted}" TextWrapping="Wrap" LineHeight="15" />
+                        </StackPanel>
+                    </Grid>
+                </Border>
 
-            <!-- Instruction & Capture Status Banner -->
-            <Border x:Name="InstructionBanner" Background="{DynamicResource Brush.SurfaceAlt}" BorderBrush="{DynamicResource Brush.Border}"
-                    BorderThickness="1" CornerRadius="4" Padding="12,10" Margin="0,0,0,14">
-                <Grid>
+                <!-- File Metadata Info -->
+                <Grid Margin="0,0,0,10">
                     <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="70" />
                         <ColumnDefinition Width="*" />
                     </Grid.ColumnDefinitions>
-                    <TextBlock x:Name="BannerIcon" Text="&#xF059F;" FontFamily="{StaticResource Font.Icon}" FontSize="18"
-                               Foreground="{DynamicResource Brush.Accent}" Margin="0,1,10,0" VerticalAlignment="Top" />
-                    <StackPanel Grid.Column="1">
-                        <TextBlock x:Name="BannerTitle" Text="Download page opened in browser" FontSize="12.5" FontWeight="SemiBold"
-                                   Foreground="{DynamicResource Brush.Text}" Margin="0,0,0,2" />
-                        <TextBlock x:Name="BannerDescription"
-                                   Text="Click the download button on the webpage in your browser. WDM will automatically intercept the renewed link and resume your download."
-                                   FontSize="12" Foreground="{DynamicResource Brush.TextMuted}" TextWrapping="Wrap" LineHeight="16" />
-                    </StackPanel>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                    </Grid.RowDefinitions>
+
+                    <TextBlock Grid.Row="0" Grid.Column="0" Text="File:" FontSize="12" Foreground="{DynamicResource Brush.TextMuted}" Margin="0,0,0,3" />
+                    <TextBlock Grid.Row="0" Grid.Column="1" x:Name="FileNameText" FontSize="12.5" FontWeight="SemiBold"
+                               Foreground="{DynamicResource Brush.Text}" TextTrimming="CharacterEllipsis" Margin="0,0,0,3" />
+
+                    <TextBlock Grid.Row="1" Grid.Column="0" Text="Progress:" FontSize="12" Foreground="{DynamicResource Brush.TextMuted}" />
+                    <TextBlock Grid.Row="1" Grid.Column="1" x:Name="ProgressText" FontSize="12" FontFamily="{StaticResource Font.App}"
+                               Foreground="{DynamicResource Brush.TextDim}" />
                 </Grid>
+
+                <!-- New URL Input -->
+                <TextBlock Text="Renewed URL" FontSize="12" FontWeight="SemiBold" Foreground="{DynamicResource Brush.Text}" Margin="0,2,0,4" />
+                <TextBox x:Name="UrlBox" Height="28" VerticalContentAlignment="Center"
+                         FontFamily="{StaticResource Font.App}" FontSize="12"
+                         Foreground="{DynamicResource Brush.Accent}" />
+            </StackPanel>
+
+            <!-- Bottom Action Strip -->
+            <Border Grid.Row="1" Background="{DynamicResource Brush.SurfaceAlt}" BorderBrush="{DynamicResource Brush.Border}" BorderThickness="0,1,0,0" CornerRadius="0,0,7,7" Padding="16,10">
+                <DockPanel LastChildFill="False">
+                    <!-- Action to open source page (Referer) in browser -->
+                    <Button x:Name="OpenSourcePageBtn" Content="Open source page" Style="{StaticResource Button.Secondary}"
+                            Click="OpenSourcePageClick" Height="28" Padding="12,0" DockPanel.Dock="Left" Visibility="Collapsed" />
+
+                    <StackPanel Orientation="Horizontal" DockPanel.Dock="Right">
+                        <Button Content="Cancel" Style="{StaticResource Button.Secondary}" Click="CancelClick"
+                                MinWidth="85" Height="28" Margin="0,0,8,0" IsCancel="True" />
+                        <Button Content="Update &amp; Resume" Style="{StaticResource Button.Accent}" Click="OkClick"
+                                MinWidth="130" Height="28" IsDefault="True" />
+                    </StackPanel>
+                </DockPanel>
             </Border>
-
-            <!-- File Metadata Info -->
-            <Grid Margin="0,0,0,10">
-                <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="90" />
-                    <ColumnDefinition Width="*" />
-                </Grid.ColumnDefinitions>
-                <Grid.RowDefinitions>
-                    <RowDefinition Height="Auto" />
-                    <RowDefinition Height="Auto" />
-                </Grid.RowDefinitions>
-
-                <TextBlock Grid.Row="0" Grid.Column="0" Text="Target file:" FontSize="12.5" Foreground="{DynamicResource Brush.TextMuted}" Margin="0,0,0,4" />
-                <TextBlock Grid.Row="0" Grid.Column="1" x:Name="FileNameText" FontSize="13" FontWeight="SemiBold"
-                           Foreground="{DynamicResource Brush.Text}" TextTrimming="CharacterEllipsis" Margin="0,0,0,4" />
-
-                <TextBlock Grid.Row="1" Grid.Column="0" Text="Progress:" FontSize="12.5" Foreground="{DynamicResource Brush.TextMuted}" />
-                <TextBlock Grid.Row="1" Grid.Column="1" x:Name="ProgressText" FontSize="12.5" FontFamily="{StaticResource Font.App}"
-                           Foreground="{DynamicResource Brush.TextDim}" />
-            </Grid>
-
-            <!-- New URL Input -->
-            <TextBlock Text="New download URL" FontSize="13" FontWeight="SemiBold" Foreground="{DynamicResource Brush.Text}" Margin="0,4,0,4" />
-            <TextBox x:Name="UrlBox" Height="28" VerticalContentAlignment="Center"
-                     FontFamily="{StaticResource Font.App}" FontSize="12.5"
-                     Foreground="{DynamicResource Brush.Accent}" Margin="0,0,0,4" />
-
-            <TextBlock x:Name="HintText" Text="If the new URL points to the same content, the transfer resumes from existing chunks."
-                       FontSize="12" Foreground="{DynamicResource Brush.TextMuted}" TextWrapping="Wrap" />
-        </StackPanel>
-
-        <!-- Bottom Action Strip -->
-        <Border Grid.Row="1" Background="{DynamicResource Brush.SurfaceAlt}" BorderBrush="{DynamicResource Brush.Border}" BorderThickness="0,1,0,0" Padding="16,10">
-            <DockPanel LastChildFill="False">
-                <!-- Action to open source page (Referer) in browser -->
-                <Button x:Name="OpenSourcePageBtn" Content="Open source page" Style="{StaticResource Button.Secondary}"
-                        Click="OpenSourcePageClick" Height="28" Padding="12,0" DockPanel.Dock="Left" Visibility="Collapsed" />
-
-                <StackPanel Orientation="Horizontal" DockPanel.Dock="Right">
-                    <Button Content="Cancel" Style="{StaticResource Button.Secondary}" Click="CancelClick"
-                            MinWidth="85" Height="28" Margin="0,0,8,0" IsCancel="True" />
-                    <Button Content="Update &amp; Resume" Style="{StaticResource Button.Accent}" Click="OkClick"
-                            MinWidth="130" Height="28" IsDefault="True" />
-                </StackPanel>
-            </DockPanel>
-        </Border>
-    </Grid>
+        </Grid>
+    </Border>
 </Window>

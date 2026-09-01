@@ -35,6 +35,14 @@ public partial class DuplicateDownloadDialog : Window
         Services.ThemeService.ApplyTitleBar(this);
     }
 
+    private void Window_MouseLeftButtonDown(object sender, System.Windows.Input.MouseButtonEventArgs e)
+    {
+        if (e.ButtonState == System.Windows.Input.MouseButtonState.Pressed)
+        {
+            DragMove();
+        }
+    }
+
     private void RenameAndDownload_Click(object sender, RoutedEventArgs e)
     {
         SelectedAction = DuplicateAction.RenameAndDownload;

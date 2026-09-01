@@ -10,11 +10,19 @@
         SnapsToDevicePixels="True"
         WindowStartupLocation="CenterScreen"
         ResizeMode="NoResize"
+        ShowInTaskbar="False"
+        WindowStyle="None"
+        AllowsTransparency="True"
+        Background="Transparent"
+        MouseLeftButtonDown="Window_MouseLeftButtonDown"
         TextOptions.TextFormattingMode="Ideal"
         TextOptions.TextRenderingMode="Auto"
-        RenderOptions.ClearTypeHint="Enabled"
-        Background="{DynamicResource Brush.Surface}">
-    <Grid>
+        RenderOptions.ClearTypeHint="Enabled">
+    <Border Background="{DynamicResource Brush.Surface}"
+            BorderBrush="{DynamicResource Brush.BorderStrong}"
+            BorderThickness="1"
+            CornerRadius="8"
+            SnapsToDevicePixels="True">
         <local:ExtensionReloadNoticeControl x:Name="NoticeControl" />
-    </Grid>
+    </Border>
 </Window>

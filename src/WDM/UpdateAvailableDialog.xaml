@@ -8,47 +8,59 @@
         WindowStartupLocation="CenterOwner"
         ResizeMode="NoResize"
         ShowInTaskbar="False"
+        WindowStyle="None"
+        AllowsTransparency="True"
+        Background="Transparent"
+        MouseLeftButtonDown="Window_MouseLeftButtonDown"
         UseLayoutRounding="True"
         SnapsToDevicePixels="True"
         TextOptions.TextFormattingMode="Ideal"
         TextOptions.TextRenderingMode="Auto"
-        RenderOptions.ClearTypeHint="Enabled"
-        Background="{DynamicResource Brush.Surface}">
-    <Grid>
-        <Grid.RowDefinitions>
-            <RowDefinition Height="*" />    <!-- Content Body -->
-            <RowDefinition Height="Auto" /> <!-- Bottom Action Strip -->
-        </Grid.RowDefinitions>
+        RenderOptions.ClearTypeHint="Enabled">
+    <Border Background="{DynamicResource Brush.Surface}"
+            BorderBrush="{DynamicResource Brush.BorderStrong}"
+            BorderThickness="1"
+            CornerRadius="8"
+            SnapsToDevicePixels="True">
+        <Grid>
+            <Grid.RowDefinitions>
+                <RowDefinition Height="*" />    <!-- Content Body -->
+                <RowDefinition Height="Auto" /> <!-- Bottom Action Strip -->
+            </Grid.RowDefinitions>
 
-        <!-- Main Body -->
-        <StackPanel Grid.Row="0" Margin="20,18,20,16">
-            <!-- Header with Download Cloud Icon -->
-            <StackPanel Orientation="Horizontal" Margin="0,0,0,6">
-                <TextBlock Text="&#xF06B0;" FontFamily="{StaticResource Font.Icon}" FontSize="20"
-                           Foreground="{DynamicResource Brush.Accent}" Margin="0,0,8,0" VerticalAlignment="Center" />
-                <TextBlock Text="A New Version is Available" FontSize="20" FontWeight="SemiBold"
-                           Foreground="{DynamicResource Brush.Text}" VerticalAlignment="Center" />
+            <!-- Main Body -->
+            <StackPanel Grid.Row="0" Margin="20,18,20,16">
+                <!-- Header with Download Cloud Icon + Close Button -->
+                <DockPanel Margin="0,0,0,6" LastChildFill="True">
+                    <Button DockPanel.Dock="Right" Style="{StaticResource Button.DialogClose}" Click="LaterClick" VerticalAlignment="Center" Margin="6,-6,-6,0" />
+                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                        <TextBlock Text="&#xF06B0;" FontFamily="{StaticResource Font.Icon}" FontSize="20"
+                                   Foreground="{DynamicResource Brush.Accent}" Margin="0,0,8,0" VerticalAlignment="Center" />
+                        <TextBlock Text="A New Version is Available" FontSize="20" FontWeight="SemiBold"
+                                   Foreground="{DynamicResource Brush.Text}" VerticalAlignment="Center" />
+                    </StackPanel>
+                </DockPanel>
+
+                <!-- Version subtitle -->
+                <TextBlock x:Name="VersionLine" FontSize="13" FontFamily="{StaticResource Font.App}"
+                           Foreground="{DynamicResource Brush.Accent}" Margin="0,0,0,12" />
+
+                <!-- Release Details -->
+                <ScrollViewer MaxHeight="180" VerticalScrollBarVisibility="Auto" Margin="0,0,0,4">
+                    <TextBlock x:Name="DetailsText" TextWrapping="Wrap" FontSize="13"
+                               Foreground="{DynamicResource Brush.TextDim}" LineHeight="18" />
+                </ScrollViewer>
             </StackPanel>
 
-            <!-- Version subtitle -->
-            <TextBlock x:Name="VersionLine" FontSize="13" FontFamily="{StaticResource Font.App}"
-                       Foreground="{DynamicResource Brush.Accent}" Margin="0,0,0,12" />
-
-            <!-- Release Details -->
-            <ScrollViewer MaxHeight="180" VerticalScrollBarVisibility="Auto" Margin="0,0,0,4">
-                <TextBlock x:Name="DetailsText" TextWrapping="Wrap" FontSize="13"
-                           Foreground="{DynamicResource Brush.TextDim}" LineHeight="18" />
-            </ScrollViewer>
-        </StackPanel>
-
-        <!-- Bottom Action Strip -->
-        <Border Grid.Row="1" Background="{DynamicResource Brush.SurfaceAlt}" BorderBrush="{DynamicResource Brush.Border}" BorderThickness="0,1,0,0" Padding="16,10">
-            <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
-                <Button x:Name="LaterButton" Content="Later" Style="{StaticResource Button.Secondary}"
-                        IsCancel="True" Click="LaterClick" MinWidth="85" Height="28" Margin="0,0,8,0" />
-                <Button x:Name="InstallButton" Content="Download &amp; Install" Style="{StaticResource Button.Accent}"
-                        Click="InstallClick" MinWidth="140" Height="28" IsDefault="True" />
-            </StackPanel>
-        </Border>
-    </Grid>
+            <!-- Bottom Action Strip -->
+            <Border Grid.Row="1" Background="{DynamicResource Brush.SurfaceAlt}" BorderBrush="{DynamicResource Brush.Border}" BorderThickness="0,1,0,0" CornerRadius="0,0,7,7" Padding="16,10">
+                <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                    <Button x:Name="LaterButton" Content="Later" Style="{StaticResource Button.Secondary}"
+                            IsCancel="True" Click="LaterClick" MinWidth="85" Height="28" Margin="0,0,8,0" />
+                    <Button x:Name="InstallButton" Content="Download &amp; Install" Style="{StaticResource Button.Accent}"
+                            Click="InstallClick" MinWidth="140" Height="28" IsDefault="True" />
+                </StackPanel>
+            </Border>
+        </Grid>
+    </Border>
 </Window>

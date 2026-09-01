@@ -1,4 +1,4 @@
-﻿using System.Diagnostics;
+using System.Diagnostics;
 using System.IO;
 using System.Windows;
 using WDM.Models;
@@ -25,6 +25,14 @@ public partial class DownloadCompleteDialog : Window
     {
         base.OnSourceInitialized(e);
         WDM.Services.ThemeService.ApplyTitleBar(this);
+    }
+
+    private void Window_MouseLeftButtonDown(object sender, System.Windows.Input.MouseButtonEventArgs e)
+    {
+        if (e.ButtonState == System.Windows.Input.MouseButtonState.Pressed)
+        {
+            DragMove();
+        }
     }
 
     private void CopyUrl_Click(object sender, RoutedEventArgs e)

@@ -37,6 +37,14 @@ public partial class RefreshLinkDialog : Window
         WDM.Services.ThemeService.ApplyTitleBar(this);
     }
 
+    private void Window_MouseLeftButtonDown(object sender, System.Windows.Input.MouseButtonEventArgs e)
+    {
+        if (e.ButtonState == System.Windows.Input.MouseButtonState.Pressed)
+        {
+            DragMove();
+        }
+    }
+
     private string GetTargetPageUrl()
     {
         if (!string.IsNullOrWhiteSpace(_task.Referer) && Uri.TryCreate(_task.Referer, UriKind.Absolute, out _))

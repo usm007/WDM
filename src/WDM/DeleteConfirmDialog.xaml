@@ -9,40 +9,53 @@
         SnapsToDevicePixels="True"
         WindowStartupLocation="CenterOwner"
         ResizeMode="NoResize"
+        ShowInTaskbar="False"
+        WindowStyle="None"
+        AllowsTransparency="True"
+        Background="Transparent"
+        MouseLeftButtonDown="Window_MouseLeftButtonDown"
         TextOptions.TextFormattingMode="Ideal"
         TextOptions.TextRenderingMode="Auto"
-        RenderOptions.ClearTypeHint="Enabled"
-        Background="{DynamicResource Brush.Surface}">
-    <Grid>
-        <Grid.RowDefinitions>
-            <RowDefinition Height="*" />    <!-- Content Body -->
-            <RowDefinition Height="Auto" /> <!-- Bottom Action Strip -->
-        </Grid.RowDefinitions>
+        RenderOptions.ClearTypeHint="Enabled">
+    <Border Background="{DynamicResource Brush.Surface}"
+            BorderBrush="{DynamicResource Brush.BorderStrong}"
+            BorderThickness="1"
+            CornerRadius="8"
+            SnapsToDevicePixels="True">
+        <Grid>
+            <Grid.RowDefinitions>
+                <RowDefinition Height="*" />    <!-- Content Body -->
+                <RowDefinition Height="Auto" /> <!-- Bottom Action Strip -->
+            </Grid.RowDefinitions>
 
-        <!-- Main Body -->
-        <StackPanel Grid.Row="0" Margin="16,14,16,12">
-            <!-- Title & Icon Header -->
-            <StackPanel Orientation="Horizontal" Margin="0,0,0,6">
-                <TextBlock Text="&#xF0A7A;" FontFamily="{StaticResource Font.Icon}" FontSize="17"
-                           Foreground="{DynamicResource Brush.StatusFailed}" Margin="0,0,7,0" VerticalAlignment="Center" />
-                <TextBlock Text="Delete Downloads" FontSize="15" FontWeight="SemiBold"
-                           Foreground="{DynamicResource Brush.Text}" VerticalAlignment="Center" />
+            <!-- Main Body -->
+            <StackPanel Grid.Row="0" Margin="16,14,16,12">
+                <!-- Title & Icon Header + Close Button -->
+                <DockPanel Margin="0,0,0,6" LastChildFill="True">
+                    <Button DockPanel.Dock="Right" Style="{StaticResource Button.DialogClose}" Click="CancelClick" VerticalAlignment="Center" Margin="6,-6,-6,0" />
+                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                        <TextBlock Text="&#xF0A7A;" FontFamily="{StaticResource Font.Icon}" FontSize="17"
+                                   Foreground="{DynamicResource Brush.StatusFailed}" Margin="0,0,7,0" VerticalAlignment="Center" />
+                        <TextBlock Text="Delete Downloads" FontSize="15" FontWeight="SemiBold"
+                                   Foreground="{DynamicResource Brush.Text}" VerticalAlignment="Center" />
+                    </StackPanel>
+                </DockPanel>
+
+                <!-- Description / Context -->
+                <TextBlock x:Name="MessageText" TextWrapping="Wrap" FontSize="11.5" Foreground="{DynamicResource Brush.TextDim}" Margin="0,0,0,10" />
+
+                <!-- Secondary Option: Delete from disk -->
+                <CheckBox x:Name="DiskCheckBox" Content="Also delete the downloaded file from disk"
+                          FontSize="11.5" Foreground="{DynamicResource Brush.Text}" Margin="0,2,0,2" />
             </StackPanel>
 
-            <!-- Description / Context -->
-            <TextBlock x:Name="MessageText" TextWrapping="Wrap" FontSize="11.5" Foreground="{DynamicResource Brush.TextDim}" Margin="0,0,0,10" />
-
-            <!-- Secondary Option: Delete from disk -->
-            <CheckBox x:Name="DiskCheckBox" Content="Also delete the downloaded file from disk"
-                      FontSize="11.5" Foreground="{DynamicResource Brush.Text}" Margin="0,2,0,2" />
-        </StackPanel>
-
-        <!-- Bottom Action Strip -->
-        <Border Grid.Row="1" Background="{DynamicResource Brush.SurfaceAlt}" BorderBrush="{DynamicResource Brush.Border}" BorderThickness="0,1,0,0" Padding="16,10">
-            <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
-                <Button x:Name="CancelButton" Content="Cancel" Style="{StaticResource Button.Secondary}" MinWidth="85" Height="28" IsCancel="True" Margin="0,0,8,0" Click="CancelClick" />
-                <Button x:Name="DeleteButton" Content="Delete" Style="{StaticResource Button.Accent}" MinWidth="85" Height="28" IsDefault="True" Click="DeleteClick" />
-            </StackPanel>
-        </Border>
-    </Grid>
+            <!-- Bottom Action Strip -->
+            <Border Grid.Row="1" Background="{DynamicResource Brush.SurfaceAlt}" BorderBrush="{DynamicResource Brush.Border}" BorderThickness="0,1,0,0" CornerRadius="0,0,7,7" Padding="16,10">
+                <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                    <Button x:Name="CancelButton" Content="Cancel" Style="{StaticResource Button.Secondary}" MinWidth="85" Height="28" IsCancel="True" Margin="0,0,8,0" Click="CancelClick" />
+                    <Button x:Name="DeleteButton" Content="Delete" Style="{StaticResource Button.Accent}" MinWidth="85" Height="28" IsDefault="True" Click="DeleteClick" />
+                </StackPanel>
+            </Border>
+        </Grid>
+    </Border>
 </Window>

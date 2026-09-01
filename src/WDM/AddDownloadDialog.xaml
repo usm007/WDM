@@ -8,34 +8,45 @@
         WindowStartupLocation="CenterScreen"
         ResizeMode="NoResize"
         ShowInTaskbar="True"
+        WindowStyle="None"
+        AllowsTransparency="True"
+        Background="Transparent"
+        MouseLeftButtonDown="Window_MouseLeftButtonDown"
         UseLayoutRounding="True"
         SnapsToDevicePixels="True"
         TextOptions.TextFormattingMode="Ideal"
         TextOptions.TextRenderingMode="Auto"
-        RenderOptions.ClearTypeHint="Enabled"
-        Background="{DynamicResource Brush.Surface}">
-    <Grid>
-        <Grid.RowDefinitions>
-            <RowDefinition Height="*" />    <!-- Content Body -->
-            <RowDefinition Height="Auto" /> <!-- Bottom Action Strip -->
-        </Grid.RowDefinitions>
+        RenderOptions.ClearTypeHint="Enabled">
+    <Border Background="{DynamicResource Brush.Surface}"
+            BorderBrush="{DynamicResource Brush.BorderStrong}"
+            BorderThickness="1"
+            CornerRadius="8"
+            SnapsToDevicePixels="True">
+        <Grid>
+            <Grid.RowDefinitions>
+                <RowDefinition Height="*" />    <!-- Content Body -->
+                <RowDefinition Height="Auto" /> <!-- Bottom Action Strip -->
+            </Grid.RowDefinitions>
 
-        <!-- Main Body -->
-        <StackPanel Grid.Row="0" Margin="16,14,16,12">
-            <!-- Header with Category Badge -->
-            <DockPanel Margin="0,0,0,12" LastChildFill="True">
-                <StackPanel x:Name="FileCategoryBadge" DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center" Margin="8,0,0,0">
-                    <TextBlock x:Name="FileCategoryIcon" Text="&#xF0224;" FontFamily="{StaticResource Font.Icon}"
-                               FontSize="13.5" Foreground="{DynamicResource Brush.TextDim}" VerticalAlignment="Center" Margin="0,0,4,0" />
-                    <TextBlock x:Name="FileCategoryLabel" Text="File" FontSize="11.5" FontWeight="Medium"
-                               Foreground="{DynamicResource Brush.TextDim}" VerticalAlignment="Center" />
-                </StackPanel>
-                <StackPanel VerticalAlignment="Center">
-                    <TextBlock Text="Add Download" FontSize="16" FontWeight="SemiBold" Foreground="{DynamicResource Brush.Text}" />
-                    <TextBlock Text="Enter the source link and destination settings." FontSize="11.5"
-                               Foreground="{DynamicResource Brush.TextMuted}" Margin="0,1.5,0,0" />
-                </StackPanel>
-            </DockPanel>
+            <!-- Main Body -->
+            <StackPanel Grid.Row="0" Margin="16,14,16,12">
+                <!-- Header with Category Badge and Close Button -->
+                <DockPanel Margin="0,0,0,12" LastChildFill="True">
+                    <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center">
+                        <StackPanel x:Name="FileCategoryBadge" Orientation="Horizontal" VerticalAlignment="Center" Margin="0,0,8,0">
+                            <TextBlock x:Name="FileCategoryIcon" Text="&#xF0224;" FontFamily="{StaticResource Font.Icon}"
+                                       FontSize="13.5" Foreground="{DynamicResource Brush.TextDim}" VerticalAlignment="Center" Margin="0,0,4,0" />
+                            <TextBlock x:Name="FileCategoryLabel" Text="File" FontSize="11.5" FontWeight="Medium"
+                                       Foreground="{DynamicResource Brush.TextDim}" VerticalAlignment="Center" />
+                        </StackPanel>
+                        <Button Style="{StaticResource Button.DialogClose}" Click="CancelClick" VerticalAlignment="Center" Margin="0,-4,-6,0" />
+                    </StackPanel>
+                    <StackPanel VerticalAlignment="Center">
+                        <TextBlock Text="Add Download" FontSize="16" FontWeight="SemiBold" Foreground="{DynamicResource Brush.Text}" />
+                        <TextBlock Text="Enter the source link and destination settings." FontSize="11.5"
+                                   Foreground="{DynamicResource Brush.TextMuted}" Margin="0,1.5,0,0" />
+                    </StackPanel>
+                </DockPanel>
 
             <!-- Form Fields Grid -->
             <Grid Margin="0,0,0,6">
@@ -214,7 +225,7 @@
         </StackPanel>
 
         <!-- Bottom Action Strip -->
-        <Border Grid.Row="1" Background="{DynamicResource Brush.SurfaceAlt}" BorderBrush="{DynamicResource Brush.Border}" BorderThickness="0,1,0,0" Padding="16,10">
+        <Border Grid.Row="1" Background="{DynamicResource Brush.SurfaceAlt}" BorderBrush="{DynamicResource Brush.Border}" BorderThickness="0,1,0,0" CornerRadius="0,0,7,7" Padding="16,10">
             <DockPanel LastChildFill="True">
                 <Button x:Name="DownloadLaterButton" DockPanel.Dock="Left" Content="Download later" Style="{StaticResource Button.Secondary}"
                         Click="DownloadLaterClick" MinWidth="105" Height="28" Margin="0,0,10,0" IsEnabled="False" />
@@ -230,4 +241,5 @@
             </DockPanel>
         </Border>
     </Grid>
+    </Border>
 </Window>

@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Diagnostics;
 using System.Windows;
 using System.Windows.Documents;
@@ -19,6 +19,14 @@ public partial class AboutDialog : Window
     {
         base.OnSourceInitialized(e);
         WDM.Services.ThemeService.ApplyTitleBar(this);
+    }
+
+    private void Window_MouseLeftButtonDown(object sender, System.Windows.Input.MouseButtonEventArgs e)
+    {
+        if (e.ButtonState == System.Windows.Input.MouseButtonState.Pressed)
+        {
+            DragMove();
+        }
     }
 
     private void Link_Click(object sender, RoutedEventArgs e)
