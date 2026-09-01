@@ -376,11 +376,42 @@ public sealed class DownloadEngine
             task.TotalBytes = meta.TotalBytes;
             session.CurrentUrlIndex = meta.UrlIndex;
             ApplyResumeCapability(task, meta);
-            if (string.IsNullOrWhiteSpace(task.FileName))
+            // Auto-upgrade filename if task has no name OR has a generic/un-probed placeholder name (e.g. .bin, download_*)
+            if (string.IsNullOrWhiteSpace(task.FileName) || IsGenericOrPlaceholderName(task.FileName, task.Url))
             {
-                task.FileName = meta.SuggestedName ?? DeriveName(task.Url, meta.ContentType);
-                task.FileName = SanitizeFileName(task.FileName);
-                task.FileName = EnsureUniqueName(task.SaveFolder, task.FileName, task.Id);
+                string? resolved = meta.SuggestedName;
+                if (string.IsNullOrWhiteSpace(resolved))
+                {
+                    string ext = FileNameHelper.ExtensionFromMime(meta.ContentType);
+                    if (!string.IsNullOrEmpty(ext))
+                    {
+                        if (!string.IsNullOrWhiteSpace(task.FileName) &&
+                            !task.FileName.StartsWith("download_", StringComparison.OrdinalIgnoreCase) &&
+                            !task.FileName.EndsWith(".bin", StringComparison.OrdinalIgnoreCase))
+                        {
+                            resolved = Path.ChangeExtension(task.FileName, ext);
+                        }
+                        else
+                        {
+                            resolved = DeriveName(task.Url, meta.ContentType);
+                        }
+                    }
+                    else
+                    {
+                        resolved = DeriveName(task.Url, meta.ContentType);
+                    }
+                }
+
+                if (!string.IsNullOrWhiteSpace(resolved) && !IsGenericOrPlaceholderName(resolved, task.Url))
+                {
+                    task.FileName = SanitizeFileName(resolved, referer: task.Referer);
+                    task.FileName = EnsureUniqueName(task.SaveFolder, task.FileName, task.Id);
+                }
+                else if (string.IsNullOrWhiteSpace(task.FileName))
+                {
+                    task.FileName = SanitizeFileName(resolved ?? DeriveName(task.Url, meta.ContentType), referer: task.Referer);
+                    task.FileName = EnsureUniqueName(task.SaveFolder, task.FileName, task.Id);
+                }
             }
             Directory.CreateDirectory(task.SaveFolder);
 
@@ -981,6 +1012,21 @@ public sealed class DownloadEngine
     {
         var task = session.Task;
         response.EnsureSuccessStatusCode();
+
+        if (IsGenericOrPlaceholderName(task.FileName, task.Url))
+        {
+            string? dispositionName = NameFromDisposition(response.Content.Headers.ContentDisposition);
+            if (!string.IsNullOrWhiteSpace(dispositionName))
+            {
+                string newName = SanitizeFileName(dispositionName, referer: task.Referer);
+                newName = EnsureUniqueName(task.SaveFolder, newName, task.Id);
+                if (!string.Equals(task.FileName, newName, StringComparison.OrdinalIgnoreCase))
+                {
+                    task.FileName = newName;
+                }
+            }
+        }
+
         await using var input = await response.Content.ReadAsStreamAsync(session.Token);
         await using var output = new FileStream(task.FullPath, FileMode.Create, FileAccess.Write, FileShare.Read);
 
@@ -1022,6 +1068,20 @@ public sealed class DownloadEngine
             }
 
             response.EnsureSuccessStatusCode();
+
+            if (existingLength == 0 && IsGenericOrPlaceholderName(task.FileName, task.Url))
+            {
+                string? dispositionName = NameFromDisposition(response.Content.Headers.ContentDisposition);
+                if (!string.IsNullOrWhiteSpace(dispositionName))
+                {
+                    string newName = SanitizeFileName(dispositionName, referer: task.Referer);
+                    newName = EnsureUniqueName(task.SaveFolder, newName, task.Id);
+                    if (!string.Equals(task.FileName, newName, StringComparison.OrdinalIgnoreCase))
+                    {
+                        task.FileName = newName;
+                    }
+                }
+            }
 
             bool isPartial = response.StatusCode == HttpStatusCode.PartialContent;
             if (!isPartial)
@@ -1324,6 +1384,43 @@ public sealed class DownloadEngine
             return false;
         string ext = Path.GetExtension(name);
         return ext.Length is >= 2 and <= 8;
+    }
+
+    /// <summary>
+    /// Checks whether a filename is an un-inspected generic fallback, placeholder, or extensionless temporary name
+    /// (e.g. download_2026-09-01_..., download.bin, uc.bin, or ending in .bin / .tmp) that should be upgraded
+    /// when the server announces the authoritative Content-Disposition or MIME Content-Type.
+    /// </summary>
+    public static bool IsGenericOrPlaceholderName(string? fileName, string? url = null)
+    {
+        if (string.IsNullOrWhiteSpace(fileName))
+            return true;
+
+        string name = fileName.Trim();
+        string ext = Path.GetExtension(name);
+
+        // 1. Files ending in .bin, .tmp, or missing extension completely
+        if (string.IsNullOrEmpty(ext) ||
+            ext.Equals(".bin", StringComparison.OrdinalIgnoreCase) ||
+            ext.Equals(".tmp", StringComparison.OrdinalIgnoreCase))
+            return true;
+
+        // 2. Generic timestamp/fallback names e.g. download_2026-09-01_..., download_20260901..., uc.bin
+        if (name.StartsWith("download_", StringComparison.OrdinalIgnoreCase) ||
+            name.StartsWith("download.", StringComparison.OrdinalIgnoreCase) ||
+            name.StartsWith("file_", StringComparison.OrdinalIgnoreCase))
+            return true;
+
+        // 3. If it matches the raw fallback name derived from an extensionless URL
+        if (!string.IsNullOrWhiteSpace(url))
+        {
+            string fallback = DeriveName(url);
+            if (string.Equals(name, fallback, StringComparison.OrdinalIgnoreCase) &&
+                (fallback.EndsWith(".bin", StringComparison.OrdinalIgnoreCase) || fallback.StartsWith("download_", StringComparison.OrdinalIgnoreCase)))
+                return true;
+        }
+
+        return false;
     }
 
     private static string FallbackName() =>
