@@ -1329,12 +1329,20 @@ public sealed class DownloadEngine
     private static string FallbackName() =>
         $"download_{DateTime.Now:yyyy-MM-dd_HHmmss}.bin";
 
-    public static string SanitizeFileName(string name)
+    public static string SanitizeFileName(string name, string? pageTitle = null, string? referer = null)
     {
-        foreach (var c in Path.GetInvalidFileNameChars())
-            name = name.Replace(c, '_');
-        name = name.Trim();
-        return string.IsNullOrWhiteSpace(name) ? $"download_{DateTime.Now:yyyyMMddHHmmss}.bin" : name;
+        string cleaned = FileNameHelper.SmartSanitizeFileName(name, pageTitle, referer);
+        return string.IsNullOrWhiteSpace(cleaned) ? $"download_{DateTime.Now:yyyyMMddHHmmss}.bin" : cleaned;
+    }
+
+    private static bool IsVideoFile(string name)
+    {
+        string ext = Path.GetExtension(name).ToLowerInvariant();
+        return ext switch
+        {
+            ".mp4" or ".mkv" or ".avi" or ".mov" or ".webm" or ".ts" or ".flv" or ".m4v" => true,
+            _ => false
+        };
     }
 
     private string EnsureUniqueName(string folder, string name, Guid taskId)

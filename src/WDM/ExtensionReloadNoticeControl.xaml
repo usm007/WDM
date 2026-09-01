@@ -1,0 +1,52 @@
+<UserControl x:Class="WDM.ExtensionReloadNoticeControl"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             UseLayoutRounding="True"
+             SnapsToDevicePixels="True"
+             TextOptions.TextFormattingMode="Ideal"
+             TextOptions.TextRenderingMode="Auto"
+             RenderOptions.ClearTypeHint="Enabled"
+             Background="{DynamicResource Brush.Surface}">
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="*" />    <!-- Content Body -->
+            <RowDefinition Height="Auto" /> <!-- Bottom Action Strip -->
+        </Grid.RowDefinitions>
+
+        <!-- Main Body -->
+        <StackPanel Grid.Row="0" Margin="20,18,20,16">
+            <!-- Header with Refresh Icon -->
+            <StackPanel Orientation="Horizontal" Margin="0,0,0,6">
+                <TextBlock Text="&#xF0457;" FontFamily="{StaticResource Font.Icon}" FontSize="20"
+                           Foreground="{DynamicResource Brush.Accent}" Margin="0,0,8,0" VerticalAlignment="Center" />
+                <TextBlock x:Name="TitleText" Text="WDM Extension Update" FontSize="18" FontWeight="SemiBold"
+                           Foreground="{DynamicResource Brush.Text}" VerticalAlignment="Center" />
+            </StackPanel>
+
+            <TextBlock x:Name="SubtitleText" Text="Please reload your browser extension to apply the latest updates."
+                       FontSize="12.5" Foreground="{DynamicResource Brush.TextMuted}" Margin="0,0,0,14" TextWrapping="Wrap" />
+
+            <TextBlock Text="Instructions" FontSize="13" FontWeight="SemiBold" Foreground="{DynamicResource Brush.Text}" Margin="0,0,0,6" />
+            <TextBlock Text="1. Open your browser extensions page (chrome://extensions or edge://extensions)." FontSize="12" Foreground="{DynamicResource Brush.TextDim}" Margin="0,0,0,3" />
+            <TextBlock Text="2. Find 'WDM Download Catcher' and click the reload icon (🔄) on its card." FontSize="12" Foreground="{DynamicResource Brush.TextDim}" Margin="0,0,0,2" />
+        </StackPanel>
+
+        <!-- Bottom Action Strip -->
+        <Border Grid.Row="1" Background="{DynamicResource Brush.SurfaceAlt}" BorderBrush="{DynamicResource Brush.Border}" BorderThickness="0,1,0,0" Padding="16,10">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+
+                <TextBlock x:Name="FeedbackText" Grid.Column="0" Text="" FontSize="12" FontFamily="{StaticResource Font.App}" Foreground="{DynamicResource Brush.Accent}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" Margin="0,0,12,0" />
+
+                <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                    <Button Content="Copy Path" Style="{StaticResource Button.Secondary}" Click="CopyPath_Click" Height="28" Padding="10,0" Margin="0,0,6,0" />
+                    <Button Content="Open Extensions" Style="{StaticResource Button.Secondary}" Click="OpenExtensions_Click" Height="28" Padding="10,0" Margin="0,0,6,0" />
+                    <Button Content="Got It" Style="{StaticResource Button.Accent}" Click="Close_Click" MinWidth="80" Height="28" />
+                </StackPanel>
+            </Grid>
+        </Border>
+    </Grid>
+</UserControl>

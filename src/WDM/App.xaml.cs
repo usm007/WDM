@@ -24,10 +24,23 @@ public partial class App : Application
     [DllImport("user32.dll")]
     private static extern bool ShowWindowAsync(IntPtr hWnd, int nCmdShow);
 
+    [DllImport("user32.dll", SetLastError = true)]
+    private static extern bool SetProcessDpiAwarenessContext(IntPtr dpiContext);
+
+    private static readonly IntPtr DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2 = new IntPtr(-4);
     private const int SW_RESTORE = 9;
 
     protected override void OnStartup(StartupEventArgs e)
     {
+        try
+        {
+            SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
+        }
+        catch
+        {
+            // Fallback on older Windows builds
+        }
+
         AppDomain.CurrentDomain.UnhandledException += (s, args) =>
         {
             LogException(args.ExceptionObject as Exception);

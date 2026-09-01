@@ -16,6 +16,12 @@ public partial class YouTubeSignInWindow : Window
         Loaded += OnLoaded;
     }
 
+    protected override void OnSourceInitialized(EventArgs e)
+    {
+        base.OnSourceInitialized(e);
+        Services.ThemeService.ApplyTitleBar(this);
+    }
+
     private async void OnLoaded(object sender, RoutedEventArgs e)
     {
         // Pre-flight: verify an installed WebView2 Runtime exists BEFORE creating any

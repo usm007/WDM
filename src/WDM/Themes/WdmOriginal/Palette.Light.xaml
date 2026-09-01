@@ -57,7 +57,7 @@
 
     <!-- Zones -->
     <Color x:Key="Color.Track">#E6EBF2</Color>
-    <Color x:Key="Color.Sidebar">#EAEFF7</Color>
+    <Color x:Key="Color.Sidebar">#FFFFFF</Color>
     <Color x:Key="Color.RowAlt">#FBFCFE</Color>
     <Color x:Key="Color.RowHover">#F4F7FC</Color>
     <Color x:Key="Color.RowSelected">#EAF3FF</Color>

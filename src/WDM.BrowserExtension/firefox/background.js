@@ -155,17 +155,32 @@ webext.downloads.onCreated.addListener(async (item) => {
     const cookieHeader = await getCookieHeaderForUrl(downloadUrl, item.referrer);
     if (cookieHeader) headers["Cookie"] = cookieHeader;
     if (item.referrer) headers["Referer"] = item.referrer;
-    await sendToWdm(downloadUrl, item.filename, item.referrer, headers);
+
+    let pageTitle = "";
+    try {
+      const tabs = await webext.tabs.query({ active: true, currentWindow: true });
+      if (tabs && tabs[0] && tabs[0].title) {
+        pageTitle = tabs[0].title;
+      }
+    } catch {}
+
+    await sendToWdm(downloadUrl, item.filename, item.referrer, headers, pageTitle);
   } catch (err) {
     console.warn("WDM handoff failed:", err);
   }
 });
 
-async function sendToWdm(url, filename, referrer, headers) {
+async function sendToWdm(url, filename, referrer, headers, pageTitle) {
   const response = await fetch(`${WDM_HOST}/download`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ url, fileName: filename || null, referer: referrer || null, headers: headers || {} }),
+    body: JSON.stringify({
+      url,
+      fileName: filename || null,
+      referer: referrer || null,
+      headers: headers || {},
+      pageTitle: pageTitle || null
+    }),
   });
   if (!response.ok) {
     throw new Error(`WDM responded ${response.status}`);

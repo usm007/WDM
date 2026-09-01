@@ -16,8 +16,6 @@ namespace WDM;
 /// </summary>
 public partial class TrayProgressPanel : Window, INotifyPropertyChanged
 {
-    private const double PillWidth = 118;
-
     private readonly MainViewModel _viewModel;
     private readonly DispatcherTimer _refreshTimer;
     private DownloadTask? _task;
@@ -48,7 +46,6 @@ public partial class TrayProgressPanel : Window, INotifyPropertyChanged
             _task = value;
             OnPropertyChanged(nameof(Task));
             OnPropertyChanged(nameof(StatusText));
-            OnPropertyChanged(nameof(FillWidth));
         }
     }
 
@@ -62,10 +59,7 @@ public partial class TrayProgressPanel : Window, INotifyPropertyChanged
         }
     }
 
-    /// <summary>Width of the green fill inside the pill (relative to progress).</summary>
-    public double FillWidth => PillWidth * (_task?.Progress ?? 0) / 100.0;
-
-    /// <summary>Shows the pill snapped to the nearest side edge (default bottom-right corner).</summary>
+    /// <summary>Shows the indicator snapped to the nearest side edge (default bottom-right corner).</summary>
     public void ShowPanel(DownloadTask task)
     {
         Task = task;
@@ -99,7 +93,7 @@ public partial class TrayProgressPanel : Window, INotifyPropertyChanged
         }
     }
 
-    /// <summary>Sticks the pill to the right edge on release, keeping its vertical position.</summary>
+    /// <summary>Sticks the indicator to the right edge on release, keeping its vertical position.</summary>
     private void SnapToEdge()
     {
         UpdateLayout();
@@ -109,14 +103,6 @@ public partial class TrayProgressPanel : Window, INotifyPropertyChanged
         _viewModel.Settings.ProgressPanelLeft = Left;
         _viewModel.Settings.ProgressPanelTop = Top;
         _viewModel.PersistSettings();
-    }
-
-    private void Window_SizeChanged(object sender, SizeChangedEventArgs e)
-    {
-        var r = new Rect(0, 0, ClipGrid.ActualWidth, ClipGrid.ActualHeight);
-        var clip = new System.Windows.Media.RectangleGeometry(r, 10, 10);
-        clip.Freeze();
-        ClipGrid.Clip = clip;
     }
 
     /// <summary>Smooth dragging via mouse capture: the pill tracks the cursor's absolute

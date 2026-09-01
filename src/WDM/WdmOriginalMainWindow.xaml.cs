@@ -21,6 +21,7 @@ public partial class WdmOriginalMainWindow : Window
     private TrayProgressPanel? _progressPanel;
     private bool _exiting;
     private DownloadCompleteDialog? _completeDialog;
+    private RefreshLinkDialog? _activeRefreshDialog;
 
     public WdmOriginalMainWindow()
     {
@@ -54,8 +55,16 @@ public partial class WdmOriginalMainWindow : Window
             });
         };
 
-        _captureServer = new CaptureServer((url, name, referer, headers) =>
-            _dispatcher.BeginInvoke(() => ShowAddDialog(url, name, referer, headers, fromCapture: true)));
+        _captureServer = new CaptureServer((url, name, referer, headers, pageTitle) =>
+            _dispatcher.BeginInvoke(() =>
+            {
+                if (_activeRefreshDialog != null && _activeRefreshDialog.IsLoaded)
+                {
+                    _activeRefreshDialog.OnLinkCaptured(url, headers);
+                    return;
+                }
+                ShowAddDialog(url, name, referer, headers, fromCapture: true, pageTitle: pageTitle);
+            }));
         _captureServer.Start();
 
         _tray = new TrayIcon();
@@ -224,7 +233,7 @@ public partial class WdmOriginalMainWindow : Window
 
     private AddDownloadDialog? _activeAddDialog;
 
-    private void ShowAddDialog(string? prefillUrl = null, string? prefillFileName = null, string? prefillReferer = null, Dictionary<string, string>? prefillHeaders = null, bool fromCapture = false)
+    private void ShowAddDialog(string? prefillUrl = null, string? prefillFileName = null, string? prefillReferer = null, Dictionary<string, string>? prefillHeaders = null, bool fromCapture = false, string? pageTitle = null)
     {
         if (!string.IsNullOrWhiteSpace(prefillUrl) && _viewModel.ExistingUrl(prefillUrl))
             return;
@@ -261,8 +270,23 @@ public partial class WdmOriginalMainWindow : Window
     private void ShowRefreshLink(DownloadTask task)
     {
         var dialog = new RefreshLinkDialog(task) { Owner = this };
-        if (dialog.ShowDialog() == true)
-            _viewModel.ApplyLinkRefresh(task, dialog.NewUrl);
+        _activeRefreshDialog = dialog;
+        try
+        {
+            if (dialog.ShowDialog() == true)
+            {
+                if (dialog.CapturedHeaders is not null && dialog.CapturedHeaders.Count > 0)
+                {
+                    foreach (var kv in dialog.CapturedHeaders)
+                        task.Headers[kv.Key] = kv.Value;
+                }
+                _viewModel.ApplyLinkRefresh(task, dialog.NewUrl);
+            }
+        }
+        finally
+        {
+            _activeRefreshDialog = null;
+        }
     }
 
     private void Root_DragOver(object sender, DragEventArgs e)

@@ -9,7 +9,8 @@
     <UseWindowsForms>true</UseWindowsForms>
     <ApplicationIcon>Assets\WDM.ico</ApplicationIcon>
     <ApplicationManifest>app.manifest</ApplicationManifest>
-    <Version>2.5.1.0</Version>
+    <ApplicationHighDpiMode>PerMonitorV2</ApplicationHighDpiMode>
+    <Version>2.5.2.0</Version>
     <AssemblyTitle>WDM</AssemblyTitle>
     <Product>WDM</Product>
     <FileDescription>WDM — fast, multi-threaded download manager for Windows</FileDescription>

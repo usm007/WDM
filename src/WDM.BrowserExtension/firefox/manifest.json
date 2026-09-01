@@ -6,7 +6,8 @@
   "permissions": [
     "downloads",
     "storage",
-    "cookies"
+    "cookies",
+    "tabs"
   ],
   "host_permissions": [
     "<all_urls>",

@@ -1,16 +1,22 @@
 <Window x:Class="WDM.MainWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:local="clr-namespace:WDM"
         xmlns:vm="clr-namespace:WDM.ViewModels"
         Title="Windows Download Manager"
         Icon="Assets/WDM.ico"
-        Width="918"
-        Height="560"
-        MinWidth="760"
-        MinHeight="420"
+        Width="792"
+        Height="490"
+        MinWidth="650"
+        MinHeight="360"
         WindowStartupLocation="CenterScreen"
         UseLayoutRounding="True"
         SnapsToDevicePixels="True"
+        TextOptions.TextFormattingMode="Ideal"
+        TextOptions.TextRenderingMode="Auto"
+        TextOptions.TextHintingMode="Auto"
+        RenderOptions.ClearTypeHint="Enabled"
+        RenderOptions.BitmapScalingMode="HighQuality"
         Background="{DynamicResource Brush.Bg}">
     <Window.Resources>
         <vm:TaskStatusToColorConverter x:Key="StatusColor" />
@@ -22,38 +28,21 @@
         <vm:InverseBooleanToVisibilityConverter x:Key="InverseBoolToVis" />
         <vm:RetryVisibilityConverter x:Key="RetryVis" />
         <vm:NullToVisibilityConverter x:Key="NullToVis" />
+        <vm:InverseNullToVisibilityConverter x:Key="InverseNullToVis" />
         <BooleanToVisibilityConverter x:Key="BoolToVis" />
 
-        <Style x:Key="ProgressBar.IDM" TargetType="ProgressBar">
-            <Setter Property="Height" Value="6" />
-            <Setter Property="Background" Value="{DynamicResource Brush.Track}" />
-            <Setter Property="Foreground" Value="{DynamicResource Brush.Accent}" />
-            <Setter Property="Template">
-                <Setter.Value>
-                    <ControlTemplate TargetType="ProgressBar">
-                        <Grid x:Name="Root" ClipToBounds="True">
-                            <Border Background="{TemplateBinding Background}" CornerRadius="3" />
-                            <Border x:Name="PART_Indicator"
-                                    Background="{TemplateBinding Foreground}"
-                                    CornerRadius="3"
-                                    HorizontalAlignment="Left" />
-                        </Grid>
-                    </ControlTemplate>
-                </Setter.Value>
-            </Setter>
-        </Style>
-
-        <!-- Flat sidebar link (hover reveal), used by bottom-of-sidebar actions -->
+        <!-- Sidebar action link button (e.g. Browser Integration) -->
         <Style x:Key="SidebarLinkButton" TargetType="Button">
             <Setter Property="Background" Value="Transparent" />
             <Setter Property="BorderThickness" Value="0" />
-            <Setter Property="Padding" Value="8,6" />
+            <Setter Property="Padding" Value="5,4" />
             <Setter Property="HorizontalContentAlignment" Value="Left" />
             <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="SnapsToDevicePixels" Value="True" />
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="Button">
-                        <Border x:Name="Bd" Background="{TemplateBinding Background}" CornerRadius="4" Padding="{TemplateBinding Padding}">
+                        <Border x:Name="Bd" Background="{TemplateBinding Background}" CornerRadius="5" Padding="{TemplateBinding Padding}">
                             <ContentPresenter VerticalAlignment="Center" />
                         </Border>
                         <ControlTemplate.Triggers>
@@ -82,20 +71,20 @@
 
     <Grid AllowDrop="True" DragOver="Root_DragOver" Drop="Root_Drop">
         <Grid.RowDefinitions>
-            <RowDefinition Height="Auto" /> <!-- 0. IDM Action Toolbar Ribbon (directly at the top) -->
-            <RowDefinition Height="1" />    <!-- 1. Divider Line below Ribbon -->
-            <RowDefinition Height="*" />    <!-- 2. Main Body: Tree Sidebar + Vertical Divider + Download Grid -->
-            <RowDefinition Height="Auto" /> <!-- 3. Bottom Status Bar with Top Divider -->
+            <RowDefinition Height="Auto" /> <!-- 0. Top Action Command Bar Strip -->
+            <RowDefinition Height="1" />    <!-- 1. 1px Subtle Separator -->
+            <RowDefinition Height="*" />    <!-- 2. Main Workspace: Sidebar + Separator + Download Grid + Detail Pane -->
+            <RowDefinition Height="Auto" /> <!-- 3. Bottom Status Bar Strip -->
         </Grid.RowDefinitions>
 
-        <!-- 1. Action Toolbar Ribbon (Directly below Title Bar with clean spacing and +20% larger buttons total) -->
-        <Grid Grid.Row="0" Margin="10,6,10,6">
+        <!-- 1. Top Command Bar Strip (Deeper Gradient Surface) -->
+        <Border Grid.Row="0" Background="{DynamicResource Brush.CommandBarBg}" Padding="10,5,10,5">
             <DockPanel LastChildFill="True">
-                <!-- Right-aligned Utilities: Search Box, Category Indicator, Divider, Settings, Theme, About -->
-                <StackPanel Orientation="Horizontal" DockPanel.Dock="Right" VerticalAlignment="Center">
-                    <!-- Search Box (+20% size total) -->
-                    <Border x:Name="SearchBoxBorder" VerticalAlignment="Center" Margin="0,0,8,0" Height="33" Width="200"
-                            Background="{DynamicResource Brush.Surface}" BorderBrush="{DynamicResource Brush.Border}" BorderThickness="1" CornerRadius="6">
+                <!-- Right Action / Utility Area -->
+                <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center">
+                    <!-- Search Input Box with Filter Funnel -->
+                    <Border Width="180" Height="30" Margin="0,0,6,0" VerticalAlignment="Center"
+                            Background="{DynamicResource Brush.Surface}" BorderBrush="{DynamicResource Brush.Border}" BorderThickness="1" CornerRadius="5">
                         <Border.Style>
                             <Style TargetType="Border">
                                 <Style.Triggers>
@@ -111,14 +100,14 @@
                                 <ColumnDefinition Width="Auto" />
                                 <ColumnDefinition Width="Auto" />
                             </Grid.ColumnDefinitions>
-                            <TextBox Width="Auto" Height="30" Background="Transparent" BorderThickness="0" Padding="10,0" FontSize="13"
+                            <TextBox x:Name="SearchBox" Width="Auto" Height="28" Background="Transparent" BorderThickness="0" Padding="8,0,4,0" FontSize="12"
                                      VerticalContentAlignment="Center" Text="{Binding SearchText, UpdateSourceTrigger=PropertyChanged}"
                                      CaretBrush="{DynamicResource Brush.Accent}"
-                                     ToolTip="Search downloads list">
+                                     ToolTip="Search downloads (Ctrl+F)">
                                 <TextBox.Template>
                                     <ControlTemplate TargetType="TextBox">
                                         <Grid>
-                                            <TextBlock Text="Search downloads…" FontSize="13" Margin="10,0"
+                                            <TextBlock Text="Search downloads…" FontSize="12" Margin="8,0"
                                                        Foreground="{DynamicResource Brush.TextMuted}" VerticalAlignment="Center"
                                                        Visibility="{Binding Text.IsEmpty, RelativeSource={RelativeSource TemplatedParent}, Converter={StaticResource BoolToVis}}" />
                                             <ScrollViewer x:Name="PART_ContentHost" Margin="0" VerticalAlignment="Center" />
@@ -126,184 +115,133 @@
                                     </ControlTemplate>
                                 </TextBox.Template>
                             </TextBox>
-                            <Button Grid.Column="1" Style="{StaticResource Button.Icon}" Command="{Binding ClearSearchCommand}"
-                                     Visibility="{Binding HasSearchText, Converter={StaticResource BoolToVis}}" Width="20" Height="20" ToolTip="Clear search" Margin="2,0">
+
+                            <!-- Clear Search text button (when searching) -->
+                            <Button Grid.Column="1" Style="{StaticResource Button.RowAction}" Command="{Binding ClearSearchCommand}"
+                                    Visibility="{Binding HasSearchText, Converter={StaticResource BoolToVis}}" Width="18" Height="18" ToolTip="Clear search" Margin="1,0">
                                 <TextBlock Text="&#xF0349;" FontFamily="{StaticResource Font.Icon}" FontSize="11" Foreground="{DynamicResource Brush.TextDim}" />
                             </Button>
-                            <TextBlock Grid.Column="2" Text="&#xF0236;" FontFamily="{StaticResource Font.Icon}" FontSize="13"
-                                       Foreground="{DynamicResource Brush.TextMuted}" Margin="4,0,8,0" VerticalAlignment="Center" />
+
+                            <!-- Filter Funnel Icon Button -->
+                            <Button Grid.Column="2" Style="{StaticResource Button.Icon}" Width="24" Height="24" Margin="0,0,3,0" ToolTip="Filter downloads">
+                                <TextBlock Text="&#xF0232;" FontFamily="{StaticResource Font.Icon}" FontSize="13.5"
+                                           Foreground="{DynamicResource Brush.TextMuted}" VerticalAlignment="Center" HorizontalAlignment="Center" />
+                            </Button>
                         </Grid>
                     </Border>
 
-                    <!-- Search context indicator -->
-                    <Border Background="{DynamicResource Brush.AccentSoft}" CornerRadius="10" Padding="8,2" Margin="0,0,6,0"
-                            Visibility="{Binding SearchContextText, Converter={StaticResource TextToVis}}" VerticalAlignment="Center">
-                        <TextBlock Text="{Binding SearchContextText}" FontSize="11" FontWeight="Medium"
-                                   Foreground="{DynamicResource Brush.TextDim}" VerticalAlignment="Center" />
-                    </Border>
-
-                    <!-- Thin Divider before utility controls -->
-                    <Border Width="1" Height="26" Background="{DynamicResource Brush.Border}" Margin="6,0,8,0" VerticalAlignment="Center" />
-
-                    <!-- Utility Controls (normalized 19.5px icons) -->
-                    <Button Style="{StaticResource Button.IDMUtil}" Command="{Binding OptionsCommand}" ToolTip="Settings (Ctrl+,)">
-                        <TextBlock Text="&#xF08BB;" FontFamily="{StaticResource Font.Icon}" FontSize="19.5" Foreground="{DynamicResource Brush.TextDim}" />
+                    <!-- Utility Controls: Settings, Theme, About -->
+                    <Button Style="{StaticResource Button.CommandBarIcon}" Command="{Binding OptionsCommand}" ToolTip="Settings (Ctrl+,)">
+                        <TextBlock Text="&#xF08BB;" FontFamily="{StaticResource Font.Icon}" FontSize="16" Foreground="{DynamicResource Brush.TextDim}" />
                     </Button>
 
-                    <Button Style="{StaticResource Button.IDMUtil}" Command="{Binding ToggleThemeCommand}" ToolTip="{Binding ThemeButtonToolTip}">
-                        <TextBlock Text="{Binding ThemeButtonIcon}" FontFamily="{StaticResource Font.Icon}" FontSize="19.5" Foreground="{DynamicResource Brush.TextDim}" />
+                    <Button Style="{StaticResource Button.CommandBarIcon}" Command="{Binding ToggleThemeCommand}" ToolTip="{Binding ThemeButtonToolTip}">
+                        <TextBlock Text="{Binding ThemeButtonIcon}" FontFamily="{StaticResource Font.Icon}" FontSize="16" Foreground="{DynamicResource Brush.TextDim}" />
                     </Button>
 
-                    <Button Style="{StaticResource Button.IDMUtil}" Command="{Binding AboutCommand}" ToolTip="About WDM">
-                        <TextBlock Text="&#xF02FD;" FontFamily="{StaticResource Font.Icon}" FontSize="19.5" Foreground="{DynamicResource Brush.TextDim}" />
+                    <Button Style="{StaticResource Button.CommandBarIcon}" Command="{Binding AboutCommand}" ToolTip="About Windows Download Manager">
+                        <TextBlock Text="&#xF02FD;" FontFamily="{StaticResource Font.Icon}" FontSize="16" Foreground="{DynamicResource Brush.Accent}" />
                     </Button>
                 </StackPanel>
 
-                <!-- Left Action Toolbar Button Groups -->
+                <!-- Left Action Controls: + Add Download & Stacked Action Buttons -->
                 <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                    <!-- Group 1. Primary Action: Add Download (Outlined ghost style, slim breadth) -->
-                    <Button Style="{StaticResource Button.IDMPrimary}" MinWidth="145" Height="33" Command="{Binding OpenAddDialogCommand}" ToolTip="Add Download (Ctrl+N)">
-                        <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" VerticalAlignment="Center">
-                            <TextBlock Text="&#xF1100;" FontFamily="{StaticResource Font.Icon}" FontSize="16" Margin="0,0,7,0" VerticalAlignment="Center" />
-                            <TextBlock Text="Add Download" FontSize="12.5" FontWeight="SemiBold" VerticalAlignment="Center" />
+                    <!-- + Add Download (Outlined Button with Blue Icon & Text) -->
+                    <Button Style="{StaticResource Button.AddDownloadPrimary}" Command="{Binding OpenAddDialogCommand}" ToolTip="Add Download (Ctrl+N)">
+                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                            <TextBlock Text="&#xF0415;" FontFamily="{StaticResource Font.Icon}" FontSize="14" Foreground="{DynamicResource Brush.Accent}" Margin="0,0,5,0" VerticalAlignment="Center" />
+                            <TextBlock Text="Add Download" FontSize="12.5" FontWeight="SemiBold" Foreground="{DynamicResource Brush.Accent}" VerticalAlignment="Center" />
                         </StackPanel>
                     </Button>
 
-                    <!-- Thin Divider -->
-                    <Border Width="1" Height="26" Background="{DynamicResource Brush.Border}" Margin="12,0" VerticalAlignment="Center" />
+                    <!-- Vertical Separator Line 1 -->
+                    <Rectangle Width="1" Height="20" Fill="{DynamicResource Brush.Border}" Margin="8,0,6,0" VerticalAlignment="Center" />
 
-                    <!-- Group 2. Download Execution Controls (+20% size total) -->
-                    <Button Style="{StaticResource Button.IDMStacked}" Command="{Binding ResumeCommand}" ToolTip="Resume selected download (Enter)">
-                        <StackPanel Orientation="Vertical" VerticalAlignment="Center" Margin="0,2,0,0">
-                            <TextBlock Text="&#xF040A;" FontFamily="{StaticResource Font.Icon}" FontSize="19.5" Foreground="{DynamicResource Brush.TextDim}" HorizontalAlignment="Center" />
-                            <TextBlock Text="Resume" FontSize="11" FontWeight="SemiBold" Foreground="{DynamicResource Brush.Text}" HorizontalAlignment="Center" />
+                    <!-- Action 1: Resume -->
+                    <Button Style="{StaticResource Button.ToolbarVertical}" Command="{Binding BulkResumeCommand}" ToolTip="Resume download(s) (Enter)">
+                        <StackPanel Orientation="Vertical" HorizontalAlignment="Center" VerticalAlignment="Center">
+                            <TextBlock Text="&#xF040A;" FontFamily="{StaticResource Font.Icon}" FontSize="16.5" HorizontalAlignment="Center" Foreground="{DynamicResource Brush.TextDim}" />
+                            <TextBlock Text="Resume" FontSize="10" FontWeight="Medium" HorizontalAlignment="Center" Margin="0,1.5,0,0" Foreground="{DynamicResource Brush.TextDim}" />
                         </StackPanel>
                     </Button>
 
-                    <Button Style="{StaticResource Button.IDMStacked}" Command="{Binding PauseCommand}" ToolTip="Pause selected download (Space)">
-                        <StackPanel Orientation="Vertical" VerticalAlignment="Center" Margin="0,2,0,0">
-                            <TextBlock Text="&#xF03E4;" FontFamily="{StaticResource Font.Icon}" FontSize="19.5" Foreground="{DynamicResource Brush.TextDim}" HorizontalAlignment="Center" />
-                            <TextBlock Text="Pause" FontSize="11" FontWeight="SemiBold" Foreground="{DynamicResource Brush.Text}" HorizontalAlignment="Center" />
+                    <!-- Action 2: Pause -->
+                    <Button Style="{StaticResource Button.ToolbarVertical}" Command="{Binding BulkPauseCommand}" ToolTip="Pause download(s) (Space)">
+                        <StackPanel Orientation="Vertical" HorizontalAlignment="Center" VerticalAlignment="Center">
+                            <TextBlock Text="&#xF03E4;" FontFamily="{StaticResource Font.Icon}" FontSize="16.5" HorizontalAlignment="Center" Foreground="{DynamicResource Brush.TextDim}" />
+                            <TextBlock Text="Pause" FontSize="10" FontWeight="Medium" HorizontalAlignment="Center" Margin="0,1.5,0,0" Foreground="{DynamicResource Brush.TextDim}" />
                         </StackPanel>
                     </Button>
 
-                    <Button Style="{StaticResource Button.IDMStacked}" Command="{Binding PauseAllCommand}" ToolTip="Stop / Pause all active downloads">
-                        <StackPanel Orientation="Vertical" VerticalAlignment="Center" Margin="0,2,0,0">
-                            <TextBlock Text="&#xF04DB;" FontFamily="{StaticResource Font.Icon}" FontSize="19.5" Foreground="{DynamicResource Brush.TextDim}" HorizontalAlignment="Center" />
-                            <TextBlock Text="Stop All" FontSize="11" FontWeight="SemiBold" Foreground="{DynamicResource Brush.Text}" HorizontalAlignment="Center" />
+                    <!-- Action 3: Stop All -->
+                    <Button Style="{StaticResource Button.ToolbarVertical}" Command="{Binding PauseAllCommand}" ToolTip="Stop all active downloads">
+                        <StackPanel Orientation="Vertical" HorizontalAlignment="Center" VerticalAlignment="Center">
+                            <TextBlock Text="&#xF04DB;" FontFamily="{StaticResource Font.Icon}" FontSize="16.5" HorizontalAlignment="Center" Foreground="{DynamicResource Brush.TextDim}" />
+                            <TextBlock Text="Stop All" FontSize="10" FontWeight="Medium" HorizontalAlignment="Center" Margin="0,1.5,0,0" Foreground="{DynamicResource Brush.TextDim}" />
                         </StackPanel>
                     </Button>
 
-                    <!-- Thin Divider -->
-                    <Border Width="1" Height="26" Background="{DynamicResource Brush.Border}" Margin="12,0" VerticalAlignment="Center" />
+                    <!-- Vertical Separator Line 2 -->
+                    <Rectangle Width="1" Height="20" Fill="{DynamicResource Brush.Border}" Margin="6,0,6,0" VerticalAlignment="Center" />
 
-                    <!-- Group 3. Deletion Tools (+20% size total) -->
-                    <Button Style="{StaticResource Button.IDMStacked}" Command="{Binding RemoveCommand}" ToolTip="Delete (Del)">
-                        <StackPanel Orientation="Vertical" VerticalAlignment="Center" Margin="0,2,0,0">
-                            <TextBlock Text="&#xF0A7A;" FontFamily="{StaticResource Font.Icon}" FontSize="19.5" Foreground="{DynamicResource Brush.TextDim}" HorizontalAlignment="Center" />
-                            <TextBlock Text="Delete" FontSize="11" FontWeight="SemiBold" Foreground="{DynamicResource Brush.Text}" HorizontalAlignment="Center" />
+                    <!-- Action 4: Delete -->
+                    <Button Style="{StaticResource Button.ToolbarVertical}" Command="{Binding BulkRemoveCommand}" ToolTip="Delete selected download(s) (Del)">
+                        <StackPanel Orientation="Vertical" HorizontalAlignment="Center" VerticalAlignment="Center">
+                            <TextBlock Text="&#xF0A7A;" FontFamily="{StaticResource Font.Icon}" FontSize="16.5" HorizontalAlignment="Center" Foreground="{DynamicResource Brush.TextDim}" />
+                            <TextBlock Text="Delete" FontSize="10" FontWeight="Medium" HorizontalAlignment="Center" Margin="0,1.5,0,0" Foreground="{DynamicResource Brush.TextDim}" />
                         </StackPanel>
                     </Button>
 
-                    <Button Style="{StaticResource Button.IDMStacked}" Command="{Binding ClearCompletedCommand}" ToolTip="Remove completed downloads from list">
-                        <StackPanel Orientation="Vertical" VerticalAlignment="Center" Margin="0,2,0,0">
-                            <TextBlock Text="&#xF0C62;" FontFamily="{StaticResource Font.Icon}" FontSize="19.5" Foreground="{DynamicResource Brush.TextDim}" HorizontalAlignment="Center" />
-                            <TextBlock Text="Clear" FontSize="11" FontWeight="SemiBold" Foreground="{DynamicResource Brush.Text}" HorizontalAlignment="Center" />
+                    <!-- Action 5: Clear (Eraser Icon) -->
+                    <Button Style="{StaticResource Button.ToolbarVertical}" Command="{Binding ClearCompletedCommand}" ToolTip="Clear finished downloads">
+                        <StackPanel Orientation="Vertical" HorizontalAlignment="Center" VerticalAlignment="Center">
+                            <TextBlock Text="&#xF01FC;" FontFamily="{StaticResource Font.Icon}" FontSize="16.5" HorizontalAlignment="Center" Foreground="{DynamicResource Brush.TextDim}" />
+                            <TextBlock Text="Clear" FontSize="10" FontWeight="Medium" HorizontalAlignment="Center" Margin="0,1.5,0,0" Foreground="{DynamicResource Brush.TextDim}" />
                         </StackPanel>
                     </Button>
                 </StackPanel>
             </DockPanel>
-        </Grid>
+        </Border>
 
         <!-- 2. Ribbon Divider Line -->
         <Border Grid.Row="1" Height="1" Background="{DynamicResource Brush.Border}" SnapsToDevicePixels="True" UseLayoutRounding="True" />
 
-        <!-- 3. Main Body (Categories Tree Sidebar + Vertical Divider + Seamless IDM Download DataGrid Table) -->
+        <!-- 3. Main Workspace (Categories Tree Sidebar + Vertical Divider + Download Grid + Detail Pane) -->
         <Grid Grid.Row="2">
             <Grid.ColumnDefinitions>
-                <ColumnDefinition x:Name="SidebarColumn" Width="165" />
-                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition x:Name="SidebarColumn" Width="118" />
+                <ColumnDefinition Width="1" />
                 <ColumnDefinition Width="*" />
             </Grid.ColumnDefinitions>
 
-            <!-- Categories Tree Sidebar — tighter & better styled -->
-            <Border Grid.Column="0" Background="{DynamicResource Brush.Sidebar}" Padding="4,4">
-                <DockPanel LastChildFill="True">
-                    
-                    <!-- Bottom App Options (Moved from Ribbon) -->
-                    <StackPanel DockPanel.Dock="Bottom" Margin="4,10,4,4">
-                        <Border Height="1" Background="{DynamicResource Brush.Border}" Margin="0,0,0,8" Opacity="0.3" />
-
-
-                        
-                        <Button Click="MenuExtension_Click" ToolTip="Browser Extension Setup" Style="{StaticResource SidebarLinkButton}">
-                            <StackPanel Orientation="Horizontal">
-                                <TextBlock Text="&#xF059F;" FontFamily="{StaticResource Font.Icon}" FontSize="14" Foreground="{DynamicResource Brush.TextDim}" Margin="0,0,8,0" VerticalAlignment="Center" />
-                                <TextBlock Text="Browser Integration" FontSize="11" Foreground="{DynamicResource Brush.TextMuted}" VerticalAlignment="Center" />
-                            </StackPanel>
-                        </Button>
-
-                    </StackPanel>
-
-                    <ListBox ItemsSource="{Binding Filters}"
-                             SelectedValue="{Binding SelectedFilter, Mode=TwoWay}"
-                             SelectedValuePath="Kind"
-                             Style="{StaticResource ListBox.Sidebar}">
+            <!-- Navigation Sidebar (Categories & Views) -->
+            <Border Grid.Column="0" Background="{DynamicResource Brush.Sidebar}" Padding="4,4,4,6">
+                <!-- Navigation Categories and Views List -->
+                <ListBox ItemsSource="{Binding Filters}"
+                         SelectedValue="{Binding SelectedFilter, Mode=TwoWay}"
+                         SelectedValuePath="Kind"
+                         Style="{StaticResource ListBox.Sidebar}">
                     <ListBox.ItemTemplate>
                         <DataTemplate>
-                            <Grid Margin="0,1">
-                                <Grid.Style>
-                                    <Style TargetType="Grid">
-                                        <Setter Property="ToolTip" Value="{Binding Name}" />
-                                        <Style.Triggers>
-                                            <DataTrigger Binding="{Binding IsHeader}" Value="True">
-                                                <Setter Property="ToolTip" Value="{x:Null}" />
-                                            </DataTrigger>
-                                            <DataTrigger Binding="{Binding IsSeparator}" Value="True">
-                                                <Setter Property="ToolTip" Value="{x:Null}" />
-                                            </DataTrigger>
-                                        </Style.Triggers>
-                                    </Style>
-                                </Grid.Style>
+                            <Grid Margin="0,0.5">
                                 <Grid.ColumnDefinitions>
                                     <ColumnDefinition Width="Auto" />
                                     <ColumnDefinition Width="*" />
-                                    <ColumnDefinition Width="Auto" />
                                 </Grid.ColumnDefinitions>
 
-                                <!-- Section Header Label (micro, uppercase) -->
-                                <TextBlock Grid.ColumnSpan="3" Text="{Binding HeaderText}"
-                                           FontSize="9.5" FontWeight="Bold" Foreground="{DynamicResource Brush.TextMuted}"
-                                           Margin="4,6,0,3" VerticalAlignment="Center"
+                                <!-- Section Header Label (Uppercase, e.g. CATEGORIES, VIEWS) -->
+                                <TextBlock Grid.ColumnSpan="2" Text="{Binding HeaderText}"
+                                           FontSize="9" FontWeight="Bold" Foreground="{DynamicResource Brush.TextMuted}"
+                                           Margin="3,5,0,2" VerticalAlignment="Center"
                                            Visibility="{Binding IsHeader, Converter={StaticResource BoolToVis}}" />
 
-                                <!-- Category Divider -->
-                                <Border Grid.ColumnSpan="3" Height="1" Background="{DynamicResource Brush.Border}" Margin="0,3" VerticalAlignment="Center" Opacity="0.3"
+                                <!-- Section Divider -->
+                                <Border Grid.ColumnSpan="2" Height="1" Background="{DynamicResource Brush.Border}" Margin="0,3" VerticalAlignment="Center" Opacity="0.3"
                                         Visibility="{Binding IsSeparator, Converter={StaticResource BoolToVis}}" />
 
-                                <!-- Category Icon -->
-                                <TextBlock Grid.Column="0" Text="{Binding Icon}" FontFamily="{StaticResource Font.Icon}" FontSize="13"
-                                           Foreground="{DynamicResource Brush.TextDim}" Margin="2,0,9,0" VerticalAlignment="Center">
-                                    <TextBlock.Style>
-                                        <Style TargetType="TextBlock">
-                                            <Setter Property="Visibility" Value="Visible" />
-                                            <Style.Triggers>
-                                                <DataTrigger Binding="{Binding IsCategory}" Value="True">
-                                                    <Setter Property="Foreground" Value="{Binding CategoryBrush}" />
-                                                </DataTrigger>
-                                                <DataTrigger Binding="{Binding IsSeparator}" Value="True">
-                                                    <Setter Property="Visibility" Value="Collapsed" />
-                                                </DataTrigger>
-                                                <DataTrigger Binding="{Binding IsHeader}" Value="True">
-                                                    <Setter Property="Visibility" Value="Collapsed" />
-                                                </DataTrigger>
-                                            </Style.Triggers>
-                                        </Style>
-                                    </TextBlock.Style>
-                                </TextBlock>
-
-                                <!-- Category Name -->
-                                <TextBlock Grid.Column="1" Text="{Binding Name}" FontSize="11.5" VerticalAlignment="Center" TextTrimming="CharacterEllipsis">
+                                <!-- Item Icon -->
+                                <TextBlock Grid.Column="0" Text="{Binding Icon}" FontFamily="{StaticResource Font.Icon}" FontSize="14"
+                                           Foreground="{Binding CategoryBrush}" Margin="2,0,5,0" VerticalAlignment="Center">
                                     <TextBlock.Style>
                                         <Style TargetType="TextBlock">
                                             <Setter Property="Visibility" Value="Visible" />
@@ -319,10 +257,10 @@
                                     </TextBlock.Style>
                                 </TextBlock>
 
-                                <!-- Category Count Pill Badge -->
-                                <Border Grid.Column="2" VerticalAlignment="Center" Margin="4,0,2,0" Padding="5,1" CornerRadius="8" Background="{DynamicResource Brush.SurfaceAlt}">
-                                    <Border.Style>
-                                        <Style TargetType="Border">
+                                <!-- Item Name -->
+                                <TextBlock Grid.Column="1" Text="{Binding Name}" FontSize="11.5" VerticalAlignment="Center" TextTrimming="None">
+                                    <TextBlock.Style>
+                                        <Style TargetType="TextBlock">
                                             <Setter Property="Visibility" Value="Visible" />
                                             <Style.Triggers>
                                                 <DataTrigger Binding="{Binding IsSeparator}" Value="True">
@@ -331,294 +269,343 @@
                                                 <DataTrigger Binding="{Binding IsHeader}" Value="True">
                                                     <Setter Property="Visibility" Value="Collapsed" />
                                                 </DataTrigger>
-                                                <DataTrigger Binding="{Binding CountText}" Value="">
-                                                    <Setter Property="Visibility" Value="Collapsed" />
-                                                </DataTrigger>
                                             </Style.Triggers>
                                         </Style>
-                                    </Border.Style>
-                                    <TextBlock Text="{Binding CountText}" FontSize="10" FontWeight="Medium" Foreground="{DynamicResource Brush.TextMuted}" VerticalAlignment="Center" HorizontalAlignment="Center" />
-                                </Border>
+                                    </TextBlock.Style>
+                                </TextBlock>
                             </Grid>
                         </DataTemplate>
                     </ListBox.ItemTemplate>
                 </ListBox>
-                </DockPanel>
             </Border>
 
-            <!-- Vertical Divider Line between Sidebar and DataGrid -->
+            <!-- Vertical Divider Line between Sidebar and Main Area -->
             <Border Grid.Column="1" Width="1" Background="{DynamicResource Brush.Border}" SnapsToDevicePixels="True" UseLayoutRounding="True" />
 
-            <!-- Seamless IDM Download DataGrid Table -->
-            <Grid Grid.Column="2" Background="{DynamicResource Brush.Bg}">
-                <Grid.RowDefinitions>
-                    <RowDefinition Height="*" />
-                    <RowDefinition Height="Auto" />
-                </Grid.RowDefinitions>
+            <!-- Main Content Area: Switches between Downloads, Settings, Extensions -->
+            <Grid Grid.Column="2" Background="{DynamicResource Brush.Surface}">
+                
+                <!-- VIEW 1: Downloads View (Table Grid + Detail Pane) -->
+                <Grid x:Name="DownloadsView" Visibility="Visible">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="*" />
+                        <RowDefinition Height="Auto" />
+                    </Grid.RowDefinitions>
 
-                <!-- Row 0: DataGrid + Empty State overlay -->
-                <Grid Grid.Row="0">
-                    <DataGrid x:Name="TaskGrid"
-                          ItemsSource="{Binding TasksView}"
-                          SelectedItem="{Binding SelectedTask}"
-                          SelectionChanged="TaskGrid_SelectionChanged"
-                          IsReadOnly="True"
-                          AutoGenerateColumns="False"
-                          CanUserAddRows="False"
-                          RowHeaderWidth="0"
-                          RowHeight="40"
-                          HeadersVisibility="Column"
-                          SelectionMode="Extended"
-                          CanUserSortColumns="False"
-                          CanUserReorderColumns="False"
-                          GridLinesVisibility="Horizontal"
-                          HorizontalGridLinesBrush="{DynamicResource Brush.GridLine}"
-                          ScrollViewer.VerticalScrollBarVisibility="Auto"
-                          ScrollViewer.HorizontalScrollBarVisibility="Disabled"
-                          MouseDoubleClick="TaskGrid_MouseDoubleClick">
-                <DataGrid.InputBindings>
-                    <KeyBinding Key="A" Modifiers="Control" Command="SelectAll" />
-                </DataGrid.InputBindings>
-                <DataGrid.ContextMenu>
-                    <ContextMenu DataContext="{Binding PlacementTarget.DataContext, RelativeSource={RelativeSource Self}}">
-                        <MenuItem Header="Open" Command="{Binding OpenFileCommand}" FontWeight="Bold">
-                            <MenuItem.Icon>
-                                <TextBlock Text="&#xF03CB;" FontFamily="{StaticResource Font.Icon}" FontSize="12" Foreground="{DynamicResource Brush.TextDim}" />
-                            </MenuItem.Icon>
-                        </MenuItem>
-                        <MenuItem Header="Open folder" Command="{Binding RevealCommand}">
-                            <MenuItem.Icon>
-                                <TextBlock Text="&#xF0770;" FontFamily="{StaticResource Font.Icon}" FontSize="12" Foreground="{DynamicResource Brush.TextDim}" />
-                            </MenuItem.Icon>
-                        </MenuItem>
-                        <Separator />
-                        <MenuItem Header="Resume" Command="{Binding ResumeCommand}">
-                            <MenuItem.Icon>
-                                <TextBlock Text="&#xF040A;" FontFamily="{StaticResource Font.Icon}" FontSize="12" Foreground="{DynamicResource Brush.TextDim}" />
-                            </MenuItem.Icon>
-                        </MenuItem>
-                        <MenuItem Header="Pause" Command="{Binding PauseCommand}">
-                            <MenuItem.Icon>
-                                <TextBlock Text="&#xF03E4;" FontFamily="{StaticResource Font.Icon}" FontSize="12" Foreground="{DynamicResource Brush.TextDim}" />
-                            </MenuItem.Icon>
-                        </MenuItem>
-                        <MenuItem Header="Restart" Command="{Binding RetryCommand}">
-                            <MenuItem.Icon>
-                                <TextBlock Text="&#xF0709;" FontFamily="{StaticResource Font.Icon}" FontSize="12" Foreground="{DynamicResource Brush.TextDim}" />
-                            </MenuItem.Icon>
-                        </MenuItem>
-                        <MenuItem Header="Stop" Command="{Binding StopCommand}">
-                            <MenuItem.Icon>
-                                <TextBlock Text="&#xF04DB;" FontFamily="{StaticResource Font.Icon}" FontSize="12" Foreground="{DynamicResource Brush.TextDim}" />
-                            </MenuItem.Icon>
-                        </MenuItem>
-                        <MenuItem Header="Refresh link..." Command="{Binding RefreshLinkCommand}">
-                            <MenuItem.Icon>
-                                <TextBlock Text="&#xF0339;" FontFamily="{StaticResource Font.Icon}" FontSize="12" Foreground="{DynamicResource Brush.TextDim}" />
-                            </MenuItem.Icon>
-                        </MenuItem>
-                        <MenuItem Header="Bypass Cloudflare / protection..." Command="{Binding SolveCloudflareCommand}">
-                            <MenuItem.Icon>
-                                <TextBlock Text="&#xF0026;" FontFamily="{StaticResource Font.Icon}" FontSize="12" Foreground="{DynamicResource Brush.Accent}" />
-                            </MenuItem.Icon>
-                        </MenuItem>
-                        <Separator />
-                        <MenuItem Header="Copy URL" Command="{Binding CopyUrlCommand}">
-                            <MenuItem.Icon>
-                                <TextBlock Text="&#xF018F;" FontFamily="{StaticResource Font.Icon}" FontSize="12" Foreground="{DynamicResource Brush.TextDim}" />
-                            </MenuItem.Icon>
-                        </MenuItem>
-                        <Separator />
-                        <MenuItem Header="Priority">
-                            <MenuItem.Icon>
-                                <TextBlock Text="&#xF0603;" FontFamily="{StaticResource Font.Icon}" FontSize="12" Foreground="{DynamicResource Brush.TextDim}" />
-                            </MenuItem.Icon>
-                            <MenuItem Header="Low" Command="{Binding SetPriorityCommand}" CommandParameter="Low" />
-                            <MenuItem Header="Normal" Command="{Binding SetPriorityCommand}" CommandParameter="Normal" />
-                            <MenuItem Header="High" Command="{Binding SetPriorityCommand}" CommandParameter="High" />
-                        </MenuItem>
-                        <MenuItem Header="Move up" Command="{Binding MoveUpCommand}">
-                            <MenuItem.Icon>
-                                <TextBlock Text="&#xF005D;" FontFamily="{StaticResource Font.Icon}" FontSize="12" Foreground="{DynamicResource Brush.TextDim}" />
-                            </MenuItem.Icon>
-                        </MenuItem>
-                        <MenuItem Header="Move down" Command="{Binding MoveDownCommand}">
-                            <MenuItem.Icon>
-                                <TextBlock Text="&#xF0045;" FontFamily="{StaticResource Font.Icon}" FontSize="12" Foreground="{DynamicResource Brush.TextDim}" />
-                            </MenuItem.Icon>
-                        </MenuItem>
-                        <Separator />
-                        <MenuItem Header="Properties..." Command="{Binding PropertiesCommand}">
-                            <MenuItem.Icon>
-                                <TextBlock Text="&#xF11E8;" FontFamily="{StaticResource Font.Icon}" FontSize="12" Foreground="{DynamicResource Brush.TextDim}" />
-                            </MenuItem.Icon>
-                        </MenuItem>
-                        <MenuItem Header="Delete" Command="{Binding RemoveCommand}" InputGestureText="Del">
-                            <MenuItem.Icon>
-                                <TextBlock Text="&#xF0A7A;" FontFamily="{StaticResource Font.Icon}" FontSize="12" Foreground="{DynamicResource Brush.StatusFailed}" />
-                            </MenuItem.Icon>
-                        </MenuItem>
-                        <MenuItem Header="Delete with file" Command="{Binding RemoveWithFileCommand}">
-                            <MenuItem.Icon>
-                                <TextBlock Text="&#xF0A7A;" FontFamily="{StaticResource Font.Icon}" FontSize="12" Foreground="{DynamicResource Brush.StatusFailed}" />
-                            </MenuItem.Icon>
-                        </MenuItem>
-                    </ContextMenu>
-                </DataGrid.ContextMenu>
+                        <Grid Grid.Row="0">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="26" /> <!-- Header Row -->
+                        <RowDefinition Height="*" />  <!-- DataGrid Content -->
+                    </Grid.RowDefinitions>
 
-                <DataGrid.Columns>
-                    <!-- 1. File Name (Takes all remaining available space, Center Header) -->
-                    <DataGridTemplateColumn Header="File Name" Width="*" MinWidth="180" HeaderStyle="{StaticResource Header.Center}">
-                        <DataGridTemplateColumn.CellTemplate>
-                            <DataTemplate>
-                                <Grid Margin="10,0,6,0" VerticalAlignment="Center">
-                                    <Grid.RowDefinitions>
-                                        <RowDefinition Height="Auto" />
-                                        <RowDefinition Height="Auto" />
-                                    </Grid.RowDefinitions>
-                                    <!-- Row 1: Icon + Filename -->
-                                    <StackPanel Grid.Row="0" Orientation="Horizontal" VerticalAlignment="Center">
-                                        <TextBlock Text="{Binding TypeIcon}" FontFamily="{StaticResource Font.Icon}" FontSize="12" Margin="0,0,8,0" VerticalAlignment="Center"
-                                                   Foreground="{DynamicResource Brush.TextDim}" />
-                                        <TextBlock Text="{Binding DisplayFileName}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis"
-                                                   FontSize="13" Foreground="{DynamicResource Brush.Text}" VerticalAlignment="Center"
-                                                   ToolTip="{Binding DisplayFileName}" />
-                                    </StackPanel>
-                                    <!-- Row 2: Domain metadata -->
-                                    <TextBlock Grid.Row="1" Text="{Binding DomainText}" FontSize="11"
-                                               Foreground="{DynamicResource Brush.TextMuted}" Margin="20,1,0,0" />
-                                </Grid>
-                            </DataTemplate>
-                        </DataGridTemplateColumn.CellTemplate>
-                    </DataGridTemplateColumn>
+                    <!-- Table Header Strip -->
+                    <Border Grid.Row="0" Background="{DynamicResource Brush.SurfaceAlt}" BorderBrush="{DynamicResource Brush.Border}" BorderThickness="0,0,0,1" Padding="12,0" Height="26">
+                        <Grid VerticalAlignment="Center">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="26" />
+                                <ColumnDefinition Width="*" MinWidth="130" />
+                                <ColumnDefinition Width="80" />
+                                <ColumnDefinition Width="75" />
+                                <ColumnDefinition Width="55" />
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Grid.Column="1" Text="File Name" FontSize="11" FontWeight="SemiBold" Foreground="{DynamicResource Brush.TextDim}" VerticalAlignment="Center" />
+                            <TextBlock Grid.Column="2" Text="Status" FontSize="11" FontWeight="SemiBold" Foreground="{DynamicResource Brush.TextDim}" HorizontalAlignment="Center" VerticalAlignment="Center" />
+                            <TextBlock Grid.Column="3" Text="Size" FontSize="11" FontWeight="SemiBold" Foreground="{DynamicResource Brush.TextDim}" HorizontalAlignment="Right" VerticalAlignment="Center" />
+                            <TextBlock Grid.Column="4" Text="ETA" FontSize="11" FontWeight="SemiBold" Foreground="{DynamicResource Brush.TextDim}" HorizontalAlignment="Right" VerticalAlignment="Center" />
+                        </Grid>
+                    </Border>
 
-                    <!-- 2. Status (Tight width, Center Header, Percentage while running, Paused/Done when stopped, no symbols) -->
-                    <DataGridTemplateColumn Header="Status" Width="68" HeaderStyle="{StaticResource Header.Center}">
-                        <DataGridTemplateColumn.CellTemplate>
-                            <DataTemplate>
-                                <Grid VerticalAlignment="Center" HorizontalAlignment="Center">
-                                    <!-- Running row: pure percentage text -->
-                                    <TextBlock Text="{Binding Progress, StringFormat='{}{0}%'}"
-                                               FontFamily="Consolas, monospace" FontSize="11"
-                                               Foreground="{DynamicResource Brush.TextDim}"
-                                               HorizontalAlignment="Center" VerticalAlignment="Center"
-                                               Visibility="{Binding IsDownloading, Converter={StaticResource BoolToVis}}" />
+                    <!-- Downloads DataGrid List -->
+                    <DataGrid Grid.Row="1"
+                              x:Name="TaskGrid"
+                              ItemsSource="{Binding TasksView}"
+                              SelectedItem="{Binding SelectedTask}"
+                              SelectionChanged="TaskGrid_SelectionChanged"
+                              IsReadOnly="True"
+                              AutoGenerateColumns="False"
+                              CanUserAddRows="False"
+                              RowHeaderWidth="0"
+                              RowHeight="44"
+                              HeadersVisibility="None"
+                              SelectionMode="Extended"
+                              CanUserSortColumns="False"
+                              CanUserReorderColumns="False"
+                              GridLinesVisibility="Horizontal"
+                              HorizontalGridLinesBrush="{DynamicResource Brush.GridLine}"
+                              ScrollViewer.VerticalScrollBarVisibility="Auto"
+                              ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                              MouseDoubleClick="TaskGrid_MouseDoubleClick">
+                        <DataGrid.InputBindings>
+                            <KeyBinding Key="A" Modifiers="Control" Command="SelectAll" />
+                        </DataGrid.InputBindings>
+                        <DataGrid.ContextMenu>
+                            <ContextMenu DataContext="{Binding PlacementTarget.DataContext, RelativeSource={RelativeSource Self}}">
+                                <MenuItem Header="Open" Command="{Binding OpenFileCommand}" FontWeight="Bold">
+                                    <MenuItem.Icon>
+                                        <TextBlock Text="&#xF03CB;" FontFamily="{StaticResource Font.Icon}" FontSize="12" Foreground="{DynamicResource Brush.TextDim}" />
+                                    </MenuItem.Icon>
+                                </MenuItem>
+                                <MenuItem Header="Open folder" Command="{Binding RevealCommand}">
+                                    <MenuItem.Icon>
+                                        <TextBlock Text="&#xF0770;" FontFamily="{StaticResource Font.Icon}" FontSize="12" Foreground="{DynamicResource Brush.TextDim}" />
+                                    </MenuItem.Icon>
+                                </MenuItem>
+                                <Separator />
+                                <MenuItem Header="Resume" Command="{Binding ResumeCommand}">
+                                    <MenuItem.Icon>
+                                        <TextBlock Text="&#xF040A;" FontFamily="{StaticResource Font.Icon}" FontSize="12" Foreground="{DynamicResource Brush.TextDim}" />
+                                    </MenuItem.Icon>
+                                </MenuItem>
+                                <MenuItem Header="Pause" Command="{Binding PauseCommand}">
+                                    <MenuItem.Icon>
+                                        <TextBlock Text="&#xF03E4;" FontFamily="{StaticResource Font.Icon}" FontSize="12" Foreground="{DynamicResource Brush.TextDim}" />
+                                    </MenuItem.Icon>
+                                </MenuItem>
+                                <MenuItem Header="Restart" Command="{Binding RetryCommand}">
+                                    <MenuItem.Icon>
+                                        <TextBlock Text="&#xF0709;" FontFamily="{StaticResource Font.Icon}" FontSize="12" Foreground="{DynamicResource Brush.TextDim}" />
+                                    </MenuItem.Icon>
+                                </MenuItem>
+                                <MenuItem Header="Stop" Command="{Binding StopCommand}">
+                                    <MenuItem.Icon>
+                                        <TextBlock Text="&#xF04DB;" FontFamily="{StaticResource Font.Icon}" FontSize="12" Foreground="{DynamicResource Brush.TextDim}" />
+                                    </MenuItem.Icon>
+                                </MenuItem>
+                                <MenuItem Header="Refresh link..." Command="{Binding RefreshLinkCommand}">
+                                    <MenuItem.Icon>
+                                        <TextBlock Text="&#xF0339;" FontFamily="{StaticResource Font.Icon}" FontSize="12" Foreground="{DynamicResource Brush.TextDim}" />
+                                    </MenuItem.Icon>
+                                </MenuItem>
+                                <MenuItem Header="Clean / format video name" Command="{Binding CleanFileNameCommand}">
+                                    <MenuItem.Icon>
+                                        <TextBlock Text="&#xF059F;" FontFamily="{StaticResource Font.Icon}" FontSize="12" Foreground="{DynamicResource Brush.Accent}" />
+                                    </MenuItem.Icon>
+                                </MenuItem>
+                                <MenuItem Header="Bypass Cloudflare / protection..." Command="{Binding SolveCloudflareCommand}">
+                                    <MenuItem.Icon>
+                                        <TextBlock Text="&#xF0026;" FontFamily="{StaticResource Font.Icon}" FontSize="12" Foreground="{DynamicResource Brush.Accent}" />
+                                    </MenuItem.Icon>
+                                </MenuItem>
+                                <Separator />
+                                <MenuItem Header="Copy URL" Command="{Binding CopyUrlCommand}">
+                                    <MenuItem.Icon>
+                                        <TextBlock Text="&#xF018F;" FontFamily="{StaticResource Font.Icon}" FontSize="12" Foreground="{DynamicResource Brush.TextDim}" />
+                                    </MenuItem.Icon>
+                                </MenuItem>
+                                <Separator />
+                                <MenuItem Header="Priority">
+                                    <MenuItem.Icon>
+                                        <TextBlock Text="&#xF0603;" FontFamily="{StaticResource Font.Icon}" FontSize="12" Foreground="{DynamicResource Brush.TextDim}" />
+                                    </MenuItem.Icon>
+                                    <MenuItem Header="Low" Command="{Binding SetPriorityCommand}" CommandParameter="Low" />
+                                    <MenuItem Header="Normal" Command="{Binding SetPriorityCommand}" CommandParameter="Normal" />
+                                    <MenuItem Header="High" Command="{Binding SetPriorityCommand}" CommandParameter="High" />
+                                </MenuItem>
+                                <MenuItem Header="Move up" Command="{Binding MoveUpCommand}">
+                                    <MenuItem.Icon>
+                                        <TextBlock Text="&#xF005D;" FontFamily="{StaticResource Font.Icon}" FontSize="12" Foreground="{DynamicResource Brush.TextDim}" />
+                                    </MenuItem.Icon>
+                                </MenuItem>
+                                <MenuItem Header="Move down" Command="{Binding MoveDownCommand}">
+                                    <MenuItem.Icon>
+                                        <TextBlock Text="&#xF0045;" FontFamily="{StaticResource Font.Icon}" FontSize="12" Foreground="{DynamicResource Brush.TextDim}" />
+                                    </MenuItem.Icon>
+                                </MenuItem>
+                                <Separator />
+                                <MenuItem Header="Properties..." Command="{Binding PropertiesCommand}">
+                                    <MenuItem.Icon>
+                                        <TextBlock Text="&#xF11E8;" FontFamily="{StaticResource Font.Icon}" FontSize="12" Foreground="{DynamicResource Brush.TextDim}" />
+                                    </MenuItem.Icon>
+                                </MenuItem>
+                                <MenuItem Header="Delete" Command="{Binding RemoveCommand}" InputGestureText="Del">
+                                    <MenuItem.Icon>
+                                        <TextBlock Text="&#xF0A7A;" FontFamily="{StaticResource Font.Icon}" FontSize="12" Foreground="{DynamicResource Brush.StatusFailed}" />
+                                    </MenuItem.Icon>
+                                </MenuItem>
+                                <MenuItem Header="Delete with file" Command="{Binding RemoveWithFileCommand}">
+                                    <MenuItem.Icon>
+                                        <TextBlock Text="&#xF0A7A;" FontFamily="{StaticResource Font.Icon}" FontSize="12" Foreground="{DynamicResource Brush.StatusFailed}" />
+                                    </MenuItem.Icon>
+                                </MenuItem>
+                            </ContextMenu>
+                        </DataGrid.ContextMenu>
 
-                                    <!-- Stopped row: pure status text (Done / Paused / Failed / Queued) -->
-                                    <TextBlock Text="{Binding StatusText}" FontSize="11"
-                                               Foreground="{Binding Status, Converter={StaticResource StatusToBrush}, ConverterParameter=fg}"
-                                               HorizontalAlignment="Center" VerticalAlignment="Center"
-                                               Visibility="{Binding IsDownloading, Converter={StaticResource InverseBoolToVis}}" />
-                                </Grid>
-                            </DataTemplate>
-                        </DataGridTemplateColumn.CellTemplate>
-                    </DataGridTemplateColumn>
+                        <DataGrid.Columns>
+                            <DataGridTemplateColumn Width="*">
+                                <DataGridTemplateColumn.CellTemplate>
+                                    <DataTemplate>
+                                        <Grid Margin="12,0,12,0" Height="44" VerticalAlignment="Center">
+                                            <Grid.ColumnDefinitions>
+                                                <!-- Col 0: File Type Icon -->
+                                                <ColumnDefinition Width="26" />
+                                                <!-- Col 1: File Name -->
+                                                <ColumnDefinition Width="*" MinWidth="130" />
+                                                <!-- Col 2: Status Column -->
+                                                <ColumnDefinition Width="80" />
+                                                <!-- Col 3: Size Column -->
+                                                <ColumnDefinition Width="75" />
+                                                <!-- Col 4: ETA Column -->
+                                                <ColumnDefinition Width="55" />
+                                            </Grid.ColumnDefinitions>
 
-                    <!-- 3. Size (Tight width, Center Header, Full when paused/done, downloaded amount while running) -->
-                    <DataGridTemplateColumn Header="Size" Width="78" HeaderStyle="{StaticResource Header.Center}">
-                        <DataGridTemplateColumn.CellTemplate>
-                            <DataTemplate>
-                                <TextBlock Text="{Binding DisplaySizeText, Converter={StaticResource EmptyDash}}" FontFamily="Consolas, monospace" FontSize="11"
-                                           Foreground="{DynamicResource Brush.TextDim}" HorizontalAlignment="Center" VerticalAlignment="Center" Margin="2,0" />
-                            </DataTemplate>
-                        </DataGridTemplateColumn.CellTemplate>
-                    </DataGridTemplateColumn>
+                                            <!-- Col 0: File Type Icon -->
+                                            <TextBlock Grid.Column="0" Text="{Binding TypeIcon}" FontFamily="{StaticResource Font.Icon}" FontSize="14.5"
+                                                       Foreground="{Binding CategoryBrush}" HorizontalAlignment="Left" VerticalAlignment="Center" Margin="0,0,6,0" />
 
-                    <!-- 4. ETA (Tight width, Center Header) -->
-                    <DataGridTemplateColumn Header="ETA" Width="68" HeaderStyle="{StaticResource Header.Center}">
-                        <DataGridTemplateColumn.CellTemplate>
-                            <DataTemplate>
-                                <TextBlock Text="{Binding Eta, Converter={StaticResource EmptyDash}}" FontFamily="Consolas, monospace" FontSize="11"
-                                           Foreground="{DynamicResource Brush.TextDim}" HorizontalAlignment="Center" VerticalAlignment="Center" Margin="2,0" />
-                            </DataTemplate>
-                        </DataGridTemplateColumn.CellTemplate>
-                    </DataGridTemplateColumn>
+                                            <!-- Col 1: File Name -->
+                                            <StackPanel Grid.Column="1" VerticalAlignment="Center" Margin="0,0,10,0">
+                                                <TextBlock Text="{Binding DisplayFileName}" FontWeight="SemiBold" FontSize="12"
+                                                           Foreground="{DynamicResource Brush.Text}" TextTrimming="CharacterEllipsis"
+                                                           ToolTip="{Binding DisplayFileName}" VerticalAlignment="Center" />
+                                                <TextBlock Text="{Binding Error}" FontSize="9.5" Foreground="{DynamicResource Brush.StatusFailed}"
+                                                           TextTrimming="CharacterEllipsis" ToolTip="{Binding Error}" VerticalAlignment="Center" Margin="0,1.5,0,0"
+                                                           Visibility="{Binding HasFailureError, Converter={StaticResource BoolToVis}}" />
+                                            </StackPanel>
 
-                </DataGrid.Columns>
+                                            <!-- Col 2: Status (Done in green, Downloading, Paused, etc.) -->
+                                            <TextBlock Grid.Column="2" Text="{Binding PrimaryStatusText}" FontSize="11.5" FontWeight="SemiBold"
+                                                       Foreground="{Binding Status, Converter={StaticResource StatusBrush}}"
+                                                       HorizontalAlignment="Center" VerticalAlignment="Center" />
+
+                                            <!-- Col 3: Size (e.g. 220.3 MB, bold on selected row) -->
+                                            <TextBlock Grid.Column="3" Text="{Binding DisplaySizeText}" FontSize="11.5"
+                                                       Foreground="{DynamicResource Brush.Text}"
+                                                       HorizontalAlignment="Right" VerticalAlignment="Center" />
+
+                                            <!-- Col 4: ETA (e.g. \-\- or time remaining) -->
+                                            <TextBlock Grid.Column="4" Text="{Binding EtaOrDashText}" FontSize="11.5"
+                                                       Foreground="{DynamicResource Brush.TextMuted}"
+                                                       HorizontalAlignment="Right" VerticalAlignment="Center" />
+                                        </Grid>
+                                    </DataTemplate>
+                                </DataGridTemplateColumn.CellTemplate>
+                            </DataGridTemplateColumn>
+                        </DataGrid.Columns>
                     </DataGrid>
 
-                    <!-- Simplified Empty State Overlay: no card border, faint and undecorated -->
-                    <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" Opacity="0.55"
+                    <!-- Empty State Overlay (when no downloads match filter) -->
+                    <StackPanel Grid.Row="1" HorizontalAlignment="Center" VerticalAlignment="Center" Opacity="0.5"
                                 Visibility="{Binding HasNoVisibleTasks, Converter={StaticResource BoolToVis}}">
                         <TextBlock Text="&#xF01DA;" FontFamily="{StaticResource Font.Icon}" FontSize="32"
-                                   Foreground="{DynamicResource Brush.TextMuted}" HorizontalAlignment="Center" Margin="0,0,0,10" />
-                        <TextBlock Text="{Binding EmptyStateTitle}" FontSize="14" FontWeight="SemiBold"
-                                   Foreground="{DynamicResource Brush.TextDim}" HorizontalAlignment="Center" Margin="0,0,0,4" />
+                                   Foreground="{DynamicResource Brush.TextMuted}" HorizontalAlignment="Center" Margin="0,0,0,6" />
+                        <TextBlock Text="{Binding EmptyStateTitle}" FontSize="13" FontWeight="SemiBold"
+                                   Foreground="{DynamicResource Brush.TextDim}" HorizontalAlignment="Center" Margin="0,0,0,3" />
                         <TextBlock Text="{Binding EmptyStateSubtitle}" Foreground="{DynamicResource Brush.TextMuted}"
-                                   FontSize="12" HorizontalAlignment="Center" />
+                                   FontSize="11.5" HorizontalAlignment="Center" />
                     </StackPanel>
-                </Grid><!-- end row 0 grid -->
+                </Grid>
 
-                <!-- Row 1: Detail strip — appears when a download is selected -->
-                <Border Grid.Row="1"
-                        Background="{DynamicResource Brush.SurfaceAlt}"
-                        BorderBrush="{DynamicResource Brush.GridLine}" BorderThickness="0,1,0,0"
+                <!-- Row 1: Selected Item Details Inspector Panel (Visible when an item is selected) -->
+                <Border Grid.Row="1" Background="{DynamicResource Brush.Surface}"
+                        BorderBrush="{DynamicResource Brush.Border}" BorderThickness="0,1,0,0"
+                        Padding="14,8,14,10"
                         Visibility="{Binding SelectedTask, Converter={StaticResource NullToVis}}">
-                <Grid>
-                    <Border Width="3" Background="{DynamicResource Brush.Accent}" HorizontalAlignment="Left" VerticalAlignment="Stretch" />
-                    <Grid Margin="16,10" DataContext="{Binding SelectedTask}">
+                    <Grid DataContext="{Binding SelectedTask}">
                         <Grid.ColumnDefinitions>
+                            <!-- Left Info Fields Grid -->
                             <ColumnDefinition Width="*" />
-                            <ColumnDefinition Width="*" />
-                            <ColumnDefinition Width="*" />
-                            <ColumnDefinition Width="*" />
+                            <!-- Right Progress Bar Section -->
+                            <ColumnDefinition Width="200" />
                         </Grid.ColumnDefinitions>
-                        <!-- Col 1: File + Status -->
-                        <StackPanel Grid.Column="0" Margin="0,0,16,0">
-                            <TextBlock Text="FILE" FontSize="9" FontWeight="Bold" Foreground="{DynamicResource Brush.TextMuted}" Margin="0,0,0,3" />
-                            <TextBlock Text="{Binding DisplayFileName}" FontSize="12" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" Margin="0,0,0,8" />
-                            <TextBlock Text="STATUS" FontSize="9" FontWeight="Bold" Foreground="{DynamicResource Brush.TextMuted}" Margin="0,0,0,3" />
-                            <TextBlock Text="{Binding StatusText}" FontSize="12"
-                                       Foreground="{Binding Status, Converter={StaticResource StatusBrush}}" FontWeight="SemiBold" />
-                        </StackPanel>
-                        <!-- Col 2: Location -->
-                        <StackPanel Grid.Column="1" Margin="0,0,16,0">
-                            <TextBlock Text="LOCATION" FontSize="9" FontWeight="Bold" Foreground="{DynamicResource Brush.TextMuted}" Margin="0,0,0,3" />
-                            <TextBlock Text="{Binding SaveFolder}" FontSize="11" Foreground="{DynamicResource Brush.TextDim}" TextTrimming="CharacterEllipsis" Margin="0,0,0,8" />
-                            <TextBlock Text="SIZE" FontSize="9" FontWeight="Bold" Foreground="{DynamicResource Brush.TextMuted}" Margin="0,0,0,3" />
-                            <TextBlock Text="{Binding SizeText}" FontSize="12" FontFamily="Consolas, monospace" />
-                        </StackPanel>
-                        <!-- Col 3: Source domain -->
-                        <StackPanel Grid.Column="2" Margin="0,0,16,0">
-                            <TextBlock Text="SOURCE" FontSize="9" FontWeight="Bold" Foreground="{DynamicResource Brush.TextMuted}" Margin="0,0,0,3" />
-                            <TextBlock Text="{Binding DomainText}" FontSize="12" Foreground="{DynamicResource Brush.TextDim}" TextTrimming="CharacterEllipsis" Margin="0,0,0,8" />
-                            <TextBlock Text="ADDED" FontSize="9" FontWeight="Bold" Foreground="{DynamicResource Brush.TextMuted}" Margin="0,0,0,3" />
-                            <TextBlock Text="{Binding AddedAt, StringFormat='{}{0:MMM dd, yyyy  HH:mm}'}" FontSize="11" Foreground="{DynamicResource Brush.TextDim}" />
-                        </StackPanel>
-                        <!-- Col 4: Progress (if active) -->
-                        <StackPanel Grid.Column="3">
-                            <TextBlock Text="PROGRESS" FontSize="9" FontWeight="Bold" Foreground="{DynamicResource Brush.TextMuted}" Margin="0,0,0,3" />
-                            <TextBlock Text="{Binding ProgressSpeedText}" FontSize="12" FontFamily="Consolas, monospace"
-                                       Foreground="{DynamicResource Brush.Accent}" Margin="0,0,0,6" />
-                            <ProgressBar Style="{StaticResource ProgressBar.Download}" Value="{Binding Progress}" Maximum="100" />
-                            <TextBlock Text="{Binding DownloadedOfTotalText}" FontSize="10" Foreground="{DynamicResource Brush.TextMuted}" Margin="0,4,0,0" />
+
+                        <!-- Left Metadata Columns -->
+                        <Grid Grid.Column="0" Margin="0,0,16,0">
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="6" />
+                                <RowDefinition Height="Auto" />
+                            </Grid.RowDefinitions>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="1.2*" />
+                                <ColumnDefinition Width="1.4*" />
+                                <ColumnDefinition Width="1.4*" />
+                            </Grid.ColumnDefinitions>
+
+                            <!-- Top Row: FILE | LOCATION | SOURCE -->
+                            <StackPanel Grid.Row="0" Grid.Column="0" Margin="0,0,12,0">
+                                <TextBlock Text="FILE" FontSize="9" FontWeight="Bold" Foreground="{DynamicResource Brush.TextMuted}" Margin="0,0,0,2" />
+                                <TextBlock Text="{Binding DisplayFileName}" FontSize="12" FontWeight="SemiBold" Foreground="{DynamicResource Brush.Text}"
+                                           TextTrimming="CharacterEllipsis" ToolTip="{Binding DisplayFileName}" />
+                            </StackPanel>
+
+                            <StackPanel Grid.Row="0" Grid.Column="1" Margin="0,0,12,0">
+                                <TextBlock Text="LOCATION" FontSize="9" FontWeight="Bold" Foreground="{DynamicResource Brush.TextMuted}" Margin="0,0,0,2" />
+                                <TextBlock Text="{Binding SaveFolder}" FontSize="11.5" Foreground="{DynamicResource Brush.Accent}"
+                                           TextTrimming="CharacterEllipsis" Cursor="Hand" ToolTip="{Binding FullPath}"
+                                           MouseDown="LocationText_MouseDown" />
+                            </StackPanel>
+
+                            <StackPanel Grid.Row="0" Grid.Column="2">
+                                <TextBlock Text="SOURCE" FontSize="9" FontWeight="Bold" Foreground="{DynamicResource Brush.TextMuted}" Margin="0,0,0,2" />
+                                <TextBlock Text="{Binding DomainText}" FontSize="11.5" Foreground="{DynamicResource Brush.Accent}"
+                                           TextTrimming="CharacterEllipsis" Cursor="Hand" ToolTip="{Binding Url}"
+                                           MouseDown="SourceText_MouseDown" />
+                            </StackPanel>
+
+                            <!-- Bottom Row: STATUS | SIZE | ADDED -->
+                            <StackPanel Grid.Row="2" Grid.Column="0" Margin="0,0,12,0">
+                                <TextBlock Text="STATUS" FontSize="9" FontWeight="Bold" Foreground="{DynamicResource Brush.TextMuted}" Margin="0,0,0,2" />
+                                <TextBlock Text="{Binding PrimaryStatusText}" FontSize="12" FontWeight="Bold"
+                                           Foreground="{Binding Status, Converter={StaticResource StatusBrush}}" />
+                            </StackPanel>
+
+                            <StackPanel Grid.Row="2" Grid.Column="1" Margin="0,0,12,0">
+                                <TextBlock Text="SIZE" FontSize="9" FontWeight="Bold" Foreground="{DynamicResource Brush.TextMuted}" Margin="0,0,0,2" />
+                                <TextBlock Text="{Binding DisplaySizeText}" FontSize="12" FontWeight="Bold" Foreground="{DynamicResource Brush.Text}" />
+                            </StackPanel>
+
+                            <StackPanel Grid.Row="2" Grid.Column="2">
+                                <TextBlock Text="ADDED" FontSize="9" FontWeight="Bold" Foreground="{DynamicResource Brush.TextMuted}" Margin="0,0,0,2" />
+                                <TextBlock Text="{Binding AddedAt, StringFormat='{}{0:MMM dd, yyyy HH:mm}'}" FontSize="11.5" Foreground="{DynamicResource Brush.TextDim}" />
+                            </StackPanel>
+                        </Grid>
+
+                        <!-- Right Progress Bar Section -->
+                        <StackPanel Grid.Column="1" VerticalAlignment="Top" Margin="0,1,0,0">
+                            <DockPanel LastChildFill="False" Margin="0,0,0,4">
+                                <TextBlock DockPanel.Dock="Left" Text="PROGRESS" FontSize="9" FontWeight="Bold" Foreground="{DynamicResource Brush.TextMuted}" />
+                                <TextBlock DockPanel.Dock="Right" Text="{Binding DownloadedOfTotalText}" FontSize="11" FontWeight="SemiBold" Foreground="{DynamicResource Brush.Accent}" />
+                            </DockPanel>
+                            <ProgressBar Style="{StaticResource ProgressBar.DetailsPanel}"
+                                         Value="{Binding Progress}" Maximum="100" Height="6"
+                                         Background="#DBEAFE" Foreground="{DynamicResource Brush.Accent}" />
                         </StackPanel>
                     </Grid>
+                </Border>
                 </Grid>
-                </Border><!-- end detail strip -->
-            </Grid><!-- end content grid -->
-        </Grid><!-- end body row -->
-
-        <!-- 4. Bottom Status Bar -->
-        <Grid Grid.Row="3">
-            <Grid.RowDefinitions>
-                <RowDefinition Height="1" />
-                <RowDefinition Height="22" />
-            </Grid.RowDefinitions>
-            <!-- Top Divider Line for Status Bar -->
-            <Border Grid.Row="0" Height="1" Background="{DynamicResource Brush.Border}" SnapsToDevicePixels="True" UseLayoutRounding="True" />
-            <Border Grid.Row="1" Background="{DynamicResource Brush.SurfaceAlt}" Padding="10,0">
-                <DockPanel VerticalAlignment="Center">
-                    <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center">
-                        <Canvas x:Name="SparklineCanvas" Width="80" Height="14" VerticalAlignment="Center" Margin="0,0,8,0" />
-                        <TextBlock Text="&#xF01DA;" FontFamily="{StaticResource Font.Icon}" FontSize="11"
-                                   Foreground="{DynamicResource Brush.Accent}" Margin="0,0,4,0" VerticalAlignment="Center" />
-                        <TextBlock Text="{Binding StatusRightText}" Foreground="{DynamicResource Brush.TextDim}" FontSize="11" VerticalAlignment="Center" />
-                    </StackPanel>
-                    <TextBlock Text="{Binding StatusText}" Foreground="{DynamicResource Brush.TextDim}" FontSize="11" VerticalAlignment="Center" />
-                </DockPanel>
-            </Border>
+            </Grid>
         </Grid>
+
+        <!-- Full-Overlay Integrated Views (Settings, Extensions, Reload Notice) - Covers Command Bar & Workspace, leaving Titlebar & Bottom Bar visible -->
+        <Grid x:Name="SettingsView" Grid.Row="0" Grid.RowSpan="3" Visibility="Collapsed" Background="{DynamicResource Brush.Surface}">
+            <local:OptionsControl x:Name="SettingsContent" />
+        </Grid>
+
+        <Grid x:Name="ExtensionView" Grid.Row="0" Grid.RowSpan="3" Visibility="Collapsed" Background="{DynamicResource Brush.Surface}">
+            <local:BrowserExtensionControl x:Name="ExtensionContent" />
+        </Grid>
+
+        <Grid x:Name="NoticeView" Grid.Row="0" Grid.RowSpan="3" Visibility="Collapsed" Background="{DynamicResource Brush.Surface}">
+            <local:ExtensionReloadNoticeControl x:Name="NoticeContent" />
+        </Grid>
+
+        <!-- 4. Bottom Status Bar Strip -->
+        <Border Grid.Row="3" Height="24" Background="{DynamicResource Brush.Surface}" BorderBrush="{DynamicResource Brush.Border}" BorderThickness="0,1,0,0" Padding="10,0">
+            <DockPanel VerticalAlignment="Center">
+                <!-- Right status: Sparkline + Tray Icon + Total Speed -->
+                <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center">
+                    <Canvas x:Name="SparklineCanvas" Width="55" Height="12" VerticalAlignment="Center" Margin="0,0,6,0" />
+                    <TextBlock Text="&#xF01DA;" FontFamily="{StaticResource Font.Icon}" FontSize="12"
+                               Foreground="{DynamicResource Brush.Accent}" Margin="0,0,3,0" VerticalAlignment="Center" />
+                    <TextBlock Text="{Binding StatusRightText}" FontFamily="{StaticResource Font.App}" Foreground="{DynamicResource Brush.Accent}" FontSize="11" FontWeight="Medium" VerticalAlignment="Center" />
+                </StackPanel>
+
+                <!-- Left status: e.g. 5 downloads · 5 completed (with 5 completed in green) -->
+                <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                    <TextBlock Text="{Binding StatusPrefixText}" Foreground="{DynamicResource Brush.TextDim}" FontSize="11" VerticalAlignment="Center" />
+                    <TextBlock Text="{Binding StatusCompletedText}" Foreground="{DynamicResource Brush.StatusComplete}" FontSize="11" FontWeight="SemiBold" VerticalAlignment="Center" />
+                </StackPanel>
+            </DockPanel>
+        </Border>
     </Grid>
 </Window>
-

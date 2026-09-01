@@ -18,7 +18,7 @@ public static class ScreenshotGenerator
     {
         CleanupLegacyFiles();
 
-        string outputDir = @"E:\WDM-2\screenshots";
+        string outputDir = @"E:\WDM-2\screenshots_new";
         string lightDir = Path.Combine(outputDir, "light");
         string darkDir = Path.Combine(outputDir, "dark");
 
@@ -207,6 +207,7 @@ public static class ScreenshotGenerator
             ("Behavior", "03_OptionsDialog_05_Behavior.png"),
             ("Appearance", "03_OptionsDialog_06_Appearance.png"),
             ("Updates", "03_OptionsDialog_07_Updates.png"),
+            ("Advanced", "03_OptionsDialog_08_Advanced.png"),
         };
 
         foreach (var (tag, fileName) in tabs)
@@ -220,13 +221,7 @@ public static class ScreenshotGenerator
 
     private static void SwitchOptionsDialogTab(OptionsDialog dialog, string tag)
     {
-        if (dialog.PanelConnection != null) dialog.PanelConnection.Visibility = tag == "Connection" ? Visibility.Visible : Visibility.Collapsed;
-        if (dialog.PanelFolders != null) dialog.PanelFolders.Visibility = tag == "Folders" ? Visibility.Visible : Visibility.Collapsed;
-        if (dialog.PanelBrowser != null) dialog.PanelBrowser.Visibility = tag == "Browser" ? Visibility.Visible : Visibility.Collapsed;
-        if (dialog.PanelYouTube != null) dialog.PanelYouTube.Visibility = tag == "YouTube" ? Visibility.Visible : Visibility.Collapsed;
-        if (dialog.PanelBehavior != null) dialog.PanelBehavior.Visibility = tag == "Behavior" ? Visibility.Visible : Visibility.Collapsed;
-        if (dialog.PanelAppearance != null) dialog.PanelAppearance.Visibility = tag == "Appearance" ? Visibility.Visible : Visibility.Collapsed;
-        if (dialog.PanelUpdates != null) dialog.PanelUpdates.Visibility = tag == "Updates" ? Visibility.Visible : Visibility.Collapsed;
+        dialog.SwitchTab(tag);
 
         // Also check the radio button
         var radioButtons = FindVisualChildren<RadioButton>(dialog);

@@ -76,6 +76,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
     public RelayCommand DismissFailedBannerCommand { get; }
     public RelayCommand RefreshLinkCommand { get; }
     public RelayCommand SolveCloudflareCommand { get; }
+    public RelayCommand CleanFileNameCommand { get; }
 
     /// <summary>Raised before a destructive delete so the view can confirm with the
     /// user. The handler shows the themed DeleteConfirmDialog and, if confirmed, sets
@@ -181,28 +182,28 @@ public sealed class MainViewModel : INotifyPropertyChanged
                 RefreshLinkRequested?.Invoke(SelectedTask);
         }, _ => SelectedTask is { Status: TaskStatus.Failed or TaskStatus.Paused });
         SolveCloudflareCommand = new RelayCommand(_ => SolveCloudflare(SelectedTask), _ => SelectedTask is not null);
+        CleanFileNameCommand = new RelayCommand(_ => CleanSelectedFileNames(), _ => SelectedTask is not null || SelectedTasks.Count > 0);
 
         TasksView = CollectionViewSource.GetDefaultView(Tasks);
         TasksView.Filter = FilterTask;
         TasksView.SortDescriptions.Add(
             new SortDescription(nameof(DownloadTask.AddedAt), ListSortDirection.Descending));
 
-        var orderedKinds = new[]
-        {
-            FilterKind.All,
-            FilterKind.Video,
-            FilterKind.Music,
-            FilterKind.Document,
-            FilterKind.Compressed,
-            FilterKind.Program,
-        };
+        // 1. Categories Section
         Filters.Add(FilterItem.Header("CATEGORIES"));
-        foreach (var kind in orderedKinds)
-            Filters.Add(new FilterItem(kind));
-        Filters.Add(FilterItem.Separator);
+        Filters.Add(new FilterItem(FilterKind.All));
+        Filters.Add(new FilterItem(FilterKind.Video));
+        Filters.Add(new FilterItem(FilterKind.Music));
+        Filters.Add(new FilterItem(FilterKind.Document));
+        Filters.Add(new FilterItem(FilterKind.Compressed));
+        Filters.Add(new FilterItem(FilterKind.Program));
+
+        // 2. Views Section
         Filters.Add(FilterItem.Header("VIEWS"));
-        foreach (var kind in new[] { FilterKind.Queue, FilterKind.Finished, FilterKind.Paused, FilterKind.Failed })
-            Filters.Add(new FilterItem(kind));
+        Filters.Add(new FilterItem(FilterKind.Queue));
+        Filters.Add(new FilterItem(FilterKind.Finished));
+        Filters.Add(new FilterItem(FilterKind.Paused));
+        Filters.Add(new FilterItem(FilterKind.Failed));
 
         _saveTimer = new System.Timers.Timer(1500)
         {
@@ -295,6 +296,21 @@ public sealed class MainViewModel : INotifyPropertyChanged
         get => _filter;
         set
         {
+            if (value == FilterKind.Settings)
+            {
+                OptionsCommand.Execute(null);
+                return;
+            }
+            if (value == FilterKind.About)
+            {
+                AboutCommand.Execute(null);
+                return;
+            }
+            if (value == FilterKind.Scheduler || value == FilterKind.SpeedLimits)
+            {
+                OptionsCommand.Execute(null);
+                return;
+            }
             if (_filter == value)
                 return;
             _filter = value;
@@ -329,6 +345,20 @@ public sealed class MainViewModel : INotifyPropertyChanged
     private string SelectedFilterName =>
         Filters.FirstOrDefault(f => f.Kind == SelectedFilter && !f.IsHeader && !f.IsSeparator)?.Name ?? SelectedFilter.ToString();
 
+    public int SelectedCount => SelectedTasks.Count > 0 ? SelectedTasks.Count : (SelectedTask != null ? 1 : 0);
+    public bool HasNoSelection => SelectedCount == 0;
+    public bool HasSingleSelection => SelectedCount == 1;
+    public bool HasMultipleSelection => SelectedCount > 1;
+
+    private void UpdateSelectionProperties()
+    {
+        OnPropertyChanged(nameof(SelectedCount));
+        OnPropertyChanged(nameof(HasNoSelection));
+        OnPropertyChanged(nameof(HasSingleSelection));
+        OnPropertyChanged(nameof(HasMultipleSelection));
+        OnPropertyChanged(nameof(BulkCountText));
+    }
+
     public DownloadTask? SelectedTask
     {
         get => _selectedTask;
@@ -336,6 +366,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
         {
             _selectedTask = value;
             OnPropertyChanged(nameof(SelectedTask));
+            UpdateSelectionProperties();
             CommandManager.InvalidateRequerySuggested();
         }
     }
@@ -393,7 +424,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
         get
         {
             int count = SelectedTasks.Count;
-            return count == 0 ? "" : count == 1 ? "1 item selected" : $"{count} items selected";
+            return count == 0 ? "" : count == 1 ? "1 selected" : $"{count} selected";
         }
     }
 
@@ -402,7 +433,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
         SelectedTasks.Clear();
         foreach (var t in tasks)
             SelectedTasks.Add(t);
-        OnPropertyChanged(nameof(BulkCountText));
+        UpdateSelectionProperties();
     }
 
     private void BulkDo(Action<DownloadTask> action)
@@ -435,15 +466,17 @@ public sealed class MainViewModel : INotifyPropertyChanged
     private static bool FilterTaskFor(FilterKind kind, DownloadTask task) => kind switch
     {
         FilterKind.All => true,
+        FilterKind.Active => task.Status == TaskStatus.Downloading,
+        FilterKind.Queue => task.Status == TaskStatus.Queued,
+        FilterKind.Finished or FilterKind.History => task.Status == TaskStatus.Completed,
+        FilterKind.Paused => task.Status == TaskStatus.Paused,
+        FilterKind.Failed => task.Status == TaskStatus.Failed,
         FilterKind.Video => task.Category == DownloadCategory.Video,
         FilterKind.Music => task.Category == DownloadCategory.Music,
         FilterKind.Document => task.Category == DownloadCategory.Document,
         FilterKind.Compressed => task.Category == DownloadCategory.Compressed,
         FilterKind.Program => task.Category == DownloadCategory.Program,
-        FilterKind.Queue => task.Status is TaskStatus.Queued or TaskStatus.Downloading,
-        FilterKind.Finished => task.Status == TaskStatus.Completed,
-        FilterKind.Paused => task.Status == TaskStatus.Paused,
-        FilterKind.Failed => task.Status == TaskStatus.Failed,
+        FilterKind.Other => task.Category == DownloadCategory.Other,
         _ => true,
     };
 
@@ -625,6 +658,10 @@ public sealed class MainViewModel : INotifyPropertyChanged
         if (string.IsNullOrWhiteSpace(task.FileName))
         {
             task.FileName = DownloadEngine.DeriveName(task.Url);
+        }
+        else
+        {
+            task.FileName = DownloadEngine.SanitizeFileName(task.FileName, referer: task.Referer);
         }
         task.Category = DownloadTask.Categorize(task.FileName);
         Tasks.Add(task);
@@ -878,6 +915,48 @@ public sealed class MainViewModel : INotifyPropertyChanged
         }
     }
 
+    public void CleanSelectedFileNames()
+    {
+        var targets = SelectedTasks.Count > 0
+            ? SelectedTasks.ToList()
+            : (SelectedTask != null ? new List<DownloadTask> { SelectedTask } : new List<DownloadTask>());
+
+        if (targets.Count == 0) return;
+
+        bool changedAny = false;
+        foreach (var task in targets)
+        {
+            string oldName = task.FileName;
+            if (string.IsNullOrWhiteSpace(oldName)) continue;
+
+            string cleaned = FileNameHelper.CleanVideoFileName(oldName);
+            if (string.Equals(oldName, cleaned, StringComparison.Ordinal)) continue;
+
+            string oldPath = Path.Combine(task.SaveFolder, oldName);
+            string newPath = Path.Combine(task.SaveFolder, cleaned);
+
+            if (File.Exists(oldPath) && !File.Exists(newPath))
+            {
+                try
+                {
+                    File.Move(oldPath, newPath);
+                }
+                catch
+                {
+                    // File may be locked by another process or stream
+                }
+            }
+
+            task.FileName = cleaned;
+            changedAny = true;
+        }
+
+        if (changedAny)
+        {
+            TaskStore.SaveTasks(Tasks);
+        }
+    }
+
     public void SaveTasksSoon()
     {
         _saveTimer.Stop();
@@ -962,6 +1041,18 @@ public sealed class MainViewModel : INotifyPropertyChanged
         }
     }
 
+    public int TotalDownloadsCount => Tasks.Count;
+    public int CompletedDownloadsCount => Tasks.Count(t => t.Status == TaskStatus.Completed);
+    public bool HasActiveDownloads => Engine.ActiveCount > 0 || Engine.QueuedCount > 0;
+
+    public string StatusPrefixText => HasActiveDownloads
+        ? $"{Engine.ActiveCount} active · "
+        : $"{TotalDownloadsCount} download{(TotalDownloadsCount == 1 ? "" : "s")} · ";
+
+    public string StatusCompletedText => HasActiveDownloads
+        ? $"{DownloadTask.FormatBytes((long)Engine.TotalSpeedBps)}/s"
+        : $"{CompletedDownloadsCount} completed";
+
     private void UpdateStatus()
     {
         int active = Engine.ActiveCount;
@@ -977,6 +1068,10 @@ public sealed class MainViewModel : INotifyPropertyChanged
         int total = Tasks.Count;
         int completed = Tasks.Count(t => t.Status == TaskStatus.Completed);
 
+        OnPropertyChanged(nameof(StatusPrefixText));
+        OnPropertyChanged(nameof(StatusCompletedText));
+        OnPropertyChanged(nameof(HasActiveDownloads));
+
         if (active == 0 && queued == 0)
         {
             StatusText = total == 0
@@ -990,7 +1085,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
         int downloadingCount = Tasks.Count(t => t.Status == TaskStatus.Downloading);
         string countLabel = downloadingCount == 1 ? "1 downloading" : $"{downloadingCount} downloading";
         StatusText = $"{active} active · {speed}/s";
-        StatusRightText = $"{countLabel} · {speed}/s";
+        StatusRightText = $"Total: {speed}/s";
     }
 
     private void UpdateEmptyState()
@@ -1039,16 +1134,30 @@ public sealed class MainViewModel : INotifyPropertyChanged
 
 public enum FilterKind
 {
+    // Downloads / Views
     All,
-    Video,
-    Music,
-    Document,
-    Compressed,
-    Program,
+    Active,
     Queue,
     Finished,
     Paused,
     Failed,
+
+    // Categories
+    Video,
+    Music,
+    Document,
+    Program,
+    Compressed,
+    Other,
+
+    // Tools
+    Scheduler,
+    SpeedLimits,
+    History,
+
+    // Application
+    Settings,
+    About,
 }
 
 public sealed class FilterItem : INotifyPropertyChanged
@@ -1065,35 +1174,50 @@ public sealed class FilterItem : INotifyPropertyChanged
     public bool IsHeader { get; private init; }
     public string HeaderText { get; private init; } = "";
     public FilterKind Kind { get; }
-    public bool IsCategory => Kind is FilterKind.Video or FilterKind.Music or FilterKind.Document or FilterKind.Compressed or FilterKind.Program;
+    public bool IsCategory => Kind is FilterKind.Video or FilterKind.Music or FilterKind.Document or FilterKind.Compressed or FilterKind.Program or FilterKind.Other;
+    public bool IsToolOrApp => Kind is FilterKind.Scheduler or FilterKind.SpeedLimits or FilterKind.Settings or FilterKind.About;
 
     public string Icon => (IsSeparator || IsHeader) ? "" : Kind switch
     {
         FilterKind.All => char.ConvertFromUtf32(0xF003B),
+        FilterKind.Active => char.ConvertFromUtf32(0xF040A),
+        FilterKind.Queue => char.ConvertFromUtf32(0xF027B),
+        FilterKind.Finished => char.ConvertFromUtf32(0xF05E0),
+        FilterKind.Paused => char.ConvertFromUtf32(0xF03E4),
+        FilterKind.Failed => char.ConvertFromUtf32(0xF0028),
         FilterKind.Video => char.ConvertFromUtf32(0xF0381),
         FilterKind.Music => char.ConvertFromUtf32(0xF0387),
         FilterKind.Document => char.ConvertFromUtf32(0xF0219),
         FilterKind.Compressed => char.ConvertFromUtf32(0xF05C4),
         FilterKind.Program => char.ConvertFromUtf32(0xF08C6),
-        FilterKind.Queue => char.ConvertFromUtf32(0xF027B),
-        FilterKind.Finished => char.ConvertFromUtf32(0xF05E0),
-        FilterKind.Paused => char.ConvertFromUtf32(0xF03E4),
-        FilterKind.Failed => char.ConvertFromUtf32(0xF0028),
+        FilterKind.Other => char.ConvertFromUtf32(0xF0168),
+        FilterKind.Scheduler => char.ConvertFromUtf32(0xF0150),
+        FilterKind.SpeedLimits => char.ConvertFromUtf32(0xF04F2),
+        FilterKind.History => char.ConvertFromUtf32(0xF02DA),
+        FilterKind.Settings => char.ConvertFromUtf32(0xF08BB),
+        FilterKind.About => char.ConvertFromUtf32(0xF02FD),
         _ => char.ConvertFromUtf32(0xF003B),
     };
 
     public string Name => IsSeparator ? "" : IsHeader ? HeaderText : Kind switch
     {
-        FilterKind.All => "All downloads",
+        FilterKind.All => "All",
+        FilterKind.Active => "Active",
+        FilterKind.Queue => "Queue",
+        FilterKind.Finished => "Finished",
+        FilterKind.Paused => "Paused",
+        FilterKind.Failed => "Failed",
         FilterKind.Video => "Video",
         FilterKind.Music => "Music",
         FilterKind.Document => "Documents",
         FilterKind.Compressed => "Compressed",
         FilterKind.Program => "Programs",
-        FilterKind.Queue => "Queue",
-        FilterKind.Finished => "Finished",
-        FilterKind.Paused => "Paused",
-        FilterKind.Failed => "Failed",
+        FilterKind.Other => "Other",
+        FilterKind.Scheduler => "Scheduler",
+        FilterKind.SpeedLimits => "Speed Limits",
+        FilterKind.History => "History",
+        FilterKind.Settings => "Settings",
+        FilterKind.About => "About",
         _ => Kind.ToString(),
     };
 
@@ -1106,7 +1230,10 @@ public sealed class FilterItem : INotifyPropertyChanged
                 FilterKind.Document => "Brush.CatDocument",
                 FilterKind.Compressed => "Brush.CatCompressed",
                 FilterKind.Program => "Brush.CatProgram",
-                _ => "Brush.Text",
+                FilterKind.Finished => "Brush.StatusComplete",
+                FilterKind.Paused => "Brush.StatusPaused",
+                FilterKind.Failed => "Brush.StatusFailed",
+                _ => "Brush.TextDim",
             }];
 
     public int Count
@@ -1136,8 +1263,7 @@ public sealed class FilterItem : INotifyPropertyChanged
     }
 
     public string CountText =>
-        Count == 0 ? ""
-        : IsCategory && ActiveCount > 0 ? $"{ActiveCount}/{Count}"
+        IsToolOrApp || Count == 0 ? ""
         : Count.ToString();
 
     public event PropertyChangedEventHandler? PropertyChanged;

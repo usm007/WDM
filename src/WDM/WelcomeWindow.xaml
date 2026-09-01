@@ -19,8 +19,8 @@
         <!-- Header -->
         <Border Grid.Row="0" Padding="20,16" Background="{DynamicResource Brush.SurfaceAlt}" BorderBrush="{DynamicResource Brush.Border}" BorderThickness="0,0,0,1">
             <StackPanel>
-                <TextBlock Text="Welcome to WDM" FontSize="20" FontWeight="Bold" Foreground="{DynamicResource Brush.Text}" Margin="0,0,0,4" />
-                <TextBlock Text="Let's get your downloading environment set up before you start." FontSize="12" Foreground="{DynamicResource Brush.TextDim}" TextWrapping="Wrap" />
+                <TextBlock Text="Welcome to WDM" FontSize="22" FontWeight="SemiBold" Foreground="{DynamicResource Brush.Text}" Margin="0,0,0,4" />
+                <TextBlock Text="Let's get your downloading environment set up before you start." FontSize="13" Foreground="{DynamicResource Brush.TextDim}" TextWrapping="Wrap" />
             </StackPanel>
         </Border>
 
@@ -31,14 +31,14 @@
                 <!-- Step 1: Browser Extension -->
                 <Border Background="{DynamicResource Brush.SurfaceAlt}" BorderBrush="{DynamicResource Brush.Border}" BorderThickness="1" CornerRadius="8" Padding="16" Margin="0,0,0,16">
                     <StackPanel>
-                        <TextBlock Text="1. Browser Extension (Essential)" FontWeight="Bold" FontSize="14" Foreground="{DynamicResource Brush.Text}" Margin="0,0,0,6" />
-                        <TextBlock Text="To automatically catch downloads from your web browsers, install the WDM extension." FontSize="12" Foreground="{DynamicResource Brush.TextDim}" TextWrapping="Wrap" Margin="0,0,0,14" />
+                        <TextBlock Text="1. Browser Extension (Essential)" FontWeight="SemiBold" FontSize="15" Foreground="{DynamicResource Brush.Text}" Margin="0,0,0,6" />
+                        <TextBlock Text="To automatically catch downloads from your web browsers, install the WDM extension." FontSize="13" Foreground="{DynamicResource Brush.TextDim}" TextWrapping="Wrap" Margin="0,0,0,14" />
 
                         <!-- Firefox Section -->
                         <Border Background="{DynamicResource Brush.Surface}" BorderBrush="{DynamicResource Brush.Border}" BorderThickness="1" CornerRadius="6" Padding="12" Margin="0,0,0,12">
                             <StackPanel>
-                                <TextBlock Text="Firefox" FontWeight="SemiBold" FontSize="13" Foreground="{DynamicResource Brush.Text}" Margin="0,0,0,6" />
-                                <TextBlock Text="Install directly from the official Mozilla Add-ons store:" FontSize="11.5" Foreground="{DynamicResource Brush.TextDim}" Margin="0,0,0,8" />
+                                <TextBlock Text="Firefox" FontWeight="SemiBold" FontSize="13.5" Foreground="{DynamicResource Brush.Text}" Margin="0,0,0,6" />
+                                <TextBlock Text="Install directly from the official Mozilla Add-ons store:" FontSize="12.5" Foreground="{DynamicResource Brush.TextDim}" Margin="0,0,0,8" />
                                 <Button Content="Install for Firefox..." Style="{StaticResource Button.Secondary}" HorizontalAlignment="Left" Height="32" Padding="16,0" Click="FirefoxBtn_Click" />
                             </StackPanel>
                         </Border>
@@ -46,18 +46,18 @@
                         <!-- Chrome / Edge / Chromium Section -->
                         <Border Background="{DynamicResource Brush.Surface}" BorderBrush="{DynamicResource Brush.Border}" BorderThickness="1" CornerRadius="6" Padding="12">
                             <StackPanel>
-                                <TextBlock Text="Chrome, Edge &amp; Chromium Browsers" FontWeight="SemiBold" FontSize="13" Foreground="{DynamicResource Brush.Text}" Margin="0,0,0,8" />
+                                <TextBlock Text="Chrome, Edge &amp; Chromium Browsers" FontWeight="SemiBold" FontSize="13.5" Foreground="{DynamicResource Brush.Text}" Margin="0,0,0,8" />
 
                                 <StackPanel Orientation="Horizontal" Margin="0,0,0,10">
                                     <Button x:Name="CopyPathButton" Content="Copy Extension Path" Style="{StaticResource Button.Secondary}" Height="32" Padding="14,0" Click="CopyPath_Click" Margin="0,0,8,0" />
                                     <Button Content="Open Extensions Page" Style="{StaticResource Button.Secondary}" Height="32" Padding="14,0" Click="OpenExtensions_Click" />
                                 </StackPanel>
 
-                                <TextBlock Text="1. Click 'Copy Extension Path'." FontSize="11.5" Foreground="{DynamicResource Brush.TextDim}" Margin="0,0,0,4" />
-                                <TextBlock Text="2. Click 'Open Extensions Page' (chrome://extensions or edge://extensions)." FontSize="11.5" Foreground="{DynamicResource Brush.TextDim}" Margin="0,0,0,4" />
-                                <TextBlock Text="3. Enable 'Developer mode' (toggle switch in the top-right corner)." FontSize="11.5" Foreground="{DynamicResource Brush.TextDim}" Margin="0,0,0,4" />
-                                <TextBlock Text="4. Click 'Load unpacked' and select the extension folder path you copied." FontSize="11.5" Foreground="{DynamicResource Brush.TextDim}" Margin="0,0,0,4" />
-                                <TextBlock x:Name="CopyFeedbackText" Text="" FontSize="11" Foreground="{DynamicResource Brush.Accent}" FontWeight="Medium" Margin="0,4,0,0" />
+                                <TextBlock Text="1. Click 'Copy Extension Path'." FontSize="12.5" Foreground="{DynamicResource Brush.TextDim}" Margin="0,0,0,4" />
+                                <TextBlock Text="2. Click 'Open Extensions Page' (chrome://extensions or edge://extensions)." FontSize="12.5" Foreground="{DynamicResource Brush.TextDim}" Margin="0,0,0,4" />
+                                <TextBlock Text="3. Enable 'Developer mode' (toggle switch in the top-right corner)." FontSize="12.5" Foreground="{DynamicResource Brush.TextDim}" Margin="0,0,0,4" />
+                                <TextBlock Text="4. Click 'Load unpacked' and select the extension folder path you copied." FontSize="12.5" Foreground="{DynamicResource Brush.TextDim}" Margin="0,0,0,4" />
+                                <TextBlock x:Name="CopyFeedbackText" Text="" FontSize="12" Foreground="{DynamicResource Brush.Accent}" FontWeight="Medium" Margin="0,4,0,0" />
                             </StackPanel>
                         </Border>
 
@@ -67,8 +67,8 @@
                 <!-- Step 2: YouTube Downloader -->
                 <Border Background="{DynamicResource Brush.SurfaceAlt}" BorderBrush="{DynamicResource Brush.Border}" BorderThickness="1" CornerRadius="8" Padding="16">
                     <StackPanel>
-                        <TextBlock Text="2. YouTube Downloader (Optional)" FontWeight="Bold" FontSize="14" Foreground="{DynamicResource Brush.Text}" Margin="0,0,0,6" />
-                        <TextBlock Text="Download videos, playlists, and audio from YouTube. Authenticate for private or age-restricted content." FontSize="12" Foreground="{DynamicResource Brush.TextDim}" TextWrapping="Wrap" Margin="0,0,0,12" />
+                        <TextBlock Text="2. YouTube Downloader (Optional)" FontWeight="SemiBold" FontSize="15" Foreground="{DynamicResource Brush.Text}" Margin="0,0,0,6" />
+                        <TextBlock Text="Download videos, playlists, and audio from YouTube. Authenticate for private or age-restricted content." FontSize="13" Foreground="{DynamicResource Brush.TextDim}" TextWrapping="Wrap" Margin="0,0,0,12" />
 
                         <StackPanel Orientation="Horizontal" Margin="0,0,0,10">
                             <Button x:Name="ActivateBtn" Content="Download Plugins &amp; Activate" Style="{StaticResource Button.Accent}" Height="32" Padding="16,0" Click="ActivateBtn_Click" Margin="0,0,8,0" />
@@ -79,14 +79,14 @@
                         <Border x:Name="ProgressCard" Background="{DynamicResource Brush.Surface}" BorderBrush="{DynamicResource Brush.Border}" BorderThickness="1" CornerRadius="4" Padding="10,8" Visibility="Collapsed" Margin="0,0,0,8">
                             <StackPanel>
                                 <Grid Margin="0,0,0,4">
-                                    <TextBlock x:Name="ProgressStatusText" Text="Downloading plugins..." FontSize="10.5" Foreground="{DynamicResource Brush.TextDim}" />
-                                    <TextBlock x:Name="ProgressPctText" Text="0%" FontSize="10.5" FontWeight="Bold" Foreground="{DynamicResource Brush.Text}" HorizontalAlignment="Right" />
+                                    <TextBlock x:Name="ProgressStatusText" Text="Downloading plugins..." FontSize="12" Foreground="{DynamicResource Brush.TextDim}" />
+                                    <TextBlock x:Name="ProgressPctText" Text="0%" FontSize="12" FontWeight="SemiBold" Foreground="{DynamicResource Brush.Text}" HorizontalAlignment="Right" />
                                 </Grid>
                                 <ProgressBar x:Name="ProgressBar" Height="4" Minimum="0" Maximum="100" BorderThickness="0" Background="{DynamicResource Brush.SurfaceHover}" Foreground="{DynamicResource Brush.Accent}" />
                             </StackPanel>
                         </Border>
 
-                        <TextBlock Text="Note: Core media plugins (yt-dlp, FFmpeg) will be downloaded automatically when activated." FontSize="11" Foreground="{DynamicResource Brush.TextMuted}" TextWrapping="Wrap" />
+                        <TextBlock Text="Note: Core media plugins (yt-dlp, FFmpeg) will be downloaded automatically when activated." FontSize="12" Foreground="{DynamicResource Brush.TextMuted}" TextWrapping="Wrap" />
                     </StackPanel>
                 </Border>
 

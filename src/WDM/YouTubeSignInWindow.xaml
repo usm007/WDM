@@ -23,11 +23,11 @@
                 BorderThickness="0,0,0,1">
             <StackPanel>
                 <TextBlock Text="Sign in with your Google account"
-                           FontSize="13"
+                           FontSize="16"
                            FontWeight="SemiBold"
                            Foreground="{DynamicResource Brush.Text}" />
                 <TextBlock Margin="0,3,0,0"
-                           FontSize="11.5"
+                           FontSize="13"
                            Foreground="{DynamicResource Brush.TextDim}"
                            TextWrapping="Wrap"
                            Text="This window is only used once — your session is saved as a local cookies file and refreshed automatically. Private, age-restricted and bot-checked videos will work." />
@@ -55,7 +55,7 @@
                 </Grid.ColumnDefinitions>
 
                 <TextBlock x:Name="StatusText"
-                           FontSize="11.5"
+                           FontSize="12.5"
                            Foreground="{DynamicResource Brush.TextDim}"
                            TextWrapping="Wrap"
                            VerticalAlignment="Center"

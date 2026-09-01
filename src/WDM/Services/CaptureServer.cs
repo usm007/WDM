@@ -21,14 +21,14 @@ public sealed class CaptureServer : IDisposable
         DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
     };
     private readonly TcpListener _listener;
-    private readonly Action<string, string?, string?, Dictionary<string, string>> _onCapture;
+    private readonly Action<string, string?, string?, Dictionary<string, string>, string?> _onCapture;
     private readonly CancellationTokenSource _cts = new();
     private bool _running;
 
     public bool IsConnected { get; private set; }
     public event Action? ExtensionConnected;
 
-    public CaptureServer(Action<string, string?, string?, Dictionary<string, string>> onCapture)
+    public CaptureServer(Action<string, string?, string?, Dictionary<string, string>, string?> onCapture)
     {
         _onCapture = onCapture;
         _listener = new TcpListener(IPAddress.Loopback, Port);
@@ -143,7 +143,7 @@ public sealed class CaptureServer : IDisposable
                 {
                     IsConnected = true;
                     ExtensionConnected?.Invoke();
-                    string ver = typeof(CaptureServer).Assembly.GetName().Version?.ToString(3) ?? "2.5.1";
+                    string ver = typeof(CaptureServer).Assembly.GetName().Version?.ToString(3) ?? "2.5.2";
                     await WriteResponseAsync(stream, HttpStatusCode.OK, $"{{\"status\":\"ok\",\"version\":\"{ver}\"}}");
                     return;
                 }
@@ -157,7 +157,7 @@ public sealed class CaptureServer : IDisposable
                             throw new InvalidOperationException("Empty url");
                         IsConnected = true;
                         ExtensionConnected?.Invoke();
-                        _onCapture(payload.Url, payload.FileName, payload.Referer, payload.Headers);
+                        _onCapture(payload.Url, payload.FileName, payload.Referer, payload.Headers, payload.PageTitle);
                         await WriteResponseAsync(stream, HttpStatusCode.OK, "{\"accepted\":true}");
                     }
                     catch
@@ -265,7 +265,8 @@ public sealed class CaptureServer : IDisposable
             "Access-Control-Allow-Headers: Content-Type\r\n" +
             $"Content-Length: {bodyBytes.Length}\r\n" +
             "Connection: close\r\n\r\n";
-        await stream.WriteAsync(Encoding.UTF8.GetBytes(headers));
+        byte[] headerBytes = Encoding.UTF8.GetBytes(headers);
+        await stream.WriteAsync(headerBytes);
         await stream.WriteAsync(bodyBytes);
         await stream.FlushAsync();
     }
@@ -297,6 +298,7 @@ public sealed class CaptureServer : IDisposable
         public string? Url { get; set; }
         public string? FileName { get; set; }
         public string? Referer { get; set; }
+        public string? PageTitle { get; set; }
         public Dictionary<string, string> Headers { get; set; } = new(StringComparer.OrdinalIgnoreCase);
         public bool DirectDownload { get; set; }
         public string? YoutubeFormatArg { get; set; }

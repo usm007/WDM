@@ -147,6 +147,11 @@ public sealed class DownloadTask : INotifyPropertyChanged
                 Raise(nameof(Eta));
                 Raise(nameof(DownloadedOfTotalText));
                 Raise(nameof(DisplaySizeText));
+                Raise(nameof(RowTelemetryStatusText));
+                Raise(nameof(PrimaryStatusText));
+                Raise(nameof(RowTimeOrEtaText));
+                Raise(nameof(EtaOrDashText));
+                Raise(nameof(HasFailureError));
             }
         }
     }
@@ -313,6 +318,41 @@ public sealed class DownloadTask : INotifyPropertyChanged
         }
     }
 
+    public string PrimaryStatusText => Status switch
+    {
+        TaskStatus.Downloading => "Running",
+        TaskStatus.Paused => "Paused",
+        TaskStatus.Completed => "Done",
+        TaskStatus.Failed => "Failed",
+        TaskStatus.Queued => QueuePosition > 0 ? $"Queue #{QueuePosition}" : "Queued",
+        _ => Status.ToString()
+    };
+
+    public string RowTimeOrEtaText => Status switch
+    {
+        TaskStatus.Downloading => !string.IsNullOrEmpty(Eta) ? Eta : "",
+        TaskStatus.Completed => CompletedAt.HasValue ? CompletedAt.Value.ToString("HH:mm") : "",
+        _ => ""
+    };
+
+    public string EtaOrDashText => Status switch
+    {
+        TaskStatus.Downloading => !string.IsNullOrEmpty(Eta) ? Eta : "--",
+        _ => "--"
+    };
+
+    public bool HasFailureError => Status == TaskStatus.Failed && !string.IsNullOrWhiteSpace(Error);
+
+    public string RowTelemetryStatusText => Status switch
+    {
+        TaskStatus.Downloading => !string.IsNullOrEmpty(Eta) ? Eta : "Estimating…",
+        TaskStatus.Completed => CompletedAt.HasValue ? CompletedAt.Value.ToString("HH:mm") : "",
+        TaskStatus.Failed => "",
+        TaskStatus.Queued => QueuePosition > 0 ? $"Queue #{QueuePosition}" : "Queued",
+        TaskStatus.Paused => "",
+        _ => "",
+    };
+
     public string SpeedOrDetailText => Status switch
     {
         TaskStatus.Downloading => SpeedText,
@@ -344,6 +384,12 @@ public sealed class DownloadTask : INotifyPropertyChanged
             return "—";
         }
     }
+
+    public long RemainingBytes => TotalBytes > DownloadedBytes ? TotalBytes - DownloadedBytes : 0;
+    public string RemainingBytesText => TotalBytes > 0 && RemainingBytes > 0 ? FormatBytes(RemainingBytes) : (Status == TaskStatus.Completed ? "0 B" : "—");
+    public string ConnectionsText => ChunkCount > 1 ? $"{ChunkCount} threads" : "1 thread";
+    public string EtaDetailText => !string.IsNullOrEmpty(Eta) ? $"{Eta} remaining" : (Status == TaskStatus.Downloading ? "Calculating…" : "—");
+    public string ExactBytesText => TotalBytes > 0 ? $"{TotalBytes:N0} B" : (DownloadedBytes > 0 ? $"{DownloadedBytes:N0} B" : "Unknown");
 
     public string QueueText => Status == TaskStatus.Queued ? (QueuePosition > 0 ? QueuePosition.ToString() : "Q") : "";
 

@@ -3,78 +3,86 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         Title="Duplicate Download — WDM"
         Icon="Assets/WDM.ico"
-        Width="490"
+        Width="460"
         SizeToContent="Height"
         WindowStartupLocation="CenterOwner"
         ResizeMode="NoResize"
+        ShowInTaskbar="False"
         UseLayoutRounding="True"
         SnapsToDevicePixels="True"
-        TextOptions.TextFormattingMode="Display"
-        TextOptions.TextRenderingMode="ClearType"
-        TextOptions.TextHintingMode="Fixed"
+        TextOptions.TextFormattingMode="Ideal"
+        TextOptions.TextRenderingMode="Auto"
+        RenderOptions.ClearTypeHint="Enabled"
         Background="{DynamicResource Brush.Surface}"
         Foreground="{DynamicResource Brush.Text}">
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="*" />    <!-- Content Body -->
+            <RowDefinition Height="Auto" /> <!-- Bottom Action Strip -->
+        </Grid.RowDefinitions>
 
-    <Border Padding="24,20">
-        <Grid>
-            <Grid.RowDefinitions>
-                <RowDefinition Height="Auto" />
-                <RowDefinition Height="*" />
-                <RowDefinition Height="Auto" />
-            </Grid.RowDefinitions>
-
-            <!-- 1. Header with Warning Icon -->
-            <StackPanel Grid.Row="0" Orientation="Horizontal" Margin="0,0,0,14">
-                <Border Width="36" Height="36" CornerRadius="18"
-                        Background="{DynamicResource Brush.WarningSoft}"
-                        Margin="0,0,14,0" VerticalAlignment="Center">
-                    <TextBlock Text="&#xF0026;" FontFamily="{StaticResource Font.Icon}"
-                               FontSize="18" Foreground="{DynamicResource Brush.Warning}"
-                               HorizontalAlignment="Center" VerticalAlignment="Center" />
-                </Border>
-                <StackPanel VerticalAlignment="Center">
-                    <TextBlock Text="Duplicate Download Captured" FontSize="15" FontWeight="SemiBold"
-                               Foreground="{DynamicResource Brush.Text}" Margin="0,0,0,2" />
-                    <TextBlock Text="This URL or file is already in your download list or target folder."
-                               FontSize="12" Foreground="{DynamicResource Brush.TextDim}" TextWrapping="Wrap" />
-                </StackPanel>
+        <!-- Main Body -->
+        <StackPanel Grid.Row="0" Margin="16,14,16,12">
+            <!-- Title & Warning Header -->
+            <StackPanel Orientation="Horizontal" Margin="0,0,0,6">
+                <TextBlock Text="&#xF0026;" FontFamily="{StaticResource Font.Icon}" FontSize="18"
+                           Foreground="{DynamicResource Brush.Warning}" Margin="0,0,8,0" VerticalAlignment="Center" />
+                <TextBlock Text="Duplicate Download Detected" FontSize="15" FontWeight="SemiBold"
+                           Foreground="{DynamicResource Brush.Text}" VerticalAlignment="Center" />
             </StackPanel>
 
-            <!-- 2. Details Card -->
-            <Border Grid.Row="1" Background="{DynamicResource Brush.Surface}"
-                    BorderBrush="{DynamicResource Brush.Border}" BorderThickness="1"
-                    CornerRadius="8" Padding="14,12" Margin="0,0,0,16">
-                <StackPanel VerticalAlignment="Center">
-                    <DockPanel Margin="0,0,0,8">
-                        <TextBlock Text="Original File:" FontSize="11.5" FontWeight="Medium"
-                                   Foreground="{DynamicResource Brush.TextDim}" Width="90" DockPanel.Dock="Left" />
-                        <TextBlock x:Name="OriginalFileText" Text="filename.zip" FontSize="12" FontWeight="SemiBold"
-                                   Foreground="{DynamicResource Brush.Text}" TextTrimming="CharacterEllipsis"
-                                   ToolTip="{Binding Text, RelativeSource={RelativeSource Self}}" />
-                    </DockPanel>
+            <!-- Description -->
+            <TextBlock Text="A file or active download with this name already exists in your destination folder. How would you like to proceed?"
+                       FontSize="11.5" Foreground="{DynamicResource Brush.TextDim}" TextWrapping="Wrap" Margin="0,0,0,12" />
 
-                    <DockPanel>
-                        <TextBlock Text="Rename to:" FontSize="11.5" FontWeight="Medium"
-                                   Foreground="{DynamicResource Brush.TextDim}" Width="90" DockPanel.Dock="Left" />
-                        <StackPanel Orientation="Horizontal">
-                            <TextBlock Text="&#xF000C;" FontFamily="{StaticResource Font.Icon}" FontSize="12"
-                                       Foreground="{DynamicResource Brush.Accent}" Margin="0,0,6,0" VerticalAlignment="Center" />
-                            <TextBlock x:Name="NumberedFileText" Text="filename (1).zip" FontSize="12" FontWeight="Bold"
-                                       Foreground="{DynamicResource Brush.Accent}" TextTrimming="CharacterEllipsis"
-                                       ToolTip="{Binding Text, RelativeSource={RelativeSource Self}}" />
-                        </StackPanel>
-                    </DockPanel>
-                </StackPanel>
+            <!-- Comparison Card -->
+            <Border Background="{DynamicResource Brush.SurfaceAlt}" BorderBrush="{DynamicResource Brush.Border}" BorderThickness="1" CornerRadius="6" Padding="12,10" Margin="0,0,0,4">
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="6" />
+                        <RowDefinition Height="Auto" />
+                    </Grid.RowDefinitions>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="90" />
+                        <ColumnDefinition Width="*" />
+                    </Grid.ColumnDefinitions>
+
+                    <!-- Existing Name -->
+                    <TextBlock Grid.Row="0" Grid.Column="0" Text="Existing file:" FontSize="11.5" Foreground="{DynamicResource Brush.TextMuted}" VerticalAlignment="Center" />
+                    <TextBlock x:Name="OriginalFileText" Grid.Row="0" Grid.Column="1" Text="filename.zip" FontSize="12"
+                               FontFamily="{StaticResource Font.App}" Foreground="{DynamicResource Brush.Text}" FontWeight="Medium"
+                               TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
+
+                    <!-- Renamed Target -->
+                    <TextBlock Grid.Row="2" Grid.Column="0" Text="Rename to:" FontSize="11.5" Foreground="{DynamicResource Brush.TextMuted}" VerticalAlignment="Center" />
+                    <TextBlock x:Name="NumberedFileText" Grid.Row="2" Grid.Column="1" Text="filename (1).zip" FontSize="12"
+                               FontFamily="{StaticResource Font.App}" FontWeight="SemiBold"
+                               Foreground="{DynamicResource Brush.Accent}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
+                </Grid>
             </Border>
+        </StackPanel>
 
-            <!-- 3. Actions Footer -->
-            <DockPanel Grid.Row="2">
-                <Button x:Name="SkipBtn" Content="Skip Download" Style="{StaticResource Button.Secondary}"
-                        Click="Skip_Click" Padding="16,0" Height="32" DockPanel.Dock="Left" MinWidth="110" />
+        <!-- Bottom Action Strip: Cancel | Overwrite | Rename & Download -->
+        <Border Grid.Row="1" Background="{DynamicResource Brush.SurfaceAlt}" BorderBrush="{DynamicResource Brush.Border}" BorderThickness="0,1,0,0" Padding="16,12">
+            <DockPanel LastChildFill="False">
+                <!-- Cancel (Left) -->
+                <Button x:Name="CancelBtn" Content="Cancel" Style="{StaticResource Button.Secondary}"
+                        Click="Cancel_Click" Height="30" MinWidth="85" DockPanel.Dock="Left" IsCancel="True" />
 
-                <Button x:Name="DownloadBtn" Content="Download with Numbered Name" Style="{StaticResource Button.Accent}"
-                        Click="DownloadNumbered_Click" Padding="18,0" Height="32" DockPanel.Dock="Right" MinWidth="190" />
+                <!-- Action Group (Right) -->
+                <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
+                    <!-- Overwrite existing file -->
+                    <Button x:Name="OverwriteBtn" Content="Overwrite File" Style="{StaticResource Button.Secondary}"
+                            Click="Overwrite_Click" Height="30" MinWidth="110" Margin="0,0,8,0"
+                            ToolTip="Replace the existing file on disk with this new download" />
+
+                    <!-- Rename and Download -->
+                    <Button x:Name="RenameBtn" Content="Rename &amp; Download" Style="{StaticResource Button.Accent}"
+                            Click="RenameAndDownload_Click" Height="30" MinWidth="150" IsDefault="True"
+                            ToolTip="Download as a numbered copy so both files are kept" />
+                </StackPanel>
             </DockPanel>
-        </Grid>
-    </Border>
+        </Border>
+    </Grid>
 </Window>

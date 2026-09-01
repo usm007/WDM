@@ -501,14 +501,26 @@ public partial class AddDownloadDialog : Window
             };
 
             bool? dupResult = dupDialog.ShowDialog();
-            if (dupResult == true && dupDialog.SelectedAction == DuplicateAction.RenameAndDownload)
+            if (dupResult == true)
             {
-                finalFileName = dupDialog.NumberedFileName;
-                NameBox.Text = finalFileName;
+                if (dupDialog.SelectedAction == DuplicateAction.RenameAndDownload)
+                {
+                    finalFileName = dupDialog.NumberedFileName;
+                    NameBox.Text = finalFileName;
+                }
+                else if (dupDialog.SelectedAction == DuplicateAction.Overwrite)
+                {
+                    finalFileName = dupDialog.OriginalFileName;
+                    NameBox.Text = finalFileName;
+                }
+                else
+                {
+                    return;
+                }
             }
             else
             {
-                // User chose to Skip
+                // User cancelled or closed dialog
                 return;
             }
         }

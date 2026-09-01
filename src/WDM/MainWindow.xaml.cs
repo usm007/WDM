@@ -21,6 +21,7 @@ public partial class MainWindow : Window
     private TrayProgressPanel? _progressPanel;
     private bool _exiting;
     private DownloadCompleteDialog? _completeDialog;
+    private RefreshLinkDialog? _activeRefreshDialog;
 
     public MainWindow()
     {
@@ -36,6 +37,11 @@ public partial class MainWindow : Window
         _viewModel.RefreshLinkRequested += task => ShowRefreshLink(task);
         _viewModel.DeletePromptRequested += ShowDeletePrompt;
         _viewModel.SpeedHistoryUpdated += history => _dispatcher.BeginInvoke(() => RenderSparkline(history));
+
+        SettingsContent.CloseRequested += (_, _) => ShowDownloadsView();
+        SettingsContent.OpenExtensionHelperRequested += (_, _) => ShowExtensionInstallerDialog(fromSettings: true);
+        ExtensionContent.DoneRequested += (_, _) => ShowDownloadsView();
+        NoticeContent.CloseRequested += (_, _) => ShowDownloadsView();
 
         _viewModel.TaskCompleted += task =>
         {
@@ -55,8 +61,16 @@ public partial class MainWindow : Window
             });
         };
 
-        _captureServer = new CaptureServer((url, name, referer, headers) =>
-            _dispatcher.BeginInvoke(() => ShowAddDialog(url, name, referer, headers, fromCapture: true)));
+        _captureServer = new CaptureServer((url, name, referer, headers, pageTitle) =>
+            _dispatcher.BeginInvoke(() =>
+            {
+                if (_activeRefreshDialog != null && _activeRefreshDialog.IsLoaded)
+                {
+                    _activeRefreshDialog.OnLinkCaptured(url, headers);
+                    return;
+                }
+                ShowAddDialog(url, name, referer, headers, fromCapture: true, pageTitle: pageTitle);
+            }));
         _captureServer.Start();
 
         _tray = new TrayIcon();
@@ -96,7 +110,7 @@ public partial class MainWindow : Window
             {
                 _viewModel.Settings.HasPromptedExtensionInstall = true;
                 _viewModel.PersistSettings();
-                _dispatcher.BeginInvoke(ShowExtensionInstallerDialog);
+                _dispatcher.BeginInvoke(() => ShowExtensionInstallerDialog());
             }
             else if (!App.StartMinimized)
             {
@@ -106,14 +120,7 @@ public partial class MainWindow : Window
                 string? lastVer = _viewModel.Settings.LastRunVersion;
                 if (!string.IsNullOrWhiteSpace(lastVer) && lastVer != currentVer)
                 {
-                    _dispatcher.BeginInvoke(() =>
-                    {
-                        var notice = new ExtensionReloadNoticeDialog(lastVer, currentVer)
-                        {
-                            Owner = this
-                        };
-                        notice.ShowDialog();
-                    });
+                    _dispatcher.BeginInvoke(() => ShowExtensionReloadNotice(lastVer, currentVer));
                 }
             }
 
@@ -141,6 +148,41 @@ public partial class MainWindow : Window
         base.OnSourceInitialized(e);
         RemoveNativeWindowShadow();
         ThemeService.ApplyTitleBar(this);
+    }
+
+    protected override void OnPreviewKeyDown(KeyEventArgs e)
+    {
+        base.OnPreviewKeyDown(e);
+
+        // Escape when on Settings / Extension / Notice view: return to Downloads
+        if (e.Key == Key.Escape && (SettingsView.Visibility == Visibility.Visible || ExtensionView.Visibility == Visibility.Visible || NoticeView.Visibility == Visibility.Visible))
+        {
+            ShowDownloadsView();
+            e.Handled = true;
+            return;
+        }
+
+        // Ctrl+F: Fast jump & focus into Search Box for 100+ downloads power users
+        if (e.Key == Key.F && (Keyboard.Modifiers & ModifierKeys.Control) == ModifierKeys.Control)
+        {
+            if (SettingsView.Visibility == Visibility.Visible || ExtensionView.Visibility == Visibility.Visible || NoticeView.Visibility == Visibility.Visible)
+                ShowDownloadsView();
+            SearchBox.Focus();
+            SearchBox.SelectAll();
+            e.Handled = true;
+            return;
+        }
+
+        // Escape while searching: clear filter and return focus to TaskGrid
+        if (e.Key == Key.Escape && SearchBox.IsFocused)
+        {
+            if (!string.IsNullOrEmpty(SearchBox.Text))
+            {
+                SearchBox.Text = "";
+            }
+            TaskGrid.Focus();
+            e.Handled = true;
+        }
     }
 
     private const int GCL_STYLE = -20;
@@ -215,10 +257,11 @@ public partial class MainWindow : Window
 
     private AddDownloadDialog? _activeAddDialog;
 
-    private void ShowAddDialog(string? prefillUrl = null, string? prefillFileName = null, string? prefillReferer = null, Dictionary<string, string>? prefillHeaders = null, bool fromCapture = false)
+    private void ShowAddDialog(string? prefillUrl = null, string? prefillFileName = null, string? prefillReferer = null, Dictionary<string, string>? prefillHeaders = null, bool fromCapture = false, string? pageTitle = null)
     {
         string targetFolder = _viewModel.Settings.DownloadFolder;
-        string initialFileName = prefillFileName ?? (!string.IsNullOrWhiteSpace(prefillUrl) ? DownloadEngine.DeriveName(prefillUrl) : "");
+        string rawName = prefillFileName ?? (!string.IsNullOrWhiteSpace(prefillUrl) ? DownloadEngine.DeriveName(prefillUrl) : "");
+        string initialFileName = DownloadEngine.SanitizeFileName(rawName, pageTitle, prefillReferer);
 
         if (!string.IsNullOrWhiteSpace(prefillUrl) && (_viewModel.ExistingUrl(prefillUrl) || _viewModel.IsDuplicateFile(initialFileName, targetFolder)))
         {
@@ -230,13 +273,24 @@ public partial class MainWindow : Window
             };
 
             bool? dupResult = dupDialog.ShowDialog();
-            if (dupResult == true && dupDialog.SelectedAction == DuplicateAction.RenameAndDownload)
+            if (dupResult == true)
             {
-                prefillFileName = dupDialog.NumberedFileName;
+                if (dupDialog.SelectedAction == DuplicateAction.RenameAndDownload)
+                {
+                    prefillFileName = dupDialog.NumberedFileName;
+                }
+                else if (dupDialog.SelectedAction == DuplicateAction.Overwrite)
+                {
+                    prefillFileName = dupDialog.OriginalFileName;
+                }
+                else
+                {
+                    return;
+                }
             }
             else
             {
-                // User chose to Skip or closed dialog
+                // User cancelled or closed dialog
                 return;
             }
         }
@@ -273,8 +327,23 @@ public partial class MainWindow : Window
     private void ShowRefreshLink(DownloadTask task)
     {
         var dialog = new RefreshLinkDialog(task) { Owner = this };
-        if (dialog.ShowDialog() == true)
-            _viewModel.ApplyLinkRefresh(task, dialog.NewUrl);
+        _activeRefreshDialog = dialog;
+        try
+        {
+            if (dialog.ShowDialog() == true)
+            {
+                if (dialog.CapturedHeaders is not null && dialog.CapturedHeaders.Count > 0)
+                {
+                    foreach (var kv in dialog.CapturedHeaders)
+                        task.Headers[kv.Key] = kv.Value;
+                }
+                _viewModel.ApplyLinkRefresh(task, dialog.NewUrl);
+            }
+        }
+        finally
+        {
+            _activeRefreshDialog = null;
+        }
     }
 
     private void ShowDeletePrompt(DeletePromptRequest prompt)
@@ -334,14 +403,21 @@ public partial class MainWindow : Window
     {
         try
         {
-            var dialog = new OptionsDialog(_viewModel);
-            if (dialog.ShowDialog() == true)
-                _viewModel.PersistSettings();
+            if (SettingsView.Visibility == Visibility.Visible)
+            {
+                ShowDownloadsView();
+                return;
+            }
+
+            DownloadsView.Visibility = Visibility.Collapsed;
+            ExtensionView.Visibility = Visibility.Collapsed;
+            NoticeView.Visibility = Visibility.Collapsed;
+            SettingsView.Visibility = Visibility.Visible;
+            SettingsContent.Initialize(_viewModel);
         }
         catch (Exception ex)
         {
             System.Windows.MessageBox.Show(ex.ToString());
-            throw;
         }
     }
 
@@ -516,10 +592,64 @@ public partial class MainWindow : Window
         ShowExtensionInstallerDialog();
     }
 
+    private void MoreButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is Button btn && btn.ContextMenu is not null)
+        {
+            btn.ContextMenu.PlacementTarget = btn;
+            btn.ContextMenu.Placement = System.Windows.Controls.Primitives.PlacementMode.Bottom;
+            btn.ContextMenu.IsOpen = true;
+        }
+    }
+
     public void ShowExtensionInstallerDialog()
     {
-        var dialog = new BrowserExtensionDialog();
-        dialog.ShowDialog();
+        ShowExtensionInstallerDialog(false);
+    }
+
+    public void ShowExtensionInstallerDialog(bool fromSettings)
+    {
+        DownloadsView.Visibility = Visibility.Collapsed;
+        SettingsView.Visibility = Visibility.Collapsed;
+        NoticeView.Visibility = Visibility.Collapsed;
+        ExtensionView.Visibility = Visibility.Visible;
+    }
+
+    public void ShowExtensionReloadNotice(string oldVersion, string newVersion)
+    {
+        DownloadsView.Visibility = Visibility.Collapsed;
+        SettingsView.Visibility = Visibility.Collapsed;
+        ExtensionView.Visibility = Visibility.Collapsed;
+        NoticeView.Visibility = Visibility.Visible;
+        NoticeContent.Initialize(oldVersion, newVersion);
+    }
+
+    public void ShowDownloadsView()
+    {
+        SettingsView.Visibility = Visibility.Collapsed;
+        ExtensionView.Visibility = Visibility.Collapsed;
+        NoticeView.Visibility = Visibility.Collapsed;
+        DownloadsView.Visibility = Visibility.Visible;
+        _viewModel.PersistSettings();
+        TaskGrid.Focus();
+    }
+
+    private void LocationText_MouseDown(object sender, MouseButtonEventArgs e)
+    {
+        if (e.ChangedButton == MouseButton.Left && _viewModel.SelectedTask is not null)
+        {
+            _viewModel.RevealSelected();
+            e.Handled = true;
+        }
+    }
+
+    private void SourceText_MouseDown(object sender, MouseButtonEventArgs e)
+    {
+        if (e.ChangedButton == MouseButton.Left && _viewModel.SelectedTask is not null)
+        {
+            _viewModel.CopySelectedUrl();
+            e.Handled = true;
+        }
     }
 
     private void TaskGrid_MouseDoubleClick(object sender, MouseButtonEventArgs e)
