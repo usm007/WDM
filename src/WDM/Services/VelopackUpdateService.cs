@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Net.Http;
 using Velopack;
 using Velopack.Sources;
 
@@ -72,9 +73,72 @@ public static class VelopackUpdateService
         }
     }
 
+    // Shared HttpClient-based downloader that reuses UpdateChecker's client settings (avoids socket permission issues)
+    private sealed class SharedHttpDownloader : IFileDownloader
+    {
+        private static readonly HttpClient _http = new HttpClient { Timeout = TimeSpan.FromSeconds(30) };
+        static SharedHttpDownloader()
+        {
+            _http.DefaultRequestHeaders.UserAgent.ParseAdd($"WDM/{UpdateChecker.CurrentVersion}");
+            _http.DefaultRequestHeaders.Accept.ParseAdd("application/octet-stream");
+        }
+        public void DownloadFile(string url, string targetFile, Action<int> progress, IDictionary<string, string> headers, double timeout, CancellationToken cancelToken)
+        {
+            DownloadFileAsync(url, targetFile, progress, headers, timeout, cancelToken).GetAwaiter().GetResult();
+        }
+        private async Task DownloadFileAsync(string url, string targetFile, Action<int> progress, IDictionary<string, string> headers, double timeout, CancellationToken cancelToken)
+        {
+            using var req = new HttpRequestMessage(HttpMethod.Get, url);
+            if (headers != null) foreach(var kv in headers) req.Headers.TryAddWithoutValidation(kv.Key, kv.Value);
+            using var resp = await _http.SendAsync(req, HttpCompletionOption.ResponseHeadersRead, cancelToken).ConfigureAwait(false);
+            resp.EnsureSuccessStatusCode();
+            long total = resp.Content.Headers.ContentLength ?? -1;
+            using var src = await resp.Content.ReadAsStreamAsync(cancelToken).ConfigureAwait(false);
+            using var dst = System.IO.File.Create(targetFile);
+            var buf = new byte[81920];
+            long read = 0;
+            while(true)
+            {
+                int n = await src.ReadAsync(buf, cancelToken).ConfigureAwait(false);
+                if (n <= 0) break;
+                await dst.WriteAsync(buf.AsMemory(0, n), cancelToken).ConfigureAwait(false);
+                read += n;
+                if (total > 0) progress?.Invoke((int)(read * 100 / total));
+            }
+        }
+        public byte[] DownloadBytes(string url, IDictionary<string, string> headers, double timeout)
+        {
+            return DownloadBytesAsync(url, headers, timeout).GetAwaiter().GetResult();
+        }
+        private async Task<byte[]> DownloadBytesAsync(string url, IDictionary<string, string> headers, double timeout)
+        {
+            using var req = new HttpRequestMessage(HttpMethod.Get, url);
+            if (headers != null) foreach(var kv in headers) req.Headers.TryAddWithoutValidation(kv.Key, kv.Value);
+            using var resp = await _http.SendAsync(req).ConfigureAwait(false);
+            resp.EnsureSuccessStatusCode();
+            return await resp.Content.ReadAsByteArrayAsync().ConfigureAwait(false);
+        }
+        public string DownloadString(string url, IDictionary<string, string> headers, double timeout)
+        {
+            return DownloadStringAsync(url, headers, timeout).GetAwaiter().GetResult();
+        }
+        private async Task<string> DownloadStringAsync(string url, IDictionary<string, string> headers, double timeout)
+        {
+            using var req = new HttpRequestMessage(HttpMethod.Get, url);
+            if (headers != null) foreach(var kv in headers) req.Headers.TryAddWithoutValidation(kv.Key, kv.Value);
+            // GitHub API needs Accept header
+            if (!req.Headers.Contains("Accept")) req.Headers.TryAddWithoutValidation("Accept", "application/vnd.github+json");
+            req.Headers.UserAgent.ParseAdd($"WDM/{UpdateChecker.CurrentVersion}");
+            using var resp = await _http.SendAsync(req).ConfigureAwait(false);
+            resp.EnsureSuccessStatusCode();
+            return await resp.Content.ReadAsStringAsync().ConfigureAwait(false);
+        }
+    }
+
     private static UpdateManager CreateManager()
     {
-        var source = new GithubSource(RepoUrl, accessToken: null, prerelease: false);
+        var downloader = new SharedHttpDownloader();
+        var source = new GithubSource(RepoUrl, accessToken: null, prerelease: false, downloader: downloader);
         var options = new UpdateOptions
         {
             AllowVersionDowngrade = false,
