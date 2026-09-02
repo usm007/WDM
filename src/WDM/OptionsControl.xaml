@@ -493,6 +493,18 @@
 
                     <TextBlock x:Name="UpdateStatusText" TextWrapping="Wrap" FontSize="11.5" Foreground="{DynamicResource Brush.TextDim}" Margin="0,4,0,10" />
 
+                    <!-- Update progress (hidden until download starts) -->
+                    <Border x:Name="UpdateProgressPanel" Visibility="Collapsed" Background="{DynamicResource Brush.SurfaceAlt}" BorderBrush="{DynamicResource Brush.Border}" BorderThickness="1" CornerRadius="4" Padding="10,8" Margin="0,0,0,10">
+                        <StackPanel>
+                            <DockPanel Margin="0,0,0,4">
+                                <TextBlock x:Name="UpdateProgressStatusText" Text="Downloading update package…" FontSize="11.5" FontWeight="SemiBold" Foreground="{DynamicResource Brush.Text}" DockPanel.Dock="Left" />
+                                <TextBlock x:Name="UpdateProgressPctText" Text="0%" FontSize="11.5" FontFamily="{StaticResource Font.App}" FontWeight="SemiBold" Foreground="{DynamicResource Brush.Accent}" DockPanel.Dock="Right" />
+                            </DockPanel>
+                            <ProgressBar x:Name="UpdateProgressBar" Style="{StaticResource ProgressBar.Thin}" Height="4" Minimum="0" Maximum="100" Value="0" Foreground="{DynamicResource Brush.Accent}" />
+                            <TextBlock x:Name="UpdateProgressDetailText" Text="Only the update package is being downloaded (~15 KB delta), not the full installer." FontSize="10.5" Foreground="{DynamicResource Brush.TextMuted}" Margin="0,4,0,0" TextWrapping="Wrap" />
+                        </StackPanel>
+                    </Border>
+
                     <StackPanel Orientation="Horizontal">
                         <Button x:Name="CheckNowButton" Content="Check now" Style="{StaticResource Button.Secondary}" Click="CheckNowClick" Height="26" Padding="14,0" Margin="0,0,8,0" />
                         <Button x:Name="OpenReleaseButton" Content="Open release page" Style="{StaticResource Button.Secondary}" Click="OpenReleaseClick" Height="26" Padding="14,0" Margin="0,0,8,0" Visibility="Collapsed" />

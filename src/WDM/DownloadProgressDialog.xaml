@@ -20,6 +20,7 @@
         RenderOptions.ClearTypeHint="Enabled">
     <Window.Resources>
         <vm:TaskStatusToBrushConverter x:Key="StatusBrush" />
+        <vm:TextToVisibilityConverter x:Key="TextVis" />
     </Window.Resources>
 
     <Border Background="{DynamicResource Brush.Surface}"
@@ -124,40 +125,61 @@
                         <TextBlock Grid.Row="5" Grid.Column="0" Text="Time remaining" FontSize="12.5" Foreground="{DynamicResource Brush.TextMuted}" VerticalAlignment="Center" />
                         <TextBlock Grid.Row="5" Grid.Column="1" Text="{Binding Task.Eta}" FontSize="13" FontWeight="Normal" FontFamily="{StaticResource Font.App}" Foreground="{DynamicResource Brush.TextDim}" VerticalAlignment="Center" />
 
-                        <!-- Resume Capability -->
-                        <TextBlock Grid.Row="6" Grid.Column="0" Text="Server range" FontSize="12.5" Foreground="{DynamicResource Brush.TextMuted}" VerticalAlignment="Center" />
-                        <TextBlock Grid.Row="6" Grid.Column="1" Text="{Binding Task.ResumeCapabilityText}" FontSize="12.5" Foreground="{DynamicResource Brush.TextDim}" VerticalAlignment="Center" />
+                        <!-- Resume Capability (HTTP only) -->
+                        <TextBlock x:Name="ResumeLabel" Grid.Row="6" Grid.Column="0" Text="Server range" FontSize="12.5" Foreground="{DynamicResource Brush.TextMuted}" VerticalAlignment="Center" />
+                        <TextBlock x:Name="ResumeValue" Grid.Row="6" Grid.Column="1" Text="{Binding Task.ResumeCapabilityText}" FontSize="12.5" Foreground="{DynamicResource Brush.TextDim}" VerticalAlignment="Center" />
                     </Grid>
 
-                    <!-- Multi-Thread Progress Segment Visualizer -->
-                    <DockPanel Margin="0,0,0,4">
-                        <TextBlock Text="Segment progress by thread:" FontSize="12" Foreground="{DynamicResource Brush.TextMuted}" VerticalAlignment="Center" />
-                        <TextBlock Text="{Binding ChunkCountText}" FontSize="12" FontFamily="{StaticResource Font.App}" FontWeight="SemiBold"
-                                   Foreground="{DynamicResource Brush.Accent}" HorizontalAlignment="Right" VerticalAlignment="Center" />
-                    </DockPanel>
+                    <!-- HTTP-specific: Multi-Thread Progress Segment Visualizer -->
+                    <StackPanel x:Name="HttpExtraPanel">
+                        <DockPanel Margin="0,0,0,4">
+                            <TextBlock Text="Segment progress by thread:" FontSize="12" Foreground="{DynamicResource Brush.TextMuted}" VerticalAlignment="Center" />
+                            <TextBlock Text="{Binding ChunkCountText}" FontSize="12" FontFamily="{StaticResource Font.App}" FontWeight="SemiBold"
+                                       Foreground="{DynamicResource Brush.Accent}" HorizontalAlignment="Right" VerticalAlignment="Center" />
+                        </DockPanel>
 
-                    <Border Background="{DynamicResource Brush.Border}" Height="6" CornerRadius="2" Padding="0.5">
-                        <ItemsControl x:Name="ChunkListHost" ItemsSource="{Binding ChunkList}">
-                            <ItemsControl.ItemsPanel>
-                                <ItemsPanelTemplate>
-                                    <UniformGrid Rows="1" />
-                                </ItemsPanelTemplate>
-                            </ItemsControl.ItemsPanel>
-                            <ItemsControl.ItemTemplate>
-                                <DataTemplate>
-                                    <Grid Margin="0.5,0" ToolTip="{Binding ToolTip}">
-                                        <Grid Height="5">
-                                            <Grid.ColumnDefinitions>
-                                                <ColumnDefinition Width="{Binding FillGridLength}" />
-                                                <ColumnDefinition Width="{Binding RemainingGridLength}" />
-                                            </Grid.ColumnDefinitions>
-                                            <Border Grid.Column="0" Background="{DynamicResource Brush.Accent}" CornerRadius="1" />
+                        <Border Background="{DynamicResource Brush.Border}" Height="6" CornerRadius="2" Padding="0.5">
+                            <ItemsControl x:Name="ChunkListHost" ItemsSource="{Binding ChunkList}">
+                                <ItemsControl.ItemsPanel>
+                                    <ItemsPanelTemplate>
+                                        <UniformGrid Rows="1" />
+                                    </ItemsPanelTemplate>
+                                </ItemsControl.ItemsPanel>
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate>
+                                        <Grid Margin="0.5,0" ToolTip="{Binding ToolTip}">
+                                            <Grid Height="5">
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="{Binding FillGridLength}" />
+                                                    <ColumnDefinition Width="{Binding RemainingGridLength}" />
+                                                </Grid.ColumnDefinitions>
+                                                <Border Grid.Column="0" Background="{DynamicResource Brush.Accent}" CornerRadius="1" />
+                                            </Grid>
                                         </Grid>
-                                    </Grid>
-                                </DataTemplate>
-                            </ItemsControl.ItemTemplate>
-                        </ItemsControl>
-                    </Border>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                        </Border>
+                    </StackPanel>
+
+                    <!-- YouTube-specific: Single stream progress (different system) -->
+                    <StackPanel x:Name="YouTubeExtraPanel" Visibility="Collapsed">
+                        <DockPanel Margin="0,0,0,4">
+                            <TextBlock Text="YouTube progress:" FontSize="12" Foreground="{DynamicResource Brush.TextMuted}" VerticalAlignment="Center" />
+                            <TextBlock Text="{Binding YouTubeEngineText}" FontSize="12" FontFamily="{StaticResource Font.App}" FontWeight="SemiBold"
+                                       Foreground="{DynamicResource Brush.Accent}" HorizontalAlignment="Right" VerticalAlignment="Center" />
+                        </DockPanel>
+                        <Border Background="{DynamicResource Brush.Border}" Height="6" CornerRadius="2" Padding="0.5">
+                            <Grid Height="5">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="{Binding YouTubeProgressFill}" />
+                                    <ColumnDefinition Width="{Binding YouTubeProgressRemaining}" />
+                                </Grid.ColumnDefinitions>
+                                <Border Grid.Column="0" Background="{DynamicResource Brush.Accent}" CornerRadius="1" />
+                            </Grid>
+                        </Border>
+                        <TextBlock Text="{Binding YouTubeStatusHint}" FontSize="11" Foreground="{DynamicResource Brush.TextDim}" Margin="0,4,0,0" TextWrapping="Wrap" Visibility="{Binding YouTubeStatusHint, Converter={StaticResource TextVis}}" />
+                    </StackPanel>
                 </StackPanel>
 
                 <!-- TAB 2: Speed Limiter -->

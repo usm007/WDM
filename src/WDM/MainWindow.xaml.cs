@@ -453,8 +453,8 @@ public partial class MainWindow : Window
         Close();
     }
 
-    /// <summary>Checks GitHub for a newer WDM release, at most once every 15 minutes,
-    /// and prompts the user to download and install it when one is found.</summary>
+    /// <summary>Checks for updates: Velopack delta first (patch-only, ~2MB), then GitHub full installer as fallback.
+    /// Throttled to once every 15 minutes.</summary>
     private async Task CheckForUpdatesAsync()
     {
         var settings = _viewModel.Settings;
@@ -464,9 +464,35 @@ public partial class MainWindow : Window
         if (lastCheck is not null && DateTime.UtcNow - lastCheck < TimeSpan.FromMinutes(15))
             return;
 
+        // 1) Try Velopack delta (silent patch) when installed via Velopack.
+        if (VelopackUpdateService.IsVelopackInstalled)
+        {
+            try
+            {
+                var velopackUpdate = await VelopackUpdateService.CheckForUpdatesAsync();
+                if (velopackUpdate is not null)
+                {
+                    settings.LastUpdateCheckUtc = DateTime.UtcNow.ToString("O");
+                    _viewModel.PersistSettings();
+
+                    var semVer = velopackUpdate.TargetFullRelease.Version;
+                    var target = VelopackUpdateService.ToSystemVersion(semVer);
+                    // Reuse ReleaseInfo shape for dialog: create synthetic ReleaseInfo from Velopack asset
+                    var synthetic = new ReleaseInfo($"v{target}", target, $"WDM {target}", $"https://github.com/usm007/WDM/releases/tag/v{target}", $"Delta update to {target} (patch-only, no full installer).", DateTime.UtcNow, null);
+                    // Attach velopack payload via dialog's velopack path
+                    _tray.ShowBalloon(
+                        "WDM update available",
+                        $"WDM {target} is available — click to download delta and restart.",
+                        () => _dispatcher.BeginInvoke(async () => await DownloadAndInstallVelopackAsync(velopackUpdate)));
+                    _ = _dispatcher.BeginInvoke(() => ShowUpdatePromptVelopack(synthetic, velopackUpdate));
+                    return;
+                }
+            }
+            catch { /* fall through to GitHub check */ }
+        }
+
+        // 2) Fallback: GitHub full installer check
         var latest = await UpdateChecker.CheckLatestAsync();
-        // Only stamp the last-check time on a successful answer; a transient network
-        // failure must not disable checking for another 24h.
         if (latest is null)
             return;
 
@@ -490,6 +516,30 @@ public partial class MainWindow : Window
         // notification otherwise.
         var dialog = new UpdateAvailableDialog(latest) { Owner = this };
         dialog.ShowDialog();
+    }
+
+    private void ShowUpdatePromptVelopack(ReleaseInfo synthetic, Velopack.UpdateInfo velopackInfo)
+    {
+        var dialog = new UpdateAvailableDialog(synthetic, velopackInfo) { Owner = this };
+        dialog.ShowDialog();
+    }
+
+    private async Task DownloadAndInstallVelopackAsync(Velopack.UpdateInfo update)
+    {
+        try
+        {
+            _tray.ShowBalloon("WDM update", "Downloading delta update…");
+            await VelopackUpdateService.DownloadUpdatesAsync(update, pct =>
+            {
+                if (pct % 25 == 0)
+                    _dispatcher.BeginInvoke(() => _tray.ShowBalloon("WDM update", $"Downloading delta… {pct}%"));
+            });
+            VelopackUpdateService.ApplyAndRestart(update.TargetFullRelease);
+        }
+        catch (Exception ex)
+        {
+            _tray.ShowBalloon("Update failed", $"Could not download delta: {ex.Message}");
+        }
     }
 
     /// <summary>Downloads the new installer to the temp folder and launches it. WDM

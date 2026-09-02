@@ -374,8 +374,7 @@ public partial class WdmOriginalMainWindow : Window
         Close();
     }
 
-    /// <summary>Checks GitHub for a newer WDM release, at most once every 15 minutes,
-    /// and prompts the user to download and install it when one is found.</summary>
+    /// <summary>Checks for updates: Velopack delta first (patch-only), then GitHub full installer fallback.</summary>
     private async Task CheckForUpdatesAsync()
     {
         var settings = _viewModel.Settings;
@@ -385,9 +384,30 @@ public partial class WdmOriginalMainWindow : Window
         if (lastCheck is not null && DateTime.UtcNow - lastCheck < TimeSpan.FromMinutes(15))
             return;
 
+        if (VelopackUpdateService.IsVelopackInstalled)
+        {
+            try
+            {
+                var velopackUpdate = await VelopackUpdateService.CheckForUpdatesAsync();
+                if (velopackUpdate is not null)
+                {
+                    settings.LastUpdateCheckUtc = DateTime.UtcNow.ToString("O");
+                    _viewModel.PersistSettings();
+                    var semVer = velopackUpdate.TargetFullRelease.Version;
+                    var target = VelopackUpdateService.ToSystemVersion(semVer);
+                    var synthetic = new ReleaseInfo($"v{target}", target, $"WDM {target}", $"https://github.com/usm007/WDM/releases/tag/v{target}", $"Delta update to {target} (patch-only).", DateTime.UtcNow, null);
+                    _tray.ShowBalloon(
+                        "WDM update available",
+                        $"WDM {target} is available — click to download delta and restart.",
+                        () => _dispatcher.BeginInvoke(async () => await DownloadAndInstallVelopackAsync(velopackUpdate)));
+                    _ = _dispatcher.BeginInvoke(() => ShowUpdatePromptVelopack(synthetic, velopackUpdate));
+                    return;
+                }
+            }
+            catch { }
+        }
+
         var latest = await UpdateChecker.CheckLatestAsync();
-        // Only stamp the last-check time on a successful answer; a transient network
-        // failure must not disable checking for another 24h.
         if (latest is null)
             return;
 
@@ -398,7 +418,7 @@ public partial class WdmOriginalMainWindow : Window
         {
             _tray.ShowBalloon(
                 "WDM update available",
-                $"WDM {latest.Version} is available â€” click to download and install.",
+                $"WDM {latest.Version} is available — click to download and install.",
                 () => _dispatcher.BeginInvoke(async () => await DownloadAndInstallUpdateAsync(latest)));
             _ = _dispatcher.BeginInvoke(() => ShowUpdatePrompt(latest));
         }
@@ -406,11 +426,32 @@ public partial class WdmOriginalMainWindow : Window
 
     private void ShowUpdatePrompt(ReleaseInfo latest)
     {
-        // Always surface the dialog, even when started minimized, because Windows
-        // 10/11 frequently suppress tray balloons and the user would never see the
-        // notification otherwise.
         var dialog = new UpdateAvailableDialog(latest) { Owner = this };
         dialog.ShowDialog();
+    }
+
+    private void ShowUpdatePromptVelopack(ReleaseInfo synthetic, Velopack.UpdateInfo velopackInfo)
+    {
+        var dialog = new UpdateAvailableDialog(synthetic, velopackInfo) { Owner = this };
+        dialog.ShowDialog();
+    }
+
+    private async Task DownloadAndInstallVelopackAsync(Velopack.UpdateInfo update)
+    {
+        try
+        {
+            _tray.ShowBalloon("WDM update", "Downloading delta update…");
+            await VelopackUpdateService.DownloadUpdatesAsync(update, pct =>
+            {
+                if (pct % 25 == 0)
+                    _dispatcher.BeginInvoke(() => _tray.ShowBalloon("WDM update", $"Downloading delta… {pct}%"));
+            });
+            VelopackUpdateService.ApplyAndRestart(update.TargetFullRelease);
+        }
+        catch (Exception ex)
+        {
+            _tray.ShowBalloon("Update failed", $"Could not download delta: {ex.Message}");
+        }
     }
 
     /// <summary>Downloads the new installer to the temp folder and launches it. WDM

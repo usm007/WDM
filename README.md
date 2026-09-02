@@ -1,8 +1,5 @@
 # WDM — Windows Download Manager
 
-<img width="1774" height="887" alt="banner" src="https://github.com/user-attachments/assets/07e7e14d-ab92-462c-af6f-7784a038bef6" />
-
-
 An IDM-inspired no-nonsense download manager for Windows, written in C# / WPF / .NET 8.
 
 - **Multi-threaded downloads** — dynamic segmentation with a shared chunk pool: the file is divided into small byte-range chunks that any worker thread can pick up as they finish, so slower segments don't idle threads.
@@ -91,9 +88,18 @@ Output: `output\WDM_Setup_<version>.exe`. Per-user install into `%LocalAppData%\
 5. `RunSingleStreamAsync` is the fallback when the server doesn't support ranges or the size is unknown; it also retries on failure. `.m3u8` URLs are routed to `HlsDownloader` instead.
 6. A timer samples bytes/sec to drive the speed and ETA shown in the UI.
 
-## Updates
+## Updates (delta / patch-only)
 
-The app checks `github.com/usm007/WDM/releases` on startup (and via *Check now* in Settings) and offers to open the latest installer when a newer version exists.
+* **Velopack delta updates** (preferred): when WDM is installed via Velopack, `src/WDM/Services/VelopackUpdateService.cs:13` checks `https://github.com/usm007/WDM/releases` for `*.nupkg` + `RELEASES`. `Velopack.UpdateManager` downloads only the binary diff (`Delta ~1-5 MB` vs full `~60 MB`) and `ApplyUpdatesAndRestart` applies it silently — no Inno wizard, no full `WDM_Setup_*.exe` prompt. `App.xaml.cs:35` calls `VelopackApp.Build().SetAutoApplyOnStartup(true).Run()` to handle hooks and auto-apply pending deltas on next launch. Works per-user (`%LocalAppData%\WDM`), no UAC, preserves `WebView2` profile / `tasks.json` / `engines\`.
+* **Fallback**: dev builds and legacy Inno-only installs (`VelopackUpdateService.IsVelopackInstalled == false`) fall back to `src/WDM/Services/UpdateChecker.cs:37` GitHub Releases API. The full installer is downloaded to `%TEMP%` and launched. Even this path can be silent via `UpdateChecker.LaunchInstallerSilent()` (`/VERYSILENT`).
+* Hybrid release: publish both `WDM_Setup_<version>.exe` (Inno, new users) + Velopack assets (`WDM-<version>-full.nupkg`, `*-delta.nupkg`, `RELEASES`) to the same GitHub Release.
+
+Build Velopack release (requires `vpk` CLI: `dotnet tool install -g vpk`):
+```
+dotnet publish src/WDM/WDM.csproj -c Release -o publish
+vpk pack --packId WDM --packVersion 2.5.4 --packDir publish --mainExe WDM.exe --outputDir output
+# upload output/RELEASES + *.nupkg to GitHub Release alongside WDM_Setup_2.5.4.exe
+```
 
 ## Caveats
 

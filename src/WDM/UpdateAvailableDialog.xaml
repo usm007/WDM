@@ -50,6 +50,18 @@
                     <TextBlock x:Name="DetailsText" TextWrapping="Wrap" FontSize="13"
                                Foreground="{DynamicResource Brush.TextDim}" LineHeight="18" />
                 </ScrollViewer>
+
+                <!-- Update Progress (hidden until download starts) -->
+                <Border x:Name="ProgressPanel" Visibility="Collapsed" Background="{DynamicResource Brush.SurfaceAlt}" BorderBrush="{DynamicResource Brush.Border}" BorderThickness="1" CornerRadius="4" Padding="10,8" Margin="0,8,0,0">
+                    <StackPanel>
+                        <DockPanel Margin="0,0,0,4">
+                            <TextBlock x:Name="ProgressStatusText" Text="Downloading update package…" FontSize="11.5" FontWeight="SemiBold" Foreground="{DynamicResource Brush.Text}" DockPanel.Dock="Left" />
+                            <TextBlock x:Name="ProgressPctText" Text="0%" FontSize="11.5" FontFamily="{StaticResource Font.App}" FontWeight="SemiBold" Foreground="{DynamicResource Brush.Accent}" DockPanel.Dock="Right" />
+                        </DockPanel>
+                        <ProgressBar x:Name="DownloadProgressBar" Style="{StaticResource ProgressBar.Thin}" Height="4" Minimum="0" Maximum="100" Value="0" Foreground="{DynamicResource Brush.Accent}" />
+                        <TextBlock x:Name="ProgressDetailText" Text="Only the update package (~2-15 MB) is being downloaded, not the full installer." FontSize="10.5" Foreground="{DynamicResource Brush.TextMuted}" Margin="0,4,0,0" TextWrapping="Wrap" />
+                    </StackPanel>
+                </Border>
             </StackPanel>
 
             <!-- Bottom Action Strip -->

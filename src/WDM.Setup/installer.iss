@@ -1,10 +1,15 @@
-; WDM installer
+; WDM installer — first-install only.
+; Delta updates (patch-only, no wizard) are handled by Velopack (src/WDM/Services/VelopackUpdateService.cs)
+; via GitHub Releases nupkg/RELEASES. This Inno installer remains for new users and as fallback
+; for portable/dev builds where Velopack is not active. It installs per-user to {localappdata}\WDM
+; and preserves user data on updates (see CurStepChanged).
 ; Requires Inno Setup 6 (https://jrsoftware.org/isinfo.php)
 ; Compile: ISCC.exe installer.iss
+; Velopack pack (delta): dotnet publish -> vpk pack --packId WDM --packVersion 2.5.4 ...
 
 #define MyAppName "WDM"
 #define MyAppShortName "WDM"
-#define MyAppVersion "2.5.3.0"
+#define MyAppVersion "2.5.4.0"
 #define MyAppPublisher "WDM Team"
 #define MyAppExeName "WDM.exe"
 #define MyAppIcon "..\WDM\Assets\WDM.ico"

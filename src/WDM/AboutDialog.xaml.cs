@@ -50,6 +50,22 @@ public partial class AboutDialog : Window
         UpdateStatusText.Text = "Checking for updates…";
         try
         {
+            // Prefer Velopack delta when installed via Velopack
+            if (VelopackUpdateService.IsVelopackInstalled)
+            {
+                var vUpdate = await VelopackUpdateService.CheckForUpdatesAsync();
+                if (vUpdate is not null)
+                {
+                    var semVer = vUpdate.TargetFullRelease.Version;
+                    var target = VelopackUpdateService.ToSystemVersion(semVer);
+                    var synthetic = new ReleaseInfo($"v{target}", target, $"WDM {target}", $"https://github.com/usm007/WDM/releases/tag/v{target}", $"Delta update to {target} (patch-only).", DateTime.UtcNow, null);
+                    UpdateStatusText.Text = "";
+                    var dialog = new UpdateAvailableDialog(synthetic, vUpdate) { Owner = this };
+                    dialog.ShowDialog();
+                    return;
+                }
+            }
+
             var latest = await UpdateChecker.CheckLatestAsync();
             if (latest is null)
             {

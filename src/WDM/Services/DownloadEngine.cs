@@ -1788,6 +1788,10 @@ public sealed class DownloadEngine
     {
         var task = session.Task;
         task.Status = TaskStatus.Downloading;
+        // YouTube tasks must not show HTTP-specific probe text; set immediately so the
+        // progress window never flashes "Checking server support..." (see screenshot).
+        task.ResumeCapabilityText = "YouTube — via yt-dlp (single stream)";
+        task.IsResumable = false;
         TaskChanged?.Invoke();
 
         try
@@ -1862,8 +1866,37 @@ public sealed class DownloadEngine
             }
             else if (proc.ExitCode == 0)
             {
-                task.DownloadedBytes = task.TotalBytes > 0 ? task.TotalBytes : (File.Exists(outFile) ? new FileInfo(outFile).Length : 0);
+                long fileLen = 0;
+                try
+                {
+                    if (!outFile.Contains("%(") && File.Exists(outFile))
+                        fileLen = new FileInfo(outFile).Length;
+                    else if (!string.IsNullOrWhiteSpace(task.FullPath) && File.Exists(task.FullPath))
+                        fileLen = new FileInfo(task.FullPath).Length;
+                    else if (outFile.Contains("%("))
+                    {
+                        // Template case: parse final FileName was set to merged name; try FullPath again
+                        // and if still missing, pick newest file in SaveFolder matching title pattern.
+                        try
+                        {
+                            var dir = task.SaveFolder;
+                            if (Directory.Exists(dir))
+                            {
+                                var newest = new DirectoryInfo(dir).GetFiles()
+                                    .OrderByDescending(f => f.LastWriteTimeUtc)
+                                    .FirstOrDefault();
+                                if (newest != null && (DateTime.UtcNow - newest.LastWriteTimeUtc).TotalMinutes < 5)
+                                    fileLen = newest.Length;
+                            }
+                        }
+                        catch { }
+                    }
+                }
+                catch { }
+
+                task.DownloadedBytes = task.TotalBytes > 0 ? task.TotalBytes : fileLen;
                 if (task.TotalBytes <= 0) task.TotalBytes = task.DownloadedBytes;
+                task.Progress = 100;
                 task.Status = TaskStatus.Completed;
                 task.CompletedAt = DateTime.Now;
                 task.SpeedBps = 0;
@@ -1907,7 +1940,23 @@ public sealed class DownloadEngine
             var name = Path.GetFileName(dest);
             if (!string.IsNullOrWhiteSpace(name))
             {
-                task.FileName = name;
+                // yt-dlp creates temp files like "Title.mp4.f616.mp4" or "Title.f140.m4a"
+                // during separate stream downloads. Don't overwrite the user-visible
+                // FileName with the temp format suffix; wait for the Merger line which
+                // carries the final merged name. Single-stream downloads have no
+                // intermediate suffix and will update here correctly.
+                bool isTempFormat = System.Text.RegularExpressions.Regex.IsMatch(name, @"\.f\d+\.", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+                if (!isTempFormat)
+                {
+                    task.FileName = name;
+                }
+                else if (string.IsNullOrWhiteSpace(task.FileName) || task.FileName == "YouTube Video" || task.FileName.StartsWith("download_", StringComparison.OrdinalIgnoreCase))
+                {
+                    // Fallback if we have no meaningful name yet: strip the temp part.
+                    var cleaned = System.Text.RegularExpressions.Regex.Replace(name, @"\.f\d+(\.[a-z0-9]+)$", "$1", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+                    if (!string.IsNullOrWhiteSpace(cleaned))
+                        task.FileName = cleaned;
+                }
             }
         }
         else if (line.StartsWith("[Merger] Merging formats into \""))
@@ -1923,49 +1972,98 @@ public sealed class DownloadEngine
                 }
             }
         }
+        else if (line.StartsWith("[ExtractAudio] Destination: "))
+        {
+            var dest = line.Substring("[ExtractAudio] Destination: ".Length).Trim();
+            var name = Path.GetFileName(dest);
+            if (!string.IsNullOrWhiteSpace(name))
+                task.FileName = name;
+        }
 
-        if (line.StartsWith("[download]") && line.Contains("%"))
+        // yt-dlp progress lines: "[download]   5.1% of ~  5.20MiB at  123.45KiB/s ETA 00:36"
+        // Tolerant regex handles the optional "~" (approximate size) and "Unknown" placeholders.
+        if (line.StartsWith("[download]") && line.Contains('%'))
         {
             try
             {
-                var parts = line.Split(' ', StringSplitOptions.RemoveEmptyEntries);
-                for (int i = 0; i < parts.Length; i++)
+                var pctMatch = System.Text.RegularExpressions.Regex.Match(line, @"(\d+(?:\.\d+)?)\s*%");
+                if (pctMatch.Success && double.TryParse(pctMatch.Groups[1].Value, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out double pct))
                 {
-                    if (parts[i] == "of" && i + 1 < parts.Length)
-                    {
-                        long bytes = ParseSizeToBytes(parts[i + 1]);
-                        if (bytes > 0)
-                        {
-                            task.TotalBytes = bytes;
-                        }
-                    }
-                    if (parts[i] == "at" && i + 1 < parts.Length)
-                    {
-                        long bps = ParseSpeedToBps(parts[i + 1]);
-                        if (bps >= 0)
-                        {
-                            task.SpeedBps = bps;
-                        }
-                    }
-                    if (parts[i] == "ETA" && i + 1 < parts.Length)
-                    {
-                        task.Eta = parts[i + 1];
-                    }
+                    pct = Math.Clamp(pct, 0, 100);
+                    task.Progress = (int)Math.Round(pct);
                 }
-                if (task.TotalBytes > 0 && line.Contains("%"))
+
+                var sizeMatch = System.Text.RegularExpressions.Regex.Match(line, @"of\s+~?\s*(\d+(?:\.\d+)?\s*[KMGT]?i?B)", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+                if (sizeMatch.Success)
                 {
-                    int pctIdx = line.IndexOf('%');
-                    int startIdx = line.LastIndexOf(' ', pctIdx);
-                    if (startIdx >= 0 && double.TryParse(line.Substring(startIdx, pctIdx - startIdx).Trim(), out double p))
+                    long bytes = ParseSizeToBytes(sizeMatch.Groups[1].Value.Replace(" ", ""));
+                    if (bytes > 0)
+                        task.TotalBytes = bytes;
+                }
+
+                var speedMatch = System.Text.RegularExpressions.Regex.Match(line, @"at\s+(\d+(?:\.\d+)?\s*[KMGT]?i?B/s)", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+                if (speedMatch.Success)
+                {
+                    long bps = ParseSpeedToBps(speedMatch.Groups[1].Value.Replace(" ", ""));
+                    if (bps > 0)
+                        task.SpeedBps = bps;
+                    else if (line.Contains("Unknown speed", StringComparison.OrdinalIgnoreCase))
+                        task.SpeedBps = 0;
+                }
+                else if (line.Contains("Unknown speed", StringComparison.OrdinalIgnoreCase))
+                {
+                    task.SpeedBps = 0;
+                }
+
+                var etaMatch = System.Text.RegularExpressions.Regex.Match(line, @"ETA\s+(\S+)", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+                if (etaMatch.Success)
+                {
+                    var etaRaw = etaMatch.Groups[1].Value.Trim();
+                    if (etaRaw.Equals("Unknown", StringComparison.OrdinalIgnoreCase) || etaRaw.Equals("UnknownETA", StringComparison.OrdinalIgnoreCase) || etaRaw.Equals("--", StringComparison.OrdinalIgnoreCase))
+                        task.Eta = "";
+                    else
+                        task.Eta = etaRaw;
+                }
+
+                // Keep DownloadedBytes in sync when total is known; progress bar itself
+                // is driven by task.Progress above so it moves even when size is "~".
+                if (task.TotalBytes > 0 && pctMatch.Success && double.TryParse(pctMatch.Groups[1].Value, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out double p2))
+                {
+                    task.DownloadedBytes = (long)(task.TotalBytes * (p2 / 100.0));
+                }
+                else if (pctMatch.Success && task.TotalBytes <= 0)
+                {
+                    // Best-effort: derive DownloadedBytes from file on disk if total unknown.
+                    try
                     {
-                        task.DownloadedBytes = (long)(task.TotalBytes * (p / 100.0));
+                        var full = task.FullPath;
+                        if (!string.IsNullOrWhiteSpace(full) && File.Exists(full))
+                            task.DownloadedBytes = new FileInfo(full).Length;
                     }
+                    catch { }
                 }
             }
             catch
             {
                 // ignore parsing errors
             }
+        }
+
+        // Merge / post-processing phase markers keep the UI from stalling at 100% immediately.
+        if (line.StartsWith("[Merger]") || line.StartsWith("[ExtractAudio]") || line.Contains("has already been downloaded", StringComparison.OrdinalIgnoreCase))
+        {
+            if (task.Progress < 100)
+            {
+                // Don't jump to 100 here; RunYouTubeSessionAsync sets Completed on exit.
+                // Nudge to 99 so the user sees "Merging..." feedback.
+                if (task.Progress < 99)
+                    task.Progress = 99;
+            }
+            task.Eta = "";
+        }
+        if (line.Contains("[download] 100%"))
+        {
+            task.Eta = "";
         }
     }
 

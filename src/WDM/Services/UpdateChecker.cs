@@ -113,10 +113,16 @@ public static class UpdateChecker
     }
 
     /// <summary>Runs the downloaded installer (UAC-per-user install; WDM restarts after).</summary>
-    public static void LaunchInstaller(string installerPath)
+    public static void LaunchInstaller(string installerPath, bool silent = false)
     {
-        Process.Start(new ProcessStartInfo(installerPath) { UseShellExecute = true });
+        string args = silent ? "/VERYSILENT /CLOSEAPPLICATIONS /NOCANCEL /RESTARTAPPLICATIONS" : "";
+        var psi = new ProcessStartInfo(installerPath, args) { UseShellExecute = true };
+        Process.Start(psi);
     }
+
+    /// <summary>Launches installer silently (no wizard) - for background patch-like experience even when falling back to full exe.</summary>
+    public static void LaunchInstallerSilent(string installerPath)
+        => LaunchInstaller(installerPath, silent: true);
 
     public static void OpenReleasesPage(string? url = null)
     {
@@ -128,6 +134,26 @@ public static class UpdateChecker
         {
             // Ignore failures to open the browser.
         }
+    }
+
+    /// <summary>Returns true if Velopack delta updates are available on this install.</summary>
+    public static bool IsVelopackAvailable => VelopackUpdateService.IsVelopackInstalled;
+
+    /// <summary>
+    /// Unified update check: tries Velopack delta first, falls back to GitHub Release check.
+    /// Returns a ReleaseInfo for GitHub full-installer path, or null if Velopack handles it.
+    /// UI should prefer Velopack when <see cref="IsVelopackAvailable"/> is true.
+    /// </summary>
+    public static async Task<(ReleaseInfo? GithubRelease, object? VelopackUpdate)> CheckUnifiedAsync(CancellationToken ct = default)
+    {
+        if (IsVelopackAvailable)
+        {
+            var velopack = await VelopackUpdateService.CheckForUpdatesAsync(ct).ConfigureAwait(false);
+            if (velopack is not null)
+                return (null, velopack);
+        }
+        var github = await CheckLatestAsync(ct).ConfigureAwait(false);
+        return (github, null);
     }
 
     /// <summary>Parses a tag like "v1.2.0", "1.2", or "1.2.0.0-beta" into a Version.</summary>

@@ -69,6 +69,39 @@ public partial class DownloadProgressDialog : Window, INotifyPropertyChanged
         _mainViewModel.Engine.ChunkProgressUpdated += Engine_ChunkProgressUpdated;
         UpdateState();
         SetupChunkVisuals();
+        ApplyYouTubeMode();
+    }
+
+    // ── YouTube-specific "different system" bindings ─────────────────────
+    public string YouTubeEngineText => Task.IsYouTube ? "yt-dlp" : ChunkCountText;
+    public string YouTubeStatusHint
+    {
+        get
+        {
+            if (!Task.IsYouTube) return "";
+            if (Task.Status == TaskStatus.Completed) return "Completed via yt-dlp";
+            if (Task.Status == TaskStatus.Failed) return Task.Error ?? "Failed";
+            if (Task.Progress >= 99 && Task.Status == TaskStatus.Downloading) return "Merging streams via ffmpeg…";
+            if (Task.Status == TaskStatus.Downloading) return $"Downloading via yt-dlp — {Task.Progress}%";
+            return "YouTube download";
+        }
+    }
+    public GridLength YouTubeProgressFill => new GridLength(Math.Clamp(Task.Progress, 0, 100), GridUnitType.Star);
+    public GridLength YouTubeProgressRemaining => new GridLength(Math.Max(0, 100 - Math.Clamp(Task.Progress, 0, 100)), GridUnitType.Star);
+
+    private void ApplyYouTubeMode()
+    {
+        bool isYt = Task.IsYouTube;
+        if (HttpExtraPanel != null) HttpExtraPanel.Visibility = isYt ? Visibility.Collapsed : Visibility.Visible;
+        if (YouTubeExtraPanel != null) YouTubeExtraPanel.Visibility = isYt ? Visibility.Visible : Visibility.Collapsed;
+        if (isYt && ResumeLabel != null) ResumeLabel.Text = "Engine";
+        // For YouTube tasks, the ResumeCapabilityText is set by RunYouTubeSessionAsync to
+        // "YouTube — via yt-dlp (single stream)" so the dialog never shows
+        // "Checking server support..." (the bug in the screenshot).
+        OnPropertyChanged(nameof(YouTubeEngineText));
+        OnPropertyChanged(nameof(YouTubeStatusHint));
+        OnPropertyChanged(nameof(YouTubeProgressFill));
+        OnPropertyChanged(nameof(YouTubeProgressRemaining));
     }
 
     protected override void OnSourceInitialized(EventArgs e)
@@ -240,12 +273,20 @@ public partial class DownloadProgressDialog : Window, INotifyPropertyChanged
             OnPropertyChanged(nameof(DownloadedDetailText));
             OnPropertyChanged(nameof(CanPause));
             OnPropertyChanged(nameof(CanResume));
+            OnPropertyChanged(nameof(YouTubeEngineText));
+            OnPropertyChanged(nameof(YouTubeStatusHint));
+            OnPropertyChanged(nameof(YouTubeProgressFill));
+            OnPropertyChanged(nameof(YouTubeProgressRemaining));
             if (e.PropertyName == nameof(DownloadTask.ChunkCount))
             {
                 OnPropertyChanged(nameof(ChunkCountText));
                 SetupChunkVisuals();
             }
-            UpdateChunkVisuals();
+            // Only update chunk visuals for HTTP tasks; YouTube uses single bar via YouTubeProgress* bindings.
+            if (!Task.IsYouTube)
+                UpdateChunkVisuals();
+            else
+                ApplyYouTubeMode();
 
             if (Task.Status == TaskStatus.Completed)
             {

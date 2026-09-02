@@ -15,6 +15,7 @@ public partial class OptionsControl : UserControl
 {
     private MainViewModel? _viewModel;
     private ReleaseInfo? _latestRelease;
+    private Velopack.UpdateInfo? _velopackUpdate;
     private bool _isInitializingAppearance = true;
 
     public event EventHandler? CloseRequested;
@@ -286,9 +287,30 @@ public partial class OptionsControl : UserControl
     {
         CheckNowButton.IsEnabled = false;
         OpenReleaseButton.Visibility = Visibility.Collapsed;
+        DownloadInstallButton.Visibility = Visibility.Collapsed;
         UpdateStatusText.Text = "Checking for updates...";
+        _latestRelease = null;
+        _velopackUpdate = null;
         try
         {
+            // Prefer Velopack delta when installed via Velopack
+            if (VelopackUpdateService.IsVelopackInstalled)
+            {
+                var vUpdate = await VelopackUpdateService.CheckForUpdatesAsync();
+                if (vUpdate is not null)
+                {
+                    _velopackUpdate = vUpdate;
+                    var semVer = vUpdate.TargetFullRelease.Version;
+                    var target = VelopackUpdateService.ToSystemVersion(semVer);
+                    LatestVersionText.Text = $"v{target} (delta)";
+                    OpenReleaseButton.Visibility = Visibility.Visible;
+                    DownloadInstallButton.Visibility = Visibility.Visible;
+                    DownloadInstallButton.Content = "Download Delta & Restart";
+                    UpdateStatusText.Text = $"Delta update available: v{target} — patch-only (~2-5 MB), no full installer.";
+                    return;
+                }
+            }
+
             _latestRelease = await UpdateChecker.CheckLatestAsync();
             if (_latestRelease is null)
             {
@@ -299,6 +321,7 @@ public partial class OptionsControl : UserControl
                 LatestVersionText.Text = _latestRelease.TagName;
                 OpenReleaseButton.Visibility = Visibility.Visible;
                 DownloadInstallButton.Visibility = Visibility.Visible;
+                DownloadInstallButton.Content = "Download & Install";
                 UpdateStatusText.Text = $"A new version is available: {_latestRelease.TagName}." +
                     (_latestRelease.PublishedAt is { } published ? $" Published {published.ToLocalTime():yyyy-MM-dd}." : "");
             }
@@ -311,6 +334,7 @@ public partial class OptionsControl : UserControl
         catch (Exception ex)
         {
             _latestRelease = null;
+            _velopackUpdate = null;
             LatestVersionText.Text = "—";
             UpdateStatusText.Text = $"Check failed: {ex.Message}";
         }
@@ -327,16 +351,75 @@ public partial class OptionsControl : UserControl
 
     private async void DownloadInstallClick(object sender, RoutedEventArgs e)
     {
+        // Velopack delta path: update package ONLY, not full installer — progress bar + auto-restart
+        if (_velopackUpdate is not null)
+        {
+            DownloadInstallButton.IsEnabled = false;
+            OpenReleaseButton.IsEnabled = false;
+            CheckNowButton.IsEnabled = false;
+            UpdateProgressPanel.Visibility = Visibility.Visible;
+            UpdateProgressBar.Value = 0;
+            UpdateProgressPctText.Text = "0%";
+            UpdateProgressStatusText.Text = "Downloading update package…";
+            UpdateProgressDetailText.Text = "Only the delta package (~15 KB - 5 MB) is being downloaded, not the full installer.";
+            UpdateStatusText.Text = "Downloading update package…";
+            try
+            {
+                await VelopackUpdateService.DownloadUpdatesAsync(_velopackUpdate, pct =>
+                {
+                    Dispatcher.Invoke(() =>
+                    {
+                        UpdateProgressBar.Value = pct;
+                        UpdateProgressPctText.Text = $"{pct}%";
+                        UpdateProgressStatusText.Text = pct < 100 ? "Downloading update package…" : "Download complete — applying…";
+                        UpdateStatusText.Text = $"Downloading update package… {pct}%";
+                    });
+                });
+                UpdateProgressStatusText.Text = "Applying update…";
+                UpdateProgressDetailText.Text = "WDM will restart automatically to apply the patch.";
+                UpdateProgressBar.Value = 100;
+                UpdateProgressPctText.Text = "100%";
+                UpdateStatusText.Text = "Update downloaded — applying and restarting…";
+                await Task.Delay(600);
+                VelopackUpdateService.ApplyAndRestart(_velopackUpdate.TargetFullRelease);
+            }
+            catch (Exception ex)
+            {
+                UpdateProgressPanel.Visibility = Visibility.Collapsed;
+                UpdateStatusText.Text = $"Delta download failed: {ex.Message}";
+                DownloadInstallButton.IsEnabled = true;
+                OpenReleaseButton.IsEnabled = true;
+                CheckNowButton.IsEnabled = true;
+            }
+            return;
+        }
+
         if (_latestRelease is null)
             return;
 
         DownloadInstallButton.IsEnabled = false;
         OpenReleaseButton.IsEnabled = false;
-        UpdateStatusText.Text = "Downloading the new installer…";
-
+        CheckNowButton.IsEnabled = false;
+        UpdateProgressPanel.Visibility = Visibility.Visible;
+        UpdateProgressBar.Value = 0;
+        UpdateProgressPctText.Text = "0%";
+        UpdateProgressStatusText.Text = "Downloading full installer…";
+        UpdateProgressDetailText.Text = "Fallback path — Velopack not available on this install.";
+        UpdateStatusText.Text = "Downloading the full installer…";
         try
         {
-            string installer = await UpdateChecker.DownloadInstallerAsync(_latestRelease);
+            string installer = await UpdateChecker.DownloadInstallerAsync(_latestRelease, progress =>
+                Dispatcher.Invoke(() =>
+                {
+                    int pct = (int)Math.Round(progress * 100);
+                    UpdateProgressBar.Value = pct;
+                    UpdateProgressPctText.Text = $"{pct}%";
+                    UpdateProgressStatusText.Text = $"Downloading full installer… {pct}%";
+                    UpdateStatusText.Text = $"Downloading full installer… {pct}%";
+                }));
+            UpdateProgressStatusText.Text = "Launching installer…";
+            UpdateProgressBar.Value = 100;
+            UpdateProgressPctText.Text = "100%";
             UpdateChecker.LaunchInstaller(installer);
             UpdateStatusText.Text = "Installer downloaded — WDM will close and restart to complete the update.";
             await Task.Delay(500);
@@ -344,9 +427,11 @@ public partial class OptionsControl : UserControl
         }
         catch (Exception ex)
         {
+            UpdateProgressPanel.Visibility = Visibility.Collapsed;
             UpdateStatusText.Text = $"Download failed: {ex.Message}";
             DownloadInstallButton.IsEnabled = true;
             OpenReleaseButton.IsEnabled = true;
+            CheckNowButton.IsEnabled = true;
         }
     }
 
