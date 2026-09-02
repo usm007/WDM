@@ -39,6 +39,11 @@ public partial class BrowserExtensionControl : UserControl
         BrowserIntegration.OpenFirefoxAddonPage();
     }
 
+    private void OpenMoreHelp_Click(object sender, RoutedEventArgs e)
+    {
+        BrowserIntegration.OpenExtensionGuide();
+    }
+
     private void CloseClick(object sender, RoutedEventArgs e)
     {
         DoneRequested?.Invoke(this, EventArgs.Empty);

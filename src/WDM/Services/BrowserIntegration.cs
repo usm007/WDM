@@ -194,6 +194,37 @@ public static class BrowserIntegration
         }
     }
 
+    /// <summary>
+    /// Opens the detailed browser extension manual & setup guide webpage in the default browser.
+    /// </summary>
+    public static void OpenExtensionGuide()
+    {
+        try
+        {
+            string[] candidates = new[]
+            {
+                Path.Combine(AppContext.BaseDirectory, "Docs", "extension_guide.html"),
+                Path.Combine(Environment.CurrentDirectory, "Docs", "extension_guide.html"),
+                Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "Docs", "extension_guide.html"),
+                Path.Combine(AppContext.BaseDirectory, "extension_guide.html"),
+            };
+
+            string? localHtml = candidates.FirstOrDefault(File.Exists);
+            if (localHtml is not null)
+            {
+                Process.Start(new ProcessStartInfo(localHtml) { UseShellExecute = true });
+                return;
+            }
+
+            // Fallback: GitHub repository README/documentation
+            Process.Start(new ProcessStartInfo("https://github.com/usm007/WDM#browser-extension") { UseShellExecute = true });
+        }
+        catch
+        {
+            // Best effort
+        }
+    }
+
     private static void CopyDirectory(string source, string destination)
     {
         Directory.CreateDirectory(destination);

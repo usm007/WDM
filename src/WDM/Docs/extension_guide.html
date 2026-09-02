@@ -1,0 +1,735 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WDM Browser Extension Setup Guide & Technical Architecture</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-canvas: #090D16;
+            --bg-surface: #0F172A;
+            --bg-surface-elevated: #1E293B;
+            --bg-card: rgba(30, 41, 59, 0.7);
+            --border-subtle: rgba(148, 163, 184, 0.12);
+            --border-accent: rgba(59, 130, 246, 0.35);
+            --text-primary: #F8FAFC;
+            --text-secondary: #94A3B8;
+            --text-muted: #64748B;
+            --accent-primary: #3B82F6;
+            --accent-glow: rgba(59, 130, 246, 0.25);
+            --accent-gradient: linear-gradient(135deg, #38BDF8 0%, #3B82F6 50%, #6366F1 100%);
+            --orange-brand: #F97316;
+            --success: #10B981;
+            --warning: #F59E0B;
+            --code-bg: #030712;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background-color: var(--bg-canvas);
+            color: var(--text-primary);
+            line-height: 1.65;
+            -webkit-font-smoothing: antialiased;
+            overflow-x: hidden;
+        }
+
+        /* Ambient background lighting */
+        .ambient-glow {
+            position: fixed;
+            top: -200px;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 1000px;
+            height: 600px;
+            background: radial-gradient(circle, rgba(56, 189, 248, 0.12) 0%, rgba(99, 102, 241, 0.05) 50%, transparent 80%);
+            pointer-events: none;
+            z-index: 0;
+        }
+
+        .container {
+            max-width: 1080px;
+            margin: 0 auto;
+            padding: 40px 24px 100px;
+            position: relative;
+            z-index: 1;
+        }
+
+        /* Header / Hero */
+        .hero {
+            text-align: center;
+            padding: 48px 0 56px;
+        }
+
+        .badge-pill {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 6px 14px;
+            background: rgba(59, 130, 246, 0.12);
+            border: 1px solid rgba(59, 130, 246, 0.28);
+            border-radius: 9999px;
+            font-size: 13px;
+            font-weight: 600;
+            color: #60A5FA;
+            margin-bottom: 20px;
+            letter-spacing: 0.2px;
+        }
+
+        .badge-pill .pulse-dot {
+            width: 7px;
+            height: 7px;
+            background: #38BDF8;
+            border-radius: 50%;
+            box-shadow: 0 0 10px #38BDF8;
+        }
+
+        h1 {
+            font-size: clamp(32px, 5vw, 48px);
+            font-weight: 800;
+            letter-spacing: -0.03em;
+            line-height: 1.15;
+            margin-bottom: 18px;
+            background: linear-gradient(180deg, #FFFFFF 0%, #CBD5E1 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .hero p {
+            font-size: 18px;
+            color: var(--text-secondary);
+            max-width: 720px;
+            margin: 0 auto;
+        }
+
+        /* Navigation cards */
+        .quick-nav {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            gap: 16px;
+            margin: 40px 0 60px;
+        }
+
+        .nav-card {
+            background: var(--bg-surface);
+            border: 1px solid var(--border-subtle);
+            border-radius: 14px;
+            padding: 20px 22px;
+            text-decoration: none;
+            color: inherit;
+            transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+            position: relative;
+            overflow: hidden;
+        }
+
+        .nav-card:hover {
+            transform: translateY(-3px);
+            border-color: var(--border-accent);
+            box-shadow: 0 12px 30px -10px rgba(59, 130, 246, 0.2);
+        }
+
+        .nav-card h3 {
+            font-size: 16px;
+            font-weight: 700;
+            color: #F1F5F9;
+            margin-bottom: 6px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .nav-card p {
+            font-size: 13.5px;
+            color: var(--text-muted);
+            line-height: 1.45;
+        }
+
+        /* Sections */
+        section {
+            margin-bottom: 72px;
+            scroll-margin-top: 40px;
+        }
+
+        .section-header {
+            margin-bottom: 28px;
+        }
+
+        .section-tag {
+            font-size: 12px;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
+            color: #38BDF8;
+            margin-bottom: 6px;
+        }
+
+        h2 {
+            font-size: 28px;
+            font-weight: 700;
+            letter-spacing: -0.02em;
+            color: var(--text-primary);
+        }
+
+        /* Card container */
+        .content-box {
+            background: var(--bg-surface);
+            border: 1px solid var(--border-subtle);
+            border-radius: 18px;
+            padding: 32px;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.35);
+        }
+
+        /* Image Display */
+        .image-banner {
+            border-radius: 12px;
+            overflow: hidden;
+            border: 1px solid var(--border-subtle);
+            background: #020617;
+            margin: 24px 0;
+            box-shadow: 0 16px 36px -12px rgba(0, 0, 0, 0.6);
+        }
+
+        .image-banner img {
+            width: 100%;
+            height: auto;
+            display: block;
+        }
+
+        .image-caption {
+            padding: 12px 18px;
+            font-size: 13px;
+            color: var(--text-muted);
+            background: rgba(15, 23, 42, 0.9);
+            border-top: 1px solid var(--border-subtle);
+            font-family: 'JetBrains Mono', monospace;
+        }
+
+        /* Callout Grids */
+        .grid-3 {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            gap: 20px;
+            margin: 24px 0;
+        }
+
+        .callout-item {
+            background: var(--bg-surface-elevated);
+            border: 1px solid var(--border-subtle);
+            border-radius: 12px;
+            padding: 22px;
+        }
+
+        .callout-icon {
+            width: 36px;
+            height: 36px;
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin-bottom: 14px;
+            font-size: 18px;
+        }
+
+        .icon-blue { background: rgba(59, 130, 246, 0.15); color: #60A5FA; }
+        .icon-orange { background: rgba(249, 115, 22, 0.15); color: #FB923C; }
+        .icon-green { background: rgba(16, 185, 129, 0.15); color: #34D399; }
+
+        .callout-item h4 {
+            font-size: 15.5px;
+            font-weight: 700;
+            margin-bottom: 8px;
+            color: #F8FAFC;
+        }
+
+        .callout-item p {
+            font-size: 13.5px;
+            color: var(--text-secondary);
+            line-height: 1.5;
+        }
+
+        /* Step by Step */
+        .step-list {
+            display: flex;
+            flex-direction: column;
+            gap: 24px;
+            margin: 28px 0;
+        }
+
+        .step-card {
+            display: grid;
+            grid-template-columns: 52px 1fr;
+            gap: 20px;
+            background: var(--bg-surface-elevated);
+            border: 1px solid var(--border-subtle);
+            border-radius: 14px;
+            padding: 24px;
+            align-items: start;
+        }
+
+        .step-number {
+            width: 44px;
+            height: 44px;
+            background: var(--accent-gradient);
+            border-radius: 10px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 18px;
+            font-weight: 800;
+            color: white;
+            box-shadow: 0 4px 12px rgba(59, 130, 246, 0.35);
+        }
+
+        .step-content h3 {
+            font-size: 17px;
+            font-weight: 700;
+            margin-bottom: 6px;
+            color: #F8FAFC;
+        }
+
+        .step-content p {
+            font-size: 14px;
+            color: var(--text-secondary);
+            margin-bottom: 12px;
+        }
+
+        /* Action bar in steps */
+        .action-row {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            margin-top: 10px;
+        }
+
+        .btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            background: #2563EB;
+            color: #FFFFFF;
+            font-size: 13px;
+            font-weight: 600;
+            padding: 9px 18px;
+            border-radius: 8px;
+            text-decoration: none;
+            border: none;
+            cursor: pointer;
+            transition: background 0.2s, transform 0.15s;
+        }
+
+        .btn:hover {
+            background: #1D4ED8;
+            transform: translateY(-1px);
+        }
+
+        .btn-secondary {
+            background: rgba(148, 163, 184, 0.1);
+            color: #E2E8F0;
+            border: 1px solid var(--border-subtle);
+        }
+
+        .btn-secondary:hover {
+            background: rgba(148, 163, 184, 0.2);
+        }
+
+        .copy-box {
+            display: flex;
+            align-items: center;
+            background: var(--code-bg);
+            border: 1px solid var(--border-subtle);
+            border-radius: 8px;
+            padding: 4px 6px 4px 14px;
+            gap: 12px;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 13px;
+            color: #38BDF8;
+            margin-top: 8px;
+            max-width: 100%;
+            overflow-x: auto;
+        }
+
+        .copy-box span {
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .btn-copy {
+            padding: 6px 12px;
+            font-size: 12px;
+            background: #334155;
+            color: #F8FAFC;
+            border-radius: 6px;
+            border: none;
+            cursor: pointer;
+            font-weight: 600;
+            font-family: 'Plus Jakarta Sans', sans-serif;
+            transition: background 0.2s;
+            margin-left: auto;
+        }
+
+        .btn-copy:hover {
+            background: #475569;
+        }
+
+        /* Notice / Alert Box */
+        .alert-box {
+            display: flex;
+            gap: 14px;
+            background: rgba(245, 158, 11, 0.08);
+            border: 1px solid rgba(245, 158, 11, 0.25);
+            border-radius: 10px;
+            padding: 16px 18px;
+            margin-top: 16px;
+            font-size: 13.5px;
+            color: #FDE68A;
+        }
+
+        .alert-icon {
+            font-size: 18px;
+            line-height: 1;
+        }
+
+        /* FAQ Section */
+        .faq-list {
+            display: flex;
+            flex-direction: column;
+            gap: 14px;
+            margin-top: 20px;
+        }
+
+        .faq-item {
+            background: var(--bg-surface-elevated);
+            border: 1px solid var(--border-subtle);
+            border-radius: 12px;
+            padding: 18px 22px;
+        }
+
+        .faq-item h4 {
+            font-size: 15px;
+            font-weight: 700;
+            color: #F8FAFC;
+            margin-bottom: 6px;
+        }
+
+        .faq-item p {
+            font-size: 13.5px;
+            color: var(--text-secondary);
+        }
+
+        /* Footer */
+        footer {
+            text-align: center;
+            padding-top: 40px;
+            border-top: 1px solid var(--border-subtle);
+            color: var(--text-muted);
+            font-size: 13.5px;
+        }
+
+        footer a {
+            color: #60A5FA;
+            text-decoration: none;
+        }
+
+        footer a:hover {
+            text-decoration: underline;
+        }
+
+        @media (max-width: 640px) {
+            .content-box {
+                padding: 20px;
+            }
+            .step-card {
+                grid-template-columns: 1fr;
+                gap: 14px;
+            }
+            .hero {
+                padding: 24px 0 36px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="ambient-glow"></div>
+
+    <div class="container">
+        <!-- Hero Header -->
+        <header class="hero">
+            <div class="badge-pill">
+                <span class="pulse-dot"></span>
+                Official WDM Integration Manual
+            </div>
+            <h1>Why Manual Setup & How It Works</h1>
+            <p>A comprehensive architectural breakdown of why modern browsers require developer-mode setup for high-speed download managers, and a step-by-step installation guide.</p>
+        </header>
+
+        <!-- Quick Navigation -->
+        <div class="quick-nav">
+            <a href="#why-manual" class="nav-card">
+                <h3>🛡️ 1. Why Manual Setup?</h3>
+                <p>Understand the security sandbox, Manifest V3 restrictions, and Chrome Web Store policies.</p>
+            </a>
+            <a href="#how-it-works" class="nav-card">
+                <h3>⚡ 2. Technical Architecture</h3>
+                <p>How the local loopback bridge (127.0.0.1:17530) powers multi-threaded acceleration.</p>
+            </a>
+            <a href="#chrome-setup" class="nav-card">
+                <h3>🌐 3. Chrome / Edge / Brave</h3>
+                <p>Simple 3-step visual tutorial to load the unpacked extension in under 30 seconds.</p>
+            </a>
+            <a href="#firefox-setup" class="nav-card">
+                <h3>🦊 4. Mozilla Firefox</h3>
+                <p>One-click instant installation from the official Mozilla Add-ons repository.</p>
+            </a>
+        </div>
+
+        <!-- Section 1: The Core Question — Why Manual Setup? -->
+        <section id="why-manual">
+            <div class="section-header">
+                <div class="section-tag">Deep Dive</div>
+                <h2>Why Can't the Extension Install Automatically With One Click?</h2>
+            </div>
+
+            <div class="content-box">
+                <p style="font-size: 15.5px; color: var(--text-secondary); margin-bottom: 20px;">
+                    Users often ask: <em>"Why does Chrome or Edge ask me to turn on Developer Mode instead of installing automatically like other apps?"</em> The answer comes down to browser security architecture and store policies that safeguard your computer.
+                </p>
+
+                <div class="image-banner">
+                    <img src="images/architecture.jpg" alt="Technical diagram showing browser policy wall vs native download engine loopback bridge">
+                    <div class="image-caption">Figure 1: Architectural isolation between browser extension sandbox and native Windows multi-threaded downloader engine.</div>
+                </div>
+
+                <div class="grid-3">
+                    <div class="callout-item">
+                        <div class="callout-icon icon-blue">🔒</div>
+                        <h4>1. Web Store Policy Walls</h4>
+                        <p>Google Chrome and Microsoft Edge Web Stores strictly restrict extensions that directly pipe raw web traffic and authentication cookies to local native applications via unverified channels.</p>
+                    </div>
+                    <div class="callout-item">
+                        <div class="callout-icon icon-orange">🧱</div>
+                        <h4>2. Manifest V3 Sandbox</h4>
+                        <p>Modern browser engines enforce the Manifest V3 security model, forbidding external binary execution from inside standard web extensions unless explicitly verified by the user.</p>
+                    </div>
+                    <div class="callout-item">
+                        <div class="callout-icon icon-green">🔌</div>
+                        <h4>3. Loopback Socket Bridge</h4>
+                        <p>WDM operates a high-speed local HTTP socket on <code>127.0.0.1:17530</code>. Running in Developer Mode grants your extension permission to communicate with your local WDM engine.</p>
+                    </div>
+                </div>
+
+                <div class="alert-box">
+                    <div class="alert-icon">💡</div>
+                    <div>
+                        <strong>What about other download managers like IDM?</strong><br>
+                        Commercial tools like IDM register custom binary Native Messaging Hosts into your Windows registry during installation. Because WDM is 100% open-source, portable, and transparent, it gives you complete ownership without injecting opaque registry keys into your operating system.
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Section 2: How It Works -->
+        <section id="how-it-works">
+            <div class="section-header">
+                <div class="section-tag">Engineering Overview</div>
+                <h2>How WDM Catches Downloads Seamlessly</h2>
+            </div>
+
+            <div class="content-box">
+                <p style="font-size: 15px; color: var(--text-secondary); margin-bottom: 18px;">
+                    Once installed, the <strong>WDM Download Catcher</strong> runs in the background of your browser, monitoring active downloads and streaming media requests:
+                </p>
+
+                <div class="image-banner">
+                    <img src="images/active_demo.jpg" alt="WDM Download Catcher active interception pop-up transferring 4K video stream to WDM engine">
+                    <div class="image-caption">Figure 2: Active download interception capturing full session cookies, referrers, and streaming URLs.</div>
+                </div>
+
+                <div class="grid-3">
+                    <div class="callout-item">
+                        <h4>1. Interception</h4>
+                        <p>When you click a download link or watch a media stream, the extension captures the request headers, cookies, user-agent, and destination URL.</p>
+                    </div>
+                    <div class="callout-item">
+                        <h4>2. Forwarding</h4>
+                        <p>The extension sends a JSON payload to <code>http://127.0.0.1:17530/download</code>. The browser download is canceled, handing full control to WDM.</p>
+                    </div>
+                    <div class="callout-item">
+                        <h4>3. Acceleration</h4>
+                        <p>WDM opens up to 32 parallel HTTP connections with auto-resume, accelerating speeds up to 10× faster than browser native downloads.</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Section 3: Chrome / Edge / Brave Installation Guide -->
+        <section id="chrome-setup">
+            <div class="section-header">
+                <div class="section-tag">Step-by-Step Tutorial</div>
+                <h2>How to Install on Chrome, Edge, Brave & Opera</h2>
+            </div>
+
+            <div class="content-box">
+                <p style="font-size: 15px; color: var(--text-secondary); margin-bottom: 20px;">
+                    Follow these 3 quick steps to activate WDM Download Catcher in Chromium-based browsers:
+                </p>
+
+                <div class="image-banner">
+                    <img src="images/chrome_setup.jpg" alt="Visual 3-step guide: 1. Developer Mode, 2. Load unpacked, 3. Select extension folder">
+                    <div class="image-caption">Figure 3: Visual guide for loading unpacked extension in Chromium browsers.</div>
+                </div>
+
+                <div class="step-list">
+                    <!-- Step 1 -->
+                    <div class="step-card">
+                        <div class="step-number">1</div>
+                        <div class="step-content">
+                            <h3>Open Extensions Page & Enable Developer Mode</h3>
+                            <p>Open your browser and navigate to the Extensions management page. In the top-right corner, toggle the <strong>Developer mode</strong> switch to <strong>ON</strong>.</p>
+                            <div class="action-row">
+                                <a href="chrome://extensions" class="btn btn-secondary" onclick="openExtensions()">Open chrome://extensions</a>
+                                <a href="edge://extensions" class="btn btn-secondary" onclick="openEdgeExtensions()">Open edge://extensions</a>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Step 2 -->
+                    <div class="step-card">
+                        <div class="step-number">2</div>
+                        <div class="step-content">
+                            <h3>Click "Load unpacked"</h3>
+                            <p>Once Developer mode is enabled, a secondary toolbar will appear. Click the <strong>Load unpacked</strong> button located on the top left.</p>
+                        </div>
+                    </div>
+
+                    <!-- Step 3 -->
+                    <div class="step-card">
+                        <div class="step-number">3</div>
+                        <div class="step-content">
+                            <h3>Select the WDM Extension Folder</h3>
+                            <p>In the Windows folder picker dialog, paste or navigate to the WDM extension deployment path, and click <strong>Select Folder</strong>:</p>
+                            <div class="copy-box">
+                                <span id="pathText">%LOCALAPPDATA%\WDM\BrowserExtension</span>
+                                <button class="btn-copy" onclick="copyFolder()">Copy Path</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="alert-box" style="background: rgba(16, 185, 129, 0.08); border-color: rgba(16, 185, 129, 0.25); color: #A7F3D0;">
+                    <div class="alert-icon">✨</div>
+                    <div>
+                        <strong>Pro Tip: Pin the extension!</strong><br>
+                        Click the puzzle piece icon (Extensions) in your browser toolbar, find <strong>WDM Download Catcher</strong>, and click the pin icon so you can easily view intercepted downloads and toggle site capturing anytime.
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Section 4: Mozilla Firefox Setup -->
+        <section id="firefox-setup">
+            <div class="section-header">
+                <div class="section-tag">Firefox Integration</div>
+                <h2>Mozilla Firefox (One-Click Install)</h2>
+            </div>
+
+            <div class="content-box">
+                <p style="font-size: 15px; color: var(--text-secondary); margin-bottom: 20px;">
+                    Firefox supports direct one-click installation through the official Mozilla Add-ons (AMO) store:
+                </p>
+
+                <div class="callout-item" style="background: var(--bg-surface-elevated); margin-bottom: 16px;">
+                    <h4 style="display: flex; align-items: center; gap: 8px;">
+                        <span>🦊</span> Install from Mozilla Add-ons Store
+                    </h4>
+                    <p style="margin-bottom: 14px;">Click the button below to visit the official WDM Download Catcher listing on Mozilla Add-ons and click <strong>Add to Firefox</strong>.</p>
+                    <a href="https://addons.mozilla.org/en-US/firefox/addon/wdm-download-catcher/" target="_blank" class="btn">
+                        Open Firefox Add-ons Page ↗
+                    </a>
+                </div>
+
+                <p style="font-size: 13px; color: var(--text-muted);">
+                    Note: If you are using a Firefox Developer or Nightly build, you can also load the bundled <code>wdm-catcher.xpi</code> located in your WDM installation folder via <code>about:debugging</code>.
+                </p>
+            </div>
+        </section>
+
+        <!-- FAQ -->
+        <section id="faq">
+            <div class="section-header">
+                <div class="section-tag">Troubleshooting</div>
+                <h2>Frequently Asked Questions</h2>
+            </div>
+
+            <div class="content-box">
+                <div class="faq-list">
+                    <div class="faq-item">
+                        <h4>Q: Will Chrome disable this extension after I restart my browser?</h4>
+                        <p>No. Unpacked extensions loaded with Developer Mode stay permanently installed across browser restarts and updates until you click "Remove".</p>
+                    </div>
+
+                    <div class="faq-item">
+                        <h4>Q: What should I do after WDM updates to a new version?</h4>
+                        <p>Whenever WDM updates, visit <code>chrome://extensions</code> and simply click the circular reload icon (🔄) on the WDM Download Catcher card to immediately reload the updated scripts.</p>
+                    </div>
+
+                    <div class="faq-item">
+                        <h4>Q: Why does the extension show "Server disconnected"?</h4>
+                        <p>Make sure Windows Download Manager is currently running in your system tray or taskbar. The extension communicates with WDM on port 17530.</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Footer -->
+        <footer>
+            <p>Windows Download Manager &bull; Open Source High-Speed Download Accelerator</p>
+            <p style="margin-top: 6px;">
+                <a href="https://github.com/usm007/WDM" target="_blank">GitHub Repository</a> &bull; 
+                <a href="https://github.com/usm007/WDM/releases" target="_blank">Releases</a> &bull; 
+                <a href="https://github.com/usm007/WDM/issues" target="_blank">Report Issue</a>
+            </p>
+        </footer>
+    </div>
+
+    <script>
+        function copyFolder() {
+            // Expand environment path or provide default LocalAppData path
+            const path = "%LOCALAPPDATA%\\WDM\\BrowserExtension";
+            navigator.clipboard.writeText(path).then(() => {
+                const btn = document.querySelector('.btn-copy');
+                btn.textContent = "Copied!";
+                btn.style.background = "#10B981";
+                setTimeout(() => {
+                    btn.textContent = "Copy Path";
+                    btn.style.background = "#334155";
+                }, 2000);
+            });
+        }
+
+        function openExtensions() {
+            try {
+                window.open('chrome://extensions', '_blank');
+            } catch (e) {
+                copyFolder();
+            }
+        }
+
+        function openEdgeExtensions() {
+            try {
+                window.open('edge://extensions', '_blank');
+            } catch (e) {
+                copyFolder();
+            }
+        }
+    </script>
+</body>
+</html>

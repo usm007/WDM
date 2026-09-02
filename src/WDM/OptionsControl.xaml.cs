@@ -399,6 +399,11 @@ public partial class OptionsControl : UserControl
         OpenExtensionHelperRequested?.Invoke(this, EventArgs.Empty);
     }
 
+    private void OpenMoreHelp_Click(object sender, RoutedEventArgs e)
+    {
+        BrowserIntegration.OpenExtensionGuide();
+    }
+
     private static string ExtractFirstDigit(string input)
     {
         var match = System.Text.RegularExpressions.Regex.Match(input, @"\d+");

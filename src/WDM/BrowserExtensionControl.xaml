@@ -51,7 +51,23 @@
             <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
                 <Button Content="Open Firefox Add-ons Page" Style="{StaticResource Button.Secondary}" Click="OpenFirefoxAddonPage_Click" Height="28" Padding="12,0" />
             </StackPanel>
-            <TextBlock Text="Install permanently from the Firefox Add-ons store with one click." FontSize="12" Foreground="{DynamicResource Brush.TextDim}" />
+            <TextBlock Text="Install permanently from the Firefox Add-ons store with one click." FontSize="12" Foreground="{DynamicResource Brush.TextDim}" Margin="0,0,0,20" />
+
+            <!-- Section 3: More Help & Deep-Dive Guide -->
+            <Border Background="{DynamicResource Brush.SurfaceAlt}" BorderBrush="{DynamicResource Brush.Border}" BorderThickness="1" CornerRadius="8" Padding="14,12">
+                <DockPanel LastChildFill="True">
+                    <Button DockPanel.Dock="Right" Style="{StaticResource Button.Secondary}" Click="OpenMoreHelp_Click" Height="28" Padding="14,0" VerticalAlignment="Center">
+                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                            <TextBlock Text="More Help" FontSize="12" FontWeight="SemiBold" VerticalAlignment="Center" Margin="0,0,5,0" />
+                            <TextBlock Text="↗" FontSize="12" FontWeight="Bold" Foreground="{DynamicResource Brush.Accent}" VerticalAlignment="Center" />
+                        </StackPanel>
+                    </Button>
+                    <StackPanel VerticalAlignment="Center" Margin="0,0,12,0">
+                        <TextBlock Text="Why is manual setup required?" FontWeight="SemiBold" FontSize="12.5" Foreground="{DynamicResource Brush.Text}" />
+                        <TextBlock Text="Explore our illustrated visual guide explaining browser security sandboxes and step-by-step setup." FontSize="11.5" Foreground="{DynamicResource Brush.TextMuted}" Margin="0,1,0,0" />
+                    </StackPanel>
+                </DockPanel>
+            </Border>
         </StackPanel>
     </ScrollViewer>
 </UserControl>
