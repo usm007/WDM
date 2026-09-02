@@ -24,7 +24,7 @@
     </Window.Resources>
 
     <Border Background="{DynamicResource Brush.Surface}"
-            BorderBrush="{DynamicResource Brush.BorderStrong}"
+            BorderBrush="{DynamicResource Brush.DialogBorder}"
             BorderThickness="1"
             CornerRadius="8"
             SnapsToDevicePixels="True">

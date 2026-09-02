@@ -9,9 +9,9 @@
     <Color x:Key="Color.Surface">#272727</Color>      <!-- Level 1: Primary content canvas / Download list -->
     <Color x:Key="Color.SurfaceAlt">#2C2C2C</Color>   <!-- Level 2: Elevated inspector / Footers / Dialog cards -->
     <Color x:Key="Color.SurfaceHover">#333333</Color> <!-- Level 3: Interactive hover state -->
-    <Color x:Key="Color.Border">#2E2E2E</Color>       <!-- Level 1: Restrained 1px subtle divider -->
-    <Color x:Key="Color.BorderStrong">#3E3E3E</Color> <!-- Level 2: Interactive border -->
-    <Color x:Key="Color.GridLine">#282828</Color>     <!-- Table gridlines -->
+    <Color x:Key="Color.Border">#3A3A3A</Color>       <!-- Level 1: Lighter, softer divider -->
+    <Color x:Key="Color.BorderStrong">#4E4E4E</Color> <!-- Level 2: Lightened dialog border (less sharp) -->
+    <Color x:Key="Color.GridLine">#323232</Color>     <!-- Table gridlines (lighter) -->
     <Color x:Key="Color.RowAlt">#242424</Color>       <!-- Alternating grid rows -->
 
     <!-- Text Hierarchy (Glare-Free, High Legibility) -->
@@ -86,6 +86,7 @@
     <SolidColorBrush x:Key="Brush.Border" Color="{StaticResource Color.Border}" />
     <SolidColorBrush x:Key="Brush.BorderStrong" Color="{StaticResource Color.BorderStrong}" />
     <SolidColorBrush x:Key="Brush.GridLine" Color="{StaticResource Color.GridLine}" />
+    <SolidColorBrush x:Key="Brush.DialogBorder" Color="#404040" Opacity="0.85" />
     <SolidColorBrush x:Key="Brush.Text" Color="{StaticResource Color.Text}" />
     <SolidColorBrush x:Key="Brush.TextDim" Color="{StaticResource Color.TextDim}" />
     <SolidColorBrush x:Key="Brush.TextMuted" Color="{StaticResource Color.TextMuted}" />
