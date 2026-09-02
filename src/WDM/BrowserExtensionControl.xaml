@@ -7,68 +7,51 @@
              TextOptions.TextRenderingMode="Auto"
              RenderOptions.ClearTypeHint="Enabled"
              Background="{DynamicResource Brush.Surface}">
-    <Grid>
-        <Grid.RowDefinitions>
-            <RowDefinition Height="*" />    <!-- Content Body -->
-            <RowDefinition Height="Auto" /> <!-- Bottom Action Strip -->
-        </Grid.RowDefinitions>
-
-        <!-- Main Body -->
-        <ScrollViewer Grid.Row="0" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
-            <StackPanel Margin="24,18,24,18">
-                <!-- Top Back Button -->
-                <Button Style="{StaticResource Button.Secondary}" Click="CloseClick" Height="30" Padding="10,0" Margin="0,0,0,14" HorizontalAlignment="Left" ToolTip="Return to downloads list (Esc)">
-                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                        <TextBlock Text="&#xF004D;" FontFamily="{StaticResource Font.Icon}" FontSize="14" Margin="0,0,6,0" VerticalAlignment="Center" Foreground="{DynamicResource Brush.Accent}" />
-                        <TextBlock Text="Back to Downloads" FontSize="12.5" FontWeight="SemiBold" VerticalAlignment="Center" Foreground="{DynamicResource Brush.Text}" />
-                    </StackPanel>
-                </Button>
-
-                <!-- Header with Extension Icon -->
-                <StackPanel Orientation="Horizontal" Margin="0,0,0,6">
-                    <TextBlock Text="&#xF0431;" FontFamily="{StaticResource Font.Icon}" FontSize="22"
-                               Foreground="{DynamicResource Brush.Accent}" Margin="0,0,10,0" VerticalAlignment="Center" />
-                    <TextBlock Text="Install Browser Extension" FontSize="18" FontWeight="SemiBold"
-                               Foreground="{DynamicResource Brush.Text}" VerticalAlignment="Center" />
+    <!-- Main Body -->
+    <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+        <StackPanel Margin="24,18,24,18">
+            <!-- Top Back Button -->
+            <Button Style="{StaticResource Button.Secondary}" Click="CloseClick" Height="30" Padding="10,0" Margin="0,0,0,14" HorizontalAlignment="Left" ToolTip="Return to downloads list (Esc)">
+                <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                    <Path Data="M 6,1 L 2,5 L 6,9 M 2,5 L 11,5"
+                          Stroke="{DynamicResource Brush.Accent}"
+                          StrokeThickness="1.5"
+                          StrokeStartLineCap="Round"
+                          StrokeEndLineCap="Round"
+                          VerticalAlignment="Center"
+                          Margin="0,0,7,0"
+                          SnapsToDevicePixels="True" />
+                    <TextBlock Text="Back to Downloads" FontSize="12.5" FontWeight="SemiBold" VerticalAlignment="Center" Foreground="{DynamicResource Brush.Text}" />
                 </StackPanel>
+            </Button>
 
-                <TextBlock Text="Catch downloads automatically from Chrome, Edge, Brave, or Firefox."
-                           FontSize="12.5" Foreground="{DynamicResource Brush.TextMuted}" Margin="0,0,0,16" />
-
-                <!-- Section 1: Chrome / Edge / Chromium -->
-                <TextBlock Text="Chrome, Edge &amp; Chromium" FontSize="13.5" FontWeight="SemiBold" Foreground="{DynamicResource Brush.Text}" Margin="0,0,0,8" />
-                <StackPanel Orientation="Horizontal" Margin="0,0,0,10">
-                    <Button x:Name="CopyPathButton" Content="Copy Extension Path" Style="{StaticResource Button.Secondary}" Click="CopyPath_Click" Height="28" Padding="12,0" Margin="0,0,8,0" />
-                    <Button Content="Open Extensions Page" Style="{StaticResource Button.Secondary}" Click="OpenExtensions_Click" Height="28" Padding="12,0" />
-                </StackPanel>
-                <TextBlock Text="1. Click 'Copy Extension Path', then click 'Open Extensions Page'." FontSize="12" Foreground="{DynamicResource Brush.TextDim}" Margin="0,0,0,3" />
-                <TextBlock Text="2. Turn on 'Developer mode' (top right), click 'Load unpacked', and paste the folder path." FontSize="12" Foreground="{DynamicResource Brush.TextDim}" Margin="0,0,0,16" />
-
-                <!-- Section 2: Firefox -->
-                <TextBlock Text="Firefox" FontSize="13.5" FontWeight="SemiBold" Foreground="{DynamicResource Brush.Text}" Margin="0,0,0,8" />
-                <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
-                    <Button Content="Open Firefox Add-ons Page" Style="{StaticResource Button.Secondary}" Click="OpenFirefoxAddonPage_Click" Height="28" Padding="12,0" />
-                </StackPanel>
-                <TextBlock Text="Install permanently from the Firefox Add-ons store with one click." FontSize="12" Foreground="{DynamicResource Brush.TextDim}" />
+            <!-- Header with Extension Icon -->
+            <StackPanel Orientation="Horizontal" Margin="0,0,0,6">
+                <TextBlock Text="&#xF0431;" FontFamily="{StaticResource Font.Icon}" FontSize="22"
+                           Foreground="{DynamicResource Brush.Accent}" Margin="0,0,10,0" VerticalAlignment="Center" />
+                <TextBlock Text="Install Browser Extension" FontSize="18" FontWeight="SemiBold"
+                           Foreground="{DynamicResource Brush.Text}" VerticalAlignment="Center" />
             </StackPanel>
-        </ScrollViewer>
 
-        <!-- Bottom Action Strip -->
-        <Border Grid.Row="1" Background="{DynamicResource Brush.SurfaceAlt}" BorderBrush="{DynamicResource Brush.Border}" BorderThickness="0,1,0,0" Padding="16,10">
-            <Grid>
-                <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="*" />
-                    <ColumnDefinition Width="Auto" />
-                </Grid.ColumnDefinitions>
+            <TextBlock Text="Catch downloads automatically from Chrome, Edge, Brave, or Firefox."
+                       FontSize="12.5" Foreground="{DynamicResource Brush.TextMuted}" Margin="0,0,0,16" />
 
-                <TextBlock x:Name="FeedbackText" Grid.Column="0" Text="" FontSize="12" FontFamily="{StaticResource Font.App}" Foreground="{DynamicResource Brush.Accent}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" Margin="0,0,12,0" />
-                <Button Style="{StaticResource Button.Accent}" Click="CloseClick" Height="28" Padding="14,0">
-                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                        <TextBlock Text="&#xF004D;" FontFamily="{StaticResource Font.Icon}" FontSize="13" Margin="0,0,6,0" VerticalAlignment="Center" Foreground="{DynamicResource Brush.Surface}" />
-                        <TextBlock Text="Back to Downloads" FontSize="12" FontWeight="SemiBold" VerticalAlignment="Center" Foreground="{DynamicResource Brush.Surface}" />
-                    </StackPanel>
-                </Button>
-            </Grid>
-        </Border>
-    </Grid>
+            <!-- Section 1: Chrome / Edge / Chromium -->
+            <TextBlock Text="Chrome, Edge &amp; Chromium" FontSize="13.5" FontWeight="SemiBold" Foreground="{DynamicResource Brush.Text}" Margin="0,0,0,8" />
+            <StackPanel Orientation="Horizontal" Margin="0,0,0,10" VerticalAlignment="Center">
+                <Button x:Name="CopyPathButton" Content="Copy Extension Path" Style="{StaticResource Button.Secondary}" Click="CopyPath_Click" Height="28" Padding="12,0" Margin="0,0,8,0" />
+                <Button Content="Open Extensions Page" Style="{StaticResource Button.Secondary}" Click="OpenExtensions_Click" Height="28" Padding="12,0" Margin="0,0,10,0" />
+                <TextBlock x:Name="FeedbackText" Text="" FontSize="12" FontFamily="{StaticResource Font.App}" Foreground="{DynamicResource Brush.Accent}" VerticalAlignment="Center" />
+            </StackPanel>
+            <TextBlock Text="1. Click 'Copy Extension Path', then click 'Open Extensions Page'." FontSize="12" Foreground="{DynamicResource Brush.TextDim}" Margin="0,0,0,3" />
+            <TextBlock Text="2. Turn on 'Developer mode' (top right), click 'Load unpacked', and paste the folder path." FontSize="12" Foreground="{DynamicResource Brush.TextDim}" Margin="0,0,0,16" />
+
+            <!-- Section 2: Firefox -->
+            <TextBlock Text="Firefox" FontSize="13.5" FontWeight="SemiBold" Foreground="{DynamicResource Brush.Text}" Margin="0,0,0,8" />
+            <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
+                <Button Content="Open Firefox Add-ons Page" Style="{StaticResource Button.Secondary}" Click="OpenFirefoxAddonPage_Click" Height="28" Padding="12,0" />
+            </StackPanel>
+            <TextBlock Text="Install permanently from the Firefox Add-ons store with one click." FontSize="12" Foreground="{DynamicResource Brush.TextDim}" />
+        </StackPanel>
+    </ScrollViewer>
 </UserControl>
