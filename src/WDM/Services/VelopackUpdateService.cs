@@ -82,11 +82,7 @@ public static class VelopackUpdateService
             _http.DefaultRequestHeaders.UserAgent.ParseAdd($"WDM/{UpdateChecker.CurrentVersion}");
             _http.DefaultRequestHeaders.Accept.ParseAdd("application/octet-stream");
         }
-        public void DownloadFile(string url, string targetFile, Action<int> progress, IDictionary<string, string> headers, double timeout, CancellationToken cancelToken)
-        {
-            DownloadFileAsync(url, targetFile, progress, headers, timeout, cancelToken).GetAwaiter().GetResult();
-        }
-        private async Task DownloadFileAsync(string url, string targetFile, Action<int> progress, IDictionary<string, string> headers, double timeout, CancellationToken cancelToken)
+        public async Task DownloadFile(string url, string targetFile, Action<int> progress, IDictionary<string, string>? headers, double timeout, CancellationToken cancelToken)
         {
             using var req = new HttpRequestMessage(HttpMethod.Get, url);
             if (headers != null) foreach(var kv in headers) req.Headers.TryAddWithoutValidation(kv.Key, kv.Value);
@@ -106,11 +102,7 @@ public static class VelopackUpdateService
                 if (total > 0) progress?.Invoke((int)(read * 100 / total));
             }
         }
-        public byte[] DownloadBytes(string url, IDictionary<string, string> headers, double timeout)
-        {
-            return DownloadBytesAsync(url, headers, timeout).GetAwaiter().GetResult();
-        }
-        private async Task<byte[]> DownloadBytesAsync(string url, IDictionary<string, string> headers, double timeout)
+        public async Task<byte[]> DownloadBytes(string url, IDictionary<string, string>? headers, double timeout)
         {
             using var req = new HttpRequestMessage(HttpMethod.Get, url);
             if (headers != null) foreach(var kv in headers) req.Headers.TryAddWithoutValidation(kv.Key, kv.Value);
@@ -118,11 +110,7 @@ public static class VelopackUpdateService
             resp.EnsureSuccessStatusCode();
             return await resp.Content.ReadAsByteArrayAsync().ConfigureAwait(false);
         }
-        public string DownloadString(string url, IDictionary<string, string> headers, double timeout)
-        {
-            return DownloadStringAsync(url, headers, timeout).GetAwaiter().GetResult();
-        }
-        private async Task<string> DownloadStringAsync(string url, IDictionary<string, string> headers, double timeout)
+        public async Task<string> DownloadString(string url, IDictionary<string, string>? headers, double timeout)
         {
             using var req = new HttpRequestMessage(HttpMethod.Get, url);
             if (headers != null) foreach(var kv in headers) req.Headers.TryAddWithoutValidation(kv.Key, kv.Value);

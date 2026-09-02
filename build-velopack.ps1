@@ -66,12 +66,15 @@ $updatePkg = if ($deltaPkg) { $deltaPkg } else { $fullPkg }
 if (Test-Path $fullSetup) { Copy-Item $fullSetup (Join-Path $uploadDir "WDM-Full-Setup-$Version.exe") }
 if (Test-Path $portable) { Copy-Item $portable (Join-Path $uploadDir "WDM-Portable-$Version.zip") }
 if ($updatePkg -and (Test-Path $updatePkg.FullName)) { Copy-Item $updatePkg.FullName (Join-Path $uploadDir $updatePkg.Name) }
+$releasesJson = Join-Path $outFull "releases.win.json"
+if (Test-Path $releasesJson) { Copy-Item $releasesJson (Join-Path $uploadDir "releases.win.json") }
 Write-Host ""
-Write-Host "Release upload (3 files) in $uploadDir :"
+Write-Host "Release upload (4 files) in $uploadDir :"
 Get-ChildItem $uploadDir | Format-Table Name, @{N="SizeMB";E={"{0:F2}" -f ($_.Length/1MB)}}, Length
 Write-Host "  1) WDM-Full-Setup-$Version.exe  -> full installer for new users (Velopack Setup, includes .NET check)"
 Write-Host "  2) WDM-Portable-$Version.zip     -> portable, no install"
 Write-Host "  3) $($updatePkg.Name)  -> update package ONLY - in-app updater downloads this delta, NOT the full installer"
+Write-Host "  4) releases.win.json -> Required by Velopack GithubSource to resolve delta packages"
 Write-Host "Updater: VelopackUpdateService downloads only the update package (delta ~15KB) with progress bar, then ApplyAndRestart."
 
 Write-Host ""
