@@ -289,9 +289,6 @@
         <Setter Property="Padding" Value="0" />
         <Setter Property="Foreground" Value="{DynamicResource Brush.TextDim}" />
         <Setter Property="ToolTip" Value="Close (Esc)" />
-        <Setter Property="Content" Value="&#xF0156;" />
-        <Setter Property="FontFamily" Value="{StaticResource Font.Icon}" />
-        <Setter Property="FontSize" Value="16" />
         <Setter Property="Template">
             <Setter.Value>
                 <ControlTemplate TargetType="Button">
@@ -300,10 +297,30 @@
                                 Background="Transparent"
                                 CornerRadius="4"
                                 SnapsToDevicePixels="True">
-                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
+                            <Grid HorizontalAlignment="Center" VerticalAlignment="Center">
+                                <!-- Default crisp vector cross -->
+                                <Path x:Name="DefaultCross"
+                                      Data="M 0,0 L 8.5,8.5 M 8.5,0 L 0,8.5"
+                                      Stroke="{TemplateBinding Foreground}"
+                                      StrokeThickness="1.2"
+                                      StrokeStartLineCap="Round"
+                                      StrokeEndLineCap="Round"
+                                      SnapsToDevicePixels="True" />
+                                <ContentPresenter x:Name="cp"
+                                                  TextElement.Foreground="{TemplateBinding Foreground}"
+                                                  TextElement.FontFamily="{TemplateBinding FontFamily}"
+                                                  TextElement.FontSize="{TemplateBinding FontSize}"
+                                                  HorizontalAlignment="Center"
+                                                  VerticalAlignment="Center"
+                                                  Visibility="Collapsed" />
+                            </Grid>
                         </Border>
                     </Grid>
                     <ControlTemplate.Triggers>
+                        <Trigger Property="HasContent" Value="True">
+                            <Setter TargetName="DefaultCross" Property="Visibility" Value="Collapsed" />
+                            <Setter TargetName="cp" Property="Visibility" Value="Visible" />
+                        </Trigger>
                         <Trigger Property="IsMouseOver" Value="True">
                             <Setter TargetName="bd" Property="Background" Value="{DynamicResource Brush.SurfaceHover}" />
                             <Setter Property="Foreground" Value="{DynamicResource Brush.Text}" />
