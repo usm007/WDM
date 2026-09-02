@@ -37,74 +37,72 @@
                     <TextBlock Text="Changes apply automatically" FontSize="10" Foreground="{DynamicResource Brush.TextMuted}" TextWrapping="Wrap" HorizontalAlignment="Center" TextAlignment="Center" />
                 </Border>
 
-                <!-- Navigation Items List -->
-                <ScrollViewer VerticalScrollBarVisibility="Disabled" HorizontalScrollBarVisibility="Disabled">
-                    <StackPanel>
-                        <!-- 1. Connection -->
-                        <RadioButton Style="{StaticResource Button.SettingsTab}" IsChecked="True" Checked="Tab_Checked" Tag="Connection" Padding="8,5">
-                            <StackPanel Orientation="Horizontal">
-                                <TextBlock Text="&#xF0003;" FontFamily="{StaticResource Font.Icon}" FontSize="14" Margin="0,0,8,0" VerticalAlignment="Center" Foreground="{DynamicResource Brush.TextDim}" />
-                                <TextBlock Text="Connection" FontSize="12" VerticalAlignment="Center" />
-                            </StackPanel>
-                        </RadioButton>
+                <!-- Navigation Items List — fixed, no scroll -->
+                <StackPanel>
+                    <!-- 1. Connection -->
+                    <RadioButton Style="{StaticResource Button.SettingsTab}" IsChecked="True" Checked="Tab_Checked" Tag="Connection" Padding="8,5">
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="&#xF0003;" FontFamily="{StaticResource Font.Icon}" FontSize="14" Margin="0,0,8,0" VerticalAlignment="Center" Foreground="{DynamicResource Brush.TextDim}" />
+                            <TextBlock Text="Connection" FontSize="12" VerticalAlignment="Center" />
+                        </StackPanel>
+                    </RadioButton>
 
-                        <!-- 2. Folders & Routing -->
-                        <RadioButton Style="{StaticResource Button.SettingsTab}" Checked="Tab_Checked" Tag="Folders" Padding="8,5">
-                            <StackPanel Orientation="Horizontal">
-                                <TextBlock Text="&#xF024B;" FontFamily="{StaticResource Font.Icon}" FontSize="14" Margin="0,0,8,0" VerticalAlignment="Center" Foreground="{DynamicResource Brush.TextDim}" />
-                                <TextBlock Text="Folders &amp; Routing" FontSize="12" VerticalAlignment="Center" />
-                            </StackPanel>
-                        </RadioButton>
+                    <!-- 2. Folders & Routing -->
+                    <RadioButton Style="{StaticResource Button.SettingsTab}" Checked="Tab_Checked" Tag="Folders" Padding="8,5">
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="&#xF024B;" FontFamily="{StaticResource Font.Icon}" FontSize="14" Margin="0,0,8,0" VerticalAlignment="Center" Foreground="{DynamicResource Brush.TextDim}" />
+                            <TextBlock Text="Folders &amp; Routing" FontSize="12" VerticalAlignment="Center" />
+                        </StackPanel>
+                    </RadioButton>
 
-                        <!-- 3. Browser Integration -->
-                        <RadioButton Style="{StaticResource Button.SettingsTab}" Checked="Tab_Checked" Tag="Browser" Padding="8,5">
-                            <StackPanel Orientation="Horizontal">
-                                <TextBlock Text="&#xF059F;" FontFamily="{StaticResource Font.Icon}" FontSize="14" Margin="0,0,8,0" VerticalAlignment="Center" Foreground="{DynamicResource Brush.TextDim}" />
-                                <TextBlock Text="Browser Integration" FontSize="12" VerticalAlignment="Center" />
-                            </StackPanel>
-                        </RadioButton>
+                    <!-- 3. Browser Integration -->
+                    <RadioButton Style="{StaticResource Button.SettingsTab}" Checked="Tab_Checked" Tag="Browser" Padding="8,5">
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="&#xF059F;" FontFamily="{StaticResource Font.Icon}" FontSize="14" Margin="0,0,8,0" VerticalAlignment="Center" Foreground="{DynamicResource Brush.TextDim}" />
+                            <TextBlock Text="Browser Integration" FontSize="12" VerticalAlignment="Center" />
+                        </StackPanel>
+                    </RadioButton>
 
-                        <!-- 4. YouTube & Media -->
-                        <RadioButton Style="{StaticResource Button.SettingsTab}" Checked="Tab_Checked" Tag="YouTube" Padding="8,5">
-                            <StackPanel Orientation="Horizontal">
-                                <TextBlock Text="&#xF0381;" FontFamily="{StaticResource Font.Icon}" FontSize="14" Margin="0,0,8,0" VerticalAlignment="Center" Foreground="{DynamicResource Brush.TextDim}" />
-                                <TextBlock Text="YouTube &amp; Media" FontSize="12" VerticalAlignment="Center" />
-                            </StackPanel>
-                        </RadioButton>
+                    <!-- 4. YouTube & Media -->
+                    <RadioButton Style="{StaticResource Button.SettingsTab}" Checked="Tab_Checked" Tag="YouTube" Padding="8,5">
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="&#xF0381;" FontFamily="{StaticResource Font.Icon}" FontSize="14" Margin="0,0,8,0" VerticalAlignment="Center" Foreground="{DynamicResource Brush.TextDim}" />
+                            <TextBlock Text="YouTube &amp; Media" FontSize="12" VerticalAlignment="Center" />
+                        </StackPanel>
+                    </RadioButton>
 
-                        <!-- 5. Behavior -->
-                        <RadioButton Style="{StaticResource Button.SettingsTab}" Checked="Tab_Checked" Tag="Behavior" Padding="8,5">
-                            <StackPanel Orientation="Horizontal">
-                                <TextBlock Text="&#xF062E;" FontFamily="{StaticResource Font.Icon}" FontSize="14" Margin="0,0,8,0" VerticalAlignment="Center" Foreground="{DynamicResource Brush.TextDim}" />
-                                <TextBlock Text="Behavior" FontSize="12" VerticalAlignment="Center" />
-                            </StackPanel>
-                        </RadioButton>
+                    <!-- 5. Behavior -->
+                    <RadioButton Style="{StaticResource Button.SettingsTab}" Checked="Tab_Checked" Tag="Behavior" Padding="8,5">
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="&#xF062E;" FontFamily="{StaticResource Font.Icon}" FontSize="14" Margin="0,0,8,0" VerticalAlignment="Center" Foreground="{DynamicResource Brush.TextDim}" />
+                            <TextBlock Text="Behavior" FontSize="12" VerticalAlignment="Center" />
+                        </StackPanel>
+                    </RadioButton>
 
-                        <!-- 6. Appearance -->
-                        <RadioButton Style="{StaticResource Button.SettingsTab}" Checked="Tab_Checked" Tag="Appearance" Padding="8,5">
-                            <StackPanel Orientation="Horizontal">
-                                <TextBlock Text="&#xF06AA;" FontFamily="{StaticResource Font.Icon}" FontSize="14" Margin="0,0,8,0" VerticalAlignment="Center" Foreground="{DynamicResource Brush.TextDim}" />
-                                <TextBlock Text="Appearance" FontSize="12" VerticalAlignment="Center" />
-                            </StackPanel>
-                        </RadioButton>
+                    <!-- 6. Appearance -->
+                    <RadioButton Style="{StaticResource Button.SettingsTab}" Checked="Tab_Checked" Tag="Appearance" Padding="8,5">
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="&#xF06AA;" FontFamily="{StaticResource Font.Icon}" FontSize="14" Margin="0,0,8,0" VerticalAlignment="Center" Foreground="{DynamicResource Brush.TextDim}" />
+                            <TextBlock Text="Appearance" FontSize="12" VerticalAlignment="Center" />
+                        </StackPanel>
+                    </RadioButton>
 
-                        <!-- 7. Updates -->
-                        <RadioButton Style="{StaticResource Button.SettingsTab}" Checked="Tab_Checked" Tag="Updates" Padding="8,5">
-                            <StackPanel Orientation="Horizontal">
-                                <TextBlock Text="&#xF06B0;" FontFamily="{StaticResource Font.Icon}" FontSize="14" Margin="0,0,8,0" VerticalAlignment="Center" Foreground="{DynamicResource Brush.TextDim}" />
-                                <TextBlock Text="Updates" FontSize="12" VerticalAlignment="Center" />
-                            </StackPanel>
-                        </RadioButton>
+                    <!-- 7. Updates -->
+                    <RadioButton Style="{StaticResource Button.SettingsTab}" Checked="Tab_Checked" Tag="Updates" Padding="8,5">
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="&#xF06B0;" FontFamily="{StaticResource Font.Icon}" FontSize="14" Margin="0,0,8,0" VerticalAlignment="Center" Foreground="{DynamicResource Brush.TextDim}" />
+                            <TextBlock Text="Updates" FontSize="12" VerticalAlignment="Center" />
+                        </StackPanel>
+                    </RadioButton>
 
-                        <!-- 8. Advanced -->
-                        <RadioButton Style="{StaticResource Button.SettingsTab}" Checked="Tab_Checked" Tag="Advanced" Padding="8,5">
-                            <StackPanel Orientation="Horizontal">
-                                <TextBlock Text="&#xF0521;" FontFamily="{StaticResource Font.Icon}" FontSize="14" Margin="0,0,8,0" VerticalAlignment="Center" Foreground="{DynamicResource Brush.TextDim}" />
-                                <TextBlock Text="Advanced" FontSize="12" VerticalAlignment="Center" />
-                            </StackPanel>
-                        </RadioButton>
-                    </StackPanel>
-                </ScrollViewer>
+                    <!-- 8. Advanced -->
+                    <RadioButton Style="{StaticResource Button.SettingsTab}" Checked="Tab_Checked" Tag="Advanced" Padding="8,5">
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="&#xF0521;" FontFamily="{StaticResource Font.Icon}" FontSize="14" Margin="0,0,8,0" VerticalAlignment="Center" Foreground="{DynamicResource Brush.TextDim}" />
+                            <TextBlock Text="Advanced" FontSize="12" VerticalAlignment="Center" />
+                        </StackPanel>
+                    </RadioButton>
+                </StackPanel>
             </DockPanel>
         </Border>
 

@@ -1056,15 +1056,14 @@
         <Setter Property="Padding" Value="2,2" />
         <Setter Property="ScrollViewer.HorizontalScrollBarVisibility" Value="Disabled" />
         <Setter Property="ScrollViewer.VerticalScrollBarVisibility" Value="Disabled" />
+        <Setter Property="ScrollViewer.CanContentScroll" Value="False" />
         <Setter Property="ItemContainerStyle" Value="{StaticResource ListBoxItem.Sidebar}" />
         <Setter Property="Template">
             <Setter.Value>
                 <ControlTemplate TargetType="ListBox">
                     <Border Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}"
                             BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="6">
-                        <ScrollViewer x:Name="ScrollViewer" Focusable="False" Padding="{TemplateBinding Padding}">
-                            <ItemsPresenter />
-                        </ScrollViewer>
+                        <ItemsPresenter Margin="{TemplateBinding Padding}" />
                     </Border>
                 </ControlTemplate>
             </Setter.Value>
