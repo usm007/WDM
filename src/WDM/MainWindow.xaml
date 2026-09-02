@@ -119,7 +119,8 @@
                             <!-- Clear Search text button (when searching) -->
                             <Button Grid.Column="1" Style="{StaticResource Button.RowAction}" Command="{Binding ClearSearchCommand}"
                                     Visibility="{Binding HasSearchText, Converter={StaticResource BoolToVis}}" Width="18" Height="18" ToolTip="Clear search" Margin="1,0">
-                                <TextBlock Text="&#xF0349;" FontFamily="{StaticResource Font.Icon}" FontSize="11" Foreground="{DynamicResource Brush.TextDim}" />
+                                <Path Data="M 0,0 L 7,7 M 7,0 L 0,7" Stroke="{DynamicResource Brush.TextDim}" StrokeThickness="1.2"
+                                      StrokeStartLineCap="Round" StrokeEndLineCap="Round" HorizontalAlignment="Center" VerticalAlignment="Center" SnapsToDevicePixels="True" />
                             </Button>
 
                             <!-- Filter Funnel Icon Button -->
@@ -195,7 +196,7 @@
                     <!-- Action 5: Clear (Eraser Icon) -->
                     <Button Style="{StaticResource Button.ToolbarVertical}" Command="{Binding ClearCompletedCommand}" ToolTip="Clear finished downloads">
                         <StackPanel Orientation="Vertical" HorizontalAlignment="Center" VerticalAlignment="Center">
-                            <TextBlock Text="&#xF01FC;" FontFamily="{StaticResource Font.Icon}" FontSize="16.5" HorizontalAlignment="Center" Foreground="{DynamicResource Brush.TextDim}" />
+                            <TextBlock Text="&#xF00E2;" FontFamily="{StaticResource Font.Icon}" FontSize="16.5" HorizontalAlignment="Center" Foreground="{DynamicResource Brush.TextDim}" />
                             <TextBlock Text="Clear" FontSize="10" FontWeight="Medium" HorizontalAlignment="Center" Margin="0,1.5,0,0" Foreground="{DynamicResource Brush.TextDim}" />
                         </StackPanel>
                     </Button>

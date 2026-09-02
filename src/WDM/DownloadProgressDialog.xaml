@@ -41,9 +41,7 @@
                         <TextBlock Text="{Binding ProgressTitleText}"
                                    FontSize="13" FontFamily="{StaticResource Font.App}" FontWeight="SemiBold"
                                    Foreground="{DynamicResource Brush.TextDim}" VerticalAlignment="Center" Margin="10,0,8,0" />
-                        <Button Style="{StaticResource Button.DialogClose}" ToolTip="Minimize" Click="MinimizeClick" Margin="0,-4,2,0">
-                            <TextBlock Text="&#xF0374;" FontFamily="{StaticResource Font.Icon}" FontSize="13" Foreground="{DynamicResource Brush.TextDim}" />
-                        </Button>
+                        <Button Style="{StaticResource Button.DialogMinimize}" Click="MinimizeClick" Margin="0,-4,2,0" />
                         <Button Style="{StaticResource Button.DialogClose}" ToolTip="Close (Esc)" Click="CloseClick" Margin="0,-4,-6,0" />
                     </StackPanel>
 

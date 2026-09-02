@@ -262,6 +262,45 @@
         </Setter>
     </Style>
 
+    <!-- Dialog Header Minimize Button -->
+    <Style x:Key="Button.DialogMinimize" TargetType="Button" BasedOn="{StaticResource Button.Base}">
+        <Setter Property="Width" Value="28" />
+        <Setter Property="Height" Value="28" />
+        <Setter Property="Padding" Value="0" />
+        <Setter Property="Foreground" Value="{DynamicResource Brush.TextDim}" />
+        <Setter Property="ToolTip" Value="Minimize" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="Button">
+                    <Grid Background="Transparent">
+                        <Border x:Name="bd"
+                                Background="Transparent"
+                                CornerRadius="4"
+                                SnapsToDevicePixels="True">
+                            <Path Data="M 0,0 L 9,0"
+                                  Stroke="{TemplateBinding Foreground}"
+                                  StrokeThickness="1.2"
+                                  StrokeStartLineCap="Round"
+                                  StrokeEndLineCap="Round"
+                                  HorizontalAlignment="Center"
+                                  VerticalAlignment="Center"
+                                  SnapsToDevicePixels="True" />
+                        </Border>
+                    </Grid>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter TargetName="bd" Property="Background" Value="{DynamicResource Brush.SurfaceHover}" />
+                            <Setter Property="Foreground" Value="{DynamicResource Brush.Text}" />
+                        </Trigger>
+                        <Trigger Property="IsPressed" Value="True">
+                            <Setter TargetName="bd" Property="Background" Value="{DynamicResource Brush.SurfaceAlt}" />
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
     <!-- PRIMARY CTA — Vibrant gradient fill, white text -->
     <Style x:Key="Button.Accent" TargetType="Button">
         <Style.Resources>
@@ -532,9 +571,16 @@
                                               Content="{TemplateBinding SelectionBoxItem}"
                                               ContentTemplate="{TemplateBinding SelectionBoxItemTemplate}"
                                               ContentStringFormat="{TemplateBinding SelectionBoxItemStringFormat}" />
-                            <TextBlock Grid.Column="1" Text="&#xE96D;" FontFamily="{StaticResource Font.Icon}"
-                                       FontSize="10" Foreground="{DynamicResource Brush.TextMuted}"
-                                       HorizontalAlignment="Center" VerticalAlignment="Center" />
+                            <Path Grid.Column="1"
+                                  Data="M 0,0 L 4,4 L 8,0"
+                                  Stroke="{DynamicResource Brush.TextMuted}"
+                                  StrokeThickness="1.2"
+                                  StrokeStartLineCap="Round"
+                                  StrokeEndLineCap="Round"
+                                  StrokeLineJoin="Round"
+                                  HorizontalAlignment="Center"
+                                  VerticalAlignment="Center"
+                                  SnapsToDevicePixels="True" />
                         </Grid>
                         <Popup x:Name="PART_Popup" AllowsTransparency="True" Placement="Bottom"
                                IsOpen="{TemplateBinding IsDropDownOpen}" StaysOpen="False"
@@ -618,10 +664,16 @@
                                 <ControlTemplate TargetType="ToggleButton">
                                     <Border x:Name="Hdr" Background="Transparent" CornerRadius="4" Padding="2,5">
                                         <DockPanel>
-                                            <TextBlock x:Name="Chevron" DockPanel.Dock="Left" Text="&#xE96E;"
-                                                       FontFamily="{StaticResource Font.Icon}" FontSize="9"
-                                                       Foreground="{DynamicResource Brush.TextDim}"
-                                                       VerticalAlignment="Center" Margin="0,0,6,0" />
+                                            <Path x:Name="Chevron" DockPanel.Dock="Left"
+                                                  Data="M 3,1.5 L 6.5,5 L 3,8.5"
+                                                  Stroke="{DynamicResource Brush.TextDim}"
+                                                  StrokeThickness="1.2"
+                                                  StrokeStartLineCap="Round"
+                                                  StrokeEndLineCap="Round"
+                                                  StrokeLineJoin="Round"
+                                                  VerticalAlignment="Center"
+                                                  Margin="0,0,6,0"
+                                                  SnapsToDevicePixels="True" />
                                             <ContentPresenter ContentSource="Content" VerticalAlignment="Center" />
                                         </DockPanel>
                                     </Border>
@@ -630,8 +682,8 @@
                                             <Setter TargetName="Hdr" Property="Background" Value="{DynamicResource Brush.SurfaceHover}" />
                                         </Trigger>
                                         <Trigger Property="IsChecked" Value="True">
-                                            <Setter TargetName="Chevron" Property="Text" Value="&#xE96D;" />
-                                            <Setter TargetName="Chevron" Property="Foreground" Value="{DynamicResource Brush.Accent}" />
+                                            <Setter TargetName="Chevron" Property="Data" Value="M 1.5,3 L 5,6.5 L 8.5,3" />
+                                            <Setter TargetName="Chevron" Property="Stroke" Value="{DynamicResource Brush.Accent}" />
                                         </Trigger>
                                     </ControlTemplate.Triggers>
                                 </ControlTemplate>
@@ -664,10 +716,17 @@
                                 Background="{DynamicResource Brush.SurfaceAlt}"
                                 BorderBrush="{DynamicResource Brush.BorderStrong}"
                                 BorderThickness="1" VerticalAlignment="Center">
-                            <TextBlock x:Name="Check" Text="&#xE73E;" FontFamily="{StaticResource Font.Icon}"
-                                       FontSize="10" Foreground="{DynamicResource Brush.AccentFg}"
-                                       HorizontalAlignment="Center" VerticalAlignment="Center"
-                                       Visibility="Collapsed" />
+                            <Path x:Name="Check"
+                                  Data="M 3,5.5 L 5.5,8 L 10.5,3"
+                                  Stroke="{DynamicResource Brush.AccentFg}"
+                                  StrokeThickness="1.6"
+                                  StrokeStartLineCap="Round"
+                                  StrokeEndLineCap="Round"
+                                  StrokeLineJoin="Round"
+                                  HorizontalAlignment="Center"
+                                  VerticalAlignment="Center"
+                                  Visibility="Collapsed"
+                                  SnapsToDevicePixels="True" />
                         </Border>
                         <ContentPresenter Margin="8,0,0,0" VerticalAlignment="Center"
                                           RecognizesAccessKey="True"
@@ -680,6 +739,7 @@
                         <Trigger Property="IsChecked" Value="True">
                             <Setter TargetName="Box" Property="Background" Value="{DynamicResource Brush.Accent}" />
                             <Setter TargetName="Box" Property="BorderBrush" Value="{DynamicResource Brush.Accent}" />
+                            <Setter TargetName="Check" Property="Stroke" Value="{DynamicResource Brush.AccentFg}" />
                             <Setter TargetName="Check" Property="Visibility" Value="Visible" />
                         </Trigger>
                         <Trigger Property="IsEnabled" Value="False">
@@ -845,12 +905,20 @@
                                     <ToggleButton.Template>
                                         <ControlTemplate TargetType="ToggleButton">
                                             <Border Background="Transparent" Width="14" Height="14">
-                                                <TextBlock x:Name="ExpandIcon" Text="&#xE96E;" FontFamily="{StaticResource Font.Icon}" FontSize="9"
-                                                           Foreground="{DynamicResource Brush.TextMuted}" HorizontalAlignment="Center" VerticalAlignment="Center" />
+                                                <Path x:Name="ExpandChevron"
+                                                      Data="M 4,2.5 L 7.5,6 L 4,9.5"
+                                                      Stroke="{DynamicResource Brush.TextMuted}"
+                                                      StrokeThickness="1.2"
+                                                      StrokeStartLineCap="Round"
+                                                      StrokeEndLineCap="Round"
+                                                      StrokeLineJoin="Round"
+                                                      HorizontalAlignment="Center"
+                                                      VerticalAlignment="Center"
+                                                      SnapsToDevicePixels="True" />
                                             </Border>
                                             <ControlTemplate.Triggers>
                                                 <Trigger Property="IsChecked" Value="True">
-                                                    <Setter TargetName="ExpandIcon" Property="Text" Value="&#xE96D;" />
+                                                    <Setter TargetName="ExpandChevron" Property="Data" Value="M 2.5,4 L 6,7.5 L 9.5,4" />
                                                 </Trigger>
                                             </ControlTemplate.Triggers>
                                         </ControlTemplate>
@@ -1305,9 +1373,18 @@
                             <!-- Header -->
                             <ContentPresenter x:Name="HeaderHost" ContentSource="Header" RecognizesAccessKey="True" VerticalAlignment="Center" />
                             <!-- Arrow for sub-menus -->
-                            <TextBlock x:Name="Arrow" Text="&#xE76C;" FontFamily="{StaticResource Font.Icon}" FontSize="8"
-                                       Foreground="{DynamicResource Brush.TextDim}" VerticalAlignment="Center" Margin="8,0,0,0"
-                                       Visibility="Collapsed" DockPanel.Dock="Right" />
+                            <Path x:Name="Arrow"
+                                  Data="M 0,0 L 3.5,3.5 L 0,7"
+                                  Stroke="{DynamicResource Brush.TextDim}"
+                                  StrokeThickness="1.2"
+                                  StrokeStartLineCap="Round"
+                                  StrokeEndLineCap="Round"
+                                  StrokeLineJoin="Round"
+                                  VerticalAlignment="Center"
+                                  Margin="8,0,0,0"
+                                  Visibility="Collapsed"
+                                  DockPanel.Dock="Right"
+                                  SnapsToDevicePixels="True" />
                             <!-- Shortcut text -->
                             <TextBlock x:Name="InputGestureText" Text="{TemplateBinding InputGestureText}"
                                        Foreground="{DynamicResource Brush.TextDim}" FontSize="11"
