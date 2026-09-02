@@ -10,6 +10,9 @@ public partial class UpdateAvailableDialog : Window
     private readonly ReleaseInfo _release;
     private readonly UpdateInfo? _velopackUpdate;
 
+    private static bool _isOpen = false;
+    public static bool IsDialogOpen => _isOpen;
+
     public UpdateAvailableDialog(ReleaseInfo release, UpdateInfo? velopackUpdate = null)
     {
         InitializeComponent();
@@ -23,6 +26,15 @@ public partial class UpdateAvailableDialog : Window
                                (string.IsNullOrWhiteSpace(release.Body) ? "" : $"{Environment.NewLine}{release.Body.Trim()}");
             InstallButton.Content = "Download Delta & Restart";
         }
+        else if (string.IsNullOrWhiteSpace(release.InstallerUrl) && !string.IsNullOrWhiteSpace(release.UpdatePackageUrl))
+        {
+            // Delta-only release (no .exe) — show update package info, offer portable
+            DetailsText.Text = $"Current: {UpdateChecker.CurrentVersion}  →  New: {release.Version}{Environment.NewLine}" +
+                               $"Update package available (delta, ~0.17 MB). Full installer will be uploaded shortly.{Environment.NewLine}" +
+                               $"You can download the portable build or open the release page.{Environment.NewLine}" +
+                               (string.IsNullOrWhiteSpace(release.Body) ? "" : $"{Environment.NewLine}{release.Body.Trim()}");
+            InstallButton.Content = "Open Release Page";
+        }
         else
         {
             DetailsText.Text = string.IsNullOrWhiteSpace(release.Body)
@@ -34,10 +46,23 @@ public partial class UpdateAvailableDialog : Window
         }
     }
 
+    protected override void OnClosed(EventArgs e)
+    {
+        _isOpen = false;
+        base.OnClosed(e);
+    }
+
     protected override void OnSourceInitialized(EventArgs e)
     {
         base.OnSourceInitialized(e);
         WDM.Services.ThemeService.ApplyTitleBar(this);
+        _isOpen = true;
+        Topmost = true;
+        // Ensure dialog is on top of its owner and any other dialogs
+        if (Owner != null)
+        {
+            Owner.Activated += (s, _) => { if (IsVisible) Activate(); };
+        }
     }
 
     private void Window_MouseLeftButtonDown(object sender, System.Windows.Input.MouseButtonEventArgs e)
@@ -91,10 +116,22 @@ public partial class UpdateAvailableDialog : Window
             return;
         }
 
-        // Fallback: full installer (only when not Velopack-installed)
+        // Fallback: full installer or delta-only handling
+        // If only update package (delta) is available and no .exe, open release page instead of failing
+        if (string.IsNullOrWhiteSpace(_release.InstallerUrl) && !string.IsNullOrWhiteSpace(_release.UpdatePackageUrl))
+        {
+            UpdateChecker.OpenReleasesPage(_release.Url);
+            DetailsText.Text = "Full installer not yet available — opened release page. You can download the portable build there.";
+            ProgressPanel.Visibility = Visibility.Collapsed;
+            InstallButton.IsEnabled = true;
+            LaterButton.IsEnabled = true;
+            InstallButton.Content = "Open Release Page";
+            return;
+        }
+
         ProgressPanel.Visibility = Visibility.Visible;
         ProgressStatusText.Text = "Downloading full installer…";
-        ProgressDetailText.Text = "Fallback path — Velopack not available, downloading full setup.";
+        ProgressDetailText.Text = "Downloading full installer package for this release.";
         DownloadProgressBar.Value = 0;
         ProgressPctText.Text = "0%";
         DetailsText.Text = "Downloading the full installer…";
@@ -106,7 +143,7 @@ public partial class UpdateAvailableDialog : Window
                     int pct = (int)Math.Round(progress * 100);
                     DownloadProgressBar.Value = pct;
                     ProgressPctText.Text = $"{pct}%";
-                    ProgressStatusText.Text = $"Downloading full installer… {pct}%";
+                    ProgressStatusText.Text = "Downloading full installer…";
                 }));
             ProgressStatusText.Text = "Launching installer…";
             DownloadProgressBar.Value = 100;
@@ -119,9 +156,14 @@ public partial class UpdateAvailableDialog : Window
         catch (Exception ex)
         {
             ProgressPanel.Visibility = Visibility.Collapsed;
-            DetailsText.Text = $"Download failed: {ex.Message}";
+            // More friendly error + offer to open release page
+            DetailsText.Text = $"Download failed: {ex.Message}{Environment.NewLine}Please try again or open the release page to download manually.";
             InstallButton.IsEnabled = true;
             LaterButton.IsEnabled = true;
+            InstallButton.Content = "Open Release Page";
+            // Change button action to open page on next click
+            InstallButton.Click -= InstallClick;
+            InstallButton.Click += (s, _) => UpdateChecker.OpenReleasesPage(_release.Url);
         }
     }
 

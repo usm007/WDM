@@ -293,10 +293,11 @@ public partial class OptionsControl : UserControl
         _velopackUpdate = null;
         try
         {
-            // Prefer Velopack delta when installed via Velopack
+            // Prefer Velopack delta when installed via Velopack (with fallback any-check)
             if (VelopackUpdateService.IsVelopackInstalled)
             {
                 var vUpdate = await VelopackUpdateService.CheckForUpdatesAsync();
+                if (vUpdate == null) vUpdate = await VelopackUpdateService.CheckForUpdatesAnyAsync();
                 if (vUpdate is not null)
                 {
                     _velopackUpdate = vUpdate;
@@ -306,7 +307,7 @@ public partial class OptionsControl : UserControl
                     OpenReleaseButton.Visibility = Visibility.Visible;
                     DownloadInstallButton.Visibility = Visibility.Visible;
                     DownloadInstallButton.Content = "Download Delta & Restart";
-                    UpdateStatusText.Text = $"Delta update available: v{target} — patch-only (~2-5 MB), no full installer.";
+                    UpdateStatusText.Text = $"Delta update available: v{target} — patch-only (~0.17 MB), auto-restart.";
                     return;
                 }
             }
@@ -321,9 +322,28 @@ public partial class OptionsControl : UserControl
                 LatestVersionText.Text = _latestRelease.TagName;
                 OpenReleaseButton.Visibility = Visibility.Visible;
                 DownloadInstallButton.Visibility = Visibility.Visible;
-                DownloadInstallButton.Content = "Download & Install";
-                UpdateStatusText.Text = $"A new version is available: {_latestRelease.TagName}." +
-                    (_latestRelease.PublishedAt is { } published ? $" Published {published.ToLocalTime():yyyy-MM-dd}." : "");
+                // Handle delta-only releases (no .exe yet) — try Velopack Any as fallback
+                if (string.IsNullOrWhiteSpace(_latestRelease.InstallerUrl) && !string.IsNullOrWhiteSpace(_latestRelease.UpdatePackageUrl))
+                {
+                    var anyUpdate = await VelopackUpdateService.CheckForUpdatesAnyAsync();
+                    if (anyUpdate != null)
+                    {
+                        _velopackUpdate = anyUpdate;
+                        DownloadInstallButton.Content = "Download Delta & Restart";
+                        UpdateStatusText.Text = $"Delta update available: {version} — patch-only, auto-restart.";
+                    }
+                    else
+                    {
+                        DownloadInstallButton.Content = "Open Release Page";
+                        UpdateStatusText.Text = $"A new version is available: {_latestRelease.TagName} — full installer not yet uploaded, delta available. Open release page for portable.";
+                    }
+                }
+                else
+                {
+                    DownloadInstallButton.Content = "Download & Install";
+                    UpdateStatusText.Text = $"A new version is available: {_latestRelease.TagName}." +
+                        (_latestRelease.PublishedAt is { } published ? $" Published {published.ToLocalTime():yyyy-MM-dd}." : "");
+                }
             }
             else
             {
@@ -404,7 +424,7 @@ public partial class OptionsControl : UserControl
         UpdateProgressBar.Value = 0;
         UpdateProgressPctText.Text = "0%";
         UpdateProgressStatusText.Text = "Downloading full installer…";
-        UpdateProgressDetailText.Text = "Fallback path — Velopack not available on this install.";
+        UpdateProgressDetailText.Text = "Downloading full installer package for this release.";
         UpdateStatusText.Text = "Downloading the full installer…";
         try
         {
@@ -414,7 +434,7 @@ public partial class OptionsControl : UserControl
                     int pct = (int)Math.Round(progress * 100);
                     UpdateProgressBar.Value = pct;
                     UpdateProgressPctText.Text = $"{pct}%";
-                    UpdateProgressStatusText.Text = $"Downloading full installer… {pct}%";
+                    UpdateProgressStatusText.Text = "Downloading full installer…";
                     UpdateStatusText.Text = $"Downloading full installer… {pct}%";
                 }));
             UpdateProgressStatusText.Text = "Launching installer…";

@@ -5,7 +5,7 @@ using System.Text.RegularExpressions;
 namespace WDM.Services;
 
 /// <summary>Details about the newest GitHub release.</summary>
-public sealed record ReleaseInfo(string TagName, Version? Version, string Name, string Url, string? Body, DateTime? PublishedAt, string? InstallerUrl);
+public sealed record ReleaseInfo(string TagName, Version? Version, string Name, string Url, string? Body, DateTime? PublishedAt, string? InstallerUrl, string? UpdatePackageUrl = null);
 
 /// <summary>Queries the GitHub releases API for WDM and compares against the running
 /// version. Used for the manual "Check now" button in Settings and the automatic
@@ -48,10 +48,11 @@ public static class UpdateChecker
             string? body = root.TryGetProperty("body", out var b) ? b.GetString() : null;
             DateTime? published = root.TryGetProperty("published_at", out var p) && p.TryGetDateTime(out var dt) ? dt : null;
             string? installerUrl = FindInstallerUrl(root);
+            string? updatePackageUrl = FindUpdatePackageUrl(root);
             if (string.IsNullOrWhiteSpace(tag) || string.IsNullOrWhiteSpace(url))
                 return null;
 
-            return new ReleaseInfo(tag, ParseVersion(tag), name ?? tag, url, body, published, installerUrl);
+            return new ReleaseInfo(tag, ParseVersion(tag), name ?? tag, url, body, published, installerUrl, updatePackageUrl);
         }
         catch
         {
@@ -76,6 +77,37 @@ public static class UpdateChecker
             }
         }
         return null;
+    }
+
+    /// <summary>Picks the update package (.nupkg delta/full) for Velopack.</summary>
+    private static string? FindUpdatePackageUrl(JsonElement release)
+    {
+        if (!release.TryGetProperty("assets", out var assets) || assets.ValueKind != JsonValueKind.Array)
+            return null;
+
+        string? deltaUrl = null;
+        string? fullUrl = null;
+        foreach (var asset in assets.EnumerateArray())
+        {
+            if (!asset.TryGetProperty("name", out var n) || n.GetString() is not string name)
+                continue;
+            if (name.EndsWith("-delta.nupkg", StringComparison.OrdinalIgnoreCase)
+                && asset.TryGetProperty("browser_download_url", out var u))
+            {
+                deltaUrl = u.GetString();
+            }
+            else if (name.EndsWith("-full.nupkg", StringComparison.OrdinalIgnoreCase)
+                && asset.TryGetProperty("browser_download_url", out var u2))
+            {
+                fullUrl = u2.GetString();
+            }
+            else if (name.EndsWith(".nupkg", StringComparison.OrdinalIgnoreCase)
+                && asset.TryGetProperty("browser_download_url", out var u3) && fullUrl == null)
+            {
+                fullUrl = u3.GetString();
+            }
+        }
+        return deltaUrl ?? fullUrl;
     }
 
     /// <summary>Downloads the latest installer to the temp folder and returns its path.

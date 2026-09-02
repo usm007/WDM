@@ -107,6 +107,35 @@ public static class VelopackUpdateService
     }
 
     /// <summary>
+    /// Fallback check that works even when IsInstalled check is flaky — uses TestVelopackLocator to query GitHub directly.
+    /// Allows Velopack-installed users to find delta even if local locator fails.
+    /// </summary>
+    public static async Task<UpdateInfo?> CheckForUpdatesAnyAsync(CancellationToken ct = default)
+    {
+        try
+        {
+            // Try normal first
+            var normal = await CheckForUpdatesAsync(ct).ConfigureAwait(false);
+            if (normal != null) return normal;
+
+            // Fallback: use Test locator with current assembly version to query GitHub feed directly
+            var currentVer = UpdateChecker.CurrentVersion.ToString();
+            var tempDir = Path.Combine(Path.GetTempPath(), "WDM_Velopack_Check");
+            Directory.CreateDirectory(tempDir);
+            var locator = new Velopack.Locators.TestVelopackLocator("WDM", currentVer, tempDir, null);
+            var source = new GithubSource(RepoUrl, null, false);
+            var options = new UpdateOptions { MaximumDeltasBeforeFallback = 10 };
+            var mgr = new UpdateManager(source, options, locator);
+            var info = await mgr.CheckForUpdatesAsync().ConfigureAwait(false);
+            return info;
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    /// <summary>
     /// Downloads the delta/full packages for the given <paramref name="update"/> and
     /// reports integer progress 0..100. No-op when not Velopack-installed.
     /// </summary>

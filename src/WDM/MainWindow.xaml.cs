@@ -470,6 +470,9 @@ public partial class MainWindow : Window
             try
             {
                 var velopackUpdate = await VelopackUpdateService.CheckForUpdatesAsync();
+                // Fallback to any-check (handles delta-only edge cases)
+                if (velopackUpdate == null)
+                    velopackUpdate = await VelopackUpdateService.CheckForUpdatesAnyAsync();
                 if (velopackUpdate is not null)
                 {
                     settings.LastUpdateCheckUtc = DateTime.UtcNow.ToString("O");
@@ -477,9 +480,7 @@ public partial class MainWindow : Window
 
                     var semVer = velopackUpdate.TargetFullRelease.Version;
                     var target = VelopackUpdateService.ToSystemVersion(semVer);
-                    // Reuse ReleaseInfo shape for dialog: create synthetic ReleaseInfo from Velopack asset
-                    var synthetic = new ReleaseInfo($"v{target}", target, $"WDM {target}", $"https://github.com/usm007/WDM/releases/tag/v{target}", $"Delta update to {target} (patch-only, no full installer).", DateTime.UtcNow, null);
-                    // Attach velopack payload via dialog's velopack path
+                    var synthetic = new ReleaseInfo($"v{target}", target, $"WDM {target}", $"https://github.com/usm007/WDM/releases/tag/v{target}", $"Delta update to {target} (patch-only).", DateTime.UtcNow, null, velopackUpdate.TargetFullRelease.FileName);
                     _tray.ShowBalloon(
                         "WDM update available",
                         $"WDM {target} is available — click to download delta and restart.",
@@ -509,19 +510,29 @@ public partial class MainWindow : Window
         }
     }
 
+    private bool _isUpdateDialogOpen = false;
     private void ShowUpdatePrompt(ReleaseInfo latest)
     {
-        // Always surface the dialog, even when started minimized, because Windows
-        // 10/11 frequently suppress tray balloons and the user would never see the
-        // notification otherwise.
-        var dialog = new UpdateAvailableDialog(latest) { Owner = this };
-        dialog.ShowDialog();
+        if (_isUpdateDialogOpen || UpdateAvailableDialog.IsDialogOpen) return;
+        _isUpdateDialogOpen = true;
+        try
+        {
+            var dialog = new UpdateAvailableDialog(latest) { Owner = this, Topmost = true };
+            dialog.ShowDialog();
+        }
+        finally { _isUpdateDialogOpen = false; }
     }
 
     private void ShowUpdatePromptVelopack(ReleaseInfo synthetic, Velopack.UpdateInfo velopackInfo)
     {
-        var dialog = new UpdateAvailableDialog(synthetic, velopackInfo) { Owner = this };
-        dialog.ShowDialog();
+        if (_isUpdateDialogOpen || UpdateAvailableDialog.IsDialogOpen) return;
+        _isUpdateDialogOpen = true;
+        try
+        {
+            var dialog = new UpdateAvailableDialog(synthetic, velopackInfo) { Owner = this, Topmost = true };
+            dialog.ShowDialog();
+        }
+        finally { _isUpdateDialogOpen = false; }
     }
 
     private async Task DownloadAndInstallVelopackAsync(Velopack.UpdateInfo update)
@@ -546,7 +557,30 @@ public partial class MainWindow : Window
     /// closes itself so the installer can replace the running copy, then restarts.</summary>
     private async Task DownloadAndInstallUpdateAsync(ReleaseInfo? release)
     {
-        if (release is null || string.IsNullOrWhiteSpace(release.InstallerUrl))
+        if (release is null)
+        {
+            _tray.ShowBalloon("No download available", "This release has no installer attached yet — open the releases page instead.");
+            return;
+        }
+        // If only delta package is available (no .exe), fallback to Velopack or open page
+        if (string.IsNullOrWhiteSpace(release.InstallerUrl) && !string.IsNullOrWhiteSpace(release.UpdatePackageUrl))
+        {
+            // Try Velopack path even for non-installed as last resort
+            try
+            {
+                var anyUpdate = await VelopackUpdateService.CheckForUpdatesAnyAsync();
+                if (anyUpdate != null)
+                {
+                    await DownloadAndInstallVelopackAsync(anyUpdate);
+                    return;
+                }
+            }
+            catch { }
+            _tray.ShowBalloon("Update package only", "Full installer not yet available — opening release page for portable download.");
+            UpdateChecker.OpenReleasesPage(release.Url);
+            return;
+        }
+        if (string.IsNullOrWhiteSpace(release.InstallerUrl))
         {
             _tray.ShowBalloon("No download available", "This release has no installer attached yet — open the releases page instead.");
             return;
