@@ -59,6 +59,7 @@ if (Test-Path $setup) {
 }
 
 # Create clean 3-file release upload folder: full installer, portable, update package (delta if exists, else full)
+# For self-contained exe: Setup/Portable are self-contained (~70-75 MB), but delta is framework-dependent (~0.15 MB, no .NET) — saves bandwidth
 $uploadDir = Join-Path $PSScriptRoot "release_upload"
 if (Test-Path $uploadDir) { Remove-Item $uploadDir -Recurse -Force }
 New-Item -ItemType Directory -Path $uploadDir -Force | Out-Null
@@ -68,11 +69,22 @@ $portable = Join-Path $outFull "WDM-win-Portable.zip"
 $deltaPkg = Get-ChildItem $outFull -Filter "WDM-$Version-delta.nupkg" -ErrorAction SilentlyContinue | Select-Object -First 1
 $fullPkg = Get-ChildItem $outFull -Filter "WDM-$Version-full.nupkg" -ErrorAction SilentlyContinue | Select-Object -First 1
 $updatePkg = if ($deltaPkg) { $deltaPkg } else { $fullPkg }
+$releasesJson = Join-Path $outFull "releases.win.json"
+# If self-contained, try to use framework delta (no .NET libs) if available from prior framework build
+if ($SelfContained) {
+    $fwDelta = Get-ChildItem (Join-Path $PSScriptRoot "releases_fw") -Filter "WDM-$Version-delta.nupkg" -ErrorAction SilentlyContinue | Select-Object -First 1
+    $fwJson = Join-Path $PSScriptRoot "releases_fw" "releases.win.json"
+    if ($fwDelta -and $fwDelta.Length -lt ($updatePkg.Length * 0.5)) {
+        Write-Host "Using framework delta (no .NET, $([math]::Round($fwDelta.Length/1KB,1)) KB) instead of self-contained delta ($([math]::Round($updatePkg.Length/1MB,1)) MB) for small updates"
+        $updatePkg = $fwDelta
+        $releasesJson = $fwJson
+    }
+}
 if (Test-Path $fullSetup) { Copy-Item $fullSetup (Join-Path $uploadDir "WDM-Full-Setup-$Version.exe") }
 if (Test-Path $portable) { Copy-Item $portable (Join-Path $uploadDir "WDM-Portable-$Version.zip") }
-if ($updatePkg -and (Test-Path $updatePkg.FullName)) { Copy-Item $updatePkg.FullName (Join-Path $uploadDir $updatePkg.Name) }
-$releasesJson = Join-Path $outFull "releases.win.json"
-if (Test-Path $releasesJson) { Copy-Item $releasesJson (Join-Path $uploadDir "releases.win.json") }
+if ($updatePkg -and (Test-Path $updatePkg.FullName)) { Copy-Item $updatePkg.FullName (Join-Path $uploadDir $updatePkg.Name) -Force }
+$releasesJson = if ($releasesJson -and (Test-Path $releasesJson)) { $releasesJson } else { Join-Path $outFull "releases.win.json" }
+if (Test-Path $releasesJson) { Copy-Item $releasesJson (Join-Path $uploadDir "releases.win.json") -Force }
 Write-Host ""
 Write-Host "Release upload (4 files) in $uploadDir :"
 Get-ChildItem $uploadDir | Format-Table Name, @{N="SizeMB";E={"{0:F2}" -f ($_.Length/1MB)}}, Length
