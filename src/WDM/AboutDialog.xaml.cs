@@ -111,6 +111,12 @@ public partial class AboutDialog : Window
         return s;
     }
 
+    /// <summary>Called by automatic update check to surface the in-app dialog instead of a Windows balloon.</summary>
+    public void ShowAvailableUpdate(ReleaseInfo release, Velopack.UpdateInfo? velopackUpdate)
+    {
+        ShowInlineUpdate(release, velopackUpdate);
+    }
+
     private void ShowInlineUpdate(ReleaseInfo release, Velopack.UpdateInfo? velopackUpdate)
     {
         _inlineRelease = release;

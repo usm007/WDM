@@ -1,0 +1,245 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>WDM — Windows Download Manager</title>
+<meta name="description" content="IDM-inspired download manager for Windows. 32-thread segmented downloads, browser catching, YouTube/HLS, Velopack delta updates. Self-contained .NET 8.">
+<meta property="og:title" content="WDM — Windows Download Manager">
+<meta property="og:description" content="Fast, multi-threaded download manager for Windows. No-nonsense, IDM-inspired.">
+<meta property="og:image" content="hero_banner_readme.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500&display=swap" rel="stylesheet">
+<script src="https://cdn.tailwindcss.com"></script>
+<script>tailwind.config={theme:{extend:{fontFamily:{sans:['Inter','system-ui','sans-serif'],mono:['JetBrains Mono','monospace']},colors:{ink:'#0B1220',muted:'#5B6477',line:'#E6E9EF',accent:'#0F6CBD',accent2:'#0A4A82',paper:'#F7F8FB'}}}}</script>
+<style>
+*{scroll-behavior:smooth} body{font-family:Inter,system-ui,sans-serif;color:#0B1220;background:#fff}
+.hero-grad{background:radial-gradient(1200px 600px at 70% -10%,#DBEAFE 0%,transparent 60%),linear-gradient(180deg,#F8FAFF 0%,#fff 100%)}
+.card{border:1px solid #E6E9EF;border-radius:16px;background:#fff}
+.shadow-soft{box-shadow:0 8px 32px rgba(15,18,32,.08),0 1.5px 0 rgba(15,18,32,.04)}
+.btn-primary{background:#0F6CBD;color:#fff;border-radius:10px;padding:12px 18px;font-weight:600;display:inline-flex;align-items:center;gap:8px}
+.btn-primary:hover{background:#0A4A82}
+.btn-ghost{border:1px solid #E6E9EF;background:#fff;color:#0B1220;border-radius:10px;padding:12px 18px;font-weight:600;display:inline-flex;align-items:center;gap:8px}
+.btn-ghost:hover{background:#F7F8FB}
+.tab-active{background:#0B1220;color:#fff;border-radius:100px;padding:6px 14px;font-size:13px;font-weight:600}
+.tab-idle{color:#5B6477;padding:6px 14px;font-size:13px;font-weight:600;border-radius:100px}
+.tab-idle:hover{background:#F1F3F7}
+.kbd{font-family:JetBrains Mono,monospace;font-size:12px;background:#0B1220;color:#fff;padding:2px 7px;border-radius:6px}
+</style>
+</head>
+<body class="antialiased">
+
+<!-- NAV -->
+<header class="sticky top-0 z-40 backdrop-blur bg-white/80 border-b border-line">
+  <div class="max-w-[1160px] mx-auto px-4 sm:px-6 h-[60px] flex items-center justify-between gap-4">
+    <a href="#" class="flex items-center gap-3">
+      <span class="w-8 h-8 rounded-lg bg-ink grid place-items-center text-white font-extrabold text-[15px]">W</span>
+      <span class="font-bold tracking-tight">WDM</span>
+      <span class="hidden sm:inline text-xs font-mono px-2 py-1 rounded bg-paper border border-line">v2.6.1 • .NET 8</span>
+    </a>
+    <nav class="hidden md:flex items-center gap-1 text-sm">
+      <a href="#features" class="px-3 py-2 rounded-lg hover:bg-paper">Features</a>
+      <a href="#how" class="px-3 py-2 rounded-lg hover:bg-paper">How it works</a>
+      <a href="#screens" class="px-3 py-2 rounded-lg hover:bg-paper">Screenshots</a>
+      <a href="extension-guide.html" class="px-3 py-2 rounded-lg hover:bg-paper">Extension</a>
+      <a href="https://github.com/usm007/WDM" class="px-3 py-2 rounded-lg hover:bg-paper">GitHub</a>
+    </nav>
+    <div class="flex items-center gap-2">
+      <a href="https://github.com/usm007/WDM/releases" class="btn-primary text-sm !py-2 !px-3.5">Download</a>
+    </div>
+  </div>
+</header>
+
+<!-- HERO -->
+<section class="hero-grad border-b border-line">
+  <div class="max-w-[1160px] mx-auto px-4 sm:px-6 pt-10 pb-8 sm:pt-14 sm:pb-10">
+    <div class="grid lg:grid-cols-[1.05fr_.95fr] gap-8 items-center">
+      <div>
+        <div class="inline-flex items-center gap-2 text-xs font-semibold border border-line bg-white rounded-full px-3 py-1.5">
+          <span class="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span> Velopack delta updates • ~2 MB patch, not 60 MB
+          <span class="hidden sm:inline text-muted font-normal">— silent, no wizard</span>
+        </div>
+        <h1 class="mt-4 text-[30px] sm:text-[42px] font-extrabold tracking-tight leading-[0.95]">Windows<br>Download<br>Manager</h1>
+        <p class="mt-3 text-[15px] leading-6 text-muted max-w-[560px]">IDM-inspired, no-nonsense. <b class="text-ink">32 parallel connections</b> with dynamic chunk pooling, browser catching on <code class="kbd">127.0.0.1:17530</code>, YouTube/HLS via yt-dlp, and pause/resume that survives reboots.</p>
+        <div class="mt-6 flex flex-wrap gap-3">
+          <a href="https://github.com/usm007/WDM/releases/latest" class="btn-primary">⬇ Download for Windows
+            <span class="opacity-70 text-xs">self-contained • no .NET needed</span></a>
+          <a href="extension-guide.html" class="btn-ghost">📄 Extension guide</a>
+          <a href="https://github.com/usm007/WDM" class="btn-ghost">★ GitHub</a>
+        </div>
+        <div class="mt-4 flex flex-wrap gap-2 text-xs">
+          <span class="px-2.5 py-1 rounded-full bg-white border border-line">Per-user • no UAC</span>
+          <span class="px-2.5 py-1 rounded-full bg-white border border-line">WPF • Light & Dark</span>
+          <span class="px-2.5 py-1 rounded-full bg-white border border-line">Tray progress flyout</span>
+        </div>
+        <div class="mt-6 grid grid-cols-3 gap-3 max-w-[560px]">
+          <div class="card p-3"><div class="text-xs text-muted">Peak speed</div><div class="text-[15px] font-bold">10× faster</div><div class="text-xs text-muted">32 TCP streams</div></div>
+          <div class="card p-3"><div class="text-xs text-muted">Resume</div><div class="text-[15px] font-bold">*.wdmstate</div><div class="text-xs text-muted">crash-safe</div></div>
+          <div class="card p-3"><div class="text-xs text-muted">Delta</div><div class="text-[15px] font-bold">~2–5 MB</div><div class="text-xs text-muted">Velopack patch</div></div>
+        </div>
+      </div>
+      <div class="relative">
+        <div class="card shadow-soft overflow-hidden p-2 bg-white">
+          <img src="hero_banner_readme.png" alt="WDM banner" class="w-full rounded-xl border border-line">
+          <div class="grid grid-cols-2 gap-2 mt-2">
+            <img src="screenshots/light/01_MainWindow.png" alt="Main" class="rounded-lg border border-line">
+            <img src="screenshots/light/05_DownloadProgressDialog.png" alt="Progress" class="rounded-lg border border-line">
+          </div>
+        </div>
+        <div class="hidden lg:flex absolute -right-3 -bottom-4 card shadow-soft p-3 gap-3 items-center">
+          <span class="w-9 h-9 rounded-lg bg-ink text-white grid place-items-center">⟡</span>
+          <div><div class="text-xs font-bold leading-none">Browser → WDM</div><div class="text-xs text-muted"><code class="font-mono">127.0.0.1:17530/download</code></div></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- FEATURES -->
+<section id="features" class="max-w-[1160px] mx-auto px-4 sm:px-6 py-10">
+  <div class="flex flex-wrap items-end justify-between gap-4">
+    <h2 class="text-[22px] font-bold tracking-tight">Everything for serious downloading</h2>
+    <p class="text-sm text-muted">Self-contained .NET 8 — exe bundles all libs, no runtime install.</p>
+  </div>
+  <div class="mt-6 grid md:grid-cols-3 gap-4">
+    <div class="card p-5"><div class="w-9 h-9 rounded-lg bg-paper border border-line grid place-items-center">⚡</div><h3 class="mt-3 font-semibold">32-thread segmented</h3><p class="mt-1 text-sm text-muted leading-6">File → 128 KiB–16 MiB chunks. Shared counter hands next chunk to any idle worker. No straggler.</p></div>
+    <div class="card p-5"><div class="w-9 h-9 rounded-lg bg-paper border border-line grid place-items-center">⏯</div><h3 class="mt-3 font-semibold">Pause / Resume</h3><p class="mt-1 text-sm text-muted leading-6">Bitmap flushed to <code>*.wdmstate</code> next to target. Resume skips done chunks, even after reboot.</p></div>
+    <div class="card p-5"><div class="w-9 h-9 rounded-lg bg-paper border border-line grid place-items-center">↻</div><h3 class="mt-3 font-semibold">Auto-retry</h3><p class="mt-1 text-sm text-muted leading-6">Transient + HTTP 408/429/5xx with exponential backoff.</p></div>
+    <div class="card p-5"><div class="w-9 h-9 rounded-lg bg-paper border border-line grid place-items-center">🧩</div><h3 class="mt-3 font-semibold">Browser catching</h3><p class="mt-1 text-sm text-muted leading-6">MV3 extension cancels browser download, forwards URL/headers/cookies to <code>127.0.0.1:17530</code>.</p></div>
+    <div class="card p-5"><div class="w-9 h-9 rounded-lg bg-paper border border-line grid place-items-center">▶</div><h3 class="mt-3 font-semibold">YouTube & HLS</h3><p class="mt-1 text-sm text-muted leading-6">yt-dlp + FFmpeg. 4K / audio-only, playlists, AES-128, TS/fMP4, 8 concurrent segments. WebView2 sign-in.</p></div>
+    <div class="card p-5"><div class="w-9 h-9 rounded-lg bg-paper border border-line grid place-items-center">🎚</div><h3 class="mt-3 font-semibold">Limits, queue, actions</h3><p class="mt-1 text-sm text-muted leading-6">Global/per-task speed, priorities, categories, SHA-256, post-script.</p></div>
+  </div>
+  <div class="mt-4 grid md:grid-cols-3 gap-4 text-sm">
+    <div class="card p-4 flex items-center gap-3"><span class="w-8 h-8 rounded-lg bg-paper border border-line grid place-items-center">◐</span><div><b>Light & Dark</b><div class="text-muted">Two themes, tray flyout</div></div></div>
+    <div class="card p-4 flex items-center gap-3"><span class="w-8 h-8 rounded-lg bg-paper border border-line grid place-items-center">✓</span><div><b>Auto-update</b><div class="text-muted">Velopack deltas or GitHub release</div></div></div>
+    <div class="card p-4 flex items-center gap-3"><span class="w-8 h-8 rounded-lg bg-paper border border-line grid place-items-center">◈</span><div><b>Portable</b><div class="text-muted">%LocalAppData%\WDM • zero registry</div></div></div>
+  </div>
+</section>
+
+<!-- HOW -->
+<section id="how" class="bg-paper border-y border-line">
+  <div class="max-w-[1160px] mx-auto px-4 sm:px-6 py-10">
+    <h2 class="text-[22px] font-bold tracking-tight">How the engine works</h2>
+    <div class="mt-6 grid lg:grid-cols-[1.1fr_.9fr] gap-6">
+      <ol class="card divide-y divide-line overflow-hidden">
+        <li class="p-4 flex gap-3"><span class="w-7 h-7 rounded-full bg-ink text-white grid place-items-center text-xs font-bold">1</span><div><b class="text-sm">Probe</b><div class="text-sm text-muted"><code>HEAD</code> → ranged <code>GET bytes=0-0</code> to learn size & range support.</div></div></li>
+        <li class="p-4 flex gap-3"><span class="w-7 h-7 rounded-full bg-ink text-white grid place-items-center text-xs font-bold">2</span><div><b class="text-sm">Chunk</b><div class="text-sm text-muted"><code>total/ (chunks×8)</code> clamped 128 KiB–16 MiB. Shared counter.</div></div></li>
+        <li class="p-4 flex gap-3"><span class="w-7 h-7 rounded-full bg-ink text-white grid place-items-center text-xs font-bold">3</span><div><b class="text-sm">Fetch</b><div class="text-sm text-muted"><code>Range: bytes=from-to</code> → preallocated file at offset; bitmap → <code>*.wdmstate</code>.</div></div></li>
+        <li class="p-4 flex gap-3"><span class="w-7 h-7 rounded-full bg-ink text-white grid place-items-center text-xs font-bold">4</span><div><b class="text-sm">Resume</b><div class="text-sm text-muted">Validate magic/size/count, skip completed chunks.</div></div></li>
+        <li class="p-4 flex gap-3"><span class="w-7 h-7 rounded-full bg-ink text-white grid place-items-center text-xs font-bold">5</span><div><b class="text-sm">Fallback</b><div class="text-sm text-muted">Single-stream if no range; <code>.m3u8</code> → HlsDownloader.</div></div></li>
+        <li class="p-4 flex gap-3"><span class="w-7 h-7 rounded-full bg-ink text-white grid place-items-center text-xs font-bold">6</span><div><b class="text-sm">Meter</b><div class="text-sm text-muted">Sample bytes/sec → speed & ETA.</div></div></li>
+      </ol>
+      <div class="card p-5">
+        <div class="text-xs font-mono text-muted">WDM/ Services</div>
+        <div class="mt-2 font-semibold">Folders</div>
+<pre class="mt-3 bg-ink text-white rounded-xl p-4 text-xs leading-6 overflow-auto">WDM/
+ WDM.sln  build-velopack.ps1  build-xpi.ps1
+ src/WDM/          WPF .NET 8
+  Models/  Services/  ViewModels/  Controls/  Themes/
+ src/WDM.BrowserExtension/  MV3  (firefox/)
+ src/WDM.Setup/  installer.iss
+Run: dotnet build WDM.sln
+App: http://127.0.0.1:17530  (CaptureServer)</pre>
+        <div class="mt-4 flex flex-wrap gap-2">
+          <a href="https://github.com/usm007/WDM/releases" class="btn-primary text-sm">Releases</a>
+          <a href="https://github.com/usm007/WDM" class="btn-ghost text-sm">Source</a>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- SCREENSHOTS -->
+<section id="screens" class="max-w-[1160px] mx-auto px-4 sm:px-6 py-10">
+  <div class="flex items-center justify-between gap-4">
+    <h2 class="text-[22px] font-bold tracking-tight">Screenshots — 17 dialogs • Light & Dark</h2>
+    <div class="hidden sm:flex items-center gap-1 p-1 rounded-full border border-line bg-paper">
+      <button id="tab-light" class="tab-active" onclick="setTheme('light')">Light</button>
+      <button id="tab-dark" class="tab-idle" onclick="setTheme('dark')">Dark</button>
+    </div>
+  </div>
+  <p class="mt-2 text-sm text-muted">Full gallery <a href="screenshots/README.md" class="underline">screenshots/README.md</a> • Click to enlarge</p>
+  <div id="gallery" class="mt-6 grid sm:grid-cols-2 lg:grid-cols-3 gap-4"></div>
+  <div class="mt-4 flex sm:hidden items-center gap-1 p-1 rounded-full border border-line bg-paper w-fit">
+    <button id="tab-light-m" class="tab-active" onclick="setTheme('light')">Light</button>
+    <button id="tab-dark-m" class="tab-idle" onclick="setTheme('dark')">Dark</button>
+  </div>
+</section>
+
+<!-- EXTENSION / INSTALL -->
+<section class="bg-paper border-y border-line">
+  <div class="max-w-[1160px] mx-auto px-4 sm:px-6 py-10">
+    <div class="grid lg:grid-cols-2 gap-6">
+      <div class="card p-6">
+        <h3 class="font-bold">Browser extension — zero registry</h3>
+        <p class="mt-2 text-sm text-muted leading-6">MV3 service worker on <code>chrome.downloads.onCreated</code> → fetch cookies/headers → <code>POST 127.0.0.1:17530/download</code>. Unpacked loopback bridge (<code>%LOCALAPPDATA%\WDM\BrowserExtension</code>) — no NativeMessaging registry, auditable JS.</p>
+        <div class="mt-4 grid sm:grid-cols-2 gap-3 text-sm">
+          <div class="rounded-xl border border-line bg-white p-4"><b>Chrome / Edge</b><div class="text-muted text-xs mt-1"><code>chrome://extensions</code> → Developer mode → Load unpacked → <code>%LOCALAPPDATA%\WDM\BrowserExtension</code></div></div>
+          <div class="rounded-xl border border-line bg-white p-4"><b>Firefox</b><div class="text-muted text-xs mt-1"><code>about:debugging</code> → Load Temporary Add-on → <code>firefox/manifest.json</code> • AMO signed build also available</div></div>
+        </div>
+        <a href="extension-guide.html" class="mt-4 inline-flex btn-ghost text-sm">Open full technical paper →</a>
+      </div>
+      <div class="card p-6">
+        <h3 class="font-bold">Install & Updates</h3>
+        <div class="mt-3 grid gap-3 text-sm">
+          <div class="rounded-xl border border-line bg-white p-4"><b>Velopack (recommended)</b><div class="text-muted">Per-user, no UAC, keeps <code>tasks.json</code> / <code>engines\</code>. Check <code>Releases</code> for <code>*.nupkg</code> + <code>RELEASES</code>. Delta ~2 MB, <code>ApplyUpdatesAndRestart</code> no wizard.</div><code class="block mt-2 bg-ink text-white rounded-lg p-3 text-xs leading-5">dotnet tool install -g vpk
+dotnet publish src/WDM/WDM.csproj -c Release -r win-x64 --self-contained -o publish
+vpk pack --packId WDM --packVersion 2.6.1 --packDir publish --mainExe WDM.exe</code></div>
+          <div class="rounded-xl border border-line bg-white p-4"><b>Inno Setup</b><div class="text-muted"><code>ISCC.exe src\WDM.Setup\installer.iss</code> → <code>output\WDM_Setup_&lt;ver&gt;.exe</code>. Launches minimized via <code>/minimized</code> on startup.</div></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<footer class="max-w-[1160px] mx-auto px-4 sm:px-6 py-8 text-sm text-muted flex flex-wrap gap-3 items-center justify-between">
+  <span>© WDM — <a href="https://github.com/usm007/WDM" class="underline text-ink">usm007/WDM</a> • MIT • Windows only</span>
+  <span class="flex gap-2"><a href="https://github.com/usm007/WDM/releases" class="underline">Releases</a> • <a href="https://github.com/usm007/WDM/issues" class="underline">Issues</a> • <a href="extension-guide.html" class="underline">Tech paper</a></span>
+</footer>
+
+<dialog id="lightbox" class="p-0 bg-transparent backdrop:bg-ink/60 max-w-[92vw]"><img id="lightbox-img" class="max-w-[92vw] max-h-[92vh] rounded-xl shadow-2xl border border-white/20"></dialog>
+<script>
+const shots=[
+ ["01_MainWindow","Main Window — fluent UI, speed graph"],
+ ["02_AddDownloadDialog","Add Download — duplicate warning"],
+ ["03_OptionsDialog_01_Connection","Options — Connection"],
+ ["03_OptionsDialog_02_Folders","Options — Folders & Routing"],
+ ["03_OptionsDialog_03_Browser","Options — Browser Integration"],
+ ["03_OptionsDialog_04_YouTube","Options — YouTube & Media"],
+ ["03_OptionsDialog_07_Updates","Options — Updates"],
+ ["04_AboutDialog","About — Version 2.6.1"],
+ ["05_DownloadProgressDialog","Download Progress — ubuntu 3.8/5.7 GB 66%"],
+ ["06_DownloadCompleteDialog","Download Complete"],
+ ["07_DuplicateDownloadDialog","Duplicate Check"],
+ ["11_BrowserExtensionDialog","Browser Extension"],
+ ["12_ExtensionReloadNoticeDialog","Extension Reload Notice"],
+ ["13_WelcomeWindow","Welcome — onboarding"],
+ ["14_AboutDialog_Update","About — Update available"],
+ ["16_YouTubeSignInWindow","YouTube Sign-In"],
+ ["17_TrayProgressPanel","Tray Progress Panel"],
+];
+let theme='light';
+function setTheme(t){
+  theme=t;
+  for(const id of ['tab-light','tab-dark','tab-light-m','tab-dark-m']){
+    const el=document.getElementById(id); if(!el) continue;
+    const isActive=(id.includes(t));
+    el.className=isActive?'tab-active':'tab-idle';
+  }
+  render();
+}
+function render(){
+  const g=document.getElementById('gallery'); g.innerHTML='';
+  for(const [name,desc] of shots){
+    const src=`screenshots/${theme}/${name}.png`;
+    const a=document.createElement('a'); a.href=src; a.className='card overflow-hidden group block';
+    a.innerHTML=`<img src="${src}" alt="${desc}" loading="lazy" class="w-full aspect-[16/10] object-cover group-hover:scale-[1.01] transition"> <div class="p-3 flex items-center justify-between gap-2"><span class="text-xs font-semibold">${name}</span><span class="text-xs text-muted">${desc}</span></div>`;
+    a.onclick=(e)=>{e.preventDefault(); document.getElementById('lightbox-img').src=src; document.getElementById('lightbox').showModal();};
+    g.appendChild(a);
+  }
+}
+document.getElementById('lightbox').addEventListener('click',e=>{ if(e.target.id==='lightbox') e.target.close(); });
+setTheme('light');
+</script>
+</body>
+</html>

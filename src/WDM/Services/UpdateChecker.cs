@@ -144,11 +144,11 @@ public static class UpdateChecker
         return target;
     }
 
-    /// <summary>Runs the downloaded installer. Velopack Setup uses --silent; Inno legacy uses /VERYSILENT.</summary>
+    /// <summary>Runs the downloaded installer. Supports both Velopack (--silent) and Inno (/VERYSILENT) so the
+    /// "WDM is already installed" modal in the screenshot never appears during a silent auto-update.</summary>
     public static void LaunchInstaller(string installerPath, bool silent = false)
     {
-        // Velopack Setup.exe (--silent) is the current installer; /VERYSILENT kept for legacy Inno builds.
-        string args = silent ? "--silent" : "";
+        string args = silent ? "/VERYSILENT /SUPPRESSMSGBOXES --silent" : "";
         var psi = new ProcessStartInfo(installerPath, args) { UseShellExecute = true };
         Process.Start(psi);
     }

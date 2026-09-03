@@ -95,8 +95,11 @@ public partial class App : Application
         var settings = TaskStore.LoadSettings();
         ThemeService.Apply(AppTheme.Default, settings.UseDarkTheme);
 
-        // Never show welcome after an update — only on first-ever run
-        if (!settings.HasPromptedExtensionInstall && string.IsNullOrWhiteSpace(settings.LastRunVersion) && !StartMinimized)
+        // Never show welcome after an update — only on true first-ever run.
+        // If user data already exists (tasks/settings) or LastRunVersion is set, this is an update/relaunch, not a first install.
+        bool hasExistingUserData = File.Exists(Path.Combine(TaskStore.AppDir, "tasks.json")) || File.Exists(Path.Combine(TaskStore.AppDir, "settings.json"));
+        bool isFirstEverRun = string.IsNullOrWhiteSpace(settings.LastRunVersion) && !hasExistingUserData && !settings.HasPromptedExtensionInstall;
+        if (isFirstEverRun && !StartMinimized)
         {
             ShutdownMode = ShutdownMode.OnExplicitShutdown;
             var welcome = new WelcomeWindow(settings);
@@ -104,9 +107,9 @@ public partial class App : Application
             TaskStore.SaveSettings(settings);
             ShutdownMode = ShutdownMode.OnLastWindowClose;
         }
-        else if (!settings.HasPromptedExtensionInstall && !string.IsNullOrWhiteSpace(settings.LastRunVersion))
+        else if (!settings.HasPromptedExtensionInstall && (!string.IsNullOrWhiteSpace(settings.LastRunVersion) || hasExistingUserData))
         {
-            // Upgraded from older version that never set the flag — suppress future welcome
+            // Upgraded from older version that never set the flag, or settings had LastRunVersion wiped but user data exists — suppress future welcome
             settings.HasPromptedExtensionInstall = true;
             TaskStore.SaveSettings(settings);
         }

@@ -118,11 +118,16 @@ public partial class MainWindow : Window
             {
                 // Check if application was updated to a newer version.
                 // Prompt user to reload Chromium browser extensions so latest version loads.
+                // We also handle the case where LastRunVersion was wiped but user data still exists — still show the update/reload notice instead of Welcome.
                 string currentVer = UpdateChecker.CurrentVersion.ToString();
                 string? lastVer = _viewModel.Settings.LastRunVersion;
-                if (!string.IsNullOrWhiteSpace(lastVer) && lastVer != currentVer)
+                bool hasExistingUserData = File.Exists(System.IO.Path.Combine(TaskStore.AppDir, "tasks.json"));
+                bool isUpdate = (!string.IsNullOrWhiteSpace(lastVer) && lastVer != currentVer)
+                                || (string.IsNullOrWhiteSpace(lastVer) && hasExistingUserData);
+                if (isUpdate)
                 {
-                    _dispatcher.BeginInvoke(() => ShowExtensionReloadNotice(lastVer, currentVer));
+                    string displayOld = string.IsNullOrWhiteSpace(lastVer) ? "previous" : lastVer;
+                    _dispatcher.BeginInvoke(() => ShowExtensionReloadNotice(displayOld, currentVer));
                 }
             }
 
@@ -456,7 +461,9 @@ public partial class MainWindow : Window
     }
 
     /// <summary>Checks for updates: Velopack delta first (patch-only, ~2MB), then GitHub full installer as fallback.
-    /// Throttled to once every 15 minutes.</summary>
+    /// Throttled to once every 15 minutes. Never uses Windows balloon notifications — surfaces the
+    /// program's own update dialog (AboutDialog inline panel) so silent auto-install failures like
+    /// the "WDM is already installed" modal cannot recur.</summary>
     private async Task CheckForUpdatesAsync()
     {
         var settings = _viewModel.Settings;
@@ -466,7 +473,7 @@ public partial class MainWindow : Window
         if (lastCheck is not null && DateTime.UtcNow - lastCheck < TimeSpan.FromMinutes(15))
             return;
 
-        // 1) Velopack → delta-only, truly silent (never runs Setup.exe which shows the "already installed" dialog)
+        // 1) Velopack → delta-only (never runs Setup.exe which shows the "already installed" dialog)
         if (VelopackUpdateService.IsVelopackInstalled)
         {
             try
@@ -480,8 +487,19 @@ public partial class MainWindow : Window
                     _viewModel.PersistSettings();
                     var semVer = velopackUpdate.TargetFullRelease.Version;
                     var target = VelopackUpdateService.ToSystemVersion(semVer);
-                    _tray.ShowBalloon("WDM updating", $"WDM {target} is downloading in the background and will restart automatically.");
-                    _ = Task.Run(async () => await DownloadAndInstallVelopackAsync(velopackUpdate));
+                    var synthetic = new ReleaseInfo($"v{target}", target, $"WDM {target}", $"https://github.com/usm007/WDM/releases/tag/v{target}", $"Delta update to {target} (patch-only).", DateTime.UtcNow, null);
+                    _dispatcher.BeginInvoke(() =>
+                    {
+                        try
+                        {
+                            RestoreWindow();
+                            var dlg = new AboutDialog();
+                            dlg.Owner = this;
+                            dlg.ShowAvailableUpdate(synthetic, velopackUpdate);
+                            dlg.ShowDialog();
+                        }
+                        catch { }
+                    });
                     return;
                 }
                 // No delta — don't fall back to Setup.exe (would show modal); just record check and exit
@@ -497,7 +515,7 @@ public partial class MainWindow : Window
             }
         }
 
-        // 2) Non-Velopack (portable/dev) → GitHub full installer, launched with --silent (bypasses prompt)
+        // 2) Non-Velopack (portable/dev) → GitHub full installer — show in-app dialog, not a balloon
         var latest = await UpdateChecker.CheckLatestAsync();
         if (latest is null)
             return;
@@ -507,9 +525,18 @@ public partial class MainWindow : Window
 
         if (latest.Version is not null && latest.Version.CompareTo(UpdateChecker.CurrentVersion) > 0)
         {
-            // Automatic silent full-installer update — no extra click after download
-            _tray.ShowBalloon("WDM updating", $"WDM {latest.Version} is downloading in the background and will restart automatically.");
-            _ = Task.Run(async () => await DownloadAndInstallUpdateAsync(latest));
+            _dispatcher.BeginInvoke(() =>
+            {
+                try
+                {
+                    RestoreWindow();
+                    var dlg = new AboutDialog();
+                    dlg.Owner = this;
+                    dlg.ShowAvailableUpdate(latest, null);
+                    dlg.ShowDialog();
+                }
+                catch { }
+            });
         }
     }
 
@@ -517,17 +544,12 @@ public partial class MainWindow : Window
     {
         try
         {
-            _tray.ShowBalloon("WDM update", "Downloading delta update…");
-            await VelopackUpdateService.DownloadUpdatesAsync(update, pct =>
-            {
-                if (pct % 25 == 0)
-                    _dispatcher.BeginInvoke(() => _tray.ShowBalloon("WDM update", $"Downloading delta… {pct}%"));
-            });
+            await VelopackUpdateService.DownloadUpdatesAsync(update, null);
             VelopackUpdateService.ApplyAndRestart(update.TargetFullRelease);
         }
-        catch (Exception ex)
+        catch
         {
-            _tray.ShowBalloon("Update failed", $"Could not download delta: {ex.Message}");
+            // Failure is surfaced in the in-app update dialog (AboutDialog), not via Windows balloon
         }
     }
 
@@ -537,13 +559,12 @@ public partial class MainWindow : Window
     {
         if (release is null)
         {
-            _tray.ShowBalloon("No download available", "This release has no installer attached yet — open the releases page instead.");
+            UpdateChecker.OpenReleasesPage(release?.Url);
             return;
         }
         // If only delta package is available (no .exe), fallback to Velopack or open page
         if (string.IsNullOrWhiteSpace(release.InstallerUrl) && !string.IsNullOrWhiteSpace(release.UpdatePackageUrl))
         {
-            // Try Velopack path even for non-installed as last resort
             try
             {
                 var anyUpdate = await VelopackUpdateService.CheckForUpdatesAnyAsync();
@@ -554,35 +575,28 @@ public partial class MainWindow : Window
                 }
             }
             catch { }
-            _tray.ShowBalloon("Update package only", "Full installer not yet available — opening release page for portable download.");
             UpdateChecker.OpenReleasesPage(release.Url);
             return;
         }
         if (string.IsNullOrWhiteSpace(release.InstallerUrl))
         {
-            _tray.ShowBalloon("No download available", "This release has no installer attached yet — open the releases page instead.");
+            UpdateChecker.OpenReleasesPage(release.Url);
             return;
         }
 
         try
         {
-            _tray.ShowBalloon("WDM update", "Downloading the new installer…");
-            string installer = await UpdateChecker.DownloadInstallerAsync(release, progress =>
-            {
-                int pct = (int)Math.Round(progress * 100);
-                if (pct % 25 == 0)
-                    _dispatcher.BeginInvoke(() => _tray.ShowBalloon("WDM update", $"Downloading the new installer… {pct}%"));
-            });
+            string installer = await UpdateChecker.DownloadInstallerAsync(release, null);
 
-            // Silent install — no wizard clicks required after download
+            // Silent install — uses /VERYSILENT + --silent so "already installed" prompt never appears
             UpdateChecker.LaunchInstaller(installer, silent: true);
             await Task.Delay(500);
             _exiting = true;
             Close();
         }
-        catch (Exception ex)
+        catch
         {
-            _tray.ShowBalloon("Update failed", $"Could not download the update: {ex.Message}");
+            UpdateChecker.OpenReleasesPage(release.Url);
         }
     }
 
