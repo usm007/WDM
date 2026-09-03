@@ -6,6 +6,8 @@ param(
     [switch]$SelfContained,
     [string]$Framework = "net8-x64-desktop"
 )
+# Self-contained is now the default for exe releases (bundles .NET 8 libs — no runtime install needed)
+if (-not $PSBoundParameters.ContainsKey('SelfContained')) { $SelfContained = $true }
 
 $ErrorActionPreference = "Stop"
 
@@ -51,7 +53,10 @@ if ($LASTEXITCODE -ne 0) { throw "vpk pack failed with exit code $LASTEXITCODE" 
 Write-Host "Velopack artifacts in $outFull"
 Get-ChildItem $outFull | Format-Table Name, Length
 $setup = Join-Path $outFull "WDM-win-Setup.exe"
-if (Test-Path $setup) { Write-Host "Setup: $setup ($([math]::Round((Get-Item $setup).Length/1MB,2)) MB) - includes dotnet check: $Framework (SelfContained=$SelfContained)" }
+if (Test-Path $setup) {
+    $mode = if ($SelfContained) { "self-contained (.NET 8 bundled, no runtime install needed)" } else { "framework-dependent (requires .NET 8, dotnet check: $Framework)" }
+    Write-Host "Setup: $setup ($([math]::Round((Get-Item $setup).Length/1MB,2)) MB) - $mode (SelfContained=$SelfContained)"
+}
 
 # Create clean 3-file release upload folder: full installer, portable, update package (delta if exists, else full)
 $uploadDir = Join-Path $PSScriptRoot "release_upload"
@@ -71,8 +76,8 @@ if (Test-Path $releasesJson) { Copy-Item $releasesJson (Join-Path $uploadDir "re
 Write-Host ""
 Write-Host "Release upload (4 files) in $uploadDir :"
 Get-ChildItem $uploadDir | Format-Table Name, @{N="SizeMB";E={"{0:F2}" -f ($_.Length/1MB)}}, Length
-Write-Host "  1) WDM-Full-Setup-$Version.exe  -> full installer for new users (Velopack Setup, includes .NET check)"
-Write-Host "  2) WDM-Portable-$Version.zip     -> portable, no install"
+Write-Host "  1) WDM-Full-Setup-$Version.exe  -> full installer for new users (Velopack Setup, self-contained .NET 8)"
+Write-Host "  2) WDM-Portable-$Version.zip     -> portable, self-contained, no .NET install needed"
 Write-Host "  3) $($updatePkg.Name)  -> update package ONLY - in-app updater downloads this delta, NOT the full installer"
 Write-Host "  4) releases.win.json -> Required by Velopack GithubSource to resolve delta packages"
 Write-Host "Updater: VelopackUpdateService downloads only the update package (delta ~15KB) with progress bar, then ApplyAndRestart."
@@ -80,4 +85,4 @@ Write-Host "Updater: VelopackUpdateService downloads only the update package (de
 Write-Host ""
 Write-Host "Next: upload $uploadDir/* to GitHub Release tag v$Version (3 files total)."
 Write-Host "Existing installs via Velopack will get delta patch-only updates with progress bar and auto-restart."
-Write-Host "Dotnet: framework=$Framework bundled as runtime check (small installer). Use -SelfContained for fully offline 160MB+ publish."
+Write-Host "Dotnet: self-contained .NET 8 is now the default (exe contains all libs, ~140-160MB). Pass -SelfContained:`$false -Framework $Framework for small framework-dependent build."

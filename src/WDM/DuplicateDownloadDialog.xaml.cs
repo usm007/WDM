@@ -24,7 +24,8 @@ public partial class DuplicateDownloadDialog : Window
 
         OriginalFileText.Text = originalFileName;
         NumberedFileText.Text = numberedFileName;
-        RenameBtn.Content = $"Rename to {numberedFileName}";
+        RenameBtnText.Text = $"Rename to {numberedFileName}";
+        RenameBtn.ToolTip = $"Download as {numberedFileName}";
 
         Loaded += (_, _) => RenameBtn.Focus();
     }

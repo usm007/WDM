@@ -1,9 +1,9 @@
 ﻿<Window x:Class="WDM.DuplicateDownloadDialog"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="Duplicate Download â€” WDM"
+        Title="Duplicate Download — WDM"
         Icon="Assets/WDM.ico"
-        Width="460"
+        Width="560"
         SizeToContent="Height"
         WindowStartupLocation="CenterOwner"
         ResizeMode="NoResize"
@@ -78,24 +78,31 @@
 
             <!-- Bottom Action Strip: Cancel | Overwrite | Rename & Download -->
             <Border Grid.Row="1" Background="{DynamicResource Brush.SurfaceAlt}" BorderBrush="{DynamicResource Brush.Border}" BorderThickness="0,1,0,0" CornerRadius="0,0,7,7" Padding="16,12">
-                <DockPanel LastChildFill="False">
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
                     <!-- Cancel (Left) -->
-                    <Button x:Name="CancelBtn" Content="Cancel" Style="{StaticResource Button.Secondary}"
-                            Click="Cancel_Click" Height="30" MinWidth="85" DockPanel.Dock="Left" IsCancel="True" />
+                    <Button x:Name="CancelBtn" Grid.Column="0" Content="Cancel" Style="{StaticResource Button.Secondary}"
+                            Click="Cancel_Click" Height="30" MinWidth="85" IsCancel="True" />
 
                     <!-- Action Group (Right) -->
-                    <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
+                    <StackPanel Grid.Column="2" Orientation="Horizontal">
                         <!-- Overwrite existing file -->
                         <Button x:Name="OverwriteBtn" Content="Overwrite File" Style="{StaticResource Button.Secondary}"
-                                Click="Overwrite_Click" Height="30" MinWidth="110" Margin="0,0,8,0"
+                                Click="Overwrite_Click" Height="30" MinWidth="120" Margin="0,0,8,0"
                                 ToolTip="Replace the existing file on disk with this new download" />
 
-                        <!-- Rename and Download -->
-                        <Button x:Name="RenameBtn" Content="Rename &amp; Download" Style="{StaticResource Button.Accent}"
-                                Click="RenameAndDownload_Click" Height="30" MinWidth="150" IsDefault="True"
-                                ToolTip="Download as a numbered copy so both files are kept" />
+                        <!-- Rename and Download — text trims instead of clipping window edge -->
+                        <Button x:Name="RenameBtn" Style="{StaticResource Button.Accent}"
+                                Click="RenameAndDownload_Click" Height="30" MinWidth="170" MaxWidth="280" IsDefault="True"
+                                ToolTip="Download as a numbered copy so both files are kept">
+                            <TextBlock x:Name="RenameBtnText" Text="Rename &amp; Download" TextTrimming="CharacterEllipsis" />
+                        </Button>
                     </StackPanel>
-                </DockPanel>
+                </Grid>
             </Border>
         </Grid>
     </Border>

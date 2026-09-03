@@ -159,16 +159,17 @@ webext.runtime.onMessage.addListener((message, sender, sendResponse) => {
 });
 
 // ============ IDM-grade webRequest pipeline (generic, except youtube) ============
-// MIME -> extensions map (IDM Aa) subset for detection
+// MIME -> extensions map — only true media types (archives/binaries are handled by download catcher, not media)
 const IDM_MIME_MAP = {
   "video/mp4":"MP4|M4V|M4S","video/mpeg":"MPG|MPEG","video/mpg4":"MP4|M4V","video/quicktime":"MOV|QT","video/webm":"WEBM","video/x-flash-video":"FLV","video/x-matroska":"MKV","video/avi":"AVI","video/msvideo":"AVI","video/x-msvideo":"AVI","video/3gpp":"3GP",
   "audio/mp4":"M4A|MP4|M4S","audio/mpeg":"MP3","audio/mp3":"MP3","audio/webm":"WEBM","audio/wav":"WAV","audio/x-wav":"WAV","audio/ogg":"OGG|OPUS",
-  "application/dash+xml":"MPD","application/vnd.apple.mpegurl":"M3U8","application/x-mpegurl":"M3U8","application/x-mpegURL":"M3U8","audio/mpegurl":"M3U|M3U8","video/mp2t":"TS|M3U8","application/octet-stream-m3u8":"M3U8",
-  "application/x-7z-compressed":"7Z","application/zip":"ZIP","application/x-rar":"RAR","application/x-rar-compressed":"RAR","application/pdf":"PDF","application/octet-stream":"BIN","application/x-msi":"MSI"
+  "application/dash+xml":"MPD","application/vnd.apple.mpegurl":"M3U8","application/x-mpegurl":"M3U8","application/x-mpegURL":"M3U8","audio/mpegurl":"M3U|M3U8","video/mp2t":"TS|M3U8","application/octet-stream-m3u8":"M3U8"
 };
 const IDM_HLS_RE = /(\.m3u8|\/hls\/|[\?&]format=m3u8|mime=.*mpegurl)/i;
 const IDM_DASH_RE = /(\.mpd|\/dash\/|[\?&]format=mpd|mime=.*dash)/i;
-const IDM_MEDIA_EXTS = /\.(mp4|m4v|m4s|webm|mkv|avi|mov|flv|mpg|mpeg|3gp|3gpp|wmv|asf|ts|m2ts|mp3|m4a|aac|ogg|opus|flac|wav|zip|rar|7z|pdf|exe|msi)(\?|$)/i;
+const IDM_MEDIA_EXTS = /\.(mp4|m4v|m4s|webm|mkv|avi|mov|flv|mpg|mpeg|3gp|3gpp|wmv|asf|ts|m2ts|mp3|m4a|aac|ogg|opus|flac|wav)(\?|$)/i;
+// Archives/binaries must never be treated as media — let downloads.onCreated handle them
+const ARCHIVE_EXT_RE = /\.(zip|rar|7z|tar|gz|bz2|xz|pdf|exe|msi|dmg|iso)(\?|$)/i;
 
 function getHeader(headers, name) {
   if (!headers) return null;
@@ -193,6 +194,7 @@ function isMediaResponse(details) {
   if (!/^https?:\/\//i.test(url)) return false;
   if (url.startsWith(WDM_HOST) || url.startsWith("http://localhost:17530")) return false;
   if (isYouTubeUrl(url)) return false; // youtube handled by yt-dlp, not media catcher
+  if (ARCHIVE_EXT_RE.test(url)) return false; // archives/binaries -> download catcher, not media
   const status = details.statusCode || 0;
   if (status && status !== 200 && status !== 206 && status !== 304) return false;
   const type = (details.type || "").toLowerCase();
@@ -223,12 +225,12 @@ function isMediaResponse(details) {
     if (IDM_MIME_MAP[ctype]) return true;
     if (ctype.includes("mpegurl") || ctype.includes("dash+xml") || ctype.includes("mp2t")) return true;
   }
-  // 3) Content-Disposition attachment with media ext
+  // 3) Content-Disposition attachment with media ext (only media, not archives)
   if (cdisp.includes("attachment")) {
     const m = cdisp.match(/filename[^;=\n]*=(?:[^"]*"([^"]+)"|([^\s;]+))/i);
     const fn = m ? (m[1] || m[2] || "") : "";
     const fext = fn ? (fn.split(".").pop() || "").toUpperCase() : "";
-    if (fext && /^(MP4|M4V|M4S|MP3|M4A|FLV|WEBM|MKV|AVI|MOV|MPD|M3U8|ZIP|RAR|7Z|PDF|EXE)$/i.test(fext)) return true;
+    if (fext && /^(MP4|M4V|M4S|MP3|M4A|FLV|WEBM|MKV|AVI|MOV|MPD|M3U8)$/i.test(fext)) return true;
     if (ext && /^(MP4|M4V|M4S|MP3|M4A|FLV|WEBM|MKV|AVI|MOV|MPD|M3U8)$/i.test(ext)) return true;
   }
   // 4) Segment filtering: very small .ts/.m4s are segments, not master
@@ -246,6 +248,7 @@ function classifyUrl(url) {
 function registerTabMedia(tabId, url, hint) {
   if (!url || !tabId || tabId < 0) return;
   if (isYouTubeUrl(url)) return;
+  if (ARCHIVE_EXT_RE.test(url)) return;
   try { url = new URL(url, "http://dummy").href; } catch {}
   try { if (/^https?:/i.test(url)) url = new URL(url).href; } catch {}
   // de-duplicate generic test beacons + DASH inits

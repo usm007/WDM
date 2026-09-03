@@ -1,7 +1,7 @@
 ﻿<Window x:Class="WDM.DownloadCompleteDialog"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="Download Complete â€” WDM"
+        Title="Download Complete — WDM"
         Icon="Assets/WDM.ico"
         Width="500"
         SizeToContent="Height"

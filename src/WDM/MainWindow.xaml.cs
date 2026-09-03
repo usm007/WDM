@@ -466,32 +466,38 @@ public partial class MainWindow : Window
         if (lastCheck is not null && DateTime.UtcNow - lastCheck < TimeSpan.FromMinutes(15))
             return;
 
-        // 1) Try Velopack delta (silent patch) when installed via Velopack.
+        // 1) Velopack → delta-only, truly silent (never runs Setup.exe which shows the "already installed" dialog)
         if (VelopackUpdateService.IsVelopackInstalled)
         {
             try
             {
                 var velopackUpdate = await VelopackUpdateService.CheckForUpdatesAsync();
-                // Fallback to any-check (handles delta-only edge cases)
                 if (velopackUpdate == null)
                     velopackUpdate = await VelopackUpdateService.CheckForUpdatesAnyAsync();
                 if (velopackUpdate is not null)
                 {
                     settings.LastUpdateCheckUtc = DateTime.UtcNow.ToString("O");
                     _viewModel.PersistSettings();
-
                     var semVer = velopackUpdate.TargetFullRelease.Version;
                     var target = VelopackUpdateService.ToSystemVersion(semVer);
-                    // Automatic silent delta update — no user click required after download
                     _tray.ShowBalloon("WDM updating", $"WDM {target} is downloading in the background and will restart automatically.");
                     _ = Task.Run(async () => await DownloadAndInstallVelopackAsync(velopackUpdate));
                     return;
                 }
+                // No delta — don't fall back to Setup.exe (would show modal); just record check and exit
+                settings.LastUpdateCheckUtc = DateTime.UtcNow.ToString("O");
+                _viewModel.PersistSettings();
+                return;
             }
-            catch { /* fall through to GitHub check */ }
+            catch
+            {
+                settings.LastUpdateCheckUtc = DateTime.UtcNow.ToString("O");
+                _viewModel.PersistSettings();
+                return;
+            }
         }
 
-        // 2) Fallback: GitHub full installer check
+        // 2) Non-Velopack (portable/dev) → GitHub full installer, launched with --silent (bypasses prompt)
         var latest = await UpdateChecker.CheckLatestAsync();
         if (latest is null)
             return;
@@ -505,31 +511,6 @@ public partial class MainWindow : Window
             _tray.ShowBalloon("WDM updating", $"WDM {latest.Version} is downloading in the background and will restart automatically.");
             _ = Task.Run(async () => await DownloadAndInstallUpdateAsync(latest));
         }
-    }
-
-    private bool _isUpdateDialogOpen = false;
-    private void ShowUpdatePrompt(ReleaseInfo latest)
-    {
-        if (_isUpdateDialogOpen || UpdateAvailableDialog.IsDialogOpen) return;
-        _isUpdateDialogOpen = true;
-        try
-        {
-            var dialog = new UpdateAvailableDialog(latest) { Owner = this, Topmost = true };
-            dialog.ShowDialog();
-        }
-        finally { _isUpdateDialogOpen = false; }
-    }
-
-    private void ShowUpdatePromptVelopack(ReleaseInfo synthetic, Velopack.UpdateInfo velopackInfo)
-    {
-        if (_isUpdateDialogOpen || UpdateAvailableDialog.IsDialogOpen) return;
-        _isUpdateDialogOpen = true;
-        try
-        {
-            var dialog = new UpdateAvailableDialog(synthetic, velopackInfo) { Owner = this, Topmost = true };
-            dialog.ShowDialog();
-        }
-        finally { _isUpdateDialogOpen = false; }
     }
 
     private async Task DownloadAndInstallVelopackAsync(Velopack.UpdateInfo update)

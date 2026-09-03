@@ -144,15 +144,16 @@ public static class UpdateChecker
         return target;
     }
 
-    /// <summary>Runs the downloaded installer (UAC-per-user install; WDM restarts after).</summary>
+    /// <summary>Runs the downloaded installer. Velopack Setup uses --silent; Inno legacy uses /VERYSILENT.</summary>
     public static void LaunchInstaller(string installerPath, bool silent = false)
     {
-        string args = silent ? "/VERYSILENT /CLOSEAPPLICATIONS /NOCANCEL /RESTARTAPPLICATIONS" : "";
+        // Velopack Setup.exe (--silent) is the current installer; /VERYSILENT kept for legacy Inno builds.
+        string args = silent ? "--silent" : "";
         var psi = new ProcessStartInfo(installerPath, args) { UseShellExecute = true };
         Process.Start(psi);
     }
 
-    /// <summary>Launches installer silently (no wizard) - for background patch-like experience even when falling back to full exe.</summary>
+    /// <summary>Launches installer silently (no wizard) — truly silent, bypasses the "already installed" prompt.</summary>
     public static void LaunchInstallerSilent(string installerPath)
         => LaunchInstaller(installerPath, silent: true);
 

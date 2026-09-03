@@ -1,6 +1,10 @@
+<p align="center">
+  <img src="hero_banner_readme.png" alt="WDM — Windows Download Manager" width="100%" />
+</p>
+
 # WDM — Windows Download Manager
 
-An IDM-inspired no-nonsense download manager for Windows, written in C# / WPF / .NET 8.
+An IDM-inspired no-nonsense download manager for Windows, written in C# / WPF / .NET 8. **Self-contained .NET 8** — exe releases bundle all libraries, no runtime install needed.
 
 - **Multi-threaded downloads** — dynamic segmentation with a shared chunk pool: the file is divided into small byte-range chunks that any worker thread can pick up as they finish, so slower segments don't idle threads.
 - **Pause / Resume** — the set of completed chunks is persisted to a `*.wdmstate` file next to the target; resuming skips chunks already on disk and continues from there, even across restarts.
@@ -94,11 +98,12 @@ Output: `output\WDM_Setup_<version>.exe`. Per-user install into `%LocalAppData%\
 * **Fallback**: dev builds and legacy Inno-only installs (`VelopackUpdateService.IsVelopackInstalled == false`) fall back to `src/WDM/Services/UpdateChecker.cs:37` GitHub Releases API. The full installer is downloaded to `%TEMP%` and launched. Even this path can be silent via `UpdateChecker.LaunchInstallerSilent()` (`/VERYSILENT`).
 * Hybrid release: publish both `WDM_Setup_<version>.exe` (Inno, new users) + Velopack assets (`WDM-<version>-full.nupkg`, `*-delta.nupkg`, `RELEASES`) to the same GitHub Release.
 
-Build Velopack release (requires `vpk` CLI: `dotnet tool install -g vpk`):
+Build Velopack release (self-contained .NET 8, requires `vpk` CLI: `dotnet tool install -g vpk`):
 ```
-dotnet publish src/WDM/WDM.csproj -c Release -o publish
+dotnet publish src/WDM/WDM.csproj -c Release -r win-x64 --self-contained true -o publish
 vpk pack --packId WDM --packVersion 2.5.4 --packDir publish --mainExe WDM.exe --outputDir output
 # upload output/RELEASES + *.nupkg to GitHub Release alongside WDM_Setup_2.5.4.exe
+# Or use: powershell -File build-velopack.ps1  (now defaults to self-contained, ~150MB, no .NET install needed)
 ```
 
 ## Caveats
@@ -108,10 +113,44 @@ vpk pack --packId WDM --packVersion 2.5.4 --packDir publish --mainExe WDM.exe --
 
 ## Screenshots
 
-<img width="929" height="579" alt="Screenshot_1" src="https://github.com/user-attachments/assets/481539b2-c661-475a-a746-dd0702d4eab3" />
+> Fresh captures from `v2.6.0` — light theme shown. Full gallery (light + dark, all 17 dialogs/tabs) in [`screenshots/README.md`](screenshots/README.md).
 
-<img width="698" height="513" alt="Screenshot_3" src="https://github.com/user-attachments/assets/c9eaaebc-6537-4c9b-b6a7-16eb99fe005c" />
+<p align="center">
+  <img src="screenshots/light/01_MainWindow.png" alt="Main Window" width="920" />
+  <br/>
+  <em>Main Window — modern fluent UI, categories, speed graph and toolbar</em>
+</p>
 
-<img width="605" height="404" alt="Screenshot_4" src="https://github.com/user-attachments/assets/19ecf8ce-f65e-4e6b-b510-21779d81fea7" />
+### Featured — Light & Dark pairs (from latest captures)
 
-<img width="631" height="475" alt="Screenshot_5" src="https://github.com/user-attachments/assets/e0e22a7f-eded-4a78-b932-d6142cd36c8d" />
+| View | Light | Dark |
+|---|---|---|
+| **Download Progress** — `ubuntu-24.04-desktop-amd64.iso` · 3.8/5.7 GB · 66% · HLS segments · 17.6 MB/s · 1m 45s · 8 threads | <img src="screenshots/light/05_DownloadProgressDialog.png" width="360" /> | <img src="screenshots/dark/05_DownloadProgressDialog.png" width="360" /> |
+| **Main Window** — 5 downloads · Queued / Running / Done / Paused / Failed | <img src="screenshots/light/01_MainWindow.png" width="360" /> | <img src="screenshots/dark/01_MainWindow.png" width="360" /> |
+| **Add Download** — URL inspect + duplicate warning `This URL is already in your download list` | <img src="screenshots/light/02_AddDownloadDialog.png" width="360" /> | <img src="screenshots/dark/02_AddDownloadDialog.png" width="360" /> |
+| **Settings** — Connection & Speed (Light) / YouTube & Media (Dark) | <img src="screenshots/light/03_OptionsDialog_01_Connection.png" width="360" /> | <img src="screenshots/dark/03_OptionsDialog_04_YouTube.png" width="360" /> |
+| **About** — `Version 2.6.0` · `github.com/usm007/WDM` | <img src="screenshots/light/04_AboutDialog.png" width="360" /> | <img src="screenshots/dark/04_AboutDialog.png" width="360" /> |
+
+### Gallery — all dialogs (light)
+
+| Add Download | Options | About |
+|---|---|---|
+| <img src="screenshots/light/02_AddDownloadDialog.png" width="320" /> | <img src="screenshots/light/03_OptionsDialog.png" width="320" /> | <img src="screenshots/light/04_AboutDialog.png" width="320" /> |
+
+| Download Progress | Duplicate Check | Task Properties |
+|---|---|---|
+| <img src="screenshots/light/05_DownloadProgressDialog.png" width="320" /> | <img src="screenshots/light/07_DuplicateDownloadDialog.png" width="320" /> | <img src="screenshots/light/08_TaskPropertiesDialog.png" width="320" /> |
+
+| Browser Extension | Welcome | Update (inline) |
+|---|---|---|
+| <img src="screenshots/light/11_BrowserExtensionDialog.png" width="320" /> | <img src="screenshots/light/13_WelcomeWindow.png" width="320" /> | <img src="screenshots/light/14_AboutDialog_Update.png" width="320" /> |
+
+<details>
+<summary>View all 17 dialogs + 8 Options tabs (light / dark)</summary>
+
+See [`screenshots/README.md`](screenshots/README.md) for the complete table:
+`01_MainWindow` · `02_AddDownloadDialog` · `03_OptionsDialog` (+ 8 tabs) · `04_AboutDialog` · `05_DownloadProgressDialog` · `06_DownloadCompleteDialog` · `07_DuplicateDownloadDialog` · `08_TaskPropertiesDialog` · `09_RefreshLinkDialog` · `10_DeleteConfirmDialog` · `11_BrowserExtensionDialog` · `12_ExtensionReloadNoticeDialog` · `13_WelcomeWindow` · `14_AboutDialog_Update` · `15_CloudflareChallengeWindow` · `16_YouTubeSignInWindow` · `17_TrayProgressPanel`
+
+Light: `screenshots/light/` · Dark: `screenshots/dark/`
+
+</details>

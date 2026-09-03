@@ -18,7 +18,12 @@ public static class ScreenshotGenerator
     {
         CleanupLegacyFiles();
 
-        string outputDir = @"E:\WDM-2\screenshots_new";
+        // Resolve to project screenshots folder so captures land in repo (works both in dev and CI)
+        string repoRoot = Path.GetFullPath(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "..", "..", "..", "..", ".."));
+        // Fallback to known absolute path for this workspace if repoRoot detection fails
+        if (!Directory.Exists(Path.Combine(repoRoot, "screenshots")))
+            repoRoot = @"C:\Users\Admin\Desktop\WDM-2.6.0";
+        string outputDir = Path.Combine(repoRoot, "screenshots");
         string lightDir = Path.Combine(outputDir, "light");
         string darkDir = Path.Combine(outputDir, "dark");
 
@@ -109,17 +114,24 @@ public static class ScreenshotGenerator
             var welcomeWindow = new WelcomeWindow(viewModel.Settings);
             SaveWindowScreenshot(welcomeWindow, Path.Combine(targetDir, "13_WelcomeWindow.png"));
 
-            // 14. UpdateAvailableDialog
-            var releaseInfo = new ReleaseInfo(
-                "v2.5.1",
-                new Version(2, 5, 1),
-                "v2.5.1",
-                "https://github.com/usm007/WDM/releases/tag/v2.5.1",
-                "What's new in v2.5.1:\n• High-DPI PerMonitorV2 support\n• Resumable HLS streaming downloads\n• Faster multi-chunk download speeds\n• Enhanced browser extension handshake",
-                DateTime.Now,
-                "https://github.com/usm007/WDM/releases/download/v2.5.1/WDM_Setup_2.5.1.0.exe");
-            var updateDialog = new UpdateAvailableDialog(releaseInfo);
-            SaveWindowScreenshot(updateDialog, Path.Combine(targetDir, "14_UpdateAvailableDialog.png"));
+            // 14. AboutDialog — with inline update (unified dialog, replaces standalone UpdateAvailableDialog)
+            var aboutWithUpdate = new AboutDialog();
+            // Best-effort: force inline panel visible for screenshot via template lookup
+            try
+            {
+                aboutWithUpdate.Show();
+                var panel = aboutWithUpdate.FindName("InlineUpdatePanel") as System.Windows.Controls.Border;
+                var verLine = aboutWithUpdate.FindName("InlineVersionLine") as System.Windows.Controls.TextBlock;
+                var status = aboutWithUpdate.FindName("InlineStatusText") as System.Windows.Controls.TextBlock;
+                var defStrip = aboutWithUpdate.FindName("DefaultStrip") as System.Windows.Controls.Grid;
+                var updStrip = aboutWithUpdate.FindName("UpdateActionStrip") as System.Windows.Controls.Grid;
+                if (panel != null) panel.Visibility = System.Windows.Visibility.Visible;
+                if (verLine != null) verLine.Text = "WDM 2.6.0 is available";
+                if (status != null) status.Text = "Delta (~2-5 MB) • Silent auto-updates — no extra clicks after download";
+                if (defStrip != null) defStrip.Visibility = System.Windows.Visibility.Collapsed;
+                if (updStrip != null) updStrip.Visibility = System.Windows.Visibility.Visible;
+            } catch { }
+            SaveWindowScreenshot(aboutWithUpdate, Path.Combine(targetDir, "14_AboutDialog_Update.png"));
 
             // 15. CloudflareChallengeWindow
             try
@@ -159,7 +171,10 @@ public static class ScreenshotGenerator
 
     private static void CleanupLegacyFiles()
     {
-        string baseDir = @"E:\WDM-2\src\WDM";
+        string repoRoot = Path.GetFullPath(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "..", "..", "..", "..", ".."));
+        if (!Directory.Exists(Path.Combine(repoRoot, "src")))
+            repoRoot = @"C:\Users\Admin\Desktop\WDM-2.6.0";
+        string baseDir = Path.Combine(repoRoot, "src", "WDM");
         var filesToDelete = new[]
         {
             Path.Combine(baseDir, "WdmOriginalMainWindow.xaml"),

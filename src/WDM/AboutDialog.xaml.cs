@@ -51,10 +51,11 @@ public partial class AboutDialog : Window
         DefaultStrip.Visibility = Visibility.Visible;
         try
         {
-            // Prefer Velopack delta when installed via Velopack
+            // Velopack install → delta-only (truly silent); never fall back to Setup.exe which shows the "already installed" prompt
             if (VelopackUpdateService.IsVelopackInstalled)
             {
-                var vUpdate = await VelopackUpdateService.CheckForUpdatesAsync();
+                var vUpdate = await VelopackUpdateService.CheckForUpdatesAsync()
+                              ?? await VelopackUpdateService.CheckForUpdatesAnyAsync();
                 if (vUpdate is not null)
                 {
                     var semVer = vUpdate.TargetFullRelease.Version;
@@ -64,6 +65,15 @@ public partial class AboutDialog : Window
                     ShowInlineUpdate(synthetic, vUpdate);
                     return;
                 }
+                // No delta found — don't offer Setup.exe (would show the modal in the screenshot); delta will appear shortly
+                var check = await UpdateChecker.CheckLatestAsync();
+                if (check?.Version is { } cv && cv.CompareTo(UpdateChecker.CurrentVersion) > 0)
+                {
+                    UpdateStatusText.Text = $"WDM {cv} is available — delta is being prepared, please try again shortly.";
+                    return;
+                }
+                UpdateStatusText.Text = "You are running the latest version.";
+                return;
             }
 
             var latest = await UpdateChecker.CheckLatestAsync();
