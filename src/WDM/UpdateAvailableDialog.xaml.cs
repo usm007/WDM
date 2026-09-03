@@ -1,4 +1,5 @@
 using System;
+using System.Linq;
 using System.Windows;
 using Velopack;
 using WDM.Services;
@@ -13,36 +14,49 @@ public partial class UpdateAvailableDialog : Window
     private static bool _isOpen = false;
     public static bool IsDialogOpen => _isOpen;
 
+    private static string ShortNotes(string? body)
+    {
+        if (string.IsNullOrWhiteSpace(body)) return "";
+        var lines = body.Split('\n')
+            .Select(l => l.Trim().TrimStart('-', '*', '•', ' ').Trim())
+            .Where(l => !string.IsNullOrWhiteSpace(l))
+            .Take(2)
+            .ToArray();
+        var s = string.Join(" • ", lines);
+        if (string.IsNullOrWhiteSpace(s))
+            s = body.Trim().Replace("\r", " ").Replace("\n", " ").Trim();
+        if (s.Length > 160) s = s.Substring(0, 157) + "...";
+        return s;
+    }
+
     public UpdateAvailableDialog(ReleaseInfo release, UpdateInfo? velopackUpdate = null)
     {
         InitializeComponent();
         _release = release;
         _velopackUpdate = velopackUpdate;
         VersionLine.Text = $"WDM {release.Version} is available";
+        var notes = ShortNotes(release.Body);
+        var notesBlock = string.IsNullOrWhiteSpace(notes) ? "" : $"What's new: {notes}{Environment.NewLine}{Environment.NewLine}";
+        var reloadWarn = "⚠️ After update, reload the browser extension: chrome://extensions (or edge://extensions) → Reload on WDM.";
         if (velopackUpdate is not null)
         {
             DetailsText.Text = $"Current: {VelopackUpdateService.CurrentVersion}  →  New: {release.Version}{Environment.NewLine}" +
                                $"Delta update (patch-only, ~2-5 MB) — no full installer needed.{Environment.NewLine}" +
-                               (string.IsNullOrWhiteSpace(release.Body) ? "" : $"{Environment.NewLine}{release.Body.Trim()}");
+                               notesBlock + reloadWarn;
             InstallButton.Content = "Download Delta & Restart";
         }
         else if (string.IsNullOrWhiteSpace(release.InstallerUrl) && !string.IsNullOrWhiteSpace(release.UpdatePackageUrl))
         {
-            // Delta-only release (no .exe) — show update package info, offer portable
             DetailsText.Text = $"Current: {UpdateChecker.CurrentVersion}  →  New: {release.Version}{Environment.NewLine}" +
                                $"Update package available (delta, ~0.17 MB). Full installer will be uploaded shortly.{Environment.NewLine}" +
-                               $"You can download the portable build or open the release page.{Environment.NewLine}" +
-                               (string.IsNullOrWhiteSpace(release.Body) ? "" : $"{Environment.NewLine}{release.Body.Trim()}");
+                               notesBlock + reloadWarn;
             InstallButton.Content = "Open Release Page";
         }
         else
         {
             DetailsText.Text = string.IsNullOrWhiteSpace(release.Body)
-                ? $"Current version: {UpdateChecker.CurrentVersion}{Environment.NewLine}" +
-                  $"New version: {release.Version}{Environment.NewLine}{Environment.NewLine}" +
-                  "Click Download & Install to automatically update and restart WDM."
-                : $"{release.Body.Trim()}{Environment.NewLine}{Environment.NewLine}" +
-                  $"Current: {UpdateChecker.CurrentVersion}  →  New: {release.Version}";
+                ? $"Current: {UpdateChecker.CurrentVersion}  →  New: {release.Version}{Environment.NewLine}{Environment.NewLine}" + reloadWarn
+                : $"{notesBlock}{reloadWarn}{Environment.NewLine}{Environment.NewLine}Current: {UpdateChecker.CurrentVersion}  →  New: {release.Version}";
         }
     }
 
@@ -148,7 +162,7 @@ public partial class UpdateAvailableDialog : Window
             ProgressStatusText.Text = "Launching installer…";
             DownloadProgressBar.Value = 100;
             ProgressPctText.Text = "100%";
-            UpdateChecker.LaunchInstaller(installer);
+            UpdateChecker.LaunchInstaller(installer, silent: true);
             await Task.Delay(500);
             DialogResult = true;
             Close();

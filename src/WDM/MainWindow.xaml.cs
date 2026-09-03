@@ -1,5 +1,7 @@
+using System;
 using System.Collections.Generic;
 using System.Runtime.InteropServices;
+using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
@@ -480,12 +482,9 @@ public partial class MainWindow : Window
 
                     var semVer = velopackUpdate.TargetFullRelease.Version;
                     var target = VelopackUpdateService.ToSystemVersion(semVer);
-                    var synthetic = new ReleaseInfo($"v{target}", target, $"WDM {target}", $"https://github.com/usm007/WDM/releases/tag/v{target}", $"Delta update to {target} (patch-only).", DateTime.UtcNow, null, velopackUpdate.TargetFullRelease.FileName);
-                    _tray.ShowBalloon(
-                        "WDM update available",
-                        $"WDM {target} is available — click to download delta and restart.",
-                        () => _dispatcher.BeginInvoke(async () => await DownloadAndInstallVelopackAsync(velopackUpdate)));
-                    _ = _dispatcher.BeginInvoke(() => ShowUpdatePromptVelopack(synthetic, velopackUpdate));
+                    // Automatic silent delta update — no user click required after download
+                    _tray.ShowBalloon("WDM updating", $"WDM {target} is downloading in the background and will restart automatically.");
+                    _ = Task.Run(async () => await DownloadAndInstallVelopackAsync(velopackUpdate));
                     return;
                 }
             }
@@ -502,11 +501,9 @@ public partial class MainWindow : Window
 
         if (latest.Version is not null && latest.Version.CompareTo(UpdateChecker.CurrentVersion) > 0)
         {
-            _tray.ShowBalloon(
-                "WDM update available",
-                $"WDM {latest.Version} is available — click to download and install.",
-                () => _dispatcher.BeginInvoke(async () => await DownloadAndInstallUpdateAsync(latest)));
-            _ = _dispatcher.BeginInvoke(() => ShowUpdatePrompt(latest));
+            // Automatic silent full-installer update — no extra click after download
+            _tray.ShowBalloon("WDM updating", $"WDM {latest.Version} is downloading in the background and will restart automatically.");
+            _ = Task.Run(async () => await DownloadAndInstallUpdateAsync(latest));
         }
     }
 
@@ -596,8 +593,8 @@ public partial class MainWindow : Window
                     _dispatcher.BeginInvoke(() => _tray.ShowBalloon("WDM update", $"Downloading the new installer… {pct}%"));
             });
 
-            // Let the installer take over; it closes and restarts WDM.
-            UpdateChecker.LaunchInstaller(installer);
+            // Silent install — no wizard clicks required after download
+            UpdateChecker.LaunchInstaller(installer, silent: true);
             await Task.Delay(500);
             _exiting = true;
             Close();
@@ -706,6 +703,17 @@ public partial class MainWindow : Window
         ExtensionView.Visibility = Visibility.Collapsed;
         NoticeView.Visibility = Visibility.Visible;
         NoticeContent.Initialize(oldVersion, newVersion);
+        // Best-effort: fetch short release notes for the new version
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                var rel = await Services.UpdateChecker.CheckLatestAsync();
+                if (rel?.Body != null && rel.Version?.ToString() == newVersion)
+                    Dispatcher.Invoke(() => NoticeContent.Initialize(oldVersion, newVersion, rel.Body));
+            }
+            catch { }
+        });
     }
 
     public void ShowDownloadsView()

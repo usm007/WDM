@@ -302,6 +302,9 @@ public sealed class CaptureServer : IDisposable
         public Dictionary<string, string> Headers { get; set; } = new(StringComparer.OrdinalIgnoreCase);
         public bool DirectDownload { get; set; }
         public string? YoutubeFormatArg { get; set; }
+        public string? StreamType { get; set; }
+        public string? VideoUrl { get; set; }
+        public string? AudioUrl { get; set; }
     }
 
     private sealed class ResolveResponse

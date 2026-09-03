@@ -150,7 +150,7 @@
                     <!-- + Add Download (Outlined Button with Blue Icon & Text) -->
                     <Button Style="{StaticResource Button.AddDownloadPrimary}" Command="{Binding OpenAddDialogCommand}" ToolTip="Add Download (Ctrl+N)">
                         <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                            <TextBlock Text="&#xF0415;" FontFamily="{StaticResource Font.Icon}" FontSize="14" Foreground="{DynamicResource Brush.Accent}" Margin="0,0,5,0" VerticalAlignment="Center" />
+                            <TextBlock Text="🔗" FontSize="14" Foreground="{DynamicResource Brush.Accent}" Margin="0,0,5,0" VerticalAlignment="Center" />
                             <TextBlock Text="Add Download" FontSize="12.5" FontWeight="SemiBold" Foreground="{DynamicResource Brush.Accent}" VerticalAlignment="Center" />
                         </StackPanel>
                     </Button>

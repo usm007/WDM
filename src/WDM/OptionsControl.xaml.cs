@@ -440,7 +440,7 @@ public partial class OptionsControl : UserControl
             UpdateProgressStatusText.Text = "Launching installer…";
             UpdateProgressBar.Value = 100;
             UpdateProgressPctText.Text = "100%";
-            UpdateChecker.LaunchInstaller(installer);
+            UpdateChecker.LaunchInstaller(installer, silent: true);
             UpdateStatusText.Text = "Installer downloaded — WDM will close and restart to complete the update.";
             await Task.Delay(500);
             Application.Current.Shutdown();

@@ -474,8 +474,8 @@ public partial class WdmOriginalMainWindow : Window
                     _dispatcher.BeginInvoke(() => _tray.ShowBalloon("WDM update", $"Downloading the new installerâ€¦ {pct}%"));
             });
 
-            // Let the installer take over; it closes and restarts WDM.
-            UpdateChecker.LaunchInstaller(installer);
+            // Silent install — no wizard clicks required after download
+            UpdateChecker.LaunchInstaller(installer, silent: true);
             await Task.Delay(500);
             _exiting = true;
             Close();

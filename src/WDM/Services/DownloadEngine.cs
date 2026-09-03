@@ -441,6 +441,10 @@ public sealed class DownloadEngine
             {
                 await RunHlsAsync(session, meta.ContentType);
             }
+            else if (meta.IsDash)
+            {
+                await RunDashAsync(session, meta.ContentType);
+            }
             else if (meta.TotalBytes > 0 && meta.SupportsRanges)
                 await RunChunkedAsync(session, meta.TotalBytes);
             else
@@ -546,7 +550,7 @@ public sealed class DownloadEngine
                 return meta;
             index++;
         }
-        return fallback ?? new ProbeMeta(-1, false, null, null, false, null, null, null, 0);
+        return fallback ?? new ProbeMeta(-1, false, null, null, false, false, null, null, null, 0);
     }
 
     private async Task<ProbeMeta> ProbeUrlAsync(DownloadTask task, string url, int urlIndex, CancellationToken ct)
@@ -658,7 +662,8 @@ public sealed class DownloadEngine
         suggestedName ??= FileNameHelper.FileNameFromS3Query(url);
 
         bool isHls = IsHlsContentType(contentType) || LooksLikeHlsUrl(url);
-        return new ProbeMeta(totalBytes, supportsRanges, suggestedName, contentType, isHls, etag, lastModified, probeBody, urlIndex);
+        bool isDash = IsDashContentType(contentType) || LooksLikeDashUrl(url);
+        return new ProbeMeta(totalBytes, supportsRanges, suggestedName, contentType, isHls, isDash, etag, lastModified, probeBody, urlIndex);
     }
 
     private static bool IsResuming(Session session)
@@ -736,10 +741,23 @@ public sealed class DownloadEngine
             || uri.Query.Contains(".m3u8", StringComparison.OrdinalIgnoreCase);
     }
 
+    private static bool LooksLikeDashUrl(string url)
+    {
+        if (!Uri.TryCreate(url, UriKind.Absolute, out var uri))
+            return false;
+        return uri.AbsolutePath.EndsWith(".mpd", StringComparison.OrdinalIgnoreCase)
+            || uri.Query.Contains(".mpd", StringComparison.OrdinalIgnoreCase);
+    }
+
     private static bool IsHlsContentType(string? contentType) =>
         !string.IsNullOrWhiteSpace(contentType)
         && (contentType.Contains("mpegurl", StringComparison.OrdinalIgnoreCase)
             || contentType.Contains("m3u8", StringComparison.OrdinalIgnoreCase));
+
+    private static bool IsDashContentType(string? contentType) =>
+        !string.IsNullOrWhiteSpace(contentType)
+        && (contentType.Contains("dash+xml", StringComparison.OrdinalIgnoreCase)
+            || contentType.Contains("vnd.ms-sstr+xml", StringComparison.OrdinalIgnoreCase));
 
     private static string? NameFromDisposition(ContentDispositionHeaderValue? disposition)
     {
@@ -948,7 +966,72 @@ public sealed class DownloadEngine
             {
                 await _governor.ThrottleAsync(EffectiveLimitKbps(), bytes, ct);
                 await session.Governor.ThrottleAsync(task.SpeedLimitKbps, bytes, ct);
-            });
+            },
+            task.Headers);
+
+        session.Token.ThrowIfCancellationRequested();
+    }
+
+    private async Task RunDashAsync(Session session, string? contentType)
+    {
+        var task = session.Task;
+
+        // DASH manifests (.mpd) can be downloaded and remuxed into .mp4 using ffmpeg/yt-dlp
+        string extension = ".mp4";
+        if (task.FileName.EndsWith(".mpd", StringComparison.OrdinalIgnoreCase))
+        {
+            task.FileName = Path.ChangeExtension(task.FileName, extension);
+            task.FileName = EnsureUniqueName(task.SaveFolder, task.FileName, task.Id);
+        }
+
+        // If ffmpeg is available, we stream and mux via ffmpeg directly
+        if (File.Exists(EngineManager.FfmpegPath))
+        {
+            var psi = new ProcessStartInfo
+            {
+                FileName = EngineManager.FfmpegPath,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                UseShellExecute = false,
+                CreateNoWindow = true
+            };
+
+            if (!string.IsNullOrWhiteSpace(task.Referer))
+            {
+                psi.ArgumentList.Add("-headers");
+                psi.ArgumentList.Add($"Referer: {task.Referer}\r\nUser-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0 Safari/537.36\r\n");
+            }
+
+            psi.ArgumentList.Add("-y");
+            psi.ArgumentList.Add("-i");
+            psi.ArgumentList.Add(task.Url);
+            psi.ArgumentList.Add("-c");
+            psi.ArgumentList.Add("copy");
+            psi.ArgumentList.Add(task.FullPath);
+
+            using var proc = Process.Start(psi) ?? throw new InvalidOperationException("Failed to launch ffmpeg for DASH stream.");
+            using var reg = session.Token.Register(() => { try { proc.Kill(); } catch {} });
+
+            string? errLine;
+            while ((errLine = await proc.StandardError.ReadLineAsync(session.Token)) != null)
+            {
+                // Inspect progress from ffmpeg stderr
+                if (errLine.Contains("size=", StringComparison.OrdinalIgnoreCase) && File.Exists(task.FullPath))
+                {
+                    long curSize = new FileInfo(task.FullPath).Length;
+                    Interlocked.Exchange(ref session.BytesDownloaded, curSize);
+                }
+            }
+
+            await proc.WaitForExitAsync(session.Token);
+            if (proc.ExitCode != 0)
+                throw new InvalidOperationException($"ffmpeg exited with code {proc.ExitCode} while capturing DASH stream.");
+        }
+        else
+        {
+            // Fallback: single stream grab
+            await RunSingleStreamAsync(session, null);
+        }
 
         session.Token.ThrowIfCancellationRequested();
     }
@@ -1501,6 +1584,7 @@ public sealed class DownloadEngine
         string? SuggestedName,
         string? ContentType,
         bool IsHls,
+        bool IsDash,
         string? Etag,
         string? LastModified,
         HttpResponseMessage? ProbeBody,
@@ -1514,6 +1598,8 @@ public sealed class DownloadEngine
         task.IsResumable = false;
         if (meta.IsHls)
             task.ResumeCapabilityText = "No — HLS segment stream";
+        else if (meta.IsDash)
+            task.ResumeCapabilityText = "No — DASH stream";
         else if (meta.TotalBytes > 0 && meta.SupportsRanges)
         {
             task.IsResumable = true;

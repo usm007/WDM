@@ -123,8 +123,12 @@ public partial class DownloadProgressDialog : Window, INotifyPropertyChanged
         Close();
     }
 
-    public string ProgressTitleText => $"{Task.Progress}%";
-    public string DownloadedDetailText => $"{Task.DownloadedText} ({Task.Progress}%)";
+    public string ProgressTitleText => Task.TotalBytes > 0
+        ? $"{Task.Progress}% · {Task.DownloadedText} / {Task.SizeText}"
+        : $"{Task.Progress}% · {Task.DownloadedText}";
+    public string DownloadedDetailText => Task.TotalBytes > 0
+        ? $"{Task.DownloadedText} / {Task.SizeText} ({Task.Progress}%)"
+        : $"{Task.DownloadedText} ({Task.Progress}%)";
     public string ChunkCountText => Task.ChunkCount > 0 ? $"{Task.ChunkCount} threads" : "Auto";
     public bool CanPause => Task.Status is TaskStatus.Downloading or TaskStatus.Queued;
     public bool CanResume => Task.Status is TaskStatus.Paused or TaskStatus.Failed;
@@ -290,7 +294,7 @@ public partial class DownloadProgressDialog : Window, INotifyPropertyChanged
 
             if (Task.Status == TaskStatus.Completed)
             {
-                Title = "100% — Done";
+                Title = Task.FileName;
                 if (!_completionHandled)
                 {
                     _completionHandled = true;
@@ -299,7 +303,7 @@ public partial class DownloadProgressDialog : Window, INotifyPropertyChanged
             }
             else
             {
-                Title = $"{Task.Progress}% {Task.FileName}";
+                Title = Task.FileName;
             }
         });
     }
@@ -343,21 +347,19 @@ public partial class DownloadProgressDialog : Window, INotifyPropertyChanged
 
     private void UpdateState()
     {
-        Title = $"{Task.Progress}% {Task.FileName}";
+        Title = Task.FileName;
     }
 
     private void Tab_Checked(object sender, RoutedEventArgs e)
     {
-        if (PanelStatus == null || PanelLimiter == null || PanelOptions == null)
+        if (PanelLimiter == null || PanelOptions == null)
             return;
 
-        PanelStatus.Visibility = Visibility.Collapsed;
+        if (PanelStatus != null) PanelStatus.Visibility = Visibility.Collapsed;
         PanelLimiter.Visibility = Visibility.Collapsed;
         PanelOptions.Visibility = Visibility.Collapsed;
 
-        if (sender == TabStatus)
-            PanelStatus.Visibility = Visibility.Visible;
-        else if (sender == TabLimiter)
+        if (sender == TabLimiter)
             PanelLimiter.Visibility = Visibility.Visible;
         else if (sender == TabOptions)
             PanelOptions.Visibility = Visibility.Visible;

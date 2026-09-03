@@ -95,13 +95,20 @@ public partial class App : Application
         var settings = TaskStore.LoadSettings();
         ThemeService.Apply(AppTheme.Default, settings.UseDarkTheme);
 
-        if (!settings.HasPromptedExtensionInstall && !StartMinimized)
+        // Never show welcome after an update — only on first-ever run
+        if (!settings.HasPromptedExtensionInstall && string.IsNullOrWhiteSpace(settings.LastRunVersion) && !StartMinimized)
         {
             ShutdownMode = ShutdownMode.OnExplicitShutdown;
             var welcome = new WelcomeWindow(settings);
             welcome.ShowDialog();
             TaskStore.SaveSettings(settings);
             ShutdownMode = ShutdownMode.OnLastWindowClose;
+        }
+        else if (!settings.HasPromptedExtensionInstall && !string.IsNullOrWhiteSpace(settings.LastRunVersion))
+        {
+            // Upgraded from older version that never set the flag — suppress future welcome
+            settings.HasPromptedExtensionInstall = true;
+            TaskStore.SaveSettings(settings);
         }
 
         Window mainWindow = new MainWindow();

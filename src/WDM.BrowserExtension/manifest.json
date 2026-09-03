@@ -7,7 +7,12 @@
     "downloads",
     "storage",
     "cookies",
-    "tabs"
+    "tabs",
+    "webRequest",
+    "webNavigation",
+    "declarativeNetRequest",
+    "scripting",
+    "notifications"
   ],
   "host_permissions": [
     "<all_urls>",
@@ -49,13 +54,12 @@
       ],
       "js": ["media_sniffer.js"],
       "run_at": "document_start",
-      "all_frames": false,
-      "world": "MAIN"
+      "all_frames": true
     }
   ],
   "web_accessible_resources": [
     {
-      "resources": ["icon16.png", "icon32.png", "icon48.png", "icon128.png"],
+      "resources": ["icon16.png", "icon32.png", "icon48.png", "icon128.png", "wdm_hook.js"],
       "matches": ["<all_urls>"]
     }
   ]

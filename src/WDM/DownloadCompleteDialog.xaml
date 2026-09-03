@@ -1,7 +1,7 @@
-<Window x:Class="WDM.DownloadCompleteDialog"
+﻿<Window x:Class="WDM.DownloadCompleteDialog"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="Download Complete — WDM"
+        Title="Download Complete â€” WDM"
         Icon="Assets/WDM.ico"
         Width="500"
         SizeToContent="Height"
@@ -20,8 +20,11 @@
     <Border Background="{DynamicResource Brush.Surface}"
             BorderBrush="{DynamicResource Brush.DialogBorder}"
             BorderThickness="1"
-            CornerRadius="8"
+            CornerRadius="8" Margin="10"
             SnapsToDevicePixels="True">
+        <Border.Effect>
+            <DropShadowEffect BlurRadius="16" ShadowDepth="1" Direction="270" Color="#000000" Opacity="0.16" RenderingBias="Quality"/>
+        </Border.Effect>
         <Grid>
             <Grid.RowDefinitions>
                 <RowDefinition Height="*" />    <!-- Content Body -->
@@ -101,3 +104,4 @@
         </Grid>
     </Border>
 </Window>
+

@@ -1,9 +1,9 @@
-<Window x:Class="WDM.AboutDialog"
+﻿<Window x:Class="WDM.AboutDialog"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         Title="About WDM"
         Icon="Assets/WDM.ico"
-        Width="380"
+        Width="460"
         SizeToContent="Height"
         WindowStartupLocation="CenterScreen"
         ResizeMode="NoResize"
@@ -20,20 +20,24 @@
     <Border Background="{DynamicResource Brush.Surface}"
             BorderBrush="{DynamicResource Brush.DialogBorder}"
             BorderThickness="1"
-            CornerRadius="8"
+            CornerRadius="8" Margin="10"
             SnapsToDevicePixels="True">
+        <Border.Effect>
+            <DropShadowEffect BlurRadius="16" ShadowDepth="1" Direction="270" Color="#000000" Opacity="0.16" RenderingBias="Quality"/>
+        </Border.Effect>
         <Grid>
             <Grid.RowDefinitions>
-                <RowDefinition Height="*" />    <!-- Content Body -->
-                <RowDefinition Height="Auto" /> <!-- Bottom Action Strip -->
+                <RowDefinition Height="*" />
+                <RowDefinition Height="Auto" />
             </Grid.RowDefinitions>
 
-            <!-- Top Close Button -->
+            <!-- Top Close Button (always visible) -->
             <Button Style="{StaticResource Button.DialogClose}" Click="CloseClick"
                     HorizontalAlignment="Right" VerticalAlignment="Top" Margin="0,10,10,0" Panel.ZIndex="10" />
 
-            <!-- Main Body (Clean Branding) -->
-            <StackPanel Grid.Row="0" Margin="24,24,24,18" HorizontalAlignment="Center">
+            <!-- Main Body -->
+            <StackPanel Grid.Row="0" Margin="24,24,24,12">
+                <!-- Branding -->
                 <Border Width="56" Height="56" CornerRadius="12"
                         Background="{DynamicResource Brush.SurfaceAlt}"
                         BorderBrush="{DynamicResource Brush.Border}"
@@ -54,35 +58,117 @@
                            FontSize="12" Foreground="{DynamicResource Brush.TextMuted}"
                            TextAlignment="Center" TextWrapping="Wrap" LineHeight="16" Margin="0,0,0,10" />
 
-                <TextBlock HorizontalAlignment="Center">
+                <TextBlock HorizontalAlignment="Center" Margin="0,0,0,8">
                     <Hyperlink NavigateUri="https://github.com/usm007/WDM" Click="Link_Click"
                                Foreground="{DynamicResource Brush.Accent}" FontSize="12">
                         <Run Text="github.com/usm007/WDM" />
                     </Hyperlink>
                 </TextBlock>
+
+                <!-- Inline Update Available Panel â€” hidden until Check finds an update -->
+                <Border x:Name="InlineUpdatePanel" Visibility="Collapsed"
+                        Background="{DynamicResource Brush.SurfaceAlt}"
+                        BorderBrush="{DynamicResource Brush.Border}"
+                        BorderThickness="1" CornerRadius="6" Padding="0" Margin="0,8,0,0">
+                    <Grid>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                        </Grid.RowDefinitions>
+
+                        <!-- Header: icon + title + close X (matches screenshot) -->
+                        <DockPanel Grid.Row="0" Margin="14,12,10,0" LastChildFill="True">
+                            <Button DockPanel.Dock="Right" Style="{StaticResource Button.DialogClose}"
+                                    Click="InlineDismissClick" VerticalAlignment="Center" Margin="6,-4,-4,0" Width="22" Height="22"/>
+                            <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                <TextBlock Text="&#xF06B0;" FontFamily="{StaticResource Font.Icon}" FontSize="18"
+                                           Foreground="{DynamicResource Brush.Accent}" Margin="0,0,8,0" VerticalAlignment="Center" />
+                                <TextBlock Text="A New Version is Available" FontSize="15" FontWeight="SemiBold"
+                                           Foreground="{DynamicResource Brush.Text}" VerticalAlignment="Center" />
+                            </StackPanel>
+                        </DockPanel>
+
+                        <!-- Version line -->
+                        <TextBlock x:Name="InlineVersionLine" Grid.Row="1" Margin="14,6,14,0"
+                                   FontSize="12.5" FontFamily="{StaticResource Font.App}"
+                                   Foreground="{DynamicResource Brush.Accent}" Text="WDM 2.5.9 is available"/>
+
+                        <!-- Status / details -->
+                        <TextBlock x:Name="InlineStatusText" Grid.Row="2" Margin="14,6,14,10"
+                                   FontSize="12" Foreground="{DynamicResource Brush.TextMuted}"
+                                   TextWrapping="Wrap" LineHeight="15"
+                                   Text="Downloading the full installer..."/>
+
+                        <!-- Progress area â€” becomes visible during download, matches screenshot card -->
+                        <Border x:Name="InlineProgressPanel" Grid.Row="2" Visibility="Collapsed"
+                                Background="{DynamicResource Brush.SurfaceAlt}"
+                                BorderBrush="{DynamicResource Brush.Border}"
+                                BorderThickness="1" CornerRadius="4" Padding="10,8" Margin="14,0,14,10">
+                            <StackPanel>
+                                <DockPanel Margin="0,0,0,4">
+                                    <TextBlock x:Name="InlineProgressStatusText"
+                                               Text="Downloading full installer..." FontSize="11.5" FontWeight="SemiBold"
+                                               Foreground="{DynamicResource Brush.Text}" DockPanel.Dock="Left"
+                                               VerticalAlignment="Center"/>
+                                    <TextBlock x:Name="InlineProgressPctText"
+                                               Text="27%" FontSize="11.5" FontFamily="{StaticResource Font.App}" FontWeight="SemiBold"
+                                               Foreground="{DynamicResource Brush.Accent}" DockPanel.Dock="Right"
+                                               VerticalAlignment="Center"/>
+                                </DockPanel>
+                                <ProgressBar x:Name="InlineDownloadProgressBar"
+                                             Style="{StaticResource ProgressBar.Thin}"
+                                             Height="4" Minimum="0" Maximum="100" Value="27"
+                                             Foreground="{DynamicResource Brush.Accent}" />
+                                <TextBlock x:Name="InlineProgressDetailText"
+                                           Text="Downloading full installer package for this release."
+                                           FontSize="10.5" Foreground="{DynamicResource Brush.TextMuted}"
+                                           Margin="0,4,0,0" TextWrapping="Wrap"/>
+                            </StackPanel>
+                        </Border>
+
+                        <!-- When progress is active we swap InlineStatusText for InlineProgressPanel â€” handled in code -->
+                    </Grid>
+                </Border>
             </StackPanel>
 
-            <!-- Bottom Action Strip -->
+            <!-- Bottom Action Strip â€” switches content when inline panel is active -->
             <Border Grid.Row="1" Background="{DynamicResource Brush.SurfaceAlt}" BorderBrush="{DynamicResource Brush.Border}"
                     BorderThickness="0,1,0,0" CornerRadius="0,0,7,7" Padding="16,10">
                 <Grid>
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="*" />
-                        <ColumnDefinition Width="Auto" />
-                    </Grid.ColumnDefinitions>
+                    <!-- Default strip -->
+                    <Grid x:Name="DefaultStrip">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <TextBlock x:Name="UpdateStatusText" Grid.Column="0" Text="" FontSize="11.5"
+                                   Foreground="{DynamicResource Brush.Accent}" TextTrimming="CharacterEllipsis"
+                                   VerticalAlignment="Center" Margin="0,0,8,0" />
+                        <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                            <Button x:Name="CheckUpdateButton" Content="Check for updates" Style="{StaticResource Button.Secondary}"
+                                    MinWidth="110" Height="28" Margin="0,0,8,0" Click="CheckUpdateClick" />
+                            <Button Content="Close" Style="{StaticResource Button.Accent}" IsDefault="True" IsCancel="True"
+                                    MinWidth="75" Height="28" Click="CloseClick" />
+                        </StackPanel>
+                    </Grid>
 
-                    <TextBlock x:Name="UpdateStatusText" Grid.Column="0" Text="" FontSize="11.5"
-                               Foreground="{DynamicResource Brush.Accent}" TextTrimming="CharacterEllipsis"
-                               VerticalAlignment="Center" Margin="0,0,8,0" />
-
-                    <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
-                        <Button x:Name="CheckUpdateButton" Content="Check for updates" Style="{StaticResource Button.Secondary}"
-                                MinWidth="110" Height="28" Margin="0,0,8,0" Click="CheckUpdateClick" />
-                        <Button Content="Close" Style="{StaticResource Button.Accent}" IsDefault="True" IsCancel="True"
-                                MinWidth="75" Height="28" Click="CloseClick" />
-                    </StackPanel>
+                    <!-- Update-action strip â€” replaces DefaultStrip when update is available (matches screenshot footer) -->
+                    <Grid x:Name="UpdateActionStrip" Visibility="Collapsed">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center" HorizontalAlignment="Right">
+                            <Button x:Name="InlineLaterButton" Content="Later" Style="{StaticResource Button.Secondary}"
+                                    MinWidth="85" Height="28" Margin="0,0,8,0" Click="InlineDismissClick"/>
+                            <Button x:Name="InlineInstallButton" Content="Download &amp; Install" Style="{StaticResource Button.Accent}"
+                                    MinWidth="140" Height="28" IsDefault="True" Click="InlineInstallClick"/>
+                        </StackPanel>
+                    </Grid>
                 </Grid>
             </Border>
         </Grid>
     </Border>
 </Window>
+

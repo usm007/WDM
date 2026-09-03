@@ -149,6 +149,7 @@ public partial class AddDownloadDialog : Window
         if (!isValid)
         {
             ProbeBadge.Visibility = Visibility.Collapsed;
+            YtSignInButton.Visibility = Visibility.Collapsed;
             UpdateCategoryBadge();
             return;
         }
@@ -174,6 +175,27 @@ public partial class AddDownloadDialog : Window
         }
     }
 
+    private void YtSignInButton_Click(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            var win = new YouTubeSignInWindow { Owner = this };
+            if (win.ShowDialog() == true)
+            {
+                YtSignInButton.Visibility = Visibility.Collapsed;
+                var url = UrlBox.Text.Trim();
+                if (!string.IsNullOrWhiteSpace(url) && MediaResolver.IsYoutubeUrl(url))
+                    ProbeYouTubeUrlAsync(url);
+            }
+        }
+        catch { }
+    }
+
+    private static bool IsYouTubeSignInRequired(string msg) =>
+        msg.IndexOf("Sign in to confirm", StringComparison.OrdinalIgnoreCase) >= 0
+        || msg.IndexOf("not a bot", StringComparison.OrdinalIgnoreCase) >= 0
+        || msg.IndexOf("cookies-from-browser", StringComparison.OrdinalIgnoreCase) >= 0;
+
     private async void ProbeYouTubeUrlAsync(string url)
     {
         _probeCts?.Cancel();
@@ -181,6 +203,7 @@ public partial class AddDownloadDialog : Window
         var ct = _probeCts.Token;
 
         ProbeBadge.Visibility = Visibility.Visible;
+        YtSignInButton.Visibility = Visibility.Collapsed;
         ProbeIcon.Text = char.ConvertFromUtf32(0xF0349);
         ProbeText.Text = "Resolving YouTube video metadata...";
 
@@ -233,7 +256,16 @@ public partial class AddDownloadDialog : Window
             if (!ct.IsCancellationRequested)
             {
                 ProbeIcon.Text = char.ConvertFromUtf32(0xF0028);
-                ProbeText.Text = "YouTube analysis: " + ex.Message;
+                if (IsYouTubeSignInRequired(ex.Message))
+                {
+                    ProbeText.Text = "Sign in required — YouTube needs you to sign in to confirm you're not a bot.";
+                    YtSignInButton.Visibility = Visibility.Visible;
+                }
+                else
+                {
+                    ProbeText.Text = "YouTube analysis: " + ex.Message;
+                    YtSignInButton.Visibility = Visibility.Collapsed;
+                }
                 if (YtThumbnail != null) YtThumbnail.Visibility = Visibility.Collapsed;
                 // Still show the options panel with fallback tiers so the user
                 // can pick a quality even when metadata resolution fails.

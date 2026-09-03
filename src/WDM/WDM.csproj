@@ -11,12 +11,11 @@
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <ApplicationHighDpiMode>PerMonitorV2</ApplicationHighDpiMode>
     <StartupObject>WDM.Program</StartupObject>
-    <Version>2.5.8.0</Version>
+    <Version>2.6.0</Version>
     <AssemblyTitle>WDM</AssemblyTitle>
     <Product>WDM</Product>
     <FileDescription>WDM — fast, multi-threaded download manager for Windows</FileDescription>
     <Company>WDM Team</Company>
-    <Copyright>Copyright © WDM Team</Copyright>
     <DefaultItemExcludes>$(DefaultItemExcludes);obj\**</DefaultItemExcludes>
   </PropertyGroup>
 

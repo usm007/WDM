@@ -24,7 +24,15 @@
             </StackPanel>
 
             <TextBlock x:Name="SubtitleText" Text="Please reload your browser extension to apply the latest updates."
-                       FontSize="12.5" Foreground="{DynamicResource Brush.TextMuted}" Margin="0,0,0,14" TextWrapping="Wrap" />
+                       FontSize="12.5" Foreground="{DynamicResource Brush.TextMuted}" Margin="0,0,0,8" TextWrapping="Wrap" />
+
+            <!-- Short release notes (very brief) -->
+            <TextBlock x:Name="ReleaseNotesText" Visibility="Collapsed" FontSize="12" Foreground="{DynamicResource Brush.TextDim}" TextWrapping="Wrap" Margin="0,0,0,8" />
+
+            <!-- Reload warning -->
+            <Border Background="{DynamicResource Brush.StatusPausedSoft}" BorderBrush="{DynamicResource Brush.Warning}" BorderThickness="1" CornerRadius="4" Padding="8,6" Margin="0,0,0,10">
+                <TextBlock Text="⚠️ After updating, reload the extension: chrome://extensions (or edge://extensions) → click Reload on WDM Download Catcher." FontSize="12" FontWeight="Medium" Foreground="{DynamicResource Brush.Text}" TextWrapping="Wrap" />
+            </Border>
 
             <TextBlock Text="Instructions" FontSize="13" FontWeight="SemiBold" Foreground="{DynamicResource Brush.Text}" Margin="0,0,0,6" />
             <TextBlock Text="1. Open your browser extensions page (chrome://extensions or edge://extensions)." FontSize="12" Foreground="{DynamicResource Brush.TextDim}" Margin="0,0,0,3" />

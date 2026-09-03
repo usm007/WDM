@@ -37,20 +37,21 @@ public static class HlsDownloader
         CancellationToken ct,
         Action<long> addBytes,
         Action<long> setTotalBytes,
-        Func<long, CancellationToken, Task> throttle)
+        Func<long, CancellationToken, Task> throttle,
+        Dictionary<string, string>? headers = null)
     {
-        var playlist = await ResolvePlaylistAsync(http, manifestUrl, referer, ct);
+        var playlist = await ResolvePlaylistAsync(http, manifestUrl, referer, headers, ct);
 
         // Pre-download the fMP4 init segment (EXT-X-MAP) and any encryption keys.
         byte[]? initSegment = null;
         if (!string.IsNullOrEmpty(playlist.InitUri))
         {
-            initSegment = await DownloadBytesAsync(http, ResolveUrl(manifestUrl, playlist.InitUri), referer, ct);
+            initSegment = await DownloadBytesAsync(http, ResolveUrl(manifestUrl, playlist.InitUri), referer, headers, ct);
             playlist.TotalBytes += initSegment.Length;
         }
 
         // Discover each segment's size so the engine can show real progress and ETA.
-        await ProbeSegmentSizesAsync(http, playlist, referer, ct);
+        await ProbeSegmentSizesAsync(http, playlist, referer, headers, ct);
         setTotalBytes(playlist.TotalBytes);
 
         string tempDir = Path.Combine(
@@ -76,7 +77,7 @@ public static class HlsDownloader
                     {
                         var seg = playlist.Segments[index];
                         string tempFile = Path.Combine(tempDir, $"seg_{index:D6}.part");
-                        long length = await DownloadSegmentAsync(http, seg, referer, tempFile, segCt, throttle);
+                        long length = await DownloadSegmentAsync(http, seg, referer, headers, tempFile, segCt, throttle);
                         addBytes(length);
                     }
                     catch when (!segCt.IsCancellationRequested)
@@ -135,7 +136,7 @@ public static class HlsDownloader
     }
 
     private static async Task ProbeSegmentSizesAsync(
-        HttpClient http, Playlist playlist, string? referer, CancellationToken ct)
+        HttpClient http, Playlist playlist, string? referer, Dictionary<string, string>? headers, CancellationToken ct)
     {
         using var semaphore = new SemaphoreSlim(MaxConcurrentSegments);
         var tasks = new List<Task>();
@@ -152,7 +153,7 @@ public static class HlsDownloader
                 await semaphore.WaitAsync(ct);
                 try
                 {
-                    seg.Length = await ProbeSizeAsync(http, seg.Uri, referer, ct);
+                    seg.Length = await ProbeSizeAsync(http, seg.Uri, referer, headers, ct);
                     Interlocked.Add(ref playlist.TotalBytes, seg.Length);
                 }
                 finally
@@ -164,7 +165,22 @@ public static class HlsDownloader
         await Task.WhenAll(tasks);
     }
 
-    private static async Task<long> ProbeSizeAsync(HttpClient http, string url, string? referer, CancellationToken ct)
+    private static void ApplyHeaders(HttpRequestMessage req, string? referer, Dictionary<string, string>? headers)
+    {
+        if (!string.IsNullOrWhiteSpace(referer) && Uri.TryCreate(referer, UriKind.Absolute, out var r))
+            req.Headers.Referrer = r;
+        if (headers != null)
+        {
+            foreach (var kv in headers)
+            {
+                if (string.IsNullOrWhiteSpace(kv.Key) || string.IsNullOrWhiteSpace(kv.Value)) continue;
+                if (kv.Key.Equals("Referer", StringComparison.OrdinalIgnoreCase) || kv.Key.Equals("Referrer", StringComparison.OrdinalIgnoreCase)) continue;
+                req.Headers.TryAddWithoutValidation(kv.Key, kv.Value);
+            }
+        }
+    }
+
+    private static async Task<long> ProbeSizeAsync(HttpClient http, string url, string? referer, Dictionary<string, string>? headers, CancellationToken ct)
     {
         int attempt = 0;
         while (true)
@@ -173,8 +189,7 @@ public static class HlsDownloader
             {
                 using var request = new HttpRequestMessage(HttpMethod.Head, url);
                 request.Headers.TryAddWithoutValidation("Accept-Encoding", "identity");
-                if (!string.IsNullOrWhiteSpace(referer) && Uri.TryCreate(referer, UriKind.Absolute, out var r))
-                    request.Headers.Referrer = r;
+                ApplyHeaders(request, referer, headers);
                 using var response = await http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, ct);
                 long length = response.Content.Headers.ContentLength ?? 0;
                 if (length > 0)
@@ -184,6 +199,7 @@ public static class HlsDownloader
                     return 0;
                 using var get = new HttpRequestMessage(HttpMethod.Get, url);
                 get.Headers.Range = new System.Net.Http.Headers.RangeHeaderValue(0, 0);
+                ApplyHeaders(get, referer, headers);
                 using var getResp = await http.SendAsync(get, HttpCompletionOption.ResponseHeadersRead, ct);
                 if (getResp.Content.Headers.ContentRange?.Length is long total && total > 0)
                     return total;
@@ -198,11 +214,11 @@ public static class HlsDownloader
     }
 
     private static async Task<Playlist> ResolvePlaylistAsync(
-        HttpClient http, string manifestUrl, string? referer, CancellationToken ct)
+        HttpClient http, string manifestUrl, string? referer, Dictionary<string, string>? headers, CancellationToken ct)
     {
         for (int depth = 0; depth < 3; depth++)
         {
-            string text = await FetchTextAsync(http, manifestUrl, referer, ct);
+            string text = await FetchTextAsync(http, manifestUrl, referer, headers, ct);
 
             // Master playlists reference variant media playlists via #EXT-X-STREAM-INF
             // lines; those variant URIs must never be mistaken for media segments.
@@ -219,7 +235,7 @@ public static class HlsDownloader
             if (playlist is null)
                 throw new InvalidOperationException("Not a valid HLS playlist.");
 
-            await PrepareKeysAsync(http, manifestUrl, referer, playlist, ct);
+            await PrepareKeysAsync(http, manifestUrl, referer, headers, playlist, ct);
             return playlist;
         }
 
@@ -410,12 +426,12 @@ public static class HlsDownloader
     }
 
     private static async Task PrepareKeysAsync(
-        HttpClient http, string manifestUrl, string? referer, Playlist playlist, CancellationToken ct)
+        HttpClient http, string manifestUrl, string? referer, Dictionary<string, string>? headers, Playlist playlist, CancellationToken ct)
     {
         var keyCache = new Dictionary<string, byte[]>(StringComparer.Ordinal);
 
         // Walk the playlist text once more to map each segment index to its key URI.
-        string text = await FetchTextAsync(http, manifestUrl, referer, ct);
+        string text = await FetchTextAsync(http, manifestUrl, referer, headers, ct);
         string[] lines = text.Split('\n');
         string? currentKeyUri = null;
         int segIndex = 0;
@@ -440,7 +456,7 @@ public static class HlsDownloader
             {
                 if (!keyCache.TryGetValue(currentKeyUri, out var key))
                 {
-                    key = await DownloadBytesAsync(http, ResolveUrl(manifestUrl, currentKeyUri), referer, ct);
+                    key = await DownloadBytesAsync(http, ResolveUrl(manifestUrl, currentKeyUri), referer, headers, ct);
                     keyCache[currentKeyUri] = key;
                 }
                 seg.Key = key;
@@ -453,6 +469,7 @@ public static class HlsDownloader
         HttpClient http,
         Segment seg,
         string? referer,
+        Dictionary<string, string>? headers,
         string tempFile,
         CancellationToken ct,
         Func<long, CancellationToken, Task> throttle)
@@ -471,8 +488,7 @@ public static class HlsDownloader
             {
                 using var request = new HttpRequestMessage(HttpMethod.Get, seg.Uri);
                 request.Headers.TryAddWithoutValidation("Accept-Encoding", "identity");
-                if (!string.IsNullOrWhiteSpace(referer) && Uri.TryCreate(referer, UriKind.Absolute, out var r))
-                    request.Headers.Referrer = r;
+                ApplyHeaders(request, referer, headers);
                 if (seg.Length > 0)
                     request.Headers.Range = new System.Net.Http.Headers.RangeHeaderValue(seg.Start, seg.Start + seg.Length - 1);
 
@@ -525,7 +541,7 @@ public static class HlsDownloader
         }
     }
 
-    private static async Task<byte[]> DownloadBytesAsync(HttpClient http, string url, string? referer, CancellationToken ct)
+    private static async Task<byte[]> DownloadBytesAsync(HttpClient http, string url, string? referer, Dictionary<string, string>? headers, CancellationToken ct)
     {
         int attempt = 0;
         while (true)
@@ -534,8 +550,7 @@ public static class HlsDownloader
             {
                 using var request = new HttpRequestMessage(HttpMethod.Get, url);
                 request.Headers.TryAddWithoutValidation("Accept-Encoding", "identity");
-                if (!string.IsNullOrWhiteSpace(referer) && Uri.TryCreate(referer, UriKind.Absolute, out var r))
-                    request.Headers.Referrer = r;
+                ApplyHeaders(request, referer, headers);
                 using var response = await http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, ct);
                 response.EnsureSuccessStatusCode();
                 return await response.Content.ReadAsByteArrayAsync(ct);
@@ -548,7 +563,7 @@ public static class HlsDownloader
         }
     }
 
-    private static async Task<string> FetchTextAsync(HttpClient http, string url, string? referer, CancellationToken ct)
+    private static async Task<string> FetchTextAsync(HttpClient http, string url, string? referer, Dictionary<string, string>? headers, CancellationToken ct)
     {
         int attempt = 0;
         while (true)
@@ -557,8 +572,7 @@ public static class HlsDownloader
             {
                 using var request = new HttpRequestMessage(HttpMethod.Get, url);
                 request.Headers.TryAddWithoutValidation("Accept-Encoding", "identity");
-                if (!string.IsNullOrWhiteSpace(referer) && Uri.TryCreate(referer, UriKind.Absolute, out var r))
-                    request.Headers.Referrer = r;
+                ApplyHeaders(request, referer, headers);
                 using var response = await http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, ct);
                 response.EnsureSuccessStatusCode();
                 return await response.Content.ReadAsStringAsync(ct);
