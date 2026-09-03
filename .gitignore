@@ -54,10 +54,5 @@ x64dbg/
 push_and_update_release.ps1
 publish_and_release.ps1
 
-# Screenshots and hero banner — generated locally, not tracked (re-captured after each UI fix)
-hero_banner_readme.png
-screenshots/*
-screenshots/**/*.png
-screenshots/*.zip
-!screenshots/README.md
+# Screenshots and hero banner — tracked for README/GitHub Pages (keep in repo)
 
