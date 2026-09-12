@@ -1,6 +1,7 @@
-﻿<Window x:Class="WDM.RefreshLinkDialog"
+<Window x:Class="WDM.RefreshLinkDialog"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
         Title="Refresh Link — WDM"
         Icon="Assets/WDM.ico"
         Width="520"
@@ -37,8 +38,8 @@
                 <DockPanel Margin="0,0,0,12" LastChildFill="True">
                     <Button DockPanel.Dock="Right" Style="{StaticResource Button.DialogClose}" Click="CancelClick" VerticalAlignment="Center" Margin="6,-6,-6,0" />
                     <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                        <TextBlock Text="&#xF0339;" FontFamily="{StaticResource Font.Icon}" FontSize="18"
-                                   Foreground="{DynamicResource Brush.Accent}" Margin="0,0,8,0" VerticalAlignment="Center" />
+                        <ui:SymbolIcon Symbol="ArrowClockwise24" FontSize="18"
+                                       Foreground="{DynamicResource Brush.Accent}" Margin="0,0,8,0" VerticalAlignment="Center" />
                         <TextBlock Text="Refresh Download Link" FontSize="16" FontWeight="SemiBold"
                                    Foreground="{DynamicResource Brush.Text}" VerticalAlignment="Center" />
                     </StackPanel>
@@ -52,8 +53,8 @@
                             <ColumnDefinition Width="Auto" />
                             <ColumnDefinition Width="*" />
                         </Grid.ColumnDefinitions>
-                        <TextBlock x:Name="BannerIcon" Text="&#xF059F;" FontFamily="{StaticResource Font.Icon}" FontSize="16"
-                                   Foreground="{DynamicResource Brush.Accent}" Margin="0,1,8,0" VerticalAlignment="Top" />
+                        <ui:SymbolIcon x:Name="BannerIcon" Symbol="WindowApps24" FontSize="16"
+                                       Foreground="{DynamicResource Brush.Accent}" Margin="0,1,8,0" VerticalAlignment="Top" />
                         <StackPanel Grid.Column="1">
                             <TextBlock x:Name="BannerTitle" Text="Download page opened in browser" FontSize="12" FontWeight="SemiBold"
                                        Foreground="{DynamicResource Brush.Text}" Margin="0,0,0,2" />
@@ -86,23 +87,24 @@
 
                 <!-- New URL Input -->
                 <TextBlock Text="Renewed URL" FontSize="12" FontWeight="SemiBold" Foreground="{DynamicResource Brush.Text}" Margin="0,2,0,4" />
-                <TextBox x:Name="UrlBox" Height="28" VerticalContentAlignment="Center"
-                         FontFamily="{StaticResource Font.App}" FontSize="12"
-                         Foreground="{DynamicResource Brush.Accent}" />
+                <ui:TextBox x:Name="UrlBox" Height="32" VerticalContentAlignment="Center"
+                            FontFamily="{StaticResource Font.App}" FontSize="12"
+                            PlaceholderText="Paste the renewed URL"
+                            AutomationProperties.Name="Renewed URL" />
             </StackPanel>
 
             <!-- Bottom Action Strip -->
             <Border Grid.Row="1" Background="{DynamicResource Brush.SurfaceAlt}" BorderBrush="{DynamicResource Brush.Border}" BorderThickness="0,1,0,0" CornerRadius="0,0,7,7" Padding="16,10">
                 <DockPanel LastChildFill="False">
                     <!-- Action to open source page (Referer) in browser -->
-                    <Button x:Name="OpenSourcePageBtn" Content="Open source page" Style="{StaticResource Button.Secondary}"
-                            Click="OpenSourcePageClick" Height="28" Padding="12,0" DockPanel.Dock="Left" Visibility="Collapsed" />
+                    <ui:Button x:Name="OpenSourcePageBtn" Content="Open source page" Style="{StaticResource Button.SecondaryAction}"
+                               Click="OpenSourcePageClick" Height="32" Padding="12,0" DockPanel.Dock="Left" Visibility="Collapsed" />
 
                     <StackPanel Orientation="Horizontal" DockPanel.Dock="Right">
-                        <Button Content="Cancel" Style="{StaticResource Button.Secondary}" Click="CancelClick"
-                                MinWidth="85" Height="28" Margin="0,0,8,0" IsCancel="True" />
-                        <Button Content="Update &amp; Resume" Style="{StaticResource Button.Accent}" Click="OkClick"
-                                MinWidth="130" Height="28" IsDefault="True" />
+                        <ui:Button Content="Cancel" Style="{StaticResource Button.SecondaryAction}" Click="CancelClick"
+                                   MinWidth="85" Height="32" Margin="0,0,8,0" IsCancel="True" />
+                        <ui:Button Content="Update &amp; Resume" Style="{StaticResource Button.PrimaryAction}" Click="OkClick"
+                                   MinWidth="130" Height="32" IsDefault="True" />
                     </StackPanel>
                 </DockPanel>
             </Border>

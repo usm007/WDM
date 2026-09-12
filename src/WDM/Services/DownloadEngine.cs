@@ -910,31 +910,44 @@ public sealed class DownloadEngine
     private async Task<long> DownloadChunkAsync(Session session, FileStream output, long from, long to)
     {
         var task = session.Task;
-        var response = await SendWithRetryAsync(() => BuildRequest(HttpMethod.Get, task, new RangeHeaderValue(from, to), session.CurrentUrl(task)), session.Token);
-        using (response)
+        long attemptBytes = 0;
+        try
         {
-            if (IsCloudflareChallenge(response))
-                throw new CloudflareBlockedException(CloudflareMessage(session.CurrentUrl(task)));
-            if (response.StatusCode != HttpStatusCode.PartialContent)
-                throw new InvalidOperationException("Server does not support range downloads.");
-
-            await using var input = await response.Content.ReadAsStreamAsync(session.Token);
-            output.Position = from;
-            var buffer = new byte[256 * 1024];
-            long written = 0;
-            int read;
-            while ((read = await input.ReadAsync(buffer, session.Token)) > 0)
+            var response = await SendWithRetryAsync(() => BuildRequest(HttpMethod.Get, task, new RangeHeaderValue(from, to), session.CurrentUrl(task)), session.Token);
+            using (response)
             {
-                await _governor.ThrottleAsync(EffectiveLimitKbps(), read, session.Token);
-                await session.Governor.ThrottleAsync(task.SpeedLimitKbps, read, session.Token);
-                await output.WriteAsync(buffer.AsMemory(0, read), session.Token);
-                written += read;
-                Interlocked.Add(ref session.BytesDownloaded, read);
-                session.Token.ThrowIfCancellationRequested();
+                if (IsCloudflareChallenge(response))
+                    throw new CloudflareBlockedException(CloudflareMessage(session.CurrentUrl(task)));
+                if (response.StatusCode != HttpStatusCode.PartialContent)
+                    throw new InvalidOperationException("Server does not support range downloads.");
+
+                await using var input = await response.Content.ReadAsStreamAsync(session.Token);
+                output.Position = from;
+                var buffer = new byte[256 * 1024];
+                long written = 0;
+                int read;
+                while ((read = await input.ReadAsync(buffer, session.Token)) > 0)
+                {
+                    await _governor.ThrottleAsync(EffectiveLimitKbps(), read, session.Token);
+                    await session.Governor.ThrottleAsync(task.SpeedLimitKbps, read, session.Token);
+                    await output.WriteAsync(buffer.AsMemory(0, read), session.Token);
+                    written += read;
+                    attemptBytes += read;
+                    Interlocked.Add(ref session.BytesDownloaded, read);
+                    session.Token.ThrowIfCancellationRequested();
+                }
+                if (written < to - from + 1)
+                    throw new HttpRequestException($"Chunk incomplete: got {written} of {to - from + 1} bytes.");
+                return written;
             }
-            if (written < to - from + 1)
-                throw new HttpRequestException($"Chunk incomplete: got {written} of {to - from + 1} bytes.");
-            return written;
+        }
+        catch
+        {
+            if (attemptBytes > 0)
+            {
+                Interlocked.Add(ref session.BytesDownloaded, -attemptBytes);
+            }
+            throw;
         }
     }
 

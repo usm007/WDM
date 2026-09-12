@@ -6,6 +6,10 @@ obj/
 # Build artifacts, packaged output and junk
 output/
 publish/
+publish_fw/
+releases/
+releases_fw/
+release_upload/
 staging/
 obj_bld/
 temp_git_index
@@ -53,6 +57,12 @@ x64dbg-test.txt
 x64dbg/
 push_and_update_release.ps1
 publish_and_release.ps1
+stdout.txt
+stderr.txt
+crash.log
+code.html
+skills-lock.json
 
-# Screenshots and hero banner — tracked for README/GitHub Pages (keep in repo)
+# Website (docs/) is local-only, deployed to Vercel — not tracked in git
+docs/
 

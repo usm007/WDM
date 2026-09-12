@@ -258,8 +258,7 @@ public partial class AboutDialog : Window
             InlineProgressStatusText.Text = "Launching installer…";
             InlineDownloadProgressBar.Value = 100;
             InlineProgressPctText.Text = "100%";
-            UpdateChecker.LaunchInstaller(installer, silent: true);
-            await Task.Delay(500);
+            await UpdateChecker.LaunchInstallerAndWaitForStart(installer);
             Close();
         }
         catch (Exception ex)

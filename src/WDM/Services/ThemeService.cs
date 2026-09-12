@@ -13,9 +13,6 @@ public static class ThemeService
     private const int DwmwaUseImmersiveDarkMode = 20;
     private const int DwmwaUseImmersiveDarkModeBefore20H1 = 19;
     private const int DwmwaWindowCornerPreference = 33;
-    private const int DwmwaBorderColor = 34;
-    private const int DwmwaCaptionColor = 35;
-    private const int DwmwaTextColor = 36;
     private const int DwmwcpRound = 2;
 
     [DllImport("dwmapi.dll")]
@@ -37,6 +34,7 @@ public static class ThemeService
     private static extern bool SetWindowPos(IntPtr hWnd, IntPtr hWndInsertAfter, int x, int y, int cx, int cy, uint uFlags);
 
     private const uint SWP_FRAMECHANGED = 0x0020;
+    private const uint SWP_NOACTIVATE = 0x0010;
     private const uint SWP_NOMOVE = 0x0002;
     private const uint SWP_NOSIZE = 0x0001;
     private const uint SWP_NOZORDER = 0x0004;
@@ -70,6 +68,23 @@ public static class ThemeService
                 themeDict.Source = newSource;
         }
 
+        // Keep WPF-UI controls on the matching theme by swapping only its theme
+        // resource dictionary. Do NOT use ApplicationThemeManager.Apply(): its
+        // default Mica backdrop path calls SetWindowThemeAttribute with
+        // WTNCA_NODRAWCAPTION and sets a transparent DWM caption color, which
+        // permanently hides the native title text (in both themes) from the
+        // first toggle on.
+        try
+        {
+            var uiTheme = app.Resources.MergedDictionaries
+                .OfType<Wpf.Ui.Markup.ThemesDictionary>()
+                .FirstOrDefault();
+            if (uiTheme is not null)
+                uiTheme.Theme = dark ? Wpf.Ui.Appearance.ApplicationTheme.Dark
+                                     : Wpf.Ui.Appearance.ApplicationTheme.Light;
+        }
+        catch { }
+
         foreach (Window window in app.Windows)
             ApplyTitleBar(window);
     }
@@ -84,8 +99,13 @@ public static class ThemeService
         Apply(theme, IsDark);
     }
 
-    /// <summary>Paints the native window title bar to seamlessly match the window background color,
-    /// applies smooth DWM rounded window corners, and configures title bar text color.</summary>
+    /// <summary>Selects the native caption scheme (dark/light) to match the app
+    /// theme and applies DWM rounded corners. Caption, text and border colors
+    /// are deliberately left at DWM defaults: explicit DWMWA_CAPTION_COLOR /
+    /// DWMWA_TEXT_COLOR values make the native title text vanish on some
+    /// Windows builds (and the broken caption persists across further toggles),
+    /// while the default chrome follows the immersive-mode flag and always
+    /// renders the title.</summary>
     public static void ApplyTitleBar(Window window)
     {
         if (window is null || window.WindowStyle == WindowStyle.None)
@@ -98,30 +118,22 @@ public static class ThemeService
         if (DwmSetWindowAttribute(hwnd, DwmwaUseImmersiveDarkMode, ref dark, sizeof(int)) != 0)
             DwmSetWindowAttribute(hwnd, DwmwaUseImmersiveDarkModeBefore20H1, ref dark, sizeof(int));
 
-        // Synchronize title bar caption color and text color with window background
-        var app = Application.Current;
-        var bg = app?.TryFindResource("Color.Bg") is System.Windows.Media.Color c
-            ? c
-            : (IsDark ? System.Windows.Media.Color.FromRgb(0x12, 0x12, 0x12) : System.Windows.Media.Color.FromRgb(0xF4, 0xF6, 0xF8));
-        var fg = app?.TryFindResource("Color.Text") is System.Windows.Media.Color tc
-            ? tc
-            : (IsDark ? System.Windows.Media.Color.FromRgb(0xF1, 0xF1, 0xF1) : System.Windows.Media.Color.FromRgb(0x1A, 0x1C, 0x20));
-        var border = app?.TryFindResource("Color.Border") is System.Windows.Media.Color bc
-            ? bc
-            : (IsDark ? System.Windows.Media.Color.FromRgb(0x2E, 0x2E, 0x2E) : System.Windows.Media.Color.FromRgb(0xC4, 0xC9, 0xD0));
-
-        int captionColor = (bg.B << 16) | (bg.G << 8) | bg.R;
-        int textColor = (fg.B << 16) | (fg.G << 8) | fg.R;
-        int borderColor = (border.B << 16) | (border.G << 8) | border.R;
-
-        // Windows 11 Build 22000+ caption, text, and border customization
-        DwmSetWindowAttribute(hwnd, DwmwaCaptionColor, ref captionColor, sizeof(int));
-        DwmSetWindowAttribute(hwnd, DwmwaTextColor, ref textColor, sizeof(int));
-        DwmSetWindowAttribute(hwnd, DwmwaBorderColor, ref borderColor, sizeof(int));
-
+        // NOTE: caption/text/border colors are intentionally left at DWM defaults.
+        // Custom DWMWA_CAPTION_COLOR/TEXT_COLOR values suppress the title text on
+        // some Windows builds even when the calls report success — default chrome
+        // is always visible and always native.
         // Apply smooth Windows 11 hardware-anti-aliased rounded corners
         int round = DwmwcpRound;
         DwmSetWindowAttribute(hwnd, DwmwaWindowCornerPreference, ref round, sizeof(int));
+
+        // Force a non-client frame repaint so re-applied attributes (e.g. after a
+        // theme toggle) take effect instead of leaving a stale caption behind.
+        try
+        {
+            SetWindowPos(hwnd, HWND_NOTOPMOST, 0, 0, 0, 0,
+                SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE | SWP_FRAMECHANGED);
+        }
+        catch { }
 
         if (window.ResizeMode == ResizeMode.NoResize)
         {

@@ -22,7 +22,7 @@ public static class ScreenshotGenerator
         string repoRoot = Path.GetFullPath(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "..", "..", "..", "..", ".."));
         // Fallback to known absolute path for this workspace if repoRoot detection fails
         if (!Directory.Exists(Path.Combine(repoRoot, "screenshots")))
-            repoRoot = @"C:\Users\Admin\Desktop\WDM-2.6.0";
+            repoRoot = @"e:\WDM-master";
         string outputDir = Path.Combine(repoRoot, "screenshots");
         string lightDir = Path.Combine(outputDir, "light");
         string darkDir = Path.Combine(outputDir, "dark");
@@ -51,12 +51,30 @@ public static class ScreenshotGenerator
             PopulateMockTasks(viewModel);
 
             // 1. MainWindow
-            var mainWindow = new MainWindow { DataContext = viewModel, Width = 980, Height = 600 };
+            var mainWindow = new MainWindow { DataContext = viewModel, Width = 784, Height = 480 };
             SaveWindowScreenshot(mainWindow, Path.Combine(targetDir, "01_MainWindow.png"));
+
+            // 1b. MainWindow — empty state (no downloads)
+            var emptyViewModel = new MainViewModel();
+            emptyViewModel.Settings.UseDarkTheme = dark;
+            var emptyWindow = new MainWindow { DataContext = emptyViewModel, Width = 784, Height = 480 };
+            SaveWindowScreenshot(emptyWindow, Path.Combine(targetDir, "01b_MainWindow_Empty.png"));
 
             // 2. AddDownloadDialog
             var addDialog = new AddDownloadDialog(viewModel, "https://releases.ubuntu.com/24.04/ubuntu-24.04-desktop-amd64.iso", "ubuntu-24.04-desktop-amd64.iso");
             SaveWindowScreenshot(addDialog, Path.Combine(targetDir, "02_AddDownloadDialog.png"));
+
+            // 2b. AddDownloadDialog — YouTube panel + advanced expanded
+            var addDialogYt = new AddDownloadDialog(viewModel, "https://www.youtube.com/watch?v=dQw4w9WgXcQ", "Never Gonna Give You Up.mp4");
+            try
+            {
+                addDialogYt.Show();
+                addDialogYt.ShowYouTubePanel(false);
+                foreach (var exp in FindVisualChildren<System.Windows.Controls.Expander>(addDialogYt))
+                    exp.IsExpanded = true;
+            }
+            catch { }
+            SaveWindowScreenshot(addDialogYt, Path.Combine(targetDir, "02b_AddDownloadDialog_Full.png"));
 
             // 3. OptionsDialog (Main + All Tabs)
             CaptureOptionsDialogAllTabs(viewModel, targetDir);
@@ -80,6 +98,47 @@ public static class ScreenshotGenerator
                 });
             }
             SaveWindowScreenshot(progressDialog, Path.Combine(targetDir, "05_DownloadProgressDialog.png"));
+
+            // 5b. Progress dialog — Speed Limiter tab open
+            var limitDialog = new DownloadProgressDialog(activeTask, viewModel);
+            try
+            {
+                limitDialog.Show();
+                limitDialog.TabLimiter.IsChecked = true;
+            }
+            catch { }
+            SaveWindowScreenshot(limitDialog, Path.Combine(targetDir, "05b_ProgressDialog_Limiter.png"));
+
+            // 5c. Progress dialog — On Completion tab open
+            var completionDialog = new DownloadProgressDialog(activeTask, viewModel);
+            try
+            {
+                completionDialog.Show();
+                completionDialog.TabOptions.IsChecked = true;
+            }
+            catch { }
+            SaveWindowScreenshot(completionDialog, Path.Combine(targetDir, "05c_ProgressDialog_Completion.png"));
+
+            // 5d. Progress dialog — Details tab open (text + graphical)
+            var detailsDialog = new DownloadProgressDialog(activeTask, viewModel);
+            detailsDialog.ChunkList.Clear();
+            var chunkPercentsD = new[] { 94, 88, 79, 65, 52, 44, 31, 18 };
+            for (int i = 0; i < chunkPercentsD.Length; i++)
+            {
+                detailsDialog.ChunkList.Add(new ChunkVisualItem
+                {
+                    Index = i + 1,
+                    ToolTip = $"Thread #{i + 1} — {chunkPercentsD[i]}%",
+                    WidthPercent = chunkPercentsD[i]
+                });
+            }
+            try
+            {
+                detailsDialog.Show();
+                detailsDialog.TabDetails.IsChecked = true;
+            }
+            catch { }
+            SaveWindowScreenshot(detailsDialog, Path.Combine(targetDir, "05d_ProgressDialog_Details.png"));
 
             // 6. DownloadCompleteDialog
             var completedTask = viewModel.Tasks.First(t => t.Status == TaskStatus.Completed);
@@ -173,7 +232,7 @@ public static class ScreenshotGenerator
     {
         string repoRoot = Path.GetFullPath(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "..", "..", "..", "..", ".."));
         if (!Directory.Exists(Path.Combine(repoRoot, "src")))
-            repoRoot = @"C:\Users\Admin\Desktop\WDM-2.6.0";
+            repoRoot = @"e:\WDM-master";
         string baseDir = Path.Combine(repoRoot, "src", "WDM");
         var filesToDelete = new[]
         {
@@ -333,11 +392,24 @@ public static class ScreenshotGenerator
             AddedAt = DateTime.Now.AddHours(-2)
         };
 
+        var t6 = new DownloadTask(ui)
+        {
+            Url = "https://live.stream.example.org/event_stream_live.ts",
+            FileName = "event_stream_live.ts",
+            TotalBytes = -1,
+            DownloadedBytes = 46_300_000,
+            SpeedBps = 3_200_000,
+            Status = TaskStatus.Downloading,
+            Category = DownloadCategory.Video,
+            AddedAt = DateTime.Now.AddMinutes(-3)
+        };
+
         vm.Tasks.Add(t1);
         vm.Tasks.Add(t2);
         vm.Tasks.Add(t3);
         vm.Tasks.Add(t4);
         vm.Tasks.Add(t5);
+        vm.Tasks.Add(t6);
     }
 
     private static void SaveWindowScreenshot(Window window, string filePath, bool closeWindow = true)
@@ -382,7 +454,7 @@ public static class ScreenshotGenerator
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"[!] Failed to capture {filePath}: {ex.Message}");
+            Console.WriteLine($"[!] Failed to capture {filePath}: {ex}");
             if (closeWindow)
             {
                 try { window.Close(); } catch { }

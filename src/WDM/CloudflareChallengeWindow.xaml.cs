@@ -10,7 +10,7 @@ using WDM.Models;
 
 namespace WDM;
 
-public partial class CloudflareChallengeWindow : Window
+public partial class CloudflareChallengeWindow : Wpf.Ui.Controls.FluentWindow
 {
     private readonly DownloadTask _task;
     public string? ExtractedCookies { get; private set; }

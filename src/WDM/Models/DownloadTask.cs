@@ -2,6 +2,7 @@ using System.ComponentModel;
 using System.Runtime.CompilerServices;
 using System.Windows.Threading;
 using WDM.Services;
+using Wpf.Ui.Controls;
 
 namespace WDM.Models;
 
@@ -147,6 +148,7 @@ public sealed class DownloadTask : INotifyPropertyChanged
                 Raise(nameof(Eta));
                 Raise(nameof(DownloadedOfTotalText));
                 Raise(nameof(DisplaySizeText));
+                Raise(nameof(CompletionPercentText));
                 Raise(nameof(RowTelemetryStatusText));
                 Raise(nameof(PrimaryStatusText));
                 Raise(nameof(RowTimeOrEtaText));
@@ -176,6 +178,7 @@ public sealed class DownloadTask : INotifyPropertyChanged
                 Raise(nameof(SizeText));
                 Raise(nameof(DownloadedOfTotalText));
                 Raise(nameof(DisplaySizeText));
+                Raise(nameof(CompletionPercentText));
             }
         }
     }
@@ -201,6 +204,7 @@ public sealed class DownloadTask : INotifyPropertyChanged
                 Raise(nameof(ProgressSpeedText));
                 Raise(nameof(DownloadedOfTotalText));
                 Raise(nameof(DisplaySizeText));
+                Raise(nameof(CompletionPercentText));
             }
         }
     }
@@ -225,6 +229,7 @@ public sealed class DownloadTask : INotifyPropertyChanged
             {
                 Raise(nameof(ProgressText));
                 Raise(nameof(ProgressSpeedText));
+                Raise(nameof(CompletionPercentText));
             }
         }
     }
@@ -282,18 +287,35 @@ public sealed class DownloadTask : INotifyPropertyChanged
 
     public string SizeText => TotalBytes > 0 ? FormatBytes(TotalBytes) : "—";
 
+    public string CompletionPercentText
+    {
+        get
+        {
+            if (Status == TaskStatus.Completed)
+                return "100%";
+            if (TotalBytes > 0)
+                return $"{Progress}%";
+            return "—";
+        }
+    }
+
     public string DisplaySizeText
     {
         get
         {
-            if (Status == TaskStatus.Downloading)
-                return DownloadedBytes > 0 ? DownloadedText : (TotalBytes > 0 ? $"0 B" : "—");
-
-            // Paused, Done/Completed, Queued, Failed
             if (TotalBytes > 0)
-                return SizeText;
+            {
+                if (Status == TaskStatus.Completed)
+                    return $"{SizeText} / {SizeText}";
+                if (DownloadedBytes > 0)
+                    return $"{DownloadedText} / {SizeText}";
+                return $"0 B / {SizeText}";
+            }
+
+            // TotalBytes <= 0: total size cannot be calculated
             if (DownloadedBytes > 0)
                 return DownloadedText;
+
             return "—";
         }
     }
@@ -365,25 +387,7 @@ public sealed class DownloadTask : INotifyPropertyChanged
         ? $"{Progress}% · {SpeedText}".TrimEnd('·', ' ')
         : "";
 
-    public string DownloadedOfTotalText
-    {
-        get
-        {
-            if (Status == TaskStatus.Completed)
-            {
-                if (TotalBytes > 0)
-                    return $"{SizeText} / {SizeText}";
-                if (DownloadedBytes > 0)
-                    return $"{DownloadedText} / {DownloadedText}";
-                return SizeText;
-            }
-            if (TotalBytes > 0)
-                return $"{DownloadedText} / {SizeText}";
-            if (DownloadedBytes > 0)
-                return DownloadedText;
-            return "—";
-        }
-    }
+    public string DownloadedOfTotalText => DisplaySizeText;
 
     public long RemainingBytes => TotalBytes > DownloadedBytes ? TotalBytes - DownloadedBytes : 0;
     public string RemainingBytesText => TotalBytes > 0 && RemainingBytes > 0 ? FormatBytes(RemainingBytes) : (Status == TaskStatus.Completed ? "0 B" : "—");
@@ -453,6 +457,16 @@ public sealed class DownloadTask : INotifyPropertyChanged
         DownloadCategory.Compressed => char.ConvertFromUtf32(0xF05C4),
         DownloadCategory.Program => char.ConvertFromUtf32(0xF08C6),
         _ => char.ConvertFromUtf32(0xF0224),
+    };
+
+    public SymbolRegular TypeSymbol => Category switch
+    {
+        DownloadCategory.Video => SymbolRegular.Video24,
+        DownloadCategory.Music => SymbolRegular.MusicNote224,
+        DownloadCategory.Document => SymbolRegular.Document24,
+        DownloadCategory.Compressed => SymbolRegular.FolderZip24,
+        DownloadCategory.Program => SymbolRegular.AppGeneric24,
+        _ => SymbolRegular.DocumentBulletList24,
     };
 
     public string StatusText => Status switch
@@ -527,8 +541,21 @@ public sealed class DownloadTask : INotifyPropertyChanged
         if (handler is null)
             return;
         if (_ui.CheckAccess())
+        {
             handler(this, new PropertyChangedEventArgs(name));
+        }
         else
-            _ui.BeginInvoke(() => handler(this, new PropertyChangedEventArgs(name)));
+        {
+            if (_ui.HasShutdownStarted || _ui.HasShutdownFinished)
+                return;
+            try
+            {
+                _ui.BeginInvoke(() => handler(this, new PropertyChangedEventArgs(name)));
+            }
+            catch (Exception)
+            {
+                // Dispatcher may have shut down between check and invoke
+            }
+        }
     }
 }

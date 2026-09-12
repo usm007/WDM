@@ -1,0 +1,296 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>WDM motion audit — 2026-09-12</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Familjen+Grotesk:wght@400;500;600;700&family=Public+Sans:wght@400;500;600;700&family=Geist+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{
+  --ink: oklch(0.155 0.006 255); --surface: oklch(0.195 0.007 255); --surface-2: oklch(0.235 0.008 255);
+  --paper: oklch(0.945 0.004 255); --paper-dim: oklch(0.800 0.006 255); --muted: oklch(0.680 0.008 255); --faint: oklch(0.505 0.008 255);
+  --line: oklch(0.95 0.01 255 / 0.09); --line-strong: oklch(0.95 0.01 255 / 0.16);
+  --crit: oklch(0.655 0.185 25); --imp: oklch(0.805 0.125 78); --opp: oklch(0.745 0.135 152);
+  --t-good: oklch(0.745 0.135 152); --t-mid: oklch(0.805 0.125 78); --t-slow: oklch(0.655 0.185 25);
+  --accent: var(--paper); --accent-soft: var(--paper-dim); --accent-tint: oklch(0.95 0.01 255 / 0.06);
+  --display:"Familjen Grotesk", system-ui, sans-serif; --sans:"Public Sans", system-ui, sans-serif; --mono:"Geist Mono", ui-monospace, monospace;
+}
+:root:has(#theme-light:checked){
+  --ink: oklch(0.985 0.003 255); --surface: oklch(0.965 0.004 255); --surface-2: oklch(0.940 0.005 255);
+  --paper: oklch(0.180 0.006 255); --paper-dim: oklch(0.330 0.008 255); --muted: oklch(0.475 0.010 255); --faint: oklch(0.640 0.009 255);
+  --line: oklch(0.180 0.010 255 / 0.12); --line-strong: oklch(0.180 0.010 255 / 0.22);
+}
+*{box-sizing:border-box}html{scroll-behavior:smooth}
+body{margin:0;background:var(--ink);color:var(--paper);font-family:var(--sans);-webkit-font-smoothing:antialiased}
+a{color:inherit}
+.wrap{max-width:1080px;margin:0 auto;padding:28px 24px 64px}
+.theme-switch{display:flex;justify-content:flex-end;margin-bottom:12px}
+.theme-switch .seg{display:inline-flex;border:1px solid var(--line-strong);border-radius:999px;overflow:hidden}
+.theme-switch .seg label{font-family:var(--mono);font-size:9.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);padding:5px 11px;cursor:pointer}
+#theme-dark:checked ~ .wrap .seg label[for="theme-dark"], #theme-light:checked ~ .wrap .seg label[for="theme-light"]{background:color-mix(in oklch, var(--paper) 12%, transparent);color:var(--paper)}
+.vh{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+.eyebrow{font-family:var(--mono);font-size:10px;letter-spacing:.16em;text-transform:uppercase;color:var(--muted)}
+h1.title{font-family:var(--display);font-size:36px;line-height:.95;letter-spacing:-.02em;margin:8px 0 10px}
+p.lede{color:var(--paper-dim);max-width:64ch;line-height:1.6;margin:0}
+.meta-row{font-family:var(--mono);font-size:11px;color:var(--muted);margin-top:12px;display:flex;gap:12px;flex-wrap:wrap}
+.stats{display:flex;gap:16px;margin-top:18px;flex-wrap:wrap}
+.stat{border:1px solid var(--line);border-radius:999px;padding:8px 14px;font-family:var(--mono);font-size:12px;display:flex;gap:8px;align-items:center;text-decoration:none}
+.stat b{font-variant-numeric:tabular-nums}
+.dot{width:8px;height:8px;border-radius:50%;display:inline-block}
+.dot.crit{background:var(--crit)}.dot.imp{background:var(--imp)}.dot.opp{background:var(--opp)}
+.assessment{margin-top:28px;border:1px solid var(--line);border-radius:16px;padding:20px;background:var(--surface)}
+.assessment .label{font-family:var(--mono);font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:var(--muted)}
+.assessment p{font-family:var(--display);font-size:18px;line-height:1.5;margin:8px 0 0}
+.lens-table{width:100%;border-collapse:collapse;margin-top:18px}
+.lens-table th{font-family:var(--mono);font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:var(--muted);text-align:left;padding:10px 12px;border-bottom:1px solid var(--line)}
+.lens-table td{padding:14px 12px;border-bottom:1px solid var(--line);font-size:13px}
+.chip{font-family:var(--mono);font-size:9px;letter-spacing:.08em;text-transform:uppercase;border:1px solid var(--line-strong);border-radius:999px;padding:3px 7px}
+.verdict{display:inline-flex;align-items:center;gap:6px;font-weight:600}
+.timing-grid{display:grid;grid-template-columns:1.6fr .9fr;gap:18px;margin-top:18px}
+.timing-card{border:1px solid var(--line);border-radius:14px;padding:16px;background:var(--surface)}
+.timing-card h4{font-family:var(--mono);font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--muted);margin:0 0 10px}
+.key-list{font-family:var(--mono);font-size:11px;line-height:1.8;color:var(--paper-dim)}
+.key-list b{color:var(--paper)}
+.lens-sec{margin-top:36px;border-top:1px solid var(--line);padding-top:24px}
+.lens-sec__head{display:flex;align-items:center;justify-content:space-between;gap:12px}
+.lens-sec__head h3{font-family:var(--display);font-size:22px;margin:0;letter-spacing:-.02em}
+.lens-sec__weight{font-family:var(--mono);font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:var(--muted);border:1px solid var(--line-strong);border-radius:999px;padding:4px 8px}
+.lens-sec__verdict{font-size:13px;color:var(--paper-dim);margin:6px 0 16px}
+.lens-block{margin-top:18px}
+.lens-block h4{font-family:var(--mono);font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--muted);margin:0 0 10px}
+.lens-list{list-style:none;padding:0;margin:0;display:grid;gap:8px}
+.lens-list li{font-size:13px;line-height:1.5;color:var(--paper-dim);padding:6px 0;border-bottom:1px solid var(--line)}
+.lens-list li code{font-family:var(--mono);font-size:11px;color:var(--muted)}
+.lens-empty{color:var(--muted);font-style:italic;font-size:13px}
+.finding-row{display:grid;grid-template-columns:1fr 380px;gap:20px;border:1px solid var(--line);border-radius:14px;padding:18px;background:var(--surface);margin-top:12px;transition:border-color .2s ease}
+.finding-row:hover{border-color:var(--line-strong)}
+.finding-row[data-sev="crit"]{border-left:3px solid var(--crit)} .finding-row[data-sev="imp"]{border-left:3px solid var(--imp)}
+.find-tags{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px}
+.find-title{font-size:14px;font-weight:700;margin:0 0 8px}
+.find-body p{font-size:13px;line-height:1.6;color:var(--paper-dim);margin:6px 0}
+.find-body .label{font-family:var(--mono);font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);margin-right:6px}
+.fix{background:var(--surface-2);border:1px solid var(--line);border-radius:10px;padding:10px 12px;margin-top:8px}
+.find-loc{font-family:var(--mono);font-size:11px;color:var(--muted);margin-top:8px}
+.lens-take{margin-top:14px;padding:12px;border-radius:12px;background:color-mix(in oklch, var(--paper) 6%, transparent);border:1px solid var(--line);font-size:13px;line-height:1.6;color:var(--paper-dim)}
+.rec-table{width:100%;border-collapse:collapse;margin-top:10px}
+.rec-table th{font-family:var(--mono);font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);text-align:left;padding:8px 10px;border-bottom:1px solid var(--line)}
+.rec-table td{padding:10px;font-size:12px;border-bottom:1px solid var(--line);vertical-align:top}
+.tier-label{font-family:var(--mono);font-size:11px;letter-spacing:.14em;text-transform:uppercase;margin-top:28px}
+.demo{position:relative;width:380px}
+.demo__bar{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:12px}
+.demo__meta{min-width:0}.demo__title{display:block;font-size:13.5px;font-weight:600;line-height:1.3}.demo__timing{display:block;font-family:var(--mono);font-size:11px;color:var(--muted);margin-top:2px;font-variant-numeric:tabular-nums}
+.demo__controls{display:flex;align-items:center;gap:12px;flex-shrink:0}.demo__loop{font-family:var(--mono);font-size:12px;color:var(--faint)}
+.seg{display:inline-flex;border:1px solid var(--line-strong);border-radius:100px;overflow:hidden}
+.seg label{font-family:var(--mono);font-size:9.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);padding:4px 9px;cursor:pointer;user-select:none;transition:background .15s ease,color .15s ease}
+.demo input[id$="-a"]:checked ~ .demo__bar .seg label[for$="-a"], .demo input[id$="-l"]:checked ~ .demo__bar .seg label[for$="-l"], .demo input[id$="-d"]:checked ~ .demo__bar .seg label[for$="-d"]{background:color-mix(in oklch, var(--paper) 12%, transparent);color:var(--paper)}
+.demo__stage{--st-bg:var(--surface-2);--st-fg:var(--paper);--st-line:var(--line-strong);--st-dim:color-mix(in oklch, var(--paper) 55%, transparent);background:var(--st-bg);color:var(--st-fg);border:1px solid var(--line);border-radius:10px;padding:32px 24px;min-height:168px;display:flex;align-items:center;justify-content:center;overflow:hidden}
+.demo input[id$="-l"]:checked ~ .demo__stage{--st-bg:oklch(0.985 0.003 255);--st-fg:oklch(0.180 0.006 255);--st-line:oklch(0.180 0.010 255 / 0.18);--st-dim:oklch(0.180 0.010 255 / 0.45)}
+.demo input[id$="-d"]:checked ~ .demo__stage{--st-bg:oklch(0.180 0.006 255);--st-fg:oklch(0.985 0.003 255);--st-line:oklch(0.985 0.010 255 / 0.18);--st-dim:oklch(0.985 0.010 255 / 0.50)}
+.ui-btn{display:inline-flex;align-items:center;justify-content:center;padding:9px 18px;border-radius:999px;background:var(--st-fg);color:var(--st-bg);font-family:var(--sans);font-size:13px;font-weight:600}
+.ui-card{background:var(--st-bg);border:1px solid var(--st-line);border-radius:10px;padding:14px 16px;min-width:180px;box-shadow:0 8px 24px oklch(0 0 0 / 0.12)}
+.ui-row{display:flex;align-items:center;gap:10px;font-size:13px;color:var(--st-fg)}
+.ui-check{width:22px;height:22px;border-radius:7px;background:var(--st-fg);display:inline-flex;align-items:center;justify-content:center;flex-shrink:0}
+.ui-check svg{width:13px;height:13px;stroke:var(--st-bg)}
+.ui-num{font-family:var(--display);font-size:34px;font-weight:700;color:var(--st-fg);font-variant-numeric:tabular-nums;letter-spacing:-.02em}
+.ui-label{font-family:var(--mono);font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:var(--st-dim)}
+@media (prefers-reduced-motion: reduce){ .demo__loop{display:none} [class*="__mt"],[class*="__mt"] *{animation:none !important;transition:none !important} }
+@media (max-width:860px){ .finding-row{grid-template-columns:1fr} .demo{width:100%} .timing-grid{grid-template-columns:1fr} }
+</style>
+<style>
+@media (prefers-reduced-motion: no-preference){
+  @keyframes m1{0%{opacity:0;transform:translateY(10px) scale(.98);filter:blur(6px)}60%{opacity:1;transform:translateY(0) scale(1);filter:blur(0)}100%{opacity:1;transform:translateY(0) scale(1);filter:blur(0)}}
+  .demo-1__mt{animation:m1 3s cubic-bezier(0.22,1,0.36,1) infinite}
+  @keyframes m2{0%{opacity:0;transform:scale(.96);filter:blur(4px)}60%{opacity:1;transform:scale(1);filter:blur(0)}100%{opacity:1;transform:scale(1);filter:blur(0)}}
+  .demo-2__mt{animation:m2 3s cubic-bezier(0.32,0.72,0,1) infinite}
+  @keyframes m3{0%{opacity:0;transform:translateY(6px);filter:blur(3px)}60%{opacity:1;transform:translateY(0);filter:blur(0)}100%{opacity:1;transform:translateY(0);filter:blur(0)}}
+  .demo-3__mt{animation:m3 3s cubic-bezier(0.16,1,0.3,1) infinite}
+  @keyframes m4{0%{opacity:0;transform:translateY(8px);filter:blur(4px)}60%{opacity:1;transform:translateY(0);filter:blur(0)}100%{opacity:1;transform:translateY(0);filter:blur(0)}}
+  .demo-4__mt{animation:m4 3s cubic-bezier(0.22,1,0.36,1) infinite}
+  @keyframes m5{0%{opacity:0;transform:scale(.98);filter:blur(4px)}60%{opacity:1;transform:scale(1);filter:blur(0)}100%{opacity:1;transform:scale(1);filter:blur(0)}}
+  .demo-5__mt{animation:m5 3s cubic-bezier(0.32,0.72,0,1) infinite}
+  @keyframes m6{0%{opacity:.6;transform:translateX(0)}15%{opacity:1;transform:translateX(6%)}60%{opacity:1;transform:translateX(0)}100%{opacity:1;transform:translateX(0)}}
+  .demo-6__mt{animation:m6 3s linear infinite}
+}
+</style>
+</head>
+<body>
+<input class="vh" type="radio" name="theme" id="theme-dark" checked><input class="vh" type="radio" name="theme" id="theme-light">
+<div class="wrap">
+<div class="theme-switch"><div class="seg"><label for="theme-dark">Dark</label><label for="theme-light">Light</label></div></div>
+<div class="eyebrow">MOTION AUDIT · DESIGN-MOTION-PRINCIPLES</div>
+<h1 class="title">WDM — downstream performance, upstream polish</h1>
+<p class="lede">Docs landing for a Windows 11 download manager. Single dark OLED shell, bento feature grid, pipeline narrative, screenshot gallery with lightbox. Static Tailwind CDN, no framework — all motion is CSS + vanilla JS.</p>
+<div class="meta-row"><span>WDM · 2026-09-12</span><span>stack: html-tailwind · docs/index.html</span><span>dials 7/6/4 · Jakub primary, Jhey secondary, Emil selective</span></div>
+<div class="stats">
+  <a class="stat" href="#rec-crit"><span class="dot crit"></span> <b>3</b> Critical</a>
+  <a class="stat" href="#rec-imp"><span class="dot imp"></span> <b>3</b> Important</a>
+  <a class="stat" href="#rec-opp"><span class="dot opp"></span> <b>2</b> Opportunities</a>
+</div>
+
+<section class="assessment"><div class="label">OVERALL</div><p>Good bones — reveal is coherent and accessible, orb/packet add narrative without theft. But high-frequency hovers at 700ms feel sluggish (Emil), three infinite pulses draw attention with no pause, and the two main content swaps (hero tab, gallery) plus the lightbox have no crafted exit — they just appear. Tighten the fast path to ~200ms, give swaps a blur exit, and gate loops.</p></section>
+
+<section><h3 style="font-family:var(--display);font-size:16px;margin:28px 0 8px">01 · Lens summary</h3>
+<table class="lens-table"><thead><tr><th>Lens</th><th>Weight</th><th>Verdict</th><th>One-line read</th></tr></thead><tbody>
+<tr><td><b>Jakub Krehel</b> — Production Polish</td><td><span class="chip">Primary</span></td><td><span class="verdict"><span class="dot imp"></span> Concern</span></td><td>Exits not subtler than enters; blur uniform across all reveals.</td></tr>
+<tr><td><b>Jhey Tompkins</b> — Experimentation & Delight</td><td><span class="chip">Secondary</span></td><td><span class="verdict"><span class="dot imp"></span> Mixed</span></td><td>Confetti/credits delight works — pulse on every live dot is spam.</td></tr>
+<tr><td><b>Emil Kowalski</b> — Restraint & Speed</td><td><span class="chip">Selective</span></td><td><span class="verdict"><span class="dot crit"></span> Problem</span></td><td>700ms on nav/tabs/gallery is 3× the 180–250ms budget for frequent triggers.</td></tr>
+</tbody></table></section>
+
+<section><h3 style="font-family:var(--display);font-size:16px;margin:28px 0 8px">02 · Where the timings land</h3>
+<div class="timing-grid">
+<div class="timing-card">
+<svg viewBox="0 0 660 300" style="width:100%;height:auto"><rect x="0" y="0" width="660" height="300" rx="12" fill="var(--surface)"/>
+<rect x="40" y="40" width="110" height="180" rx="8" fill="color-mix(in oklch, var(--t-good) 18%, transparent)" stroke="var(--line)"/><text x="95" y="60" text-anchor="middle" font-family="Geist Mono" font-size="9" fill="var(--muted)">INSTANT</text><text x="95" y="72" text-anchor="middle" font-family="Geist Mono" font-size="8" fill="var(--faint)">0–100ms</text>
+<rect x="150" y="40" width="200" height="180" rx="8" fill="color-mix(in oklch, var(--t-good) 14%, transparent)" stroke="var(--line)"/><text x="250" y="60" text-anchor="middle" font-family="Geist Mono" font-size="9" fill="var(--muted)">RESPONSIVE</text><text x="250" y="72" text-anchor="middle" font-family="Geist Mono" font-size="8" fill="var(--faint)">100–300ms</text>
+<rect x="350" y="40" width="150" height="180" rx="8" fill="color-mix(in oklch, var(--t-mid) 16%, transparent)" stroke="var(--line)"/><text x="425" y="60" text-anchor="middle" font-family="Geist Mono" font-size="9" fill="var(--muted)">DELIBERATE</text><text x="425" y="72" text-anchor="middle" font-family="Geist Mono" font-size="8" fill="var(--faint)">300–500ms</text>
+<rect x="500" y="40" width="120" height="180" rx="8" fill="color-mix(in oklch, var(--t-slow) 14%, transparent)" stroke="var(--line)"/><text x="560" y="60" text-anchor="middle" font-family="Geist Mono" font-size="9" fill="var(--muted)">SLUGGISH</text><text x="560" y="72" text-anchor="middle" font-family="Geist Mono" font-size="8" fill="var(--faint)">500ms+</text>
+<circle cx="620" cy="110" r="10" fill="var(--t-slow)" stroke="var(--line-strong)"/><text x="620" y="114" text-anchor="middle" font-family="Geist Mono" font-size="9" fill="white">1</text>
+<circle cx="620" cy="150" r="10" fill="var(--t-slow)" stroke="var(--line-strong)"/><text x="620" y="154" text-anchor="middle" font-family="Geist Mono" font-size="9" fill="white">2</text>
+<circle cx="260" cy="110" r="7" fill="var(--t-good)" stroke="var(--line-strong)"/><text x="260" y="113" text-anchor="middle" font-family="Geist Mono" font-size="7" fill="white">3</text>
+<circle cx="610" cy="190" r="6" fill="var(--t-slow)"/><text x="610" y="193" text-anchor="middle" font-family="Geist Mono" font-size="6" fill="white">4</text>
+<circle cx="260" cy="150" r="7" fill="var(--t-good)"/><text x="260" y="153" text-anchor="middle" font-family="Geist Mono" font-size="7" fill="white">5</text>
+</svg>
+<div style="font-family:var(--mono);font-size:11px;color:var(--muted);margin-top:8px">What's off: ① nav 700ms + overlay 700ms and ② reveal 900ms land in Sluggish — 3× Emil's 180–250ms for high-frequency triggers. ④ lightbox none→instant is hollow.</div>
+</div>
+<div class="timing-card"><h4>Key</h4><div class="key-list">
+<b>1</b> — nav hover / hamburger 700ms — Sluggish<br>
+<b>2</b> — reveal 900ms blur+translate — Sluggish (Jhey→ select, Jakub→ 200–500)<br>
+<b>3</b> — hero tab 110ms opacity — Responsive but no blur<br>
+<b>4</b> — lightbox no transition — Instant (gap)<br>
+<b>5</b> — gallery swap 110ms — Responsive but equal exit<br>
+Loops: shimmer 3.5s / packet 3.8s / chunk 2.2s / marquee 36s / orb 9s — continuous, gated by reduced-motion only.
+</div></div>
+</div>
+</section>
+
+<!-- JAKUB PRIMARY -->
+<section class="lens-sec">
+<div class="lens-sec__head"><h3>Jakub Krehel — Production Polish</h3><span class="lens-sec__weight">Primary</span></div>
+<div class="lens-sec__verdict"><span class="dot imp"></span> Concern — polished entry, but exits are as loud as enters and blur is smeared uniformly.</div>
+
+<div class="lens-block"><h4>What's working well</h4><ul class="lens-list">
+<li>✓ Enter recipe is correct — <code>opacity + translateY(48px) + blur(12px)</code> at <code>docs/index.html:47</code> is Jakub's materialize recipe with custom ease <code>cubic-bezier(0.32,0.72,0,1)</code>.</li>
+<li>✓ Shadows over borders in bezels — <code>inset 0 1px + 0 20px</code> adapts on dark, not solid clash.</li>
+<li>✓ Reduced-motion collapses reveals and all loops to static — <code>docs/index.html:72</code>.</li>
+</ul></div>
+
+<div class="lens-block"><h4>Issues to address</h4>
+
+<div class="finding-row" data-sev="crit">
+<div class="finding-row__prose"><div class="find-tags"><span class="chip" style="border-color:var(--crit);color:var(--crit)">Critical</span><span class="chip">Jakub</span></div>
+<h4 class="find-title">Lightbox has no enter/exit — dialog just appears</h4>
+<div class="find-body"><p><span class="label">What</span><code>dialog#lightbox</code> at <code>docs/index.html:539</code> uses <code>showModal()</code> with no opacity/blur/scale transition. Content pops.</p><p><span class="label">Why it matters</span>Jakub: dialog is high-attention — it needs a subtle materialize (blur+scale) and a softer exit; instant feels broken on a polished landing.</p><div class="fix"><p><span class="label">Recommended motion</span>Enter 260ms <code>cubic-bezier(0.16,1,0.3,1)</code> from <code>opacity 0 scale(.97) blur(8px)</code>, exit to <code>opacity 0 scale(.98) blur(4px)</code> 180ms. Add <code>dialog[open]::backdrop</code> fade.</p></div><p class="find-loc"><code>docs/index.html:539 — dialog#lightbox</code></p></div></div>
+<div class="demo"><input class="vh" type="radio" name="st1" id="st1-a" checked><input class="vh" type="radio" name="st1" id="st1-l"><input class="vh" type="radio" name="st1" id="st1-d"><div class="demo__bar"><div class="demo__meta"><span class="demo__title">Dialog materialize</span><span class="demo__timing">260ms · ease-out-quint + exit 180ms</span></div><div class="demo__controls"><div class="seg"><label for="st1-a">Auto</label><label for="st1-l">Light</label><label for="st1-d">Dark</label></div><span class="demo__loop">↻</span></div></div><div class="demo__stage"><div class="demo-1__mt"><div class="ui-card"><div class="ui-label">WDM Preview</div><div style="height:8px"></div><div class="ui-row"><div style="width:100%;height:56px;border:1px dashed var(--st-line);border-radius:8px"></div></div></div></div></div></div>
+</div>
+
+<div class="finding-row" data-sev="imp">
+<div class="finding-row__prose"><div class="find-tags"><span class="chip" style="border-color:var(--imp);color:var(--imp)">Important</span><span class="chip">Jakub</span></div>
+<h4 class="find-title">Hero and gallery swaps share the same exit as enter</h4>
+<div class="find-body"><p><span class="label">What</span><code>#hero-img</code> and <code>#gallery-window-img</code> at <code>docs/index.html:596</code> crossfade 110ms opacity+scale(.99) on tab click — exit movement equals enter.</p><p><span class="label">Why it matters</span>Jakub: exits should be subtler (smaller translate) than enters; equal prominence competes with the incoming image.</p><div class="fix"><p><span class="label">Recommended motion</span>Enter <code>opacity 0 →1, translateY 8px→0, blur 4→0</code> 220ms, exit <code>opacity 0, translateY -6px, blur 4px</code> 160ms via two-layer crossfade. Use <code>ease-out</code> enter, <code>ease-in</code> exit.</p></div><p class="find-loc"><code>docs/index.html:596 — hero-tab handler</code></p></div></div>
+<div class="demo"><input class="vh" type="radio" name="st3" id="st3-a" checked><input class="vh" type="radio" name="st3" id="st3-l"><input class="vh" type="radio" name="st3" id="st3-d"><div class="demo__bar"><div class="demo__meta"><span class="demo__title">Image crossfade with blur exit</span><span class="demo__timing">220ms · ease-out · exit 160ms</span></div><div class="demo__controls"><div class="seg"><label for="st3-a">Auto</label><label for="st3-l">Light</label><label for="st3-d">Dark</label></div><span class="demo__loop">↻</span></div></div><div class="demo__stage"><div class="demo-3__mt"><div class="ui-card" style="min-width:220px"><div class="ui-label">Screenshot</div><div style="margin-top:8px;height:72px;border:1px solid var(--st-line);border-radius:8px;background:var(--st-bg)"></div></div></div></div></div>
+</div>
+
+<div class="finding-row" data-sev="imp">
+<div class="finding-row__prose"><div class="find-tags"><span class="chip" style="border-color:var(--imp);color:var(--imp)">Important</span><span class="chip">Jakub</span></div>
+<h4 class="find-title">Uniform reveal on every block — 900ms blur on all .reveal</h4>
+<div class="find-body"><p><span class="label">What</span>Every feature, arch, gallery and install block shares identical <code>translateY(48px) blur(12px) 900ms</code> at <code>docs/index.html:47</code> — 9 sections, same delay ramp.</p><p><span class="label">Why it matters</span>Anti-checklist uniform-fade-in: ≥4 identical enters is slop. Hierarchy is lost; page feels sluggish and text readability suffers before paint.</p><div class="fix"><p><span class="label">Recommended motion</span>Stagger only the bento grid: first item 0ms, then <code>each:60ms</code>, from center, <code>back.out(1.4)</code> 400ms. Body copy and headings: no motion, appear instantly. Wrap in <code>prefers-reduced-motion: no-preference</code>.</p></div><p class="find-loc"><code>docs/index.html:47 — .reveal</code></p></div></div>
+<div class="demo"><input class="vh" type="radio" name="st4" id="st4-a" checked><input class="vh" type="radio" name="st4" id="st4-l"><input class="vh" type="radio" name="st4" id="st4-d"><div class="demo__bar"><div class="demo__meta"><span class="demo__title">Selective stagger from center</span><span class="demo__timing">400ms · back.out(1.4) · each 60ms</span></div><div class="demo__controls"><div class="seg"><label for="st4-a">Auto</label><label for="st4-l">Light</label><label for="st4-d">Dark</label></div><span class="demo__loop">↻</span></div></div><div class="demo__stage"><div class="demo-4__mt" style="display:flex;gap:8px"><div style="width:42px;height:42px;border-radius:8px;background:var(--st-fg)"></div><div style="width:42px;height:42px;border-radius:8px;background:var(--st-fg);opacity:.9"></div><div style="width:42px;height:42px;border-radius:8px;background:var(--st-fg);opacity:.8"></div></div></div></div>
+</div>
+
+</div>
+
+<div class="lens-block"><h4>Opportunities</h4><ul class="lens-list opp">
+<li>💡 Animate theme toggle icon swap (moon↔sun) with <code>opacity+scale+blur</code> — currently instant at <code>docs/index.html:603</code>.</li>
+<li>💡 Add optical alignment for <code>#hero-img</code> play/zoom buttons — icon + text feels 1px heavy on left.</li>
+</ul></div>
+<div class="lens-take">Through Jakub's lens: entry recipe is right, discipline is missing — make exits quieter than enters, stagger only the bento, and give the lightbox a materialize.</div>
+</section>
+
+<!-- EMIL -->
+<section class="lens-sec">
+<div class="lens-sec__head"><h3>Emil Kowalski — Restraint & Speed</h3><span class="lens-sec__weight">Selective</span></div>
+<div class="lens-sec__verdict"><span class="dot crit"></span> Problem — 700ms on every hover is 3× the budget for triggers users hit dozens of times per visit.</div>
+<div class="lens-block"><h4>What's working well</h4><ul class="lens-list">
+<li>✓ Keyboard-initiated gallery arrows correctly do not add extra flourish — they reuse the same crossfade, not a new bounce.</li>
+<li>✓ No <code>scale(0)</code> entrances; smallest is <code>scale(.98)</code> on swaps.</li>
+<li>✓ Custom ease <code>cubic-bezier(0.32,0.72,0,1)</code> (iOS sheet curve) used consistently instead of <code>ease</code>.</li>
+</ul></div>
+<div class="lens-block"><h4>Issues to address</h4>
+
+<div class="finding-row" data-sev="crit">
+<div class="finding-row__prose"><div class="find-tags"><span class="chip" style="border-color:var(--crit);color:var(--crit)">Critical</span><span class="chip">Emil</span></div>
+<h4 class="find-title">700ms hovers on high-frequency controls — nav, hero tabs, gallery</h4>
+<div class="find-body"><p><span class="label">What</span>Every interactive at <code>docs/index.html:92</code> bears <code>transition-all duration-700</code> — nav links, hero tabs, gallery arrows, CTA hovers. Users retarget mid-flight and feel lag.</p><p><span class="label">Why it matters</span>Frequency gate: nav/tabs are frequent (tens/visit). Emil: under 300ms, ideal 180ms. 700ms + <code>transform</code> on hover is interruptible but still sluggish; keyframes can't retarget is not the issue — duration is.</p><div class="fix"><p><span class="label">Recommended motion</span>Hover <code>150–200ms ease-out</code>, active <code>scale(.97)</code> 120ms. Retain 700ms only for orb background (rare, ambient). Switch hovers to <code>transition: background 180ms, transform 180ms</code> with interruptible transitions.</p></div><p class="find-loc"><code>docs/index.html:92 — nav + hero tabs</code></p></div></div>
+<div class="demo"><input class="vh" type="radio" name="st2" id="st2-a" checked><input class="vh" type="radio" name="st2" id="st2-l"><input class="vh" type="radio" name="st2" id="st2-d"><div class="demo__bar"><div class="demo__meta"><span class="demo__title">Fast hover + press scale</span><span class="demo__timing">180ms · ease-out · active scale .97</span></div><div class="demo__controls"><div class="seg"><label for="st2-a">Auto</label><label for="st2-l">Light</label><label for="st2-d">Dark</label></div><span class="demo__loop">↻</span></div></div><div class="demo__stage"><div class="demo-2__mt"><div class="ui-btn">Hover me</div></div></div></div>
+</div>
+
+<div class="finding-row" data-sev="crit">
+<div class="finding-row__prose"><div class="find-tags"><span class="chip" style="border-color:var(--crit);color:var(--crit)">Critical</span><span class="chip">Emil</span><span class="chip">A11y</span></div>
+<h4 class="find-title">Mobile nav overlay snaps opacity without interruptible transition</h4>
+<div class="find-body"><p><span class="label">What</span><code>#nav-overlay</code> at <code>docs/index.html:114</code> toggles <code>hidden</code> + <code>opacity-0</code> with <code>700ms</code> keyframe-like class swaps via JS. Rapid taps queue, not blend.</p><p><span class="label">Why it matters</span>Emil: use CSS transitions with state classes so rapid retarget blends. Also missing <code>transform-origin: top</code> — sheet should emerge from nav island.</p><div class="fix"><p><span class="label">Recommended motion</span>Keep overlay mounted, toggle <code>.open { opacity:1; transform: translateY(0) }</code> with <code>transition: opacity 220ms, transform 220ms cubic-bezier(0.32,0.72,0,1)</code>. Links stagger <code>each 30ms</code> from top, exit subtler 140ms. Use <code>transform-origin: top center</code>.</p></div><p class="find-loc"><code>docs/index.html:114 — #nav-overlay</code></p></div></div>
+<div class="demo"><input class="vh" type="radio" name="st5" id="st5-a" checked><input class="vh" type="radio" name="st5" id="st5-l"><input class="vh" type="radio" name="st5" id="st5-d"><div class="demo__bar"><div class="demo__meta"><span class="demo__title">Sheet from trigger</span><span class="demo__timing">220ms · iOS ease · origin top</span></div><div class="demo__controls"><div class="seg"><label for="st5-a">Auto</label><label for="st5-l">Light</label><label for="st5-d">Dark</label></div><span class="demo__loop">↻</span></div></div><div class="demo__stage"><div class="demo-5__mt"><div class="ui-card" style="transform-origin:top center"><div class="ui-label">Menu</div><div style="margin-top:8px;display:grid;gap:6px"><div style="height:10px;background:var(--st-fg);border-radius:999px;opacity:.9"></div><div style="height:10px;background:var(--st-fg);border-radius:999px;opacity:.7"></div><div style="height:10px;background:var(--st-fg);border-radius:999px;opacity:.5"></div></div></div></div></div></div>
+</div>
+
+</div>
+<div class="lens-block"><h4>Opportunities</h4><ul class="lens-list opp"><li>💡 Make gallery prev/next honor velocity not distance if swipe is added later — fast short drag should dismiss.</li></ul></div>
+<div class="lens-take">Through Emil's lens: decide IF first — hovers and tabs are frequent, so they must be 180ms and interruptible, not 700ms showcases.</div>
+</section>
+
+<!-- JHEY -->
+<section class="lens-sec">
+<div class="lens-sec__head"><h3>Jhey Tompkins — Experimentation & Delight</h3><span class="lens-sec__weight">Secondary</span></div>
+<div class="lens-sec__verdict"><span class="dot imp"></span> Mixed — credits/confetti are joyful and correctly gated; everyday pulses steal that joy.</div>
+<div class="lens-block"><h4>What's working well</h4><ul class="lens-list">
+<li>✓ Credits roll + confetti on Konami is delightful rare-trigger (monthly) — appropriate expressive motion.</li>
+<li>✓ <code>@property</code>-free but scoped variables for chunk delays (<code>animation-delay:.1s</code> etc.) vary behavior from one definition.</li>
+<li>✓ Orb parallax is ambient and slow (9–10.5s) — not competing with content.</li>
+</ul></div>
+<div class="lens-block"><h4>Issues to address</h4>
+
+<div class="finding-row" data-sev="imp">
+<div class="finding-row__prose"><div class="find-tags"><span class="chip" style="border-color:var(--imp);color:var(--imp)">Important</span><span class="chip">Jhey</span></div>
+<h4 class="find-title">Pulsing indicators on every live dot — three infinite pingSoft</h4>
+<div class="find-body"><p><span class="label">What</span><code>pingSoft 2s infinite</code> at <code>docs/index.html:52</code> on the hero live pill, the emerald bridge dot, and the wallet badge — identical loop on three small status elements.</p><p><span class="label">Why it matters</span>Anti-checklist pulsing-indicators: flag any infinite pulse on small UI. One intentional brand pulse is fine; three is slop and competes with the hero narrative.</p><div class="fix"><p><span class="label">Recommended motion</span>Keep pulse only on the hero live pill (once), make it a single 800ms entrance (scale 0.8→1, opacity 0→1) then static <code>background:#22C55E</code>. Other dots: static color, no animation. Optionally use <code>@property --pulse</code> for a Jhey hue shift on the single hero dot if delight is desired.</p></div><p class="find-loc"><code>docs/index.html:52 — @keyframes pingSoft</code></p></div></div>
+<div class="demo"><input class="vh" type="radio" name="st6" id="st6-a" checked><input class="vh" type="radio" name="st6" id="st6-l"><input class="vh" type="radio" name="st6" id="st6-d"><div class="demo__bar"><div class="demo__meta"><span class="demo__title">Single entrance, then static</span><span class="demo__timing">800ms · ease-out · no loop</span></div><div class="demo__controls"><div class="seg"><label for="st6-a">Auto</label><label for="st6-l">Light</label><label for="st6-d">Dark</label></div><span class="demo__loop">↻</span></div></div><div class="demo__stage"><div class="demo-6__mt"><div style="display:flex;align-items:center;gap:8px"><span style="width:10px;height:10px;border-radius:50%;background:var(--st-fg)"></span><span style="font-family:var(--mono);font-size:12px;color:var(--st-fg)">Live</span></div></div></div></div>
+</div>
+
+<div class="finding-row" data-sev="imp">
+<div class="finding-row__prose"><div class="find-tags"><span class="chip" style="border-color:var(--imp);color:var(--imp)">Important</span><span class="chip">Jhey</span><span class="chip">A11y</span></div>
+<h4 class="find-title">Continuous loops with no pause — marquee 36s + shimmer/packet/chunk</h4>
+<div class="find-body"><p><span class="label">What</span><code>marquee 36s linear infinite</code>, <code>shimmer 3.5s infinite</code>, <code>packetTravel 3.8s infinite</code>, <code>chunkPulse 2.2s infinite</code> — all run forever with no user pause, only global <code>prefers-reduced-motion</code>.</p><p><span class="label">Why it matters</span>Vestibular + attention tax. Functional loops (packet shows flow) can stay, decorative loops (chunk bobbing) should respect <code>hover: pause</code> or be gated to <code>:hover</code> on the section.</p><div class="fix"><p><span class="label">Recommended motion</span>Add <code>.marquee-track:hover, .marquee-track:focus-within { animation-play-state: paused }</code> and a visible pause button (<code>aria-pressed</code>). Gate <code>chunkPulse</code> to section hover or make it a single entrance stagger, not infinite.</p></div><p class="find-loc"><code>docs/index.html:64 — .marquee-track</code></p></div></div>
+<div class="demo" style="display:none"></div>
+</div>
+
+</div>
+<div class="lens-block"><h4>Opportunities</h4><ul class="lens-list opp"><li>💡 Decompose marquee into @property --offset for curved scroll-driven duration control (Jhey §14) — sever scroll speed from animation.</li></ul></div>
+<div class="lens-take">Through Jhey's lens: keep the one joyful hero moment (confetti/credits), drop the everyday throbs — delight is rare by design.</div>
+</section>
+
+<section id="rec-crit" style="margin-top:32px"><div class="tier-label" style="color:var(--crit)">Critical · must fix — 3</div><hr style="border:none;border-top:1px solid var(--line);margin:8px 0 0">
+<table class="rec-table"><thead><tr><th>Issue</th><th>File</th><th>Fix</th></tr></thead><tbody>
+<tr><td>Lightbox no enter/exit</td><td><code>docs/index.html:539</code></td><td>260ms blur+scale enter, 180ms subtler exit, backdrop fade</td></tr>
+<tr><td>700ms hovers on frequent controls</td><td><code>docs/index.html:92</code></td><td>180ms ease-out hover, 120ms active scale(.97)</td></tr>
+<tr><td>Mobile nav queued classes</td><td><code>docs/index.html:114</code></td><td>220ms transition, origin top, stagger 30ms</td></tr>
+</tbody></table></section>
+
+<section id="rec-imp"><div class="tier-label" style="color:var(--imp)">Important · should fix — 3</div><hr style="border:none;border-top:1px solid var(--line);margin:8px 0 0">
+<table class="rec-table"><thead><tr><th>Issue</th><th>File</th><th>Fix</th></tr></thead><tbody>
+<tr><td>Hero/gallery exit equals enter</td><td><code>docs/index.html:596</code></td><td>220ms enter / 160ms exit with blur</td></tr>
+<tr><td>Uniform 900ms reveal everywhere</td><td><code>docs/index.html:47</code></td><td>Selective stagger only on bento, rest instant</td></tr>
+<tr><td>Pulsing on 3 dots + loops no pause</td><td><code>docs/index.html:52/64</code></td><td>Single pulse → static; marquee pause on hover</td></tr>
+</tbody></table></section>
+
+<section id="rec-opp"><div class="tier-label" style="color:var(--opp)">Opportunities · could enhance — 2</div><hr style="border:none;border-top:1px solid var(--line);margin:8px 0 0">
+<table class="rec-table"><thead><tr><th>Enhancement</th><th>Where</th><th>Impact</th></tr></thead><tbody>
+<tr><td>Animate icon swap on theme toggle</td><td><code>docs/index.html:603</code></td><td>Polishes polish — feels responsive</td></tr>
+<tr><td>Scroll-driven marquee with @property</td><td><code>credits</code></td><td>Jhey-craft, learning moment</td></tr>
+</tbody></table></section>
+
+<section style="margin-top:28px;border:1px solid var(--line);border-radius:14px;padding:16px;background:var(--surface)"><h4 style="font-family:var(--mono);font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--muted);margin:0 0 8px">Lens reference summary</h4><p style="font-size:13px;line-height:1.6;color:var(--paper-dim);margin:0">Most referenced: <b>Jakub</b> — landing polish is primary. To lean Emil: cut 700ms→180ms, remove motion on frequent tabs. To lean Jhey: keep one delight (confetti) but gate loops with pause controls. To lean Jakub stricter: exits at 60% intensity of enters, add blur to every swap.</p></section>
+
+<footer style="font-family:var(--mono);font-size:11px;color:var(--muted);margin-top:28px;display:flex;justify-content:space-between"><span>WDM · 2026-09-12 · 6 findings with demos</span><span>design-motion-principles</span></footer>
+</div>
+</body>
+</html>

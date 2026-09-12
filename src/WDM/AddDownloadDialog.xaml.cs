@@ -9,6 +9,7 @@ using Microsoft.Win32;
 using WDM.Models;
 using WDM.Services;
 using WDM.ViewModels;
+using Wpf.Ui.Controls;
 
 namespace WDM;
 
@@ -204,7 +205,7 @@ public partial class AddDownloadDialog : Window
 
         ProbeBadge.Visibility = Visibility.Visible;
         YtSignInButton.Visibility = Visibility.Collapsed;
-        ProbeIcon.Text = char.ConvertFromUtf32(0xF0349);
+        ProbeIcon.Symbol = SymbolRegular.VideoClip24;
         ProbeText.Text = "Resolving YouTube video metadata...";
 
         try
@@ -224,7 +225,7 @@ public partial class AddDownloadDialog : Window
                 _ytQualityOptions = res.QualityOptions;
                 ShowYouTubePanel(res.IsPlaylist);
 
-                ProbeIcon.Text = char.ConvertFromUtf32(0xF0381);
+                ProbeIcon.Symbol = SymbolRegular.PlayCircle24;
                 string durStr = item.Duration.HasValue ? $" ({item.Duration.Value:mm\\:ss})" : "";
                 ProbeText.Text = $"YouTube Media • {item.Title}{durStr}";
                 CategoryBox.SelectedIndex = 1; // Video
@@ -255,7 +256,7 @@ public partial class AddDownloadDialog : Window
         {
             if (!ct.IsCancellationRequested)
             {
-                ProbeIcon.Text = char.ConvertFromUtf32(0xF0028);
+                ProbeIcon.Symbol = SymbolRegular.Warning24;
                 if (IsYouTubeSignInRequired(ex.Message))
                 {
                     ProbeText.Text = "Sign in required — YouTube needs you to sign in to confirm you're not a bot.";
@@ -285,7 +286,7 @@ public partial class AddDownloadDialog : Window
     private bool IsAudioOnly => YtTypeAudioOnly?.IsChecked == true;
     private bool IsVideoOnly => YtTypeVideoOnly?.IsChecked == true;
 
-    private void ShowYouTubePanel(bool isPlaylist)
+    internal void ShowYouTubePanel(bool isPlaylist)
     {
         if (YouTubePanel == null) return;
         YouTubePanel.Visibility = Visibility.Visible;
@@ -367,14 +368,14 @@ public partial class AddDownloadDialog : Window
         if (FileCategoryIcon is null || FileCategoryLabel is null) return;
         var cat = SelectedCategory();
         FileCategoryLabel.Text = cat.ToString();
-        FileCategoryIcon.Text = cat switch
+        FileCategoryIcon.Symbol = cat switch
         {
-            DownloadCategory.Video => char.ConvertFromUtf32(0xF0381),
-            DownloadCategory.Music => char.ConvertFromUtf32(0xF0387),
-            DownloadCategory.Document => char.ConvertFromUtf32(0xF0219),
-            DownloadCategory.Compressed => char.ConvertFromUtf32(0xF05C4),
-            DownloadCategory.Program => char.ConvertFromUtf32(0xF08C6),
-            _ => char.ConvertFromUtf32(0xF0224),
+            DownloadCategory.Video => SymbolRegular.Video24,
+            DownloadCategory.Music => SymbolRegular.MusicNote224,
+            DownloadCategory.Document => SymbolRegular.Document24,
+            DownloadCategory.Compressed => SymbolRegular.FolderZip24,
+            DownloadCategory.Program => SymbolRegular.AppGeneric24,
+            _ => SymbolRegular.Document24,
         };
     }
 
@@ -385,7 +386,7 @@ public partial class AddDownloadDialog : Window
         var ct = _probeCts.Token;
 
         ProbeBadge.Visibility = Visibility.Visible;
-        ProbeIcon.Text = char.ConvertFromUtf32(0xF0349);
+        ProbeIcon.Symbol = SymbolRegular.ArrowSync24;
         ProbeText.Text = "Inspecting URL capabilities...";
 
         try
@@ -462,17 +463,17 @@ public partial class AddDownloadDialog : Window
                 || url.Contains(".m3u8", StringComparison.OrdinalIgnoreCase);
             if (isHls)
             {
-                ProbeIcon.Text = char.ConvertFromUtf32(0xF05E0);
+                ProbeIcon.Symbol = SymbolRegular.CheckmarkCircle24;
                 ProbeText.Text = $"{sizeStr} • HLS stream (downloads as one media file)";
             }
             else if (supportsRanges)
             {
-                ProbeIcon.Text = char.ConvertFromUtf32(0xF05E0);
+                ProbeIcon.Symbol = SymbolRegular.CheckmarkCircle24;
                 ProbeText.Text = $"{sizeStr} • Multi-threaded resume supported";
             }
             else
             {
-                ProbeIcon.Text = char.ConvertFromUtf32(0xF05D6);
+                ProbeIcon.Symbol = SymbolRegular.Info24;
                 ProbeText.Text = $"{sizeStr} • Single-thread download (Server doesn't support resuming)";
             }
         }
@@ -484,7 +485,7 @@ public partial class AddDownloadDialog : Window
         {
             if (!ct.IsCancellationRequested)
             {
-                ProbeIcon.Text = char.ConvertFromUtf32(0xF05E0);
+                ProbeIcon.Symbol = SymbolRegular.CheckmarkCircle24;
                 ProbeText.Text = "URL ready for download";
             }
         }
@@ -512,7 +513,7 @@ public partial class AddDownloadDialog : Window
         if (!Uri.TryCreate(url, UriKind.Absolute, out var uri) ||
             (uri.Scheme != Uri.UriSchemeHttp && uri.Scheme != Uri.UriSchemeHttps && uri.Scheme != Uri.UriSchemeFtp))
         {
-            MessageBox.Show(this, "Enter a valid http(s) or ftp URL.", "Invalid URL", MessageBoxButton.OK, MessageBoxImage.Warning);
+            System.Windows.MessageBox.Show(this, "Enter a valid http(s) or ftp URL.", "Invalid URL", System.Windows.MessageBoxButton.OK, MessageBoxImage.Warning);
             return;
         }
 

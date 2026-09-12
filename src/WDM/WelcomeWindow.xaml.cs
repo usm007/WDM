@@ -3,7 +3,7 @@ using System.Windows;
 
 namespace WDM;
 
-public partial class WelcomeWindow : Window
+public partial class WelcomeWindow : Wpf.Ui.Controls.FluentWindow
 {
     private readonly Services.AppSettings _settings;
 

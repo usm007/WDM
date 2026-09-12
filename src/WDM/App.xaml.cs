@@ -49,15 +49,13 @@ public partial class App : Application
         {
             LogException(args.Exception);
         };
-
-        if (e.Args.Any(a => string.Equals(a, "--capture-screenshots", StringComparison.OrdinalIgnoreCase)))
+        if (e.Args.Any(a => string.Equals(a, "--capture-screenshots", StringComparison.OrdinalIgnoreCase) || string.Equals(a, "--screenshots", StringComparison.OrdinalIgnoreCase)))
         {
             ShutdownMode = ShutdownMode.OnExplicitShutdown;
             ScreenshotGenerator.Run();
             Shutdown();
             return;
         }
-
         // Single instance: if another WDM is already running, surface its window
         // instead of starting a second copy.
         try
@@ -156,7 +154,8 @@ public partial class App : Application
         if (ex is null) return;
         try
         {
-            string logPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "wdm_error.log");
+            Directory.CreateDirectory(TaskStore.AppDir);
+            string logPath = Path.Combine(TaskStore.AppDir, "wdm_error.log");
             string entry = $"[CRASH {DateTime.Now:O}]\n{ex}";
             if (ex.InnerException is not null)
                 entry += $"\nInner:\n{ex.InnerException}";

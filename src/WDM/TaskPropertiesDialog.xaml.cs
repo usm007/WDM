@@ -5,7 +5,7 @@ using WDM.Models;
 
 namespace WDM;
 
-public partial class TaskPropertiesDialog : Window
+public partial class TaskPropertiesDialog : Wpf.Ui.Controls.FluentWindow
 {
     private readonly DownloadTask _task;
 

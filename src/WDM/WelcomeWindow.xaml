@@ -1,23 +1,35 @@
-<Window x:Class="WDM.WelcomeWindow"
+<ui:FluentWindow x:Class="WDM.WelcomeWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
         Title="Welcome to WDM"
-        Width="640" Height="640"
+        Icon="Assets/WDM.ico"
+        Width="640" Height="660"
         MinWidth="580" MinHeight="500"
         WindowStartupLocation="CenterScreen"
-        Background="{DynamicResource Brush.Surface}"
+        WindowBackdropType="Mica"
+        ExtendsContentIntoTitleBar="True"
+        Background="{DynamicResource Brush.Bg}"
         UseLayoutRounding="True"
+        SnapsToDevicePixels="True"
         ShowInTaskbar="True">
 
-    <Grid>
+    <Grid Background="{DynamicResource Brush.Bg}">
         <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
             <RowDefinition Height="Auto" />
             <RowDefinition Height="*" />
             <RowDefinition Height="Auto" />
         </Grid.RowDefinitions>
 
+        <ui:TitleBar Grid.Row="0" Title="Welcome to WDM">
+            <ui:TitleBar.Icon>
+                <ui:ImageIcon Source="pack://application:,,,/Assets/logo.png" />
+            </ui:TitleBar.Icon>
+        </ui:TitleBar>
+
         <!-- Header -->
-        <Border Grid.Row="0" Padding="20,16" Background="{DynamicResource Brush.SurfaceAlt}" BorderBrush="{DynamicResource Brush.Border}" BorderThickness="0,0,0,1">
+        <Border Grid.Row="1" Padding="20,16" Background="{DynamicResource Brush.SurfaceAlt}" BorderBrush="{DynamicResource Brush.Border}" BorderThickness="0,0,0,1">
             <StackPanel>
                 <TextBlock Text="Welcome to WDM" FontSize="22" FontWeight="SemiBold" Foreground="{DynamicResource Brush.Text}" Margin="0,0,0,4" />
                 <TextBlock Text="Let's get your downloading environment set up before you start." FontSize="13" Foreground="{DynamicResource Brush.TextDim}" TextWrapping="Wrap" />
@@ -25,7 +37,7 @@
         </Border>
 
         <!-- Content Area with ScrollViewer -->
-        <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+        <ScrollViewer Grid.Row="2" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
             <StackPanel Margin="20">
 
                 <!-- Step 1: Browser Extension -->
@@ -39,7 +51,7 @@
                             <StackPanel>
                                 <TextBlock Text="Firefox" FontWeight="SemiBold" FontSize="13.5" Foreground="{DynamicResource Brush.Text}" Margin="0,0,0,6" />
                                 <TextBlock Text="Install directly from the official Mozilla Add-ons store:" FontSize="12.5" Foreground="{DynamicResource Brush.TextDim}" Margin="0,0,0,8" />
-                                <Button Content="Install for Firefox..." Style="{StaticResource Button.Secondary}" HorizontalAlignment="Left" Height="32" Padding="16,0" Click="FirefoxBtn_Click" />
+                                <ui:Button Content="Install for Firefox..." Style="{StaticResource Button.SecondaryAction}" HorizontalAlignment="Left" Height="32" Padding="16,0" Click="FirefoxBtn_Click" />
                             </StackPanel>
                         </Border>
 
@@ -49,8 +61,8 @@
                                 <TextBlock Text="Chrome, Edge &amp; Chromium Browsers" FontWeight="SemiBold" FontSize="13.5" Foreground="{DynamicResource Brush.Text}" Margin="0,0,0,8" />
 
                                 <StackPanel Orientation="Horizontal" Margin="0,0,0,10">
-                                    <Button x:Name="CopyPathButton" Content="Copy Extension Path" Style="{StaticResource Button.Secondary}" Height="32" Padding="14,0" Click="CopyPath_Click" Margin="0,0,8,0" />
-                                    <Button Content="Open Extensions Page" Style="{StaticResource Button.Secondary}" Height="32" Padding="14,0" Click="OpenExtensions_Click" />
+                                    <ui:Button x:Name="CopyPathButton" Content="Copy Extension Path" Style="{StaticResource Button.SecondaryAction}" Height="32" Padding="14,0" Click="CopyPath_Click" Margin="0,0,8,0" />
+                                    <ui:Button Content="Open Extensions Page" Style="{StaticResource Button.SecondaryAction}" Height="32" Padding="14,0" Click="OpenExtensions_Click" />
                                 </StackPanel>
 
                                 <TextBlock Text="1. Click 'Copy Extension Path'." FontSize="12.5" Foreground="{DynamicResource Brush.TextDim}" Margin="0,0,0,4" />
@@ -64,15 +76,15 @@
                     </StackPanel>
                 </Border>
 
-                <!-- Step 2: YouTube Downloader -->
+                <!-- Step 2: YouTube & Media Plugins -->
                 <Border Background="{DynamicResource Brush.SurfaceAlt}" BorderBrush="{DynamicResource Brush.Border}" BorderThickness="1" CornerRadius="8" Padding="16">
                     <StackPanel>
-                        <TextBlock Text="2. YouTube Downloader (Optional)" FontWeight="SemiBold" FontSize="15" Foreground="{DynamicResource Brush.Text}" Margin="0,0,0,6" />
-                        <TextBlock Text="Download videos, playlists, and audio from YouTube. Authenticate for private or age-restricted content." FontSize="13" Foreground="{DynamicResource Brush.TextDim}" TextWrapping="Wrap" Margin="0,0,0,12" />
+                        <TextBlock Text="2. High-Speed Media Downloader (Optional)" FontWeight="SemiBold" FontSize="15" Foreground="{DynamicResource Brush.Text}" Margin="0,0,0,6" />
+                        <TextBlock Text="Download videos, playlists, audio tracks, and HLS streams at maximum speed." FontSize="13" Foreground="{DynamicResource Brush.TextDim}" TextWrapping="Wrap" Margin="0,0,0,14" />
 
-                        <StackPanel Orientation="Horizontal" Margin="0,0,0,10">
-                            <Button x:Name="ActivateBtn" Content="Download Plugins &amp; Activate" Style="{StaticResource Button.Accent}" Height="32" Padding="16,0" Click="ActivateBtn_Click" Margin="0,0,8,0" />
-                            <Button x:Name="YouTubeBtn" Content="Sign in to YouTube (Optional)" Style="{StaticResource Button.Secondary}" Height="32" Padding="16,0" Click="YouTubeBtn_Click" IsEnabled="False" />
+                        <StackPanel Orientation="Horizontal" Margin="0,0,0,12">
+                            <ui:Button x:Name="ActivateBtn" Content="Activate YouTube Media Engine" Style="{StaticResource Button.SecondaryAction}" Height="32" Padding="16,0" Click="ActivateBtn_Click" Margin="0,0,10,0" />
+                            <ui:Button x:Name="YouTubeBtn" Content="Sign In to YouTube (Optional)" Style="{StaticResource Button.SecondaryAction}" Height="32" Padding="16,0" Click="YouTubeBtn_Click" IsEnabled="False" />
                         </StackPanel>
 
                         <!-- Progress Bar Card -->
@@ -94,9 +106,9 @@
         </ScrollViewer>
 
         <!-- Footer -->
-        <Border Grid.Row="2" Padding="20,14" Background="{DynamicResource Brush.Surface}" BorderBrush="{DynamicResource Brush.Border}" BorderThickness="0,1,0,0">
-            <Button Content="Finish Setup" Style="{StaticResource Button.Accent}" HorizontalAlignment="Right" Height="32" MinWidth="120" Padding="16,0"
-                    IsDefault="True" IsCancel="True" ToolTip="Finish setup (Enter / Esc)" Click="FinishBtn_Click" />
+        <Border Grid.Row="3" Padding="20,14" Background="{DynamicResource Brush.Surface}" BorderBrush="{DynamicResource Brush.Border}" BorderThickness="0,1,0,0">
+            <ui:Button Content="Finish Setup" Style="{StaticResource Button.PrimaryAction}" HorizontalAlignment="Right" Height="32" MinWidth="120" Padding="16,0"
+                       IsDefault="True" IsCancel="True" ToolTip="Finish setup (Enter / Esc)" Click="FinishBtn_Click" />
         </Border>
     </Grid>
-</Window>
+</ui:FluentWindow>

@@ -14,9 +14,9 @@ public sealed class MainViewModel : INotifyPropertyChanged
 {
     private readonly Dispatcher _dispatcher;
     private readonly System.Timers.Timer _saveTimer;
-    /// <summary>Tasks that already had one automatic solver run; prevents a
-    /// challenge→solve→challenge loop. Manual "Bypass Cloudflare" clears the entry.</summary>
-    private readonly HashSet<Guid> _cfAutoSolved = new();
+    /// <summary>Tasks currently running the automatic Cloudflare challenge solver window;
+    /// prevents opening multiple concurrent solver windows for the same task.</summary>
+    private readonly HashSet<Guid> _cfSolving = new();
     private DownloadTask? _selectedTask;
     private string _statusText = "WDM — ready";
     private string _statusRightText = "";
@@ -75,7 +75,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
     public RelayCommand RetryAllFailedCommand { get; }
     public RelayCommand DismissFailedBannerCommand { get; }
     public RelayCommand RefreshLinkCommand { get; }
-    public RelayCommand SolveCloudflareCommand { get; }
+    public RelayCommand OpenFolderCommand { get; }
     public RelayCommand CleanFileNameCommand { get; }
 
     /// <summary>Raised before a destructive delete so the view can confirm with the
@@ -91,16 +91,16 @@ public sealed class MainViewModel : INotifyPropertyChanged
         Engine.MaxConcurrent = Settings.MaxConcurrentDownloads;
         Engine.GlobalSpeedLimitKbps = Settings.GlobalSpeedLimitKbps;
         Engine.MaxRetries = Settings.MaxRetries;
-        Engine.TaskChanged += () => _dispatcher.BeginInvoke(OnTasksChanged);
-        Engine.TaskCompleted += task => _dispatcher.BeginInvoke(() =>
+        Engine.TaskChanged += () => Dispatch(OnTasksChanged);
+        Engine.TaskCompleted += task => Dispatch(() =>
         {
-            _cfAutoSolved.Remove(task.Id);
             task.CompletedAt ??= DateTime.Now;
             TaskCompleted?.Invoke(task);
             HandlePostDownload(task);
+            MaybeShutdownOnQueueComplete();
             SaveTasksSoon();
         });
-        Engine.CloudflareBlocked += task => _dispatcher.BeginInvoke(() => AutoSolveCloudflare(task));
+        Engine.CloudflareBlocked += task => Dispatch(() => AutoSolveCloudflare(task));
 
         OpenAddDialogCommand = new RelayCommand(_ => OpenAddDialog());
         PauseCommand = new RelayCommand(_ => PauseSelected(), _ => CanPause);
@@ -181,7 +181,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
             if (SelectedTask is not null)
                 RefreshLinkRequested?.Invoke(SelectedTask);
         }, _ => SelectedTask is { Status: TaskStatus.Failed or TaskStatus.Paused });
-        SolveCloudflareCommand = new RelayCommand(_ => SolveCloudflare(SelectedTask), _ => SelectedTask is not null);
+        OpenFolderCommand = new RelayCommand(p => RevealTask(p as DownloadTask ?? SelectedTask));
         CleanFileNameCommand = new RelayCommand(_ => CleanSelectedFileNames(), _ => SelectedTask is not null || SelectedTasks.Count > 0);
 
         TasksView = CollectionViewSource.GetDefaultView(Tasks);
@@ -189,21 +189,22 @@ public sealed class MainViewModel : INotifyPropertyChanged
         TasksView.SortDescriptions.Add(
             new SortDescription(nameof(DownloadTask.AddedAt), ListSortDirection.Descending));
 
-        // 1. Categories Section
-        Filters.Add(FilterItem.Header("CATEGORIES"));
+        // 1. Views Section (All, Queue, Finished, Paused, Failed)
         Filters.Add(new FilterItem(FilterKind.All));
+        Filters.Add(new FilterItem(FilterKind.Queue));
+        Filters.Add(new FilterItem(FilterKind.Finished));
+        Filters.Add(new FilterItem(FilterKind.Paused));
+        Filters.Add(new FilterItem(FilterKind.Failed));
+
+        // Divider between Views and Categories
+        Filters.Add(FilterItem.Separator);
+
+        // 2. Categories Section (Video, Music, Document, Compressed, Program)
         Filters.Add(new FilterItem(FilterKind.Video));
         Filters.Add(new FilterItem(FilterKind.Music));
         Filters.Add(new FilterItem(FilterKind.Document));
         Filters.Add(new FilterItem(FilterKind.Compressed));
         Filters.Add(new FilterItem(FilterKind.Program));
-
-        // 2. Views Section
-        Filters.Add(FilterItem.Header("VIEWS"));
-        Filters.Add(new FilterItem(FilterKind.Queue));
-        Filters.Add(new FilterItem(FilterKind.Finished));
-        Filters.Add(new FilterItem(FilterKind.Paused));
-        Filters.Add(new FilterItem(FilterKind.Failed));
 
         _saveTimer = new System.Timers.Timer(1500)
         {
@@ -254,6 +255,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
             TaskStore.SaveSettings(Settings);
             OnPropertyChanged(nameof(IsDarkTheme));
             OnPropertyChanged(nameof(ThemeButtonIcon));
+            OnPropertyChanged(nameof(ThemeSymbol));
             OnPropertyChanged(nameof(ThemeButtonLabel));
             OnPropertyChanged(nameof(ThemeButtonToolTip));
         }
@@ -280,6 +282,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
 
     /// <summary>Icon of the theme the button switches to: sun for light, contrast for dark.</summary>
     public string ThemeButtonIcon => IsDarkTheme ? char.ConvertFromUtf32(0xF0599) : char.ConvertFromUtf32(0xF0594); // Sunny when dark (switch to light), Night when light
+    public Wpf.Ui.Controls.SymbolRegular ThemeSymbol => IsDarkTheme ? Wpf.Ui.Controls.SymbolRegular.WeatherSunny24 : Wpf.Ui.Controls.SymbolRegular.WeatherMoon24;
     public string ThemeButtonLabel => IsDarkTheme ? "Light" : "Dark";
     public string ThemeButtonToolTip => IsDarkTheme ? "Switch to light theme" : "Switch to dark theme";
 
@@ -569,50 +572,64 @@ public sealed class MainViewModel : INotifyPropertyChanged
         return candidate;
     }
 
-    /// <summary>Automatic one-shot solver invoked when the engine reports a
-    /// Cloudflare block. Runs once per task; further blocks leave the task Failed
-    /// (the manual "Bypass Cloudflare" command remains available).</summary>
+    /// <summary>Automatic solver invoked when the engine reports a Cloudflare block.</summary>
     private void AutoSolveCloudflare(DownloadTask task)
     {
         if (task.Status != TaskStatus.Failed)
             return;
-        if (!_cfAutoSolved.Add(task.Id))
-            return;
-        RunCloudflareSolver(task);
-    }
-
-    /// <summary>Manual "Bypass Cloudflare / protection..." entry point — unlimited
-    /// runs, and it resets the automatic one-shot marker.</summary>
-    public void SolveCloudflare(DownloadTask? task)
-    {
-        if (task is null) return;
-        _cfAutoSolved.Remove(task.Id);
         RunCloudflareSolver(task);
     }
 
     private void RunCloudflareSolver(DownloadTask task)
     {
-        var window = new CloudflareChallengeWindow(task)
+        if (!_cfSolving.Add(task.Id))
+            return;
+
+        try
         {
-            Owner = Application.Current.MainWindow
-        };
-        if (window.ShowDialog() == true)
+            var window = new CloudflareChallengeWindow(task)
+            {
+                Owner = Application.Current.MainWindow
+            };
+            if (window.ShowDialog() == true)
+            {
+                if (!string.IsNullOrWhiteSpace(window.ExtractedCookies))
+                {
+                    task.Headers["Cookie"] = window.ExtractedCookies;
+                }
+                if (!string.IsNullOrWhiteSpace(window.ExtractedUserAgent))
+                {
+                    task.Headers["User-Agent"] = window.ExtractedUserAgent;
+                }
+                if (!string.IsNullOrWhiteSpace(window.FinalRedirectUrl) && window.FinalRedirectUrl != task.Url)
+                {
+                    task.Url = window.FinalRedirectUrl;
+                }
+                task.Status = TaskStatus.Queued;
+                task.Error = null;
+                Engine.Start(task);
+            }
+        }
+        finally
         {
-            if (!string.IsNullOrWhiteSpace(window.ExtractedCookies))
-            {
-                task.Headers["Cookie"] = window.ExtractedCookies;
-            }
-            if (!string.IsNullOrWhiteSpace(window.ExtractedUserAgent))
-            {
-                task.Headers["User-Agent"] = window.ExtractedUserAgent;
-            }
-            if (!string.IsNullOrWhiteSpace(window.FinalRedirectUrl) && window.FinalRedirectUrl != task.Url)
-            {
-                task.Url = window.FinalRedirectUrl;
-            }
-            task.Status = TaskStatus.Queued;
-            task.Error = null;
-            Engine.Start(task);
+            _cfSolving.Remove(task.Id);
+        }
+    }
+
+    private void Dispatch(Action action)
+    {
+        if (_dispatcher.HasShutdownStarted || _dispatcher.HasShutdownFinished)
+            return;
+        try
+        {
+            if (_dispatcher.CheckAccess())
+                action();
+            else
+                _dispatcher.BeginInvoke(action);
+        }
+        catch (InvalidOperationException)
+        {
+            // Dispatcher was shutting down
         }
     }
 
@@ -622,7 +639,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
             return;
         if (!_dispatcher.CheckAccess())
         {
-            _dispatcher.BeginInvoke(() => AddTask(url, fileName, referer, chunkCount, mirrors));
+            Dispatch(() => AddTask(url, fileName, referer, chunkCount, mirrors));
             return;
         }
         var task = new DownloadTask(_dispatcher)
@@ -652,7 +669,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
     {
         if (!_dispatcher.CheckAccess())
         {
-            _dispatcher.BeginInvoke(() => AddTask(task));
+            Dispatch(() => AddTask(task));
             return;
         }
         if (string.IsNullOrWhiteSpace(task.FileName))
@@ -888,14 +905,33 @@ public sealed class MainViewModel : INotifyPropertyChanged
         UpdateStatus();
     }
 
-    public void RevealSelected()
+    public void RevealTask(DownloadTask? task)
     {
-        if (SelectedTask is null)
+        if (task is null)
             return;
-        string? path = SelectedTask.FullPath;
+        string? path = task.FullPath;
         if (!string.IsNullOrWhiteSpace(path))
-            Process.Start(new ProcessStartInfo("explorer.exe", $"/select,\"{path}\"") { UseShellExecute = true });
+        {
+            if (File.Exists(path))
+            {
+                Process.Start(new ProcessStartInfo("explorer.exe", $"/select,\"{path}\"") { UseShellExecute = true });
+            }
+            else if (Directory.Exists(task.SaveFolder))
+            {
+                Process.Start(new ProcessStartInfo("explorer.exe", $"\"{task.SaveFolder}\"") { UseShellExecute = true });
+            }
+            else
+            {
+                Process.Start(new ProcessStartInfo("explorer.exe", $"/select,\"{path}\"") { UseShellExecute = true });
+            }
+        }
+        else if (Directory.Exists(task.SaveFolder))
+        {
+            Process.Start(new ProcessStartInfo("explorer.exe", $"\"{task.SaveFolder}\"") { UseShellExecute = true });
+        }
     }
+
+    public void RevealSelected() => RevealTask(SelectedTask);
 
     public void OpenFile()
     {
@@ -1045,6 +1081,63 @@ public sealed class MainViewModel : INotifyPropertyChanged
     public int CompletedDownloadsCount => Tasks.Count(t => t.Status == TaskStatus.Completed);
     public bool HasActiveDownloads => Engine.ActiveCount > 0 || Engine.QueuedCount > 0;
 
+    private bool _shutdownWhenQueueComplete;
+    /// <summary>Global "shutdown when done" flag. Set from any progress dialog's
+    /// "Shutdown computer after all active downloads finish" checkbox. It must be
+    /// global (not per-dialog) so it survives the dialog being closed and so it
+    /// fires only once every active/queued download has finished.</summary>
+    public bool ShutdownWhenQueueComplete
+    {
+        get => _shutdownWhenQueueComplete;
+        set
+        {
+            if (_shutdownWhenQueueComplete != value)
+            {
+                _shutdownWhenQueueComplete = value;
+                OnPropertyChanged(nameof(ShutdownWhenQueueComplete));
+                if (value)
+                    MaybeShutdownOnQueueComplete();
+            }
+        }
+    }
+
+    /// <summary>Called whenever a task completes (and whenever the flag is turned
+    /// on) to cover the "checked the box after everything already finished" case.</summary>
+    public void MaybeShutdownOnQueueComplete()
+    {
+        if (!_shutdownWhenQueueComplete)
+            return;
+        if (HasActiveDownloads)
+            return;
+        if (Tasks.Any(t => t.Status == TaskStatus.Downloading || t.Status == TaskStatus.Queued))
+            return;
+        // One-shot: consume the flag before shutting down so a reboot +
+        // relaunch (or a second completion event) can't shut down again.
+        _shutdownWhenQueueComplete = false;
+        OnPropertyChanged(nameof(ShutdownWhenQueueComplete));
+        TriggerSystemShutdown();
+    }
+
+    private static void TriggerSystemShutdown()
+    {
+        try
+        {
+            Process.Start(new ProcessStartInfo("shutdown", "/s /t 60 /c \"WDM: All downloads completed. Shutting down in 60 seconds. Run 'shutdown /a' in a terminal to abort.\"")
+            {
+                CreateNoWindow = true,
+                UseShellExecute = false,
+            });
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show(
+                $"WDM could not shut down the computer:\n{ex.Message}\n\nRun 'shutdown /s /t 60' manually, or 'shutdown /a' to abort a pending shutdown.",
+                "Shutdown failed",
+                MessageBoxButton.OK,
+                MessageBoxImage.Warning);
+        }
+    }
+
     public string StatusPrefixText => HasActiveDownloads
         ? $"{Engine.ActiveCount} active · "
         : $"{TotalDownloadsCount} download{(TotalDownloadsCount == 1 ? "" : "s")} · ";
@@ -1134,6 +1227,8 @@ public sealed class MainViewModel : INotifyPropertyChanged
 
 public enum FilterKind
 {
+    None = -1,
+
     // Downloads / Views
     All,
     Active,
@@ -1167,8 +1262,8 @@ public sealed class FilterItem : INotifyPropertyChanged
 
     public FilterItem(FilterKind kind) => Kind = kind;
 
-    public static FilterItem Separator => new(FilterKind.All) { IsSeparator = true };
-    public static FilterItem Header(string title) => new(FilterKind.All) { IsHeader = true, HeaderText = title };
+    public static FilterItem Separator => new(FilterKind.None) { IsSeparator = true };
+    public static FilterItem Header(string title) => new(FilterKind.None) { IsHeader = true, HeaderText = title };
 
     public bool IsSeparator { get; private init; }
     public bool IsHeader { get; private init; }
@@ -1197,6 +1292,28 @@ public sealed class FilterItem : INotifyPropertyChanged
         FilterKind.Settings => char.ConvertFromUtf32(0xF08BB),
         FilterKind.About => char.ConvertFromUtf32(0xF02FD),
         _ => char.ConvertFromUtf32(0xF003B),
+    };
+
+    public Wpf.Ui.Controls.SymbolRegular Symbol => (IsSeparator || IsHeader) ? Wpf.Ui.Controls.SymbolRegular.Empty : Kind switch
+    {
+        FilterKind.All => Wpf.Ui.Controls.SymbolRegular.Apps24,
+        FilterKind.Active => Wpf.Ui.Controls.SymbolRegular.Play24,
+        FilterKind.Queue => Wpf.Ui.Controls.SymbolRegular.ArrowDownload24,
+        FilterKind.Finished => Wpf.Ui.Controls.SymbolRegular.CheckmarkCircle24,
+        FilterKind.Paused => Wpf.Ui.Controls.SymbolRegular.PauseCircle24,
+        FilterKind.Failed => Wpf.Ui.Controls.SymbolRegular.DismissCircle24,
+        FilterKind.Video => Wpf.Ui.Controls.SymbolRegular.Video24,
+        FilterKind.Music => Wpf.Ui.Controls.SymbolRegular.MusicNote224,
+        FilterKind.Document => Wpf.Ui.Controls.SymbolRegular.Document24,
+        FilterKind.Compressed => Wpf.Ui.Controls.SymbolRegular.FolderZip24,
+        FilterKind.Program => Wpf.Ui.Controls.SymbolRegular.AppGeneric24,
+        FilterKind.Other => Wpf.Ui.Controls.SymbolRegular.DocumentBulletList24,
+        FilterKind.Scheduler => Wpf.Ui.Controls.SymbolRegular.Clock24,
+        FilterKind.SpeedLimits => Wpf.Ui.Controls.SymbolRegular.Gauge24,
+        FilterKind.History => Wpf.Ui.Controls.SymbolRegular.History24,
+        FilterKind.Settings => Wpf.Ui.Controls.SymbolRegular.Settings24,
+        FilterKind.About => Wpf.Ui.Controls.SymbolRegular.Info24,
+        _ => Wpf.Ui.Controls.SymbolRegular.Folder24,
     };
 
     public string Name => IsSeparator ? "" : IsHeader ? HeaderText : Kind switch

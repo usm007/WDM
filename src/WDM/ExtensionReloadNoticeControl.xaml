@@ -1,6 +1,7 @@
 <UserControl x:Class="WDM.ExtensionReloadNoticeControl"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
              UseLayoutRounding="True"
              SnapsToDevicePixels="True"
              TextOptions.TextFormattingMode="Ideal"
@@ -17,7 +18,7 @@
         <StackPanel Grid.Row="0" Margin="20,18,20,16">
             <!-- Header with Refresh Icon -->
             <StackPanel Orientation="Horizontal" Margin="0,0,0,6">
-                <TextBlock Text="&#xF0457;" FontFamily="{StaticResource Font.Icon}" FontSize="20"
+                <ui:SymbolIcon Symbol="ArrowClockwise24" FontSize="20"
                            Foreground="{DynamicResource Brush.Accent}" Margin="0,0,8,0" VerticalAlignment="Center" />
                 <TextBlock x:Name="TitleText" Text="WDM Extension Update" FontSize="18" FontWeight="SemiBold"
                            Foreground="{DynamicResource Brush.Text}" VerticalAlignment="Center" />
@@ -31,12 +32,15 @@
 
             <!-- Reload warning -->
             <Border Background="{DynamicResource Brush.StatusPausedSoft}" BorderBrush="{DynamicResource Brush.Warning}" BorderThickness="1" CornerRadius="4" Padding="8,6" Margin="0,0,0,10">
-                <TextBlock Text="⚠️ After updating, reload the extension: chrome://extensions (or edge://extensions) → click Reload on WDM Download Catcher." FontSize="12" FontWeight="Medium" Foreground="{DynamicResource Brush.Text}" TextWrapping="Wrap" />
+                <DockPanel LastChildFill="True">
+                    <ui:SymbolIcon DockPanel.Dock="Left" Symbol="Warning20" FontSize="16" Foreground="{DynamicResource Brush.Warning}" Margin="0,1,8,0" VerticalAlignment="Top" />
+                    <TextBlock Text="After updating, reload the extension: chrome://extensions (or edge://extensions) → click Reload on WDM Download Catcher." FontSize="12" FontWeight="Medium" Foreground="{DynamicResource Brush.Text}" TextWrapping="Wrap" />
+                </DockPanel>
             </Border>
 
             <TextBlock Text="Instructions" FontSize="13" FontWeight="SemiBold" Foreground="{DynamicResource Brush.Text}" Margin="0,0,0,6" />
             <TextBlock Text="1. Open your browser extensions page (chrome://extensions or edge://extensions)." FontSize="12" Foreground="{DynamicResource Brush.TextDim}" Margin="0,0,0,3" />
-            <TextBlock Text="2. Find 'WDM Download Catcher' and click the reload icon (🔄) on its card." FontSize="12" Foreground="{DynamicResource Brush.TextDim}" Margin="0,0,0,2" />
+            <TextBlock Text="2. Find 'WDM Download Catcher' and click the Reload button on its card." FontSize="12" Foreground="{DynamicResource Brush.TextDim}" Margin="0,0,0,2" />
         </StackPanel>
 
         <!-- Bottom Action Strip -->
@@ -50,9 +54,9 @@
                 <TextBlock x:Name="FeedbackText" Grid.Column="0" Text="" FontSize="12" FontFamily="{StaticResource Font.App}" Foreground="{DynamicResource Brush.Accent}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" Margin="0,0,12,0" />
 
                 <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
-                    <Button Content="Copy Path" Style="{StaticResource Button.Secondary}" Click="CopyPath_Click" Height="28" Padding="10,0" Margin="0,0,6,0" />
-                    <Button Content="Open Extensions" Style="{StaticResource Button.Secondary}" Click="OpenExtensions_Click" Height="28" Padding="10,0" Margin="0,0,6,0" />
-                    <Button Content="Got It" Style="{StaticResource Button.Accent}" Click="Close_Click" MinWidth="80" Height="28" />
+                    <ui:Button Content="Copy Path" Appearance="Secondary" Click="CopyPath_Click" Height="32" Padding="10,0" Margin="0,0,6,0" />
+                    <ui:Button Content="Open Extensions" Appearance="Secondary" Click="OpenExtensions_Click" Height="32" Padding="10,0" Margin="0,0,6,0" />
+                    <ui:Button Content="Got It" Appearance="Primary" Click="Close_Click" MinWidth="80" Height="32" />
                 </StackPanel>
             </Grid>
         </Border>

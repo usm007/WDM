@@ -4,7 +4,7 @@ using WDM.ViewModels;
 
 namespace WDM;
 
-public partial class OptionsDialog : Window
+public partial class OptionsDialog : Wpf.Ui.Controls.FluentWindow
 {
     public OptionsDialog(MainViewModel viewModel)
     {

@@ -4,6 +4,8 @@
 
 # WDM — Windows Download Manager
 
+> 🌐 Live site: **https://get-wdm.vercel.app**
+
 An IDM-inspired no-nonsense download manager for Windows, written in C# / WPF / .NET 8. **Self-contained .NET 8** — exe releases bundle all libraries, no runtime install needed.
 
 - **Multi-threaded downloads** — dynamic segmentation with a shared chunk pool: the file is divided into small byte-range chunks that any worker thread can pick up as they finish, so slower segments don't idle threads.
@@ -113,43 +115,59 @@ vpk pack --packId WDM --packVersion 2.5.4 --packDir publish --mainExe WDM.exe --
 
 ## Screenshots
 
-> Fresh captures from `v2.6.0` — light theme shown. Full gallery (light + dark, all 17 dialogs/tabs) in [`screenshots/README.md`](screenshots/README.md).
+> Fresh captures — Windows 11 Fluent Design. Full gallery (light + dark, all 17 dialogs & tabs) in [`screenshots/README.md`](screenshots/README.md).
 
 <p align="center">
   <img src="screenshots/light/01_MainWindow.png" alt="Main Window" width="920" />
   <br/>
-  <em>Main Window — modern fluent UI, categories, speed graph and toolbar</em>
+  <em>Main Window — modern fluent UI, categories, speed graph, folder shortcuts, and toolbar</em>
 </p>
 
-### Featured — Light & Dark pairs (from latest captures)
+### Featured — Light & Dark pairs
 
 | View | Light | Dark |
 |---|---|---|
-| **Download Progress** — `ubuntu-24.04-desktop-amd64.iso` · 3.8/5.7 GB · 66% · HLS segments · 17.6 MB/s · 1m 45s · 8 threads | <img src="screenshots/light/05_DownloadProgressDialog.png" width="360" /> | <img src="screenshots/dark/05_DownloadProgressDialog.png" width="360" /> |
-| **Main Window** — 5 downloads · Queued / Running / Done / Paused / Failed | <img src="screenshots/light/01_MainWindow.png" width="360" /> | <img src="screenshots/dark/01_MainWindow.png" width="360" /> |
-| **Add Download** — URL inspect + duplicate warning `This URL is already in your download list` | <img src="screenshots/light/02_AddDownloadDialog.png" width="360" /> | <img src="screenshots/dark/02_AddDownloadDialog.png" width="360" /> |
-| **Settings** — Connection & Speed (Light) / YouTube & Media (Dark) | <img src="screenshots/light/03_OptionsDialog_01_Connection.png" width="360" /> | <img src="screenshots/dark/03_OptionsDialog_04_YouTube.png" width="360" /> |
-| **About** — `Version 2.6.0` · `github.com/usm007/WDM` | <img src="screenshots/light/04_AboutDialog.png" width="360" /> | <img src="screenshots/dark/04_AboutDialog.png" width="360" /> |
+| **Main Window** — Multi-task download manager with progress tracking, speed graph, and folder actions | <img src="screenshots/light/01_MainWindow.png" width="360" /> | <img src="screenshots/dark/01_MainWindow.png" width="360" /> |
+| **Download Progress** — Real-time multi-threaded chunk progress, transfer speed, and limiter controls | <img src="screenshots/light/05_DownloadProgressDialog.png" width="360" /> | <img src="screenshots/dark/05_DownloadProgressDialog.png" width="360" /> |
+| **Add Download** — URL inspector, video/audio tier resolution, authentication & headers | <img src="screenshots/light/02_AddDownloadDialog.png" width="360" /> | <img src="screenshots/dark/02_AddDownloadDialog.png" width="360" /> |
+| **Settings (Connection & Speed)** — Windows 11 SettingsCard layout, range chunk streams, throttling | <img src="screenshots/light/03_OptionsDialog_01_Connection.png" width="360" /> | <img src="screenshots/dark/03_OptionsDialog_01_Connection.png" width="360" /> |
+| **Settings (Behavior & Automation)** — Native Fluent ToggleSwitches, checksums, startup & tray behavior | <img src="screenshots/light/03_OptionsDialog_05_Behavior.png" width="360" /> | <img src="screenshots/dark/03_OptionsDialog_05_Behavior.png" width="360" /> |
+| **Settings (YouTube & Media)** — yt-dlp & FFmpeg engine status, runtimes, account sign-in | <img src="screenshots/light/03_OptionsDialog_04_YouTube.png" width="360" /> | <img src="screenshots/dark/03_OptionsDialog_04_YouTube.png" width="360" /> |
+| **About** — Application details, delta updater, and repository info | <img src="screenshots/light/04_AboutDialog.png" width="360" /> | <img src="screenshots/dark/04_AboutDialog.png" width="360" /> |
 
-### Gallery — all dialogs (light)
+### Windows 11 Settings Experience (Fluent 2)
 
-| Add Download | Options | About |
+| Connection & Speed | Folders & Routing | Browser Integration |
 |---|---|---|
-| <img src="screenshots/light/02_AddDownloadDialog.png" width="320" /> | <img src="screenshots/light/03_OptionsDialog.png" width="320" /> | <img src="screenshots/light/04_AboutDialog.png" width="320" /> |
+| <img src="screenshots/light/03_OptionsDialog_01_Connection.png" width="280" /> | <img src="screenshots/light/03_OptionsDialog_02_Folders.png" width="280" /> | <img src="screenshots/light/03_OptionsDialog_03_Browser.png" width="280" /> |
 
-| Download Progress | Duplicate Check | Task Properties |
+| YouTube & Media | Behavior & Automation | Appearance |
 |---|---|---|
-| <img src="screenshots/light/05_DownloadProgressDialog.png" width="320" /> | <img src="screenshots/light/07_DuplicateDownloadDialog.png" width="320" /> | <img src="screenshots/light/08_TaskPropertiesDialog.png" width="320" /> |
+| <img src="screenshots/light/03_OptionsDialog_04_YouTube.png" width="280" /> | <img src="screenshots/light/03_OptionsDialog_05_Behavior.png" width="280" /> | <img src="screenshots/light/03_OptionsDialog_06_Appearance.png" width="280" /> |
 
-| Browser Extension | Welcome | Update (inline) |
+| Updates | Advanced Diagnostics | Main Window (Dark) |
 |---|---|---|
-| <img src="screenshots/light/11_BrowserExtensionDialog.png" width="320" /> | <img src="screenshots/light/13_WelcomeWindow.png" width="320" /> | <img src="screenshots/light/14_AboutDialog_Update.png" width="320" /> |
+| <img src="screenshots/light/03_OptionsDialog_07_Updates.png" width="280" /> | <img src="screenshots/light/03_OptionsDialog_08_Advanced.png" width="280" /> | <img src="screenshots/dark/01_MainWindow.png" width="280" /> |
+
+### Dialog Gallery
+
+| Add Download | Duplicate Detection | Task Properties |
+|---|---|---|
+| <img src="screenshots/light/02_AddDownloadDialog.png" width="280" /> | <img src="screenshots/light/07_DuplicateDownloadDialog.png" width="280" /> | <img src="screenshots/light/08_TaskPropertiesDialog.png" width="280" /> |
+
+| Browser Extension Setup | Onboarding / Welcome | Inline Update |
+|---|---|---|
+| <img src="screenshots/light/11_BrowserExtensionDialog.png" width="280" /> | <img src="screenshots/light/13_WelcomeWindow.png" width="280" /> | <img src="screenshots/light/14_AboutDialog_Update.png" width="280" /> |
+
+| Progress Details | Cloudflare Anti-Bot | YouTube Sign-In |
+|---|---|---|
+| <img src="screenshots/light/05d_ProgressDialog_Details.png" width="280" /> | <img src="screenshots/light/15_CloudflareChallengeWindow.png" width="280" /> | <img src="screenshots/light/16_YouTubeSignInWindow.png" width="280" /> |
 
 <details>
-<summary>View all 17 dialogs + 8 Options tabs (light / dark)</summary>
+<summary>View all 17 dialogs + 8 Options tabs (light / dark index)</summary>
 
-See [`screenshots/README.md`](screenshots/README.md) for the complete table:
-`01_MainWindow` · `02_AddDownloadDialog` · `03_OptionsDialog` (+ 8 tabs) · `04_AboutDialog` · `05_DownloadProgressDialog` · `06_DownloadCompleteDialog` · `07_DuplicateDownloadDialog` · `08_TaskPropertiesDialog` · `09_RefreshLinkDialog` · `10_DeleteConfirmDialog` · `11_BrowserExtensionDialog` · `12_ExtensionReloadNoticeDialog` · `13_WelcomeWindow` · `14_AboutDialog_Update` · `15_CloudflareChallengeWindow` · `16_YouTubeSignInWindow` · `17_TrayProgressPanel`
+See [`screenshots/README.md`](screenshots/README.md) for the complete table and links:
+`01_MainWindow` · `02_AddDownloadDialog` · `03_OptionsDialog` (+ 8 tabs: `Connection`, `Folders`, `Browser`, `YouTube`, `Behavior`, `Appearance`, `Updates`, `Advanced`) · `04_AboutDialog` · `05_DownloadProgressDialog` (+ `Limiter`, `Completion`, `Details`) · `06_DownloadCompleteDialog` · `07_DuplicateDownloadDialog` · `08_TaskPropertiesDialog` · `09_RefreshLinkDialog` · `10_DeleteConfirmDialog` · `11_BrowserExtensionDialog` · `12_ExtensionReloadNoticeDialog` · `13_WelcomeWindow` · `14_AboutDialog_Update` · `15_CloudflareChallengeWindow` · `16_YouTubeSignInWindow` · `17_TrayProgressPanel`
 
 Light: `screenshots/light/` · Dark: `screenshots/dark/`
 

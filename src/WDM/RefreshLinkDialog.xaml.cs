@@ -101,7 +101,7 @@ public partial class RefreshLinkDialog : Window
         CapturedHeaders = headers;
         UrlBox.Text = url;
 
-        BannerIcon.Text = "\uF012C"; // Check icon
+        BannerIcon.Symbol = Wpf.Ui.Controls.SymbolRegular.CheckmarkCircle24; // Check icon
         BannerIcon.Foreground = (System.Windows.Media.Brush)(TryFindResource("Brush.StatusComplete") ?? System.Windows.Media.Brushes.Green);
         BannerTitle.Text = "Renewed link captured!";
         BannerDescription.Text = "Resuming download with renewed session parameters...";

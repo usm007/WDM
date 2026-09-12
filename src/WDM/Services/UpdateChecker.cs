@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Security.Cryptography;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 
@@ -111,7 +112,8 @@ public static class UpdateChecker
     }
 
     /// <summary>Downloads the latest installer to the temp folder and returns its path.
-    /// <paramref name="onProgress"/> reports 0..1 as bytes arrive.</summary>
+    /// <paramref name="onProgress"/> reports 0..1 as bytes arrive.
+    /// Verifies the downloaded file is a valid PE executable before returning.</summary>
     public static async Task<string> DownloadInstallerAsync(ReleaseInfo release, Action<double>? onProgress = null, CancellationToken ct = default)
     {
         if (string.IsNullOrWhiteSpace(release.InstallerUrl))
@@ -140,17 +142,68 @@ public static class UpdateChecker
             if (total > 0)
                 onProgress?.Invoke((double)read / total);
         }
+        await file.FlushAsync(ct);
+        await file.DisposeAsync();
+
+        VerifyInstallerIntegrity(target);
 
         return target;
     }
 
+    /// <summary>Verifies a downloaded installer is a valid PE executable and logs its SHA-256 hash.
+    /// Throws if the file is corrupt, too small, or not a valid Windows executable.</summary>
+    private static void VerifyInstallerIntegrity(string path)
+    {
+        var info = new FileInfo(path);
+        if (info.Length < 1024)
+            throw new InvalidOperationException($"Downloaded installer is suspiciously small ({info.Length} bytes) — likely corrupt.");
+
+        // Check for MZ (PE) header
+        using var fs = File.OpenRead(path);
+        var header = new byte[2];
+        if (fs.Read(header, 0, 2) != 2 || header[0] != 'M' || header[1] != 'Z')
+            throw new InvalidOperationException("Downloaded file is not a valid Windows executable (missing MZ header).");
+        fs.Close();
+
+        // Compute SHA-256 for audit trail
+        using var sha = SHA256.Create();
+        using var stream = File.OpenRead(path);
+        var hash = sha.ComputeHash(stream);
+        var hashStr = Convert.ToHexString(hash);
+        Debug.WriteLine($"[Update] Installer SHA-256: {hashStr} ({info.Length} bytes)");
+    }
+
     /// <summary>Runs the downloaded installer. Supports both Velopack (--silent) and Inno (/VERYSILENT) so the
     /// "WDM is already installed" modal in the screenshot never appears during a silent auto-update.</summary>
-    public static void LaunchInstaller(string installerPath, bool silent = false)
+    public static Process? LaunchInstaller(string installerPath, bool silent = false)
     {
         string args = silent ? "/VERYSILENT /SUPPRESSMSGBOXES --silent" : "";
         var psi = new ProcessStartInfo(installerPath, args) { UseShellExecute = true };
-        Process.Start(psi);
+        return Process.Start(psi);
+    }
+
+    /// <summary>Launches installer silently and waits for the process to start before returning.
+    /// Retries for up to <paramref name="timeoutMs"/> milliseconds to handle slow UAC prompts.</summary>
+    public static async Task<Process?> LaunchInstallerAndWaitForStart(string installerPath, int timeoutMs = 3000)
+    {
+        var proc = LaunchInstaller(installerPath, silent: true);
+        if (proc is null) return null;
+
+        // Wait for the process to appear (handles UAC delay, disk spin-up, etc.)
+        var sw = Stopwatch.StartNew();
+        while (sw.ElapsedMilliseconds < timeoutMs)
+        {
+            try
+            {
+                // Refresh process info — Process.Start returns immediately but the OS may not
+                // have fully launched the process yet
+                if (!proc.HasExited)
+                    return proc;
+            }
+            catch { }
+            await Task.Delay(100);
+        }
+        return proc;
     }
 
     /// <summary>Launches installer silently (no wizard) — truly silent, bypasses the "already installed" prompt.</summary>

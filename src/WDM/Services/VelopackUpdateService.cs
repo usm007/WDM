@@ -164,15 +164,15 @@ public static class VelopackUpdateService
     /// </summary>
     public static async Task<UpdateInfo?> CheckForUpdatesAnyAsync(CancellationToken ct = default)
     {
+        // Try normal first
+        var normal = await CheckForUpdatesAsync(ct).ConfigureAwait(false);
+        if (normal != null) return normal;
+
+        // Fallback: use Test locator with current assembly version to query GitHub feed directly
+        var currentVer = UpdateChecker.CurrentVersion.ToString();
+        var tempDir = Path.Combine(Path.GetTempPath(), "WDM_Velopack_Check");
         try
         {
-            // Try normal first
-            var normal = await CheckForUpdatesAsync(ct).ConfigureAwait(false);
-            if (normal != null) return normal;
-
-            // Fallback: use Test locator with current assembly version to query GitHub feed directly
-            var currentVer = UpdateChecker.CurrentVersion.ToString();
-            var tempDir = Path.Combine(Path.GetTempPath(), "WDM_Velopack_Check");
             Directory.CreateDirectory(tempDir);
             var locator = new Velopack.Locators.TestVelopackLocator("WDM", currentVer, tempDir, null);
             var source = new GithubSource(RepoUrl, null, false);
@@ -184,6 +184,10 @@ public static class VelopackUpdateService
         catch
         {
             return null;
+        }
+        finally
+        {
+            try { if (Directory.Exists(tempDir)) Directory.Delete(tempDir, recursive: true); } catch { }
         }
     }
 

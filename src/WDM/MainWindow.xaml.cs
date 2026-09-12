@@ -14,7 +14,7 @@ using WDM.ViewModels;
 
 namespace WDM;
 
-public partial class MainWindow : Window
+public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
 {
     private readonly MainViewModel _viewModel;
     private readonly CaptureServer _captureServer;
@@ -226,7 +226,7 @@ public partial class MainWindow : Window
     }
 
     private System.Windows.Threading.Dispatcher _dispatcher =>
-        System.Windows.Application.Current.Dispatcher;
+        this.Dispatcher;
 
     private static void RenderCanvasSparkline(Canvas canvas, List<double> history)
     {
@@ -250,7 +250,7 @@ public partial class MainWindow : Window
         var polyline = new Polyline
         {
             Points = points,
-            Stroke = (Brush)Application.Current.Resources["Brush.Accent"],
+            Stroke = (Brush?)Application.Current?.Resources["Brush.Accent"] ?? Brushes.DodgerBlue,
             StrokeThickness = 1.5,
             StrokeLineJoin = PenLineJoin.Round
         };
@@ -488,7 +488,7 @@ public partial class MainWindow : Window
                     var semVer = velopackUpdate.TargetFullRelease.Version;
                     var target = VelopackUpdateService.ToSystemVersion(semVer);
                     var synthetic = new ReleaseInfo($"v{target}", target, $"WDM {target}", $"https://github.com/usm007/WDM/releases/tag/v{target}", $"Delta update to {target} (patch-only).", DateTime.UtcNow, null);
-                    _dispatcher.BeginInvoke(() =>
+                    _ = _dispatcher.BeginInvoke(() =>
                     {
                         try
                         {
@@ -525,7 +525,7 @@ public partial class MainWindow : Window
 
         if (latest.Version is not null && latest.Version.CompareTo(UpdateChecker.CurrentVersion) > 0)
         {
-            _dispatcher.BeginInvoke(() =>
+            _ = _dispatcher.BeginInvoke(() =>
             {
                 try
                 {

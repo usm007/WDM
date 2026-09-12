@@ -1,29 +1,39 @@
-<Window x:Class="WDM.TaskPropertiesDialog"
+<ui:FluentWindow x:Class="WDM.TaskPropertiesDialog"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
         Title="Download Properties — WDM"
         Icon="Assets/WDM.ico"
-        Width="540"
-        Height="540"
+        Width="560"
+        Height="560"
         MinHeight="460"
         MinWidth="480"
         WindowStartupLocation="CenterScreen"
         ResizeMode="CanResizeWithGrip"
         ShowInTaskbar="False"
+        WindowBackdropType="Mica"
+        ExtendsContentIntoTitleBar="True"
         UseLayoutRounding="True"
         SnapsToDevicePixels="True"
         TextOptions.TextFormattingMode="Ideal"
         TextOptions.TextRenderingMode="Auto"
         RenderOptions.ClearTypeHint="Enabled"
-        Background="{DynamicResource Brush.Surface}">
-    <Grid>
+        Background="{DynamicResource Brush.Bg}">
+    <Grid Background="{DynamicResource Brush.Bg}">
         <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" /> <!-- TitleBar -->
             <RowDefinition Height="*" />    <!-- Content Body -->
             <RowDefinition Height="Auto" /> <!-- Bottom Action Strip -->
         </Grid.RowDefinitions>
 
+        <ui:TitleBar Grid.Row="0" Title="Download Properties">
+            <ui:TitleBar.Icon>
+                <ui:ImageIcon Source="pack://application:,,,/Assets/logo.png" />
+            </ui:TitleBar.Icon>
+        </ui:TitleBar>
+
         <!-- Main Body -->
-        <Grid Grid.Row="0" Margin="20,18,20,16">
+        <Grid Grid.Row="1" Margin="20,18,20,16">
             <Grid.RowDefinitions>
                 <RowDefinition Height="Auto" /> <!-- Header -->
                 <RowDefinition Height="*" />    <!-- Scrollable Properties Grid -->
@@ -61,68 +71,96 @@
                     </Grid.RowDefinitions>
 
                     <!-- URL -->
-                    <TextBlock Grid.Row="0" Grid.Column="0" Text="Source URL" FontSize="12.5" Foreground="{DynamicResource Brush.TextMuted}" Margin="0,5" />
-                    <TextBlock x:Name="UrlText" Grid.Row="0" Grid.Column="1" FontSize="12.5" FontFamily="{StaticResource Font.App}" TextWrapping="Wrap" Foreground="{DynamicResource Brush.Accent}" Margin="0,5" />
+                    <TextBlock Grid.Row="0" Grid.Column="0" Text="Source URL" FontSize="12.5" Foreground="{DynamicResource Brush.TextDim}" Margin="0,5" VerticalAlignment="Center" />
+                    <Grid Grid.Row="0" Grid.Column="1" Margin="0,3">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <TextBox x:Name="UrlText"
+                                 IsReadOnly="True"
+                                 TextWrapping="Wrap"
+                                 FontSize="12"
+                                 FontFamily="{StaticResource Font.App}"
+                                 Foreground="{DynamicResource Brush.Accent}"
+                                 Background="{DynamicResource Brush.Surface}"
+                                 BorderBrush="{DynamicResource Brush.Border}"
+                                 BorderThickness="1"
+                                 Padding="8,5"
+                                 MaxHeight="70"
+                                 ScrollViewer.VerticalScrollBarVisibility="Auto"
+                                 VerticalAlignment="Center" />
+                        <ui:Button Grid.Column="1"
+                                   Appearance="Secondary"
+                                   Click="CopyUrlClick"
+                                   ToolTip="Copy source URL"
+                                   Margin="6,0,0,0"
+                                   Padding="8,5"
+                                   Height="30"
+                                   VerticalAlignment="Center">
+                            <ui:SymbolIcon Symbol="Copy20" FontSize="14" Foreground="{DynamicResource Brush.Text}" />
+                        </ui:Button>
+                    </Grid>
 
                     <!-- Save Folder -->
-                    <TextBlock Grid.Row="1" Grid.Column="0" Text="Save location" FontSize="12.5" Foreground="{DynamicResource Brush.TextMuted}" Margin="0,5" />
-                    <TextBlock x:Name="FolderText" Grid.Row="1" Grid.Column="1" FontSize="12.5" FontFamily="{StaticResource Font.App}" Foreground="{DynamicResource Brush.TextDim}" TextWrapping="Wrap" Margin="0,5" />
+                    <TextBlock Grid.Row="1" Grid.Column="0" Text="Save location" FontSize="12.5" Foreground="{DynamicResource Brush.TextDim}" Margin="0,5" />
+                    <TextBlock x:Name="FolderText" Grid.Row="1" Grid.Column="1" FontSize="12.5" FontFamily="{StaticResource Font.App}" Foreground="{DynamicResource Brush.Text}" TextWrapping="Wrap" Margin="0,5" />
 
                     <!-- Size -->
-                    <TextBlock Grid.Row="2" Grid.Column="0" Text="Total size" FontSize="12.5" Foreground="{DynamicResource Brush.TextMuted}" Margin="0,5" />
+                    <TextBlock Grid.Row="2" Grid.Column="0" Text="Total size" FontSize="12.5" Foreground="{DynamicResource Brush.TextDim}" Margin="0,5" />
                     <TextBlock x:Name="SizeText" Grid.Row="2" Grid.Column="1" FontSize="13" FontFamily="{StaticResource Font.App}" Foreground="{DynamicResource Brush.Text}" Margin="0,5" />
 
                     <!-- Progress -->
-                    <TextBlock Grid.Row="3" Grid.Column="0" Text="Progress" FontSize="12.5" Foreground="{DynamicResource Brush.TextMuted}" Margin="0,5" />
+                    <TextBlock Grid.Row="3" Grid.Column="0" Text="Progress" FontSize="12.5" Foreground="{DynamicResource Brush.TextDim}" Margin="0,5" />
                     <StackPanel Grid.Row="3" Grid.Column="1" Margin="0,5">
                         <ProgressBar x:Name="ProgressBar" Style="{StaticResource ProgressBar.Thin}" Height="3" Maximum="100" />
                         <TextBlock x:Name="PercentText" FontSize="12" FontFamily="{StaticResource Font.App}" Foreground="{DynamicResource Brush.TextDim}" Margin="0,3,0,0" />
                     </StackPanel>
 
                     <!-- Speed -->
-                    <TextBlock Grid.Row="4" Grid.Column="0" Text="Throughput" FontSize="12.5" Foreground="{DynamicResource Brush.TextMuted}" Margin="0,5" />
+                    <TextBlock Grid.Row="4" Grid.Column="0" Text="Throughput" FontSize="12.5" Foreground="{DynamicResource Brush.TextDim}" Margin="0,5" />
                     <TextBlock x:Name="SpeedText" Grid.Row="4" Grid.Column="1" FontSize="13" FontFamily="{StaticResource Font.App}" FontWeight="SemiBold" Foreground="{DynamicResource Brush.Accent}" Margin="0,5" />
 
                     <!-- Connections -->
-                    <TextBlock Grid.Row="5" Grid.Column="0" Text="Connections" FontSize="12.5" Foreground="{DynamicResource Brush.TextMuted}" Margin="0,5" />
-                    <TextBlock x:Name="ChunksText" Grid.Row="5" Grid.Column="1" FontSize="12.5" FontFamily="{StaticResource Font.App}" Foreground="{DynamicResource Brush.TextDim}" Margin="0,5" />
+                    <TextBlock Grid.Row="5" Grid.Column="0" Text="Connections" FontSize="12.5" Foreground="{DynamicResource Brush.TextDim}" Margin="0,5" />
+                    <TextBlock x:Name="ChunksText" Grid.Row="5" Grid.Column="1" FontSize="12.5" FontFamily="{StaticResource Font.App}" Foreground="{DynamicResource Brush.Text}" Margin="0,5" />
 
                     <!-- Resume -->
-                    <TextBlock Grid.Row="6" Grid.Column="0" Text="Server range" FontSize="12.5" Foreground="{DynamicResource Brush.TextMuted}" Margin="0,5" />
-                    <TextBlock x:Name="ResumeCapText" Grid.Row="6" Grid.Column="1" FontSize="12.5" FontFamily="{StaticResource Font.App}" Foreground="{DynamicResource Brush.TextDim}" Margin="0,5" />
+                    <TextBlock Grid.Row="6" Grid.Column="0" Text="Server range" FontSize="12.5" Foreground="{DynamicResource Brush.TextDim}" Margin="0,5" />
+                    <TextBlock x:Name="ResumeCapText" Grid.Row="6" Grid.Column="1" FontSize="12.5" FontFamily="{StaticResource Font.App}" Foreground="{DynamicResource Brush.Text}" Margin="0,5" />
 
                     <!-- Added Date -->
-                    <TextBlock Grid.Row="7" Grid.Column="0" Text="Added date" FontSize="12.5" Foreground="{DynamicResource Brush.TextMuted}" Margin="0,5" />
-                    <TextBlock x:Name="AddedText" Grid.Row="7" Grid.Column="1" FontSize="12.5" FontFamily="{StaticResource Font.App}" Foreground="{DynamicResource Brush.TextDim}" Margin="0,5" />
+                    <TextBlock Grid.Row="7" Grid.Column="0" Text="Added date" FontSize="12.5" Foreground="{DynamicResource Brush.TextDim}" Margin="0,5" />
+                    <TextBlock x:Name="AddedText" Grid.Row="7" Grid.Column="1" FontSize="12.5" FontFamily="{StaticResource Font.App}" Foreground="{DynamicResource Brush.Text}" Margin="0,5" />
 
                     <!-- Category -->
-                    <TextBlock Grid.Row="8" Grid.Column="0" Text="Category" FontSize="12.5" Foreground="{DynamicResource Brush.TextMuted}" Margin="0,5" />
-                    <TextBlock x:Name="CategoryText" Grid.Row="8" Grid.Column="1" FontSize="12.5" FontFamily="{StaticResource Font.App}" Foreground="{DynamicResource Brush.TextDim}" Margin="0,5" />
+                    <TextBlock Grid.Row="8" Grid.Column="0" Text="Category" FontSize="12.5" Foreground="{DynamicResource Brush.TextDim}" Margin="0,5" />
+                    <TextBlock x:Name="CategoryText" Grid.Row="8" Grid.Column="1" FontSize="12.5" FontFamily="{StaticResource Font.App}" Foreground="{DynamicResource Brush.Text}" Margin="0,5" />
 
                     <!-- Priority -->
-                    <TextBlock Grid.Row="9" Grid.Column="0" Text="Priority" FontSize="12.5" Foreground="{DynamicResource Brush.TextMuted}" Margin="0,5" />
+                    <TextBlock Grid.Row="9" Grid.Column="0" Text="Priority" FontSize="12.5" Foreground="{DynamicResource Brush.TextDim}" Margin="0,5" />
                     <TextBlock x:Name="PriorityText" Grid.Row="9" Grid.Column="1" FontSize="12.5" FontWeight="Medium" FontFamily="{StaticResource Font.App}" Foreground="{DynamicResource Brush.Text}" Margin="0,5" />
 
                     <!-- Custom Headers -->
-                    <TextBlock Grid.Row="10" Grid.Column="0" Text="Custom headers" FontSize="12.5" Foreground="{DynamicResource Brush.TextMuted}" Margin="0,5" />
-                    <TextBlock x:Name="HeadersText" Grid.Row="10" Grid.Column="1" FontSize="12.5" FontFamily="{StaticResource Font.App}" TextWrapping="Wrap" Foreground="{DynamicResource Brush.TextDim}" Margin="0,5" />
+                    <TextBlock Grid.Row="10" Grid.Column="0" Text="Custom headers" FontSize="12.5" Foreground="{DynamicResource Brush.TextDim}" Margin="0,5" />
+                    <TextBlock x:Name="HeadersText" Grid.Row="10" Grid.Column="1" FontSize="12.5" FontFamily="{StaticResource Font.App}" TextWrapping="Wrap" Foreground="{DynamicResource Brush.Text}" Margin="0,5" />
 
                     <!-- Checksum -->
-                    <TextBlock Grid.Row="11" Grid.Column="0" Text="SHA-256 hash" FontSize="12.5" Foreground="{DynamicResource Brush.TextMuted}" Margin="0,5" />
-                    <TextBlock x:Name="ChecksumText" Grid.Row="11" Grid.Column="1" FontSize="12.5" FontFamily="{StaticResource Font.App}" TextWrapping="Wrap" Foreground="{DynamicResource Brush.TextDim}" Margin="0,5" />
+                    <TextBlock Grid.Row="11" Grid.Column="0" Text="SHA-256 hash" FontSize="12.5" Foreground="{DynamicResource Brush.TextDim}" Margin="0,5" />
+                    <TextBlock x:Name="ChecksumText" Grid.Row="11" Grid.Column="1" FontSize="12.5" FontFamily="{StaticResource Font.App}" TextWrapping="Wrap" Foreground="{DynamicResource Brush.Text}" Margin="0,5" />
                 </Grid>
             </ScrollViewer>
         </Grid>
 
         <!-- Bottom Action Strip -->
-        <Border Grid.Row="1" Background="{DynamicResource Brush.SurfaceAlt}" BorderBrush="{DynamicResource Brush.Border}" BorderThickness="0,1,0,0" Padding="16,10">
+        <Border Grid.Row="2" Background="{DynamicResource Brush.SurfaceAlt}" BorderBrush="{DynamicResource Brush.Border}" BorderThickness="0,1,0,0" Padding="16,10">
             <DockPanel LastChildFill="False">
-                <Button Content="Copy URL" Style="{StaticResource Button.Secondary}" Click="CopyUrlClick" Height="28" Padding="12,0" DockPanel.Dock="Left" />
+                <ui:Button Content="Copy URL" Style="{StaticResource Button.SecondaryAction}" Click="CopyUrlClick" Height="32" Padding="12,0" DockPanel.Dock="Left" />
                 <StackPanel Orientation="Horizontal" DockPanel.Dock="Right">
-                    <Button Content="Open Folder" Style="{StaticResource Button.Secondary}" Click="FolderClick" Height="28" Padding="12,0" Margin="0,0,8,0" />
-                    <Button Content="Close" Style="{StaticResource Button.Accent}" IsCancel="True" IsDefault="True" Click="CloseClick" MinWidth="85" Height="28" />
+                    <ui:Button Content="Open Folder" Style="{StaticResource Button.SecondaryAction}" Click="FolderClick" Height="32" Padding="12,0" Margin="0,0,8,0" />
+                    <ui:Button Content="Close" Style="{StaticResource Button.PrimaryAction}" IsCancel="True" IsDefault="True" Click="CloseClick" MinWidth="85" Height="32" />
                 </StackPanel>
             </DockPanel>
         </Border>
     </Grid>
-</Window>
+</ui:FluentWindow>

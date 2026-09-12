@@ -1,6 +1,7 @@
-<Window x:Class="WDM.OptionsDialog"
+<ui:FluentWindow x:Class="WDM.OptionsDialog"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
         xmlns:local="clr-namespace:WDM"
         Title="Settings — WDM"
         Icon="Assets/WDM.ico"
@@ -11,13 +12,24 @@
         WindowStartupLocation="CenterScreen"
         ResizeMode="CanResizeWithGrip"
         ShowInTaskbar="True"
+        WindowBackdropType="Mica"
+        ExtendsContentIntoTitleBar="True"
         UseLayoutRounding="True"
         SnapsToDevicePixels="True"
         TextOptions.TextFormattingMode="Ideal"
         TextOptions.TextRenderingMode="Auto"
         RenderOptions.ClearTypeHint="Enabled"
-        Background="{DynamicResource Brush.Surface}">
-    <Grid>
-        <local:OptionsControl x:Name="SettingsControl" />
+        Background="{DynamicResource Brush.Bg}">
+    <Grid Background="{DynamicResource Brush.Bg}">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+        </Grid.RowDefinitions>
+        <ui:TitleBar Grid.Row="0" Title="Settings">
+            <ui:TitleBar.Icon>
+                <ui:ImageIcon Source="pack://application:,,,/Assets/logo.png" />
+            </ui:TitleBar.Icon>
+        </ui:TitleBar>
+        <local:OptionsControl Grid.Row="1" x:Name="SettingsControl" />
     </Grid>
-</Window>
+</ui:FluentWindow>

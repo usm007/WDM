@@ -113,6 +113,12 @@ public sealed class CaptureServer : IDisposable
                         expectContinue = value.Contains("100-continue", StringComparison.OrdinalIgnoreCase);
                 }
 
+                if (contentLength > 10 * 1024 * 1024)
+                {
+                    await WriteResponseAsync(stream, HttpStatusCode.RequestEntityTooLarge, "Payload Too Large");
+                    return;
+                }
+
                 if (expectContinue)
                 {
                     await WriteRawAsync(stream, "HTTP/1.1 100 Continue\r\n\r\n");

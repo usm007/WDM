@@ -46,8 +46,11 @@ public sealed class SpeedGovernor
                 }
                 waitMs = (bytes - _tokens) * 1000.0 / rate;
             }
+            // Wedge guard: never sleep more than a few seconds per slice even if
+            // a caller passes an unexpectedly large byte count — the loop re-evaluates
+            // afterwards, so throttling behavior is unchanged in normal operation.
             if (waitMs > 0.5)
-                await Task.Delay((int)waitMs, ct);
+                await Task.Delay((int)Math.Min(waitMs, 2000), ct);
             else
                 await Task.Delay(1, ct); // never busy-spin the refill loop
             ct.ThrowIfCancellationRequested();

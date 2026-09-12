@@ -65,34 +65,28 @@ public static class HlsDownloader
             using var failCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
             var segCt = failCts.Token;
 
-            using var semaphore = new SemaphoreSlim(MaxConcurrentSegments);
-            var tasks = new List<Task>();
-            for (int i = 0; i < playlist.Segments.Count; i++)
+            var parallelOptions = new ParallelOptions
             {
-                int index = i;
-                tasks.Add(Task.Run(async () =>
+                MaxDegreeOfParallelism = MaxConcurrentSegments,
+                CancellationToken = segCt
+            };
+
+            var indexedSegments = playlist.Segments.Select((seg, index) => (seg, index));
+            await Parallel.ForEachAsync(indexedSegments, parallelOptions, async (item, token) =>
+            {
+                try
                 {
-                    await semaphore.WaitAsync(segCt);
-                    try
-                    {
-                        var seg = playlist.Segments[index];
-                        string tempFile = Path.Combine(tempDir, $"seg_{index:D6}.part");
-                        long length = await DownloadSegmentAsync(http, seg, referer, headers, tempFile, segCt, throttle);
-                        addBytes(length);
-                    }
-                    catch when (!segCt.IsCancellationRequested)
-                    {
-                        // Signal all sibling segments to stop on first error.
-                        failCts.Cancel();
-                        throw;
-                    }
-                    finally
-                    {
-                        semaphore.Release();
-                    }
-                }, segCt));
-            }
-            await Task.WhenAll(tasks);
+                    string tempFile = Path.Combine(tempDir, $"seg_{item.index:D6}.part");
+                    long length = await DownloadSegmentAsync(http, item.seg, referer, headers, tempFile, token, throttle);
+                    addBytes(length);
+                }
+                catch when (!token.IsCancellationRequested)
+                {
+                    // Signal all sibling segments to stop on first error.
+                    failCts.Cancel();
+                    throw;
+                }
+            });
             ct.ThrowIfCancellationRequested();
 
             // Concatenate in playlist order.
@@ -138,31 +132,22 @@ public static class HlsDownloader
     private static async Task ProbeSegmentSizesAsync(
         HttpClient http, Playlist playlist, string? referer, Dictionary<string, string>? headers, CancellationToken ct)
     {
-        using var semaphore = new SemaphoreSlim(MaxConcurrentSegments);
-        var tasks = new List<Task>();
-        for (int i = 0; i < playlist.Segments.Count; i++)
+        var parallelOptions = new ParallelOptions
         {
-            var seg = playlist.Segments[i];
+            MaxDegreeOfParallelism = MaxConcurrentSegments,
+            CancellationToken = ct
+        };
+
+        await Parallel.ForEachAsync(playlist.Segments, parallelOptions, async (seg, token) =>
+        {
             if (seg.Length > 0)
             {
                 Interlocked.Add(ref playlist.TotalBytes, seg.Length);
-                continue;
+                return;
             }
-            tasks.Add(Task.Run(async () =>
-            {
-                await semaphore.WaitAsync(ct);
-                try
-                {
-                    seg.Length = await ProbeSizeAsync(http, seg.Uri, referer, headers, ct);
-                    Interlocked.Add(ref playlist.TotalBytes, seg.Length);
-                }
-                finally
-                {
-                    semaphore.Release();
-                }
-            }, ct));
-        }
-        await Task.WhenAll(tasks);
+            seg.Length = await ProbeSizeAsync(http, seg.Uri, referer, headers, token);
+            Interlocked.Add(ref playlist.TotalBytes, seg.Length);
+        });
     }
 
     private static void ApplyHeaders(HttpRequestMessage req, string? referer, Dictionary<string, string>? headers)

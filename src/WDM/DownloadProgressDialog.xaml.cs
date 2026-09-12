@@ -3,6 +3,7 @@ using System.ComponentModel;
 using System.Runtime.CompilerServices;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Input;
 using WDM.Models;
 using WDM.ViewModels;
 
@@ -67,6 +68,7 @@ public partial class DownloadProgressDialog : Window, INotifyPropertyChanged
 
         Task.PropertyChanged += Task_PropertyChanged;
         _mainViewModel.Engine.ChunkProgressUpdated += Engine_ChunkProgressUpdated;
+        _mainViewModel.PropertyChanged += ViewModel_PropertyChanged;
         UpdateState();
         SetupChunkVisuals();
         ApplyYouTubeMode();
@@ -141,13 +143,13 @@ public partial class DownloadProgressDialog : Window, INotifyPropertyChanged
             if (!value)
             {
                 Task.SpeedLimitKbps = 0;
-                OnPropertyChanged();
             }
             else if (Task.SpeedLimitKbps <= 0)
             {
                 Task.SpeedLimitKbps = 500;
-                OnPropertyChanged();
             }
+            OnPropertyChanged();
+            OnPropertyChanged(nameof(TaskSpeedLimit));
         }
     }
 
@@ -158,6 +160,7 @@ public partial class DownloadProgressDialog : Window, INotifyPropertyChanged
         {
             Task.SpeedLimitKbps = Math.Max(0, value);
             OnPropertyChanged();
+            OnPropertyChanged(nameof(IsSpeedLimitEnabled));
         }
     }
 
@@ -189,18 +192,33 @@ public partial class DownloadProgressDialog : Window, INotifyPropertyChanged
         }
     }
 
-    private bool _shutdownOnComplete = false;
+    /// <summary>Global flag (stored on the MainViewModel): "shutdown after ALL
+    /// active downloads finish". Delegated so checking the box in any dialog
+    /// survives that dialog being closed, stays in sync across open dialogs,
+    /// and fires even if this task already finished before the box was checked.</summary>
     public bool ShutdownOnComplete
     {
-        get => _shutdownOnComplete;
+        get => _mainViewModel.ShutdownWhenQueueComplete;
         set
         {
-            if (_shutdownOnComplete != value)
+            if (_mainViewModel.ShutdownWhenQueueComplete != value)
             {
-                _shutdownOnComplete = value;
+                _mainViewModel.ShutdownWhenQueueComplete = value;
                 OnPropertyChanged();
             }
+            else if (value)
+            {
+                // Already on (e.g. enabled from another dialog): re-evaluate in
+                // case everything already finished.
+                _mainViewModel.MaybeShutdownOnQueueComplete();
+            }
         }
+    }
+
+    private void ViewModel_PropertyChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName == nameof(MainViewModel.ShutdownWhenQueueComplete))
+            OnPropertyChanged(nameof(ShutdownOnComplete));
     }
 
     private bool _completionHandled = false;
@@ -326,18 +344,10 @@ public partial class DownloadProgressDialog : Window, INotifyPropertyChanged
             }
         }
 
-        if (ShutdownOnComplete)
-        {
-            try
-            {
-                System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo("shutdown", "/s /t 30 /c \"WDM: Download completed. Shutting down system in 30 seconds.\"")
-                {
-                    CreateNoWindow = true,
-                    UseShellExecute = false
-                });
-            }
-            catch { }
-        }
+        // Global one-shot shutdown: only fires when no active/queued downloads
+        // remain (see MainViewModel.MaybeShutdownOnQueueComplete). Checking the
+        // box after completion is handled by the ShutdownOnComplete setter.
+        _mainViewModel.MaybeShutdownOnQueueComplete();
 
         if (CloseOnComplete)
         {
@@ -352,17 +362,40 @@ public partial class DownloadProgressDialog : Window, INotifyPropertyChanged
 
     private void Tab_Checked(object sender, RoutedEventArgs e)
     {
-        if (PanelLimiter == null || PanelOptions == null)
+        if (PanelLimiter == null || PanelOptions == null || PanelDetails == null)
             return;
 
         if (PanelStatus != null) PanelStatus.Visibility = Visibility.Collapsed;
+        PanelDetails.Visibility = Visibility.Collapsed;
         PanelLimiter.Visibility = Visibility.Collapsed;
         PanelOptions.Visibility = Visibility.Collapsed;
 
-        if (sender == TabLimiter)
+        if (sender == TabDetails)
+            PanelDetails.Visibility = Visibility.Visible;
+        else if (sender == TabLimiter)
             PanelLimiter.Visibility = Visibility.Visible;
         else if (sender == TabOptions)
             PanelOptions.Visibility = Visibility.Visible;
+    }
+
+    /// <summary>Clicking the active tab button again collapses its panel.</summary>
+    private void Tab_PreviewMouseDown(object sender, MouseButtonEventArgs e)
+    {
+        if (sender is System.Windows.Controls.RadioButton rb && rb.IsChecked == true)
+        {
+            rb.IsChecked = false;
+            if (PanelDetails != null) PanelDetails.Visibility = Visibility.Collapsed;
+            if (PanelLimiter != null) PanelLimiter.Visibility = Visibility.Collapsed;
+            if (PanelOptions != null) PanelOptions.Visibility = Visibility.Collapsed;
+            e.Handled = true;
+        }
+    }
+
+    private void Tab_Unchecked(object sender, RoutedEventArgs e)
+    {
+        if (PanelDetails != null) PanelDetails.Visibility = Visibility.Collapsed;
+        if (PanelLimiter != null) PanelLimiter.Visibility = Visibility.Collapsed;
+        if (PanelOptions != null) PanelOptions.Visibility = Visibility.Collapsed;
     }
 
     private void CopyUrl_Click(object sender, RoutedEventArgs e)
@@ -431,6 +464,7 @@ public partial class DownloadProgressDialog : Window, INotifyPropertyChanged
     protected override void OnClosed(EventArgs e)
     {
         _mainViewModel.Engine.ChunkProgressUpdated -= Engine_ChunkProgressUpdated;
+        _mainViewModel.PropertyChanged -= ViewModel_PropertyChanged;
         Task.PropertyChanged -= Task_PropertyChanged;
         base.OnClosed(e);
     }

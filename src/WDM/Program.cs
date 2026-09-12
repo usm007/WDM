@@ -12,7 +12,12 @@ public static class Program
     public static void Main(string[] args)
     {
         // Handle Velopack lifecycle hooks (install, update, uninstall). No-op on dev/Inno builds.
-        try { VelopackApp.Build().SetAutoApplyOnStartup(true).Run(); } catch { /* ignore velopack bootstrap failures in dev */ }
+        try { VelopackApp.Build().SetAutoApplyOnStartup(true).Run(); }
+        catch (Exception ex)
+        {
+            // Log to debug output — silent in release, visible under debugger
+            System.Diagnostics.Debug.WriteLine($"[Velopack] Bootstrap failed: {ex}");
+        }
 
         var app = new App();
         app.InitializeComponent();

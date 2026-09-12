@@ -25,45 +25,16 @@ async function loadCaptureState() {
   }
 }
 
-function updateBadge() {
-  if (!captureEnabled) {
-    try { webext.action.setBadgeText({ text: "OFF" }); } catch {}
-  } else {
-    try { webext.action.setBadgeText({ text: "" }); } catch {}
-  }
-}
-
-// Map of tabId -> Map of url -> streamInfo
-const tabMediaMap = new Map();
-
 function updateBadge(tabId) {
+  const details = typeof tabId === "number" ? { tabId } : {};
   if (!captureEnabled) {
-    try { webext.action.setBadgeText({ text: "OFF", tabId }); } catch {}
-    try { webext.action.setBadgeBackgroundColor({ color: "#ef4444", tabId }); } catch {}
+    try { webext.action.setBadgeText({ text: "OFF", ...details }); } catch {}
+    try { webext.action.setBadgeBackgroundColor({ color: "#ef4444", ...details }); } catch {}
     return;
   }
-  
-  if (typeof tabId === "number" && tabMediaMap.has(tabId)) {
-    const count = tabMediaMap.get(tabId).size;
-    try {
-      webext.action.setBadgeText({ text: count > 0 ? String(count) : "", tabId });
-      webext.action.setBadgeBackgroundColor({ color: "#2563eb", tabId });
-    } catch {}
-  } else {
-    try { webext.action.setBadgeText({ text: "" }); } catch {}
-  }
+  try { webext.action.setBadgeText({ text: "", ...details }); } catch {}
 }
 
-// Clean up media when tab is closed or navigated
-webext.tabs.onRemoved.addListener((tabId) => {
-  tabMediaMap.delete(tabId);
-});
-webext.tabs.onUpdated.addListener((tabId, changeInfo) => {
-  if (changeInfo.status === "loading") {
-    tabMediaMap.delete(tabId);
-    updateBadge(tabId);
-  }
-});
 webext.tabs.onActivated.addListener((activeInfo) => {
   updateBadge(activeInfo.tabId);
 });
@@ -99,24 +70,12 @@ webext.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
 
   if (message.action === "mediaDetected") {
-    const tabId = sender.tab ? sender.tab.id : null;
-    if (tabId && message.stream && message.stream.url) {
-      if (!tabMediaMap.has(tabId)) {
-        tabMediaMap.set(tabId, new Map());
-      }
-      tabMediaMap.get(tabId).set(message.stream.url, message.stream);
-      updateBadge(tabId);
-    }
     sendResponse({ success: true });
     return true;
   }
 
   if (message.action === "getMediaList") {
-    const tabId = message.tabId;
-    const list = (tabId && tabMediaMap.has(tabId)) 
-      ? Array.from(tabMediaMap.get(tabId).values()) 
-      : [];
-    sendResponse({ media: list, wdmActive: isWdmActive });
+    sendResponse({ media: [], wdmActive: isWdmActive });
     return true;
   }
 

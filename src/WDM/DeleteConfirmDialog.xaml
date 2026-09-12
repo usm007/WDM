@@ -1,6 +1,7 @@
-﻿<Window x:Class="WDM.DeleteConfirmDialog"
+<Window x:Class="WDM.DeleteConfirmDialog"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
         Title="Delete Downloads — WDM"
         Icon="Assets/WDM.ico"
         Width="400"
@@ -37,8 +38,8 @@
                 <DockPanel Margin="0,0,0,6" LastChildFill="True">
                     <Button DockPanel.Dock="Right" Style="{StaticResource Button.DialogClose}" Click="CancelClick" VerticalAlignment="Center" Margin="6,-6,-6,0" />
                     <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                        <TextBlock Text="&#xF0A7A;" FontFamily="{StaticResource Font.Icon}" FontSize="17"
-                                   Foreground="{DynamicResource Brush.StatusFailed}" Margin="0,0,7,0" VerticalAlignment="Center" />
+                        <ui:SymbolIcon Symbol="Delete24" FontSize="18"
+                                       Foreground="{DynamicResource Brush.StatusFailed}" Margin="0,0,7,0" VerticalAlignment="Center" />
                         <TextBlock Text="Delete Downloads" FontSize="15" FontWeight="SemiBold"
                                    Foreground="{DynamicResource Brush.Text}" VerticalAlignment="Center" />
                     </StackPanel>
@@ -55,8 +56,10 @@
             <!-- Bottom Action Strip -->
             <Border Grid.Row="1" Background="{DynamicResource Brush.SurfaceAlt}" BorderBrush="{DynamicResource Brush.Border}" BorderThickness="0,1,0,0" CornerRadius="0,0,7,7" Padding="16,10">
                 <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
-                    <Button x:Name="CancelButton" Content="Cancel" Style="{StaticResource Button.Secondary}" MinWidth="85" Height="28" IsCancel="True" Margin="0,0,8,0" Click="CancelClick" />
-                    <Button x:Name="DeleteButton" Content="Delete" Style="{StaticResource Button.Accent}" MinWidth="85" Height="28" IsDefault="True" Click="DeleteClick" />
+                    <ui:Button x:Name="CancelButton" Content="Cancel" Style="{StaticResource Button.SecondaryAction}" MinWidth="85" Height="32" IsCancel="True" Margin="0,0,8,0" Click="CancelClick" />
+                    <ui:Button x:Name="DeleteButton" Appearance="Danger" MinWidth="85" Height="32" IsDefault="True" Click="DeleteClick">
+                        <TextBlock Text="Delete" Foreground="White" VerticalAlignment="Center" />
+                    </ui:Button>
                 </StackPanel>
             </Border>
         </Grid>

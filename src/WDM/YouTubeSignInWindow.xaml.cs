@@ -6,7 +6,7 @@ using WDM.Services;
 
 namespace WDM;
 
-public partial class YouTubeSignInWindow : Window
+public partial class YouTubeSignInWindow : Wpf.Ui.Controls.FluentWindow
 {
     private WebView2? _webView;
 
