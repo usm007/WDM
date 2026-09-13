@@ -3,6 +3,9 @@
 ; via GitHub Releases nupkg/RELEASES. This Inno installer remains for new users and as fallback
 ; for portable/dev builds where Velopack is not active. It installs per-user to {localappdata}\WDM
 ; and preserves user data on updates (see CurStepChanged).
+; USER DATA SAFETY: since the data-home move, tasks.json / settings.json / cookies /
+; downloaded engines / WebView2 profile live in %LOCALAPPDATA%\WDM-Data (TaskStore.AppDir),
+; OUTSIDE {app}. Uninstall wipes {app} only and must never touch WDM-Data.
 ; Requires Inno Setup 6 (https://jrsoftware.org/isinfo.php)
 ; Compile: ISCC.exe installer.iss
 ; Velopack pack (delta): dotnet publish -> vpk pack --packId WDM --packVersion 2.5.4 ...
@@ -134,10 +137,11 @@ begin
   begin
     KillAllProcesses;
     // Do NOT delete AppDir on updates!
-    // AppDir ({app}) holds runtime user data: YouTube sign-in profile (WebView2),
-    // YouTube cookies (youtube_cookies.txt), downloaded engine plugins (bin/yt-dlp.exe, etc.),
-    // and user tasks/settings (tasks.json/settings.json).
-    // Inno Setup safely overwrites app binaries from [Files] while leaving user data untouched.
+    // Binaries ship from [Files]; user data (tasks.json, settings.json, engines,
+    // WebView2 profile) lives OUTSIDE {app} in %LOCALAPPDATA%\WDM-Data, so an
+    // install or uninstall can no longer take the download list with it.
+    // (The {app}\bin / WebView2 entries under [UninstallDelete] only clean up
+    // leftovers from pre-move installs and bundled content.)
   end;
 end;
 

@@ -23,8 +23,9 @@ public static class EngineManager
         Http.DefaultRequestHeaders.UserAgent.ParseAdd("WDM/2.2 (+https://github.com/usm007/WDM)");
     }
 
-    public static string DataFolder => Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "WDM");
+    // Downloaded engines live with the rest of the user data (TaskStore.AppDir),
+    // outside the install root so updates/uninstalls never wipe them.
+    public static string DataFolder => TaskStore.AppDir;
 
     public static string BinDir => Path.Combine(DataFolder, "bin");
     public static string SeedsDir => Path.Combine(AppContext.BaseDirectory, "engines");

@@ -58,43 +58,39 @@ if (Test-Path $setup) {
     Write-Host "Setup: $setup ($([math]::Round((Get-Item $setup).Length/1MB,2)) MB) - $mode (SelfContained=$SelfContained)"
 }
 
-# Create clean 3-file release upload folder: full installer, portable, update package (delta if exists, else full)
-# For self-contained exe: Setup/Portable are self-contained (~70-75 MB), but delta is framework-dependent (~0.15 MB, no .NET) — saves bandwidth
+# Create clean release upload folder: full installer, portable, self-contained update
+# packages (delta + full) and the matching feed JSON.
+# IMPORTANT: the auto-update feed (releases.win.json) must match the installed flavor.
+# The installed base is self-contained (.NET bundled), so the feed MUST be self-contained
+# too — a framework-only package applied over a self-contained install would delete the
+# bundled .NET runtime during Velopack obsolete-file removal. Framework builds
+# (-SelfContained:$false) remain available for manual/dev use but are never uploaded here.
 $uploadDir = Join-Path $PSScriptRoot "release_upload"
 if (Test-Path $uploadDir) { Remove-Item $uploadDir -Recurse -Force }
 New-Item -ItemType Directory -Path $uploadDir -Force | Out-Null
 $fullSetup = Join-Path $outFull "WDM-win-Setup.exe"
 $portable = Join-Path $outFull "WDM-win-Portable.zip"
-# Prefer delta as update package for patch releases (smaller), fallback to full.nupkg for initial release
+# Prefer the self-contained delta as the small update package, fallback to the full nupkg
 $deltaPkg = Get-ChildItem $outFull -Filter "WDM-$Version-delta.nupkg" -ErrorAction SilentlyContinue | Select-Object -First 1
 $fullPkg = Get-ChildItem $outFull -Filter "WDM-$Version-full.nupkg" -ErrorAction SilentlyContinue | Select-Object -First 1
 $updatePkg = if ($deltaPkg) { $deltaPkg } else { $fullPkg }
 $releasesJson = Join-Path $outFull "releases.win.json"
-# If self-contained, try to use framework delta (no .NET libs) if available from prior framework build
-if ($SelfContained) {
-    $fwDelta = Get-ChildItem (Join-Path $PSScriptRoot "releases_fw") -Filter "WDM-$Version-delta.nupkg" -ErrorAction SilentlyContinue | Select-Object -First 1
-    $fwJson = Join-Path (Join-Path $PSScriptRoot "releases_fw") "releases.win.json"
-    if ($fwDelta -and $fwDelta.Length -lt ($updatePkg.Length * 0.5)) {
-        Write-Host "Using framework delta (no .NET, $([math]::Round($fwDelta.Length/1KB,1)) KB) instead of self-contained delta ($([math]::Round($updatePkg.Length/1MB,1)) MB) for small updates"
-        $updatePkg = $fwDelta
-        $releasesJson = $fwJson
-    }
-}
 if (Test-Path $fullSetup) { Copy-Item $fullSetup (Join-Path $uploadDir "WDM-Full-Setup-$Version.exe") }
 if (Test-Path $portable) { Copy-Item $portable (Join-Path $uploadDir "WDM-Portable-$Version.zip") }
 if ($updatePkg -and (Test-Path $updatePkg.FullName)) { Copy-Item $updatePkg.FullName (Join-Path $uploadDir $updatePkg.Name) -Force }
-$releasesJson = if ($releasesJson -and (Test-Path $releasesJson)) { $releasesJson } else { Join-Path $outFull "releases.win.json" }
+if ($fullPkg -and (Test-Path $fullPkg.FullName)) { Copy-Item $fullPkg.FullName (Join-Path $uploadDir $fullPkg.Name) -Force }
 if (Test-Path $releasesJson) { Copy-Item $releasesJson (Join-Path $uploadDir "releases.win.json") -Force }
 Write-Host ""
-Write-Host "Release upload (4 files) in $uploadDir :"
+Write-Host "Release upload in $uploadDir :"
 Get-ChildItem $uploadDir | Format-Table Name, @{N="SizeMB";E={"{0:F2}" -f ($_.Length/1MB)}}, Length
 Write-Host "  1) WDM-Full-Setup-$Version.exe  -> full installer for new users (Velopack Setup, self-contained .NET 8)"
 Write-Host "  2) WDM-Portable-$Version.zip     -> portable, self-contained, no .NET install needed"
-Write-Host "  3) $($updatePkg.Name)  -> update package ONLY - in-app updater downloads this delta, NOT the full installer"
-Write-Host "  4) releases.win.json -> Required by Velopack GithubSource to resolve delta packages"
-Write-Host "Updater: VelopackUpdateService downloads only the update package (delta ~15KB) with progress bar, then ApplyAndRestart."
+Write-Host "  3) $($updatePkg.Name)  -> small update package - in-app updater downloads this delta, NOT the full installer"
+Write-Host "  4) $($fullPkg.Name)  -> full update package - fallback for updaters too far behind for delta"
+Write-Host "  5) releases.win.json -> Required by Velopack GithubSource to resolve update packages (self-contained feed)"
+Write-Host "Updater: VelopackUpdateService downloads only the update package (delta ~3MB) with progress bar, then ApplyAndRestart."
 
 Write-Host ""
-Write-Host "Next: upload $uploadDir/* to GitHub Release tag v$Version (3 files total)."
+Write-Host "Next: upload $uploadDir/* to GitHub Release tag v$Version (full nupkg required so the feed can resolve it)."
 Write-Host "Existing installs via Velopack will get delta patch-only updates with progress bar and auto-restart."
 Write-Host "Dotnet: self-contained .NET 8 is now the default (exe contains all libs, ~140-160MB). Pass -SelfContained:`$false -Framework $Framework for small framework-dependent build."

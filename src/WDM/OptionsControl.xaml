@@ -590,7 +590,7 @@
                             <ui:CardControl.Header>
                                 <StackPanel>
                                     <TextBlock Text="Settings storage" FontWeight="Medium" FontSize="13" Foreground="{DynamicResource Brush.Text}" />
-                                    <TextBlock Text="Persisted in %APPDATA%\WDM\settings.json with atomic flush." FontSize="11.5" Foreground="{DynamicResource Brush.TextMuted}" Margin="0,2,0,0" />
+                                    <TextBlock Text="Persisted in %LOCALAPPDATA%\WDM-Data\settings.json with atomic flush." FontSize="11.5" Foreground="{DynamicResource Brush.TextMuted}" Margin="0,2,0,0" />
                                 </StackPanel>
                             </ui:CardControl.Header>
                             <Border Background="{DynamicResource Brush.SurfaceHover}" BorderBrush="{DynamicResource Brush.Border}" BorderThickness="1" CornerRadius="4" Padding="10,4">

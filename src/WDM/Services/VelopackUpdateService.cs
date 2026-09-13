@@ -52,6 +52,43 @@ public static class VelopackUpdateService
         }
     }
 
+    /// <summary>True when the running copy bundles the .NET runtime (self-contained
+    /// publish). Framework-dependent copies have no coreclr/System.Private.CoreLib
+    /// next to the exe — those come from the shared runtime instead.</summary>
+    public static bool IsSelfContainedInstall
+    {
+        get
+        {
+            try
+            {
+                string dir = AppContext.BaseDirectory;
+                return File.Exists(Path.Combine(dir, "coreclr.dll"))
+                    || File.Exists(Path.Combine(dir, "System.Private.CoreLib.dll"));
+            }
+            catch { return false; }
+        }
+    }
+
+    /// <summary>
+    /// Refuses a cross-flavor update: a framework-only package applied over a
+    /// self-contained install would delete the bundled .NET runtime during
+    /// Velopack's obsolete-file removal and leave a broken app behind.
+    /// A self-contained full (~70+ MB) can never be confused with a
+    /// framework-only one (~7 MB), so size is a reliable discriminator.
+    /// </summary>
+    private static void ThrowIfFeedFlavorMismatch(UpdateInfo update)
+    {
+        const long MinSelfContainedFullBytes = 20_000_000;
+        var full = update.TargetFullRelease;
+        if (IsSelfContainedInstall && full is not null && full.Size < MinSelfContainedFullBytes)
+        {
+            throw new InvalidOperationException(
+                $"Update feed mismatch: installed WDM is self-contained (.NET bundled) but the feed " +
+                $"offers '{full.FileName}' ({full.Size / 1048576} MB, framework-only, no .NET). " +
+                $"Refusing to apply — download the full setup from the release page instead. " +
+                $"See wdm_error.log for details.");
+        }
+    }
     /// <summary>Converts Velopack SemanticVersion to System.Version for ReleaseInfo.</summary>
     public static Version ToSystemVersion(NuGet.Versioning.SemanticVersion semVer)
     {
@@ -201,6 +238,7 @@ public static class VelopackUpdateService
         if (!mgr.IsInstalled)
             throw new InvalidOperationException("Velopack is not installed — cannot download delta updates. Use full installer fallback.");
 
+        ThrowIfFeedFlavorMismatch(update);
         await mgr.DownloadUpdatesAsync(update, onProgress, ct).ConfigureAwait(false);
     }
 

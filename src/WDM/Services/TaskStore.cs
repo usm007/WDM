@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using WDM.Models;
 
 namespace WDM.Services;
@@ -54,18 +55,189 @@ public sealed class AppSettings
     public string? PostDownloadScript { get; set; }
 }
 
+/// <summary>
+/// JSON converter factory that tolerates unknown enum values instead of throwing.
+/// A single unrecognized value (e.g. written by a newer or older app version) falls
+/// back to the enum default, so one bad value can never sink a whole file.
+/// Serialized output stays identical to JsonStringEnumConverter (camel-agnostic names).
+/// </summary>
+public sealed class LenientEnumConverterFactory : JsonConverterFactory
+{
+    public override bool CanConvert(Type typeToConvert) => typeToConvert.IsEnum;
+
+    public override JsonConverter CreateConverter(Type typeToConvert, JsonSerializerOptions options)
+        => (JsonConverter)Activator.CreateInstance(
+            typeof(LenientEnumConverter<>).MakeGenericType(typeToConvert))!;
+}
+
+public sealed class LenientEnumConverter<T> : JsonConverter<T> where T : struct, Enum
+{
+    public override T Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
+    {
+        if (reader.TokenType == JsonTokenType.String)
+        {
+            string? s = reader.GetString();
+            if (!string.IsNullOrWhiteSpace(s))
+            {
+                if (Enum.TryParse(s, ignoreCase: true, out T named))
+                    return named;
+                if (int.TryParse(s, out int n) && Enum.IsDefined(typeof(T), n))
+                    return (T)Enum.ToObject(typeof(T), n);
+            }
+            return default;
+        }
+        if (reader.TokenType == JsonTokenType.Number && reader.TryGetInt32(out int num))
+        {
+            if (Enum.IsDefined(typeof(T), num))
+                return (T)Enum.ToObject(typeof(T), num);
+            return default;
+        }
+        if (reader.TokenType == JsonTokenType.Null)
+            return default;
+        // Unexpected token (object/array/bool where an enum was expected): skip it.
+        using var _ = JsonDocument.ParseValue(ref reader);
+        return default;
+    }
+
+    public override void Write(Utf8JsonWriter writer, T value, JsonSerializerOptions options)
+        => writer.WriteStringValue(value.ToString());
+}
+
 public sealed class TaskStore
 {
-    public static readonly string AppDir = Path.Combine(
+    /// <summary>
+    /// User data home. Deliberately OUTSIDE the install root (%LocalAppData%\WDM),
+    /// which Velopack/Inno own and may wipe on uninstall or reinstall. Holds
+    /// tasks.json, settings.json, cookies, downloaded engines and the WebView2
+    /// profile. Never store binaries here; never delete this folder on uninstall.
+    /// Plain static (not readonly) so tests/tools can redirect it; app code must
+    /// treat it as read-only after startup.
+    /// </summary>
+    public static string AppDir = Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "WDM-Data");
+
+    /// <summary>
+    /// Legacy data location (inside the install root). Only read by the one-time
+    /// migration in <see cref="EnsureMigrated"/>; never written to by new versions.
+    /// </summary>
+    public static string LegacyAppDir = Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "WDM");
-    private static readonly string SettingsPath = Path.Combine(AppDir, "settings.json");
-    private static readonly string TasksPath = Path.Combine(AppDir, "tasks.json");
+
+    private static string SettingsPath => Path.Combine(AppDir, "settings.json");
+    private static string TasksPath => Path.Combine(AppDir, "tasks.json");
+    private static string TasksBackupPath => TasksPath + ".bak";
 
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
         WriteIndented = false,
-        Converters = { new System.Text.Json.Serialization.JsonStringEnumConverter() },
+        Converters = { new LenientEnumConverterFactory() },
     };
+
+    /// <summary>True when the last tasks load hit an error. While true,
+    /// <see cref="SaveTasks"/> refuses to overwrite tasks.json so a failed read
+    /// can never cement an empty list over the user's real data.</summary>
+    public static bool TasksLoadFailed { get; private set; }
+
+    /// <summary>Number of individual records skipped while salvaging a corrupt file.</summary>
+    public static int TasksLoadSkippedRecords { get; private set; }
+
+    /// <summary>Error text from the last failed tasks load (also in wdm_error.log).</summary>
+    public static string? LastTasksLoadError { get; private set; }
+
+    /// <summary>True when the last load transparently restored tasks.json from backup.</summary>
+    public static bool TasksBackupRestored { get; private set; }
+
+    private static bool _sessionBackupTaken;
+
+    private static void LogNonFatal(Exception ex)
+    {
+        try { WDM.App.LogException(ex); } catch { }
+    }
+
+    private static void FailLoad(Exception ex)
+    {
+        TasksLoadFailed = true;
+        LastTasksLoadError = ex.Message;
+        LogNonFatal(ex);
+    }
+
+    private static bool IsExistingUser()
+    {
+        try { return File.Exists(SettingsPath); } catch { return false; }
+    }
+
+    /// <summary>
+    /// One-time migration of user data out of the legacy install-root location.
+    /// Safe to call on every startup: only moves files/dirs that exist in the
+    /// legacy folder and are missing in the new home (copy-then-delete, so a
+    /// failed delete still leaves a good copy behind).
+    /// </summary>
+    public static void EnsureMigrated()
+    {
+        try
+        {
+            string newRoot = Path.GetFullPath(AppDir).TrimEnd(Path.DirectorySeparatorChar);
+            string oldRoot = Path.GetFullPath(LegacyAppDir).TrimEnd(Path.DirectorySeparatorChar);
+            if (string.Equals(newRoot, oldRoot, StringComparison.OrdinalIgnoreCase))
+                return;
+
+            MigrateFile("tasks.json");
+            MigrateFile("settings.json");
+            MigrateFile("youtube_cookies.txt");
+            try
+            {
+                if (Directory.Exists(LegacyAppDir))
+                {
+                    foreach (string bak in Directory.GetFiles(LegacyAppDir, "tasks.json.bak*"))
+                        MigrateFile(Path.GetFileName(bak));
+                }
+            }
+            catch (Exception ex) { LogNonFatal(ex); }
+            MigrateDir("bin");
+            MigrateDir("WebView2");
+        }
+        catch (Exception ex) { LogNonFatal(ex); }
+    }
+
+    private static bool MigrateFile(string name)
+    {
+        try
+        {
+            string src = Path.Combine(LegacyAppDir, name);
+            string dst = Path.Combine(AppDir, name);
+            if (!File.Exists(src) || File.Exists(dst))
+                return false;
+            Directory.CreateDirectory(AppDir);
+            File.Copy(src, dst);
+            try { File.Delete(src); } catch { /* copy won; a stale legacy file is harmless */ }
+            return true;
+        }
+        catch (Exception ex) { LogNonFatal(ex); return false; }
+    }
+
+    private static bool MigrateDir(string name)
+    {
+        try
+        {
+            string src = Path.Combine(LegacyAppDir, name);
+            string dst = Path.Combine(AppDir, name);
+            if (!Directory.Exists(src) || Directory.Exists(dst))
+                return false;
+            CopyDirectory(src, dst);
+            try { Directory.Delete(src, recursive: true); } catch { }
+            return true;
+        }
+        catch (Exception ex) { LogNonFatal(ex); return false; }
+    }
+
+    private static void CopyDirectory(string src, string dst)
+    {
+        Directory.CreateDirectory(dst);
+        foreach (string file in Directory.GetFiles(src))
+            File.Copy(file, Path.Combine(dst, Path.GetFileName(file)), overwrite: true);
+        foreach (string dir in Directory.GetDirectories(src))
+            CopyDirectory(dir, Path.Combine(dst, Path.GetFileName(dir)));
+    }
 
     public static AppSettings LoadSettings()
     {
@@ -74,9 +246,9 @@ public sealed class TaskStore
             if (File.Exists(SettingsPath))
                 return JsonSerializer.Deserialize<AppSettings>(File.ReadAllText(SettingsPath), JsonOptions) ?? new AppSettings();
         }
-        catch
+        catch (Exception ex)
         {
-            // Fall back to defaults.
+            LogNonFatal(ex);
         }
         return new AppSettings();
     }
@@ -88,31 +260,143 @@ public sealed class TaskStore
             Directory.CreateDirectory(AppDir);
             AtomicFile.Write(SettingsPath, JsonSerializer.Serialize(settings, JsonOptions));
         }
-        catch
+        catch (Exception ex)
         {
-            // Ignore persistence failures.
+            LogNonFatal(ex);
         }
     }
 
     public static List<TaskRecord> LoadTasks()
     {
+        TasksLoadFailed = false;
+        TasksLoadSkippedRecords = 0;
+        LastTasksLoadError = null;
+        TasksBackupRestored = false;
+
+        if (!File.Exists(TasksPath))
+            return new List<TaskRecord>(); // Fresh user — nothing to protect.
+
+        string text;
         try
         {
-            if (File.Exists(TasksPath))
-                return JsonSerializer.Deserialize<List<TaskRecord>>(File.ReadAllText(TasksPath), JsonOptions) ?? new();
+            text = File.ReadAllText(TasksPath);
         }
-        catch
+        catch (Exception ex)
         {
-            // Fall back to empty list.
+            FailLoad(ex);
+            return new List<TaskRecord>();
         }
-        return new List<TaskRecord>();
+
+        if (string.IsNullOrWhiteSpace(text))
+        {
+            FailLoad(new InvalidDataException("tasks.json is empty."));
+            return new List<TaskRecord>();
+        }
+
+        // Fast path: the whole file parses.
+        try
+        {
+            return JsonSerializer.Deserialize<List<TaskRecord>>(text, JsonOptions) ?? new List<TaskRecord>();
+        }
+        catch (Exception ex)
+        {
+            LastTasksLoadError = ex.Message;
+            LogNonFatal(ex);
+        }
+
+        // Slow path: an existing user's list failed to parse. Try the backup
+        // before falling back to per-record salvage.
+        if (IsExistingUser() && TryRestoreBackup(out var restored))
+            return restored;
+
+        var salvaged = SalvageRecords(text);
+        // Any exception during load (or any skipped record) means the file may
+        // hold data we couldn't read — refuse future overwrites this session.
+        TasksLoadFailed = true;
+        return salvaged;
+    }
+
+    private static bool TryRestoreBackup(out List<TaskRecord> restored)
+    {
+        restored = new List<TaskRecord>();
+        try
+        {
+            if (!File.Exists(TasksBackupPath))
+                return false;
+            string text = File.ReadAllText(TasksBackupPath);
+            var parsed = JsonSerializer.Deserialize<List<TaskRecord>>(text, JsonOptions);
+            if (parsed is null || parsed.Count == 0)
+                return false;
+            File.Copy(TasksBackupPath, TasksPath, overwrite: true);
+            TasksBackupRestored = true;
+            LogNonFatal(new InvalidOperationException(
+                $"tasks.json was unreadable and has been restored from tasks.json.bak ({parsed.Count} records)."));
+            restored = parsed;
+            return true;
+        }
+        catch (Exception ex)
+        {
+            LogNonFatal(ex);
+            return false;
+        }
+    }
+
+    private static List<TaskRecord> SalvageRecords(string text)
+    {
+        var salvaged = new List<TaskRecord>();
+        try
+        {
+            using var doc = JsonDocument.Parse(text);
+            if (doc.RootElement.ValueKind != JsonValueKind.Array)
+                return salvaged;
+            foreach (var el in doc.RootElement.EnumerateArray())
+            {
+                try
+                {
+                    var rec = el.Deserialize<TaskRecord>(JsonOptions);
+                    if (rec is not null)
+                        salvaged.Add(rec);
+                    else
+                        TasksLoadSkippedRecords++;
+                }
+                catch
+                {
+                    TasksLoadSkippedRecords++;
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            LastTasksLoadError = (LastTasksLoadError ?? "") + " | salvage: " + ex.Message;
+            LogNonFatal(ex);
+        }
+        return salvaged;
     }
 
     public static void SaveTasks(IEnumerable<DownloadTask> tasks)
     {
         try
         {
+            if (TasksLoadFailed)
+            {
+                // The in-memory list may be missing records we failed to read.
+                // Never overwrite the file in that state — the cause is in wdm_error.log.
+                LogNonFatal(new InvalidOperationException(
+                    "SaveTasks skipped: the initial tasks load failed (" + LastTasksLoadError + "). " +
+                    "Fix or delete tasks.json (a tasks.json.bak backup may exist) and restart WDM."));
+                return;
+            }
             Directory.CreateDirectory(AppDir);
+            if (!_sessionBackupTaken)
+            {
+                _sessionBackupTaken = true;
+                try
+                {
+                    if (File.Exists(TasksPath))
+                        File.Copy(TasksPath, TasksBackupPath, overwrite: true);
+                }
+                catch { }
+            }
             var records = tasks.Select(t => new TaskRecord
             {
                 Url = t.Url,

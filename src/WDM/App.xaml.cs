@@ -90,6 +90,9 @@ public partial class App : Application
             string.Equals(a, "-silent", StringComparison.OrdinalIgnoreCase) ||
             string.Equals(a, "-tray", StringComparison.OrdinalIgnoreCase));
         BrowserIntegration.DeployExtension();
+        // Migrate user data out of the legacy install-root location first, so every
+        // read below (settings, tasks, engines, WebView2 profile) hits the new home.
+        TaskStore.EnsureMigrated();
         var settings = TaskStore.LoadSettings();
         ThemeService.Apply(AppTheme.Default, settings.UseDarkTheme);
 
