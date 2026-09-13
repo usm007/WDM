@@ -72,7 +72,9 @@ screenshots/
 design-system/
 motion-audits/
 
-# Local-only README with images — keep lean placeholder on GitHub
+# Markdown files - local only, not tracked in remote repository
+*.md
 README.md
+stream_catch.md
 preparing-states-preview.html
 
