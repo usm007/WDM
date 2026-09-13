@@ -73,7 +73,7 @@ $releasesJson = Join-Path $outFull "releases.win.json"
 # If self-contained, try to use framework delta (no .NET libs) if available from prior framework build
 if ($SelfContained) {
     $fwDelta = Get-ChildItem (Join-Path $PSScriptRoot "releases_fw") -Filter "WDM-$Version-delta.nupkg" -ErrorAction SilentlyContinue | Select-Object -First 1
-    $fwJson = Join-Path $PSScriptRoot "releases_fw" "releases.win.json"
+    $fwJson = Join-Path (Join-Path $PSScriptRoot "releases_fw") "releases.win.json"
     if ($fwDelta -and $fwDelta.Length -lt ($updatePkg.Length * 0.5)) {
         Write-Host "Using framework delta (no .NET, $([math]::Round($fwDelta.Length/1KB,1)) KB) instead of self-contained delta ($([math]::Round($updatePkg.Length/1MB,1)) MB) for small updates"
         $updatePkg = $fwDelta
