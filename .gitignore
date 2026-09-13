@@ -66,3 +66,9 @@ skills-lock.json
 # Website (docs/) is local-only, deployed to Vercel — not tracked in git
 docs/
 
+# Large media / design artifacts — kept locally, re-add to README later via external URLs
+hero_banner_readme.png
+screenshots/
+design-system/
+motion-audits/
+
