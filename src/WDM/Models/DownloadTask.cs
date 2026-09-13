@@ -47,6 +47,11 @@ public sealed class DownloadTask : INotifyPropertyChanged
     public string Url { get; set; } = "";
     public string? Referer { get; set; }
 
+    /// <summary>Original player/embed page URL when <see cref="Url"/> was resolved to a
+    /// direct stream by the embed resolver. Persisted so expiring signed links can be
+    /// re-resolved fresh on resume/restart instead of reusing a stale CDN URL.</summary>
+    public string? SourcePageUrl { get; set; }
+
     /// <summary>Custom HTTP headers sent with every request (e.g. Cookie, Authorization).
     /// Keys are header names; values are header values.</summary>
     public Dictionary<string, string> Headers { get; set; } = new(StringComparer.OrdinalIgnoreCase);
@@ -80,7 +85,20 @@ public sealed class DownloadTask : INotifyPropertyChanged
     public string? ThumbnailUrl { get; set; }
 
     public long SpeedLimitKbps { get; set; }
-    public DownloadCategory Category { get; set; } = DownloadCategory.Other;
+    private DownloadCategory _category = DownloadCategory.Other;
+    public DownloadCategory Category
+    {
+        get => _category;
+        set
+        {
+            if (Set(ref _category, value))
+            {
+                Raise(nameof(CategoryBrush));
+                Raise(nameof(TypeIcon));
+                Raise(nameof(TypeSymbol));
+            }
+        }
+    }
     public string? Checksum { get; set; }
     public DateTime? CompletedAt { get; set; }
 
@@ -139,6 +157,13 @@ public sealed class DownloadTask : INotifyPropertyChanged
         {
             if (Set(ref _status, value))
             {
+                // Leaving the active state always clears the preparing indicator;
+                // the engine re-enables it on every new session.
+                if (_status != TaskStatus.Downloading && _isPreparing)
+                {
+                    _isPreparing = false;
+                    Raise(nameof(IsPreparing));
+                }
                 Raise(nameof(StatusText));
                 Raise(nameof(ProgressText));
                 Raise(nameof(Progress));
@@ -251,7 +276,15 @@ public sealed class DownloadTask : INotifyPropertyChanged
     private string _eta = "";
     public string Eta
     {
-        get => Status == TaskStatus.Downloading ? _eta : "";
+        get
+        {
+            if (Status != TaskStatus.Downloading)
+                return "";
+            if (!string.IsNullOrEmpty(_eta))
+                return _eta;
+            // Preparing gap (resolve/probe): show activity instead of blank.
+            return _isPreparing ? "…" : "";
+        }
         set
         {
             Set(ref _eta, value);
@@ -283,6 +316,38 @@ public sealed class DownloadTask : INotifyPropertyChanged
     {
         get => _resumeCapabilityText;
         set => Set(ref _resumeCapabilityText, value);
+    }
+
+    /// <summary>True from session start until the first bytes actually flow.
+    /// Covers embed resolving, title sync, HEAD/probe, HLS playlist + segment
+    /// probing and ffmpeg spawn — the window where the progress dialog would
+    /// otherwise show empty stats. Set/cleared by the engine only.</summary>
+    private bool _isPreparing;
+    public bool IsPreparing
+    {
+        get => _isPreparing;
+        set
+        {
+            if (Set(ref _isPreparing, value))
+            {
+                Raise(nameof(SpeedText));
+                Raise(nameof(Eta));
+                Raise(nameof(RowTelemetryStatusText));
+            }
+        }
+    }
+
+    /// <summary>Human-readable phase shown under the file name while
+    /// <see cref="IsPreparing"/> is true, e.g. "Resolving stream…".</summary>
+    private string _phaseText = "";
+    public string PhaseText
+    {
+        get => _phaseText;
+        set
+        {
+            if (Set(ref _phaseText, value))
+                Raise(nameof(RowTelemetryStatusText));
+        }
     }
 
     public string SizeText => TotalBytes > 0 ? FormatBytes(TotalBytes) : "—";
@@ -326,9 +391,18 @@ public sealed class DownloadTask : INotifyPropertyChanged
 
     public bool IsDownloading => Status == TaskStatus.Downloading;
 
-    public string SpeedText => Status == TaskStatus.Downloading && SpeedBps >= 1
-        ? $"{FormatBytes((long)SpeedBps)}/s"
-        : "";
+    public string SpeedText
+    {
+        get
+        {
+            if (Status != TaskStatus.Downloading)
+                return "";
+            if (SpeedBps >= 1)
+                return $"{FormatBytes((long)SpeedBps)}/s";
+            // Preparing gap: show activity instead of blank.
+            return _isPreparing ? "…" : "";
+        }
+    }
 
     public string DomainText
     {
@@ -367,7 +441,8 @@ public sealed class DownloadTask : INotifyPropertyChanged
 
     public string RowTelemetryStatusText => Status switch
     {
-        TaskStatus.Downloading => !string.IsNullOrEmpty(Eta) ? Eta : "Estimating…",
+        TaskStatus.Downloading => _isPreparing && !string.IsNullOrWhiteSpace(_phaseText) ? _phaseText
+            : (!string.IsNullOrEmpty(Eta) ? Eta : "Estimating…"),
         TaskStatus.Completed => CompletedAt.HasValue ? CompletedAt.Value.ToString("HH:mm") : "",
         TaskStatus.Failed => "",
         TaskStatus.Queued => QueuePosition > 0 ? $"Queue #{QueuePosition}" : "Queued",
@@ -437,9 +512,11 @@ public sealed class DownloadTask : INotifyPropertyChanged
         }
     }
 
-    public System.Windows.Media.Brush CategoryBrush =>
-        (System.Windows.Media.Brush)System.Windows.Application.Current.Resources[
-            Category switch
+    public System.Windows.Media.Brush CategoryBrush
+    {
+        get
+        {
+            string key = Category switch
             {
                 DownloadCategory.Video => "Brush.CatVideo",
                 DownloadCategory.Music => "Brush.CatMusic",
@@ -447,7 +524,17 @@ public sealed class DownloadTask : INotifyPropertyChanged
                 DownloadCategory.Compressed => "Brush.CatCompressed",
                 DownloadCategory.Program => "Brush.CatProgram",
                 _ => "Brush.Text",
-            }];
+            };
+            try
+            {
+                var found = System.Windows.Application.Current?.TryFindResource(key);
+                if (found is System.Windows.Media.Brush brush)
+                    return brush;
+            }
+            catch { }
+            return System.Windows.Media.Brushes.Gray;
+        }
+    }
 
     public string TypeIcon => Category switch
     {

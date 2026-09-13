@@ -18,6 +18,7 @@ public static class AtomicFile
         {
             string dir = Path.GetDirectoryName(path) ?? AppDomain.CurrentDomain.BaseDirectory;
             Directory.CreateDirectory(dir);
+            SweepStaleTemps(dir, Path.GetFileName(path));
             string tmp = Path.Combine(dir, $"{Path.GetFileName(path)}.{Guid.NewGuid():N}.tmp");
             try
             {
@@ -30,5 +31,24 @@ public static class AtomicFile
                 throw;
             }
         }
+    }
+
+    /// <summary>Best-effort cleanup of orphaned temp files from crashed/killed
+    /// writes. Only touches our own pattern older than a day.</summary>
+    private static void SweepStaleTemps(string dir, string baseName)
+    {
+        try
+        {
+            foreach (string f in Directory.GetFiles(dir, baseName + ".*.tmp"))
+            {
+                try
+                {
+                    if (DateTime.UtcNow - File.GetLastWriteTimeUtc(f) > TimeSpan.FromDays(1))
+                        File.Delete(f);
+                }
+                catch { }
+            }
+        }
+        catch { }
     }
 }

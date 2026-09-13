@@ -119,7 +119,7 @@ public static class FileNameHelper
             var parts = new List<string>();
             var cont = Regex.Matches(disposition, @"filename\*(\d+)(\*?)\s*=\s*([^;]+)", RegexOptions.IgnoreCase)
                 .Cast<Match>()
-                .OrderBy(m => int.Parse(m.Groups[1].Value));
+                .OrderBy(m => int.TryParse(m.Groups[1].Value, out int idx) ? idx : 0);
             foreach (Match m in cont)
             {
                 string chunk = m.Groups[3].Value.Trim().Trim('"');
@@ -326,12 +326,7 @@ public static class FileNameHelper
         // G. Expand known compressed title abbreviations
         var expansions = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
         {
-            ["T One"] = "The One",
-            ["Tone"] = "The One",
-            ["Wlk"] = "Walk",
             ["Agnst"] = "Against",
-            ["T Ran"] = "The Rain",
-            ["Tran"] = "The Rain",
             ["Ssn"] = "Season",
             ["Seas"] = "Season",
             ["Ep"] = "Episode",
@@ -356,6 +351,9 @@ public static class FileNameHelper
         if (string.IsNullOrWhiteSpace(name))
             name = $"download_{DateTime.Now:yyyyMMdd_HHmmss}";
 
+        name = HardenStem(name);
+        ext = SanitizeExtension(ext);
+
         if (!string.IsNullOrEmpty(ext))
         {
             if (!ext.StartsWith('.')) ext = "." + ext;
@@ -364,16 +362,88 @@ public static class FileNameHelper
         return name;
     }
 
+    /// <summary>Last line of defense for every filename tier: strips path
+    /// separators/traversal, reserved device names, leading dots and over-long
+    /// stems. All <see cref="FinalizeName"/> callers are covered.</summary>
+    private static string HardenStem(string name)
+    {
+        name = name.Replace('/', ' ').Replace('\\', ' ');
+        name = name.Replace("..", " ");
+        foreach (char c in Path.GetInvalidFileNameChars())
+            name = name.Replace(c, ' ');
+        name = Regex.Replace(name, @":", " ");
+        name = Regex.Replace(name, @"\s+", " ").Trim();
+        name = name.TrimStart('.');
+        name = name.Trim('-', ' ', '_', ',', '|', '~', ';');
+        if (string.IsNullOrWhiteSpace(name))
+            return $"download_{DateTime.Now:yyyyMMddHHmmss}";
+        // Reserved Windows device names (CON, PRN, AUX, NUL, COM1-9, LPT1-9).
+        string upper = name.ToUpperInvariant();
+        int dot = upper.IndexOf('.');
+        string basePart = dot > 0 ? upper[..dot] : upper;
+        if (basePart is "CON" or "PRN" or "AUX" or "NUL" ||
+            Regex.IsMatch(basePart, @"^(COM[1-9]|LPT[1-9])$"))
+            name = "_" + name;
+        const int maxStem = 120;
+        if (name.Length > maxStem)
+            name = name[..maxStem].TrimEnd();
+        return string.IsNullOrWhiteSpace(name) ? $"download_{DateTime.Now:yyyyMMddHHmmss}" : name;
+    }
+
+    private static string SanitizeExtension(string ext)
+    {
+        if (string.IsNullOrWhiteSpace(ext))
+            return "";
+        ext = ext.Trim();
+        if (!ext.StartsWith('.'))
+            ext = "." + ext;
+        string body = ext[1..];
+        if (body.Length is < 1 or > 10 || !Regex.IsMatch(body, @"^[A-Za-z0-9]+$"))
+            return "";
+        return "." + body.ToLowerInvariant();
+    }
+
     public static string CleanVideoFileName(string fileName, string? pageTitle = null, string? referer = null) =>
         SmartSanitizeFileName(fileName, pageTitle, referer);
+
+    /// <summary>True for manifest/chunklist basenames that carry no title
+    /// ("master", "index", "playlist", "index-v1-a1", "seg-12", ...).</summary>
+    public static bool IsManifestStem(string? stem)
+    {
+        if (string.IsNullOrWhiteSpace(stem)) return true;
+        string s = stem.Trim();
+        // Strip one media extension before comparing ("master.m3u8" -> "master").
+        int dot = s.LastIndexOf('.');
+        if (dot > 0) s = s[..dot];
+        return Regex.IsMatch(s,
+            @"^(master|index|playlist|chunklist|manifest|stream|play|video|media|file|download|index-v1-a\d+|seg-?\d*)$",
+            RegexOptions.IgnoreCase);
+    }
 
     public static string CleanPageTitle(string pageTitle)
     {
         if (string.IsNullOrWhiteSpace(pageTitle)) return "";
         string title = pageTitle.Trim();
 
+        // Strip player prefixes e.g. "Watch My Film", "Now Playing: My Film".
+        title = Regex.Replace(title, @"^\s*(Watch|Now Playing)\s*[:\-–—]\s*", "", RegexOptions.IgnoreCase);
+        title = Regex.Replace(title, @"^\s*(Watch|Now Playing)\s+", "", RegexOptions.IgnoreCase);
+
         // Strip site suffix e.g. " - World4uFree", " | Vegamovies", " » 1TamilMV"
         title = Regex.Replace(title, @"\s*[-–—|»•]\s*(World4uFree|Vegamovies|1TamilMV|Bolly4u|MoviesMod|Khatrimaza|FilmyZilla|9xmovies|Pagalworld|Mp4moviez|.*?\.(vu|org|com|net|in|cc|ws|top|vip|site)).*$", "", RegexOptions.IgnoreCase);
+
+        // Generic trailing site tag when the known-site list missed
+        // ("My Film - VOE", "Show | dood"): strip the last " - X" chunk only when
+        // X looks like a site tag (dotted, very short, or all-caps) so real
+        // subtitles ("Episode 5 - Finale") survive.
+        title = Regex.Replace(title, @"\s*[-–—|»•]\s*([^-–—|»•]{1,32})$", m =>
+        {
+            string chunk = m.Groups[1].Value.Trim();
+            bool siteLike = chunk.Contains('.')
+                || chunk.Length <= 5
+                || Regex.IsMatch(chunk, @"^[A-Z0-9]{2,}$");
+            return siteLike ? "" : m.Value;
+        }, RegexOptions.None).Trim();
 
         // Strip common promotional marketing buzzwords
         title = Regex.Replace(title, @"(?i)\b(Full Movie Download|Movie Download|Download in|Free Download|Watch Online|Direct Link|Download HD|Download Full Movie|Full Movie|Download)\b", " ");

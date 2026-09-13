@@ -69,6 +69,11 @@ public partial class App : Application
                 return;
             }
         }
+        catch (AbandonedMutexException)
+        {
+            // Previous instance crashed while holding the mutex — we now own it.
+            _ownsMutex = true;
+        }
         catch (DirectoryNotFoundException)
         {
             // Kernel object path resolution failed — fall back to unnamed mutex
@@ -134,10 +139,27 @@ public partial class App : Application
     private static void BringExistingInstanceToFront()
     {
         var current = System.Diagnostics.Process.GetCurrentProcess();
+        string exePath;
+        try { exePath = current.MainModule?.FileName ?? ""; }
+        catch { exePath = ""; }
         foreach (var process in System.Diagnostics.Process.GetProcessesByName(current.ProcessName))
         {
             if (process.Id == current.Id || process.MainWindowHandle == IntPtr.Zero)
                 continue;
+            // Same exe name isn't enough (unrelated same-named exe): require the
+            // same binary path and a WDM main window before stealing focus.
+            try
+            {
+                string other = process.MainModule?.FileName ?? "";
+                if (!string.IsNullOrEmpty(exePath) && !string.IsNullOrEmpty(other) &&
+                    !string.Equals(exePath, other, StringComparison.OrdinalIgnoreCase))
+                    continue;
+                string title = process.MainWindowTitle ?? "";
+                if (!title.Contains("WDM", StringComparison.OrdinalIgnoreCase) &&
+                    !title.Contains("Download Manager", StringComparison.OrdinalIgnoreCase))
+                    continue;
+            }
+            catch { continue; }
             ShowWindowAsync(process.MainWindowHandle, SW_RESTORE);
             SetForegroundWindow(process.MainWindowHandle);
             break;

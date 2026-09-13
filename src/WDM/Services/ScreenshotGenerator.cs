@@ -16,7 +16,8 @@ public static class ScreenshotGenerator
 {
     public static void Run()
     {
-        CleanupLegacyFiles();
+        // NOTE: legacy WdmOriginal theme cleanup was removed — a screenshot
+        // tool must never delete source files as a side effect.
 
         // Resolve to project screenshots folder so captures land in repo (works both in dev and CI)
         string repoRoot = Path.GetFullPath(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "..", "..", "..", "..", ".."));
@@ -28,8 +29,8 @@ public static class ScreenshotGenerator
         string darkDir = Path.Combine(outputDir, "dark");
 
         // Clear existing screenshot folders for fresh capture
-        if (Directory.Exists(lightDir)) Directory.Delete(lightDir, true);
-        if (Directory.Exists(darkDir)) Directory.Delete(darkDir, true);
+        try { if (Directory.Exists(lightDir)) Directory.Delete(lightDir, true); } catch { }
+        try { if (Directory.Exists(darkDir)) Directory.Delete(darkDir, true); } catch { }
 
         Directory.CreateDirectory(lightDir);
         Directory.CreateDirectory(darkDir);
@@ -47,6 +48,7 @@ public static class ScreenshotGenerator
             ThemeService.Apply(AppTheme.Default, dark);
 
             var viewModel = new MainViewModel();
+            viewModel.SuppressPersistence();
             viewModel.Settings.UseDarkTheme = dark;
             PopulateMockTasks(viewModel);
 
@@ -56,6 +58,7 @@ public static class ScreenshotGenerator
 
             // 1b. MainWindow — empty state (no downloads)
             var emptyViewModel = new MainViewModel();
+            emptyViewModel.SuppressPersistence();
             emptyViewModel.Settings.UseDarkTheme = dark;
             var emptyWindow = new MainWindow { DataContext = emptyViewModel, Width = 784, Height = 480 };
             SaveWindowScreenshot(emptyWindow, Path.Combine(targetDir, "01b_MainWindow_Empty.png"));
@@ -86,17 +89,7 @@ public static class ScreenshotGenerator
             // 5. DownloadProgressDialog
             var activeTask = viewModel.Tasks.First(t => t.Status == TaskStatus.Downloading);
             var progressDialog = new DownloadProgressDialog(activeTask, viewModel);
-            progressDialog.ChunkList.Clear();
-            var chunkPercents = new[] { 94, 88, 79, 65, 52, 44, 31, 18 };
-            for (int i = 0; i < chunkPercents.Length; i++)
-            {
-                progressDialog.ChunkList.Add(new ChunkVisualItem
-                {
-                    Index = i + 1,
-                    ToolTip = $"Thread #{i + 1} — {chunkPercents[i]}%",
-                    WidthPercent = chunkPercents[i]
-                });
-            }
+            FillMockBlockMap(progressDialog);
             SaveWindowScreenshot(progressDialog, Path.Combine(targetDir, "05_DownloadProgressDialog.png"));
 
             // 5b. Progress dialog — Speed Limiter tab open
@@ -121,17 +114,7 @@ public static class ScreenshotGenerator
 
             // 5d. Progress dialog — Details tab open (text + graphical)
             var detailsDialog = new DownloadProgressDialog(activeTask, viewModel);
-            detailsDialog.ChunkList.Clear();
-            var chunkPercentsD = new[] { 94, 88, 79, 65, 52, 44, 31, 18 };
-            for (int i = 0; i < chunkPercentsD.Length; i++)
-            {
-                detailsDialog.ChunkList.Add(new ChunkVisualItem
-                {
-                    Index = i + 1,
-                    ToolTip = $"Thread #{i + 1} — {chunkPercentsD[i]}%",
-                    WidthPercent = chunkPercentsD[i]
-                });
-            }
+            FillMockBlockMap(detailsDialog);
             try
             {
                 detailsDialog.Show();
@@ -219,7 +202,7 @@ public static class ScreenshotGenerator
             var trayPanel = new TrayProgressPanel(viewModel);
             trayPanel.ShowPanel(activeTask);
             SaveWindowScreenshot(trayPanel, Path.Combine(targetDir, "17_TrayProgressPanel.png"));
-            trayPanel.HidePanel();
+            try { trayPanel.Close(); } catch { }
         }
 
         Console.WriteLine("\n==================================================");
@@ -323,6 +306,24 @@ public static class ScreenshotGenerator
             {
                 yield return childOfChild;
             }
+        }
+    }
+
+    /// <summary>Mock a realistic 66% file block map: 42 blocks done,
+    /// 8 in-flight with descending progress, rest pending.</summary>
+    private static void FillMockBlockMap(DownloadProgressDialog dialog)
+    {
+        dialog.BlockList.Clear();
+        double[] inFlight = { 90, 82, 74, 60, 48, 38, 26, 14 };
+        for (int i = 0; i < DownloadProgressDialog.BlockCount; i++)
+        {
+            double pct = i < 42 ? 100.0 : i < 50 ? inFlight[i - 42] : 0.0;
+            dialog.BlockList.Add(new BlockVisualItem
+            {
+                Index = i + 1,
+                ToolTip = BlockVisualItem.GetToolTip(i + 1, pct),
+                Percent = pct
+            });
         }
     }
 

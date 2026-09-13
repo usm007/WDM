@@ -23,6 +23,7 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
     private TrayProgressPanel? _progressPanel;
     private bool _exiting;
     private DownloadCompleteDialog? _completeDialog;
+    private readonly Queue<DownloadTask> _completedTasksQueue = new();
     private RefreshLinkDialog? _activeRefreshDialog;
 
     public MainWindow()
@@ -50,16 +51,15 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
             if (_viewModel.Settings.NotifyOnCompletion)
                 _tray?.ShowBalloon("Done", $"{task.FileName} is ready.");
 
-            // Show a single Download Complete dialog at a time instead of stacking
-            // a modal chain when several tasks finish close together.
+            // Show completion dialog, queueing subsequent completions if one is already open.
             _dispatcher.BeginInvoke(() =>
             {
                 if (_completeDialog is not null)
+                {
+                    _completedTasksQueue.Enqueue(task);
                     return;
-                var dialog = new DownloadCompleteDialog(task);
-                _completeDialog = dialog;
-                dialog.Closed += (_, _) => _completeDialog = null;
-                dialog.Show();
+                }
+                ShowNextCompleteDialog(task);
             });
         };
 
@@ -88,18 +88,20 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
         };
         trayTimer.Tick += (_, _) =>
         {
+            int pausedCount = _viewModel.Tasks.Count(t => t.Status == Models.TaskStatus.Paused);
+            int queuedCount = _viewModel.Engine.QueuedCount;
             var active = _viewModel.Tasks.FirstOrDefault(t => t.Status == Models.TaskStatus.Downloading);
             if (active is not null)
             {
                 // The floating pill (docked to the right edge) shows % + speed.
                 string speed = string.IsNullOrEmpty(active.SpeedText) ? "0 B/s" : active.SpeedText;
-                _tray.SetProgress(active.Progress, speed, active.FileName ?? "");
+                _tray.SetProgress(active.Progress, speed, active.FileName ?? "", queuedCount, pausedCount);
                 UpdateProgressPanel(_viewModel.Settings.ShowTrayProgress ? active : null);
             }
             else
             {
                 _tray.SetActiveCount(
-                    _viewModel.Engine.ActiveCount, _viewModel.Engine.QueuedCount, _viewModel.Engine.TotalSpeedBps);
+                    _viewModel.Engine.ActiveCount, queuedCount, _viewModel.Engine.TotalSpeedBps, pausedCount);
                 UpdateProgressPanel(null);
             }
         };
@@ -269,38 +271,6 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
         string rawName = prefillFileName ?? (!string.IsNullOrWhiteSpace(prefillUrl) ? DownloadEngine.DeriveName(prefillUrl) : "");
         string initialFileName = DownloadEngine.SanitizeFileName(rawName, pageTitle, prefillReferer);
 
-        if (!string.IsNullOrWhiteSpace(prefillUrl) && (_viewModel.ExistingUrl(prefillUrl) || _viewModel.IsDuplicateFile(initialFileName, targetFolder)))
-        {
-            string numberedFileName = _viewModel.GetNumberedFileName(initialFileName, targetFolder);
-            var dupDialog = new DuplicateDownloadDialog(prefillUrl, initialFileName, numberedFileName)
-            {
-                Topmost = fromCapture,
-                Owner = this
-            };
-
-            bool? dupResult = dupDialog.ShowDialog();
-            if (dupResult == true)
-            {
-                if (dupDialog.SelectedAction == DuplicateAction.RenameAndDownload)
-                {
-                    prefillFileName = dupDialog.NumberedFileName;
-                }
-                else if (dupDialog.SelectedAction == DuplicateAction.Overwrite)
-                {
-                    prefillFileName = dupDialog.OriginalFileName;
-                }
-                else
-                {
-                    return;
-                }
-            }
-            else
-            {
-                // User cancelled or closed dialog
-                return;
-            }
-        }
-
         // When a link is captured from the browser extension, show the dialog on
         // top of every window without surfacing the main WDM window.
         if (!fromCapture)
@@ -308,18 +278,45 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
 
         if (_activeAddDialog is not null && _activeAddDialog.IsLoaded)
         {
-            _activeAddDialog.Topmost = fromCapture;
-            _activeAddDialog.Activate();
-            return;
+            if (_activeAddDialog.IsEmpty)
+            {
+                _activeAddDialog.UpdatePrefill(prefillUrl, prefillFileName, prefillReferer, prefillHeaders);
+                _activeAddDialog.Topmost = fromCapture;
+                _activeAddDialog.Activate();
+                return;
+            }
         }
 
         var dialog = new AddDownloadDialog(_viewModel, prefillUrl, prefillFileName, prefillReferer, prefillHeaders)
         {
             Topmost = fromCapture,
         };
-        _activeAddDialog = dialog;
-        dialog.Closed += (_, _) => _activeAddDialog = null;
-        dialog.ShowDialog();
+        if (_activeAddDialog is null)
+        {
+            _activeAddDialog = dialog;
+            dialog.Closed += (_, _) =>
+            {
+                if (ReferenceEquals(_activeAddDialog, dialog))
+                    _activeAddDialog = null;
+            };
+        }
+        dialog.Show();
+    }
+
+    private void ShowNextCompleteDialog(DownloadTask task)
+    {
+        var dialog = new DownloadCompleteDialog(task);
+        _completeDialog = dialog;
+        dialog.Closed += (_, _) =>
+        {
+            _completeDialog = null;
+            if (_completedTasksQueue.Count > 0)
+            {
+                var next = _completedTasksQueue.Dequeue();
+                ShowNextCompleteDialog(next);
+            }
+        };
+        dialog.Show();
     }
 
     private void ShowProperties(DownloadTask? task)
@@ -400,9 +397,15 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
 
     private void TryAddUrl(string text)
     {
-        if (Uri.TryCreate(text.Trim(), UriKind.Absolute, out var uri) &&
+        string trimmed = text.Trim();
+        if (Uri.TryCreate(trimmed, UriKind.Absolute, out var uri) &&
             (uri.Scheme == Uri.UriSchemeHttp || uri.Scheme == Uri.UriSchemeHttps || uri.Scheme == Uri.UriSchemeFtp))
-            _viewModel.AddTask(text.Trim());
+        {
+            // Drag-drop path bypasses the Add dialog's duplicate check — apply it here.
+            if (_viewModel.ExistingUrl(trimmed))
+                return;
+            _viewModel.AddTask(trimmed);
+        }
     }
 
     private void ShowOptions()
@@ -594,6 +597,68 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
         }
     }
 
+    private void TaskGrid_PreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
+    {
+        if (e.ClickCount != 1)
+            return;
+
+        if (Keyboard.Modifiers != ModifierKeys.None)
+            return;
+
+        if (e.OriginalSource is not DependencyObject source)
+            return;
+
+        // Do not intercept clicks on buttons (like Open Containing Folder) or scrollbars
+        if (FindVisualParent<System.Windows.Controls.Primitives.ButtonBase>(source) is not null ||
+            FindVisualParent<System.Windows.Controls.Primitives.TextBoxBase>(source) is not null ||
+            FindVisualParent<System.Windows.Controls.Primitives.ScrollBar>(source) is not null)
+        {
+            return;
+        }
+
+        var row = ItemsControl.ContainerFromElement(TaskGrid, source) as DataGridRow
+                  ?? FindVisualParent<DataGridRow>(source);
+
+        if (row?.Item is DownloadTask clickedTask)
+        {
+            // If this task is already the sole selected task, clicking it again deselects it (details panel disappears)
+            if (_viewModel.SelectedTask == clickedTask && TaskGrid.SelectedItems.Count <= 1)
+            {
+                TaskGrid.UnselectAll();
+                TaskGrid.SelectedItem = null;
+                _viewModel.SelectedTask = null;
+                e.Handled = true;
+            }
+        }
+        else
+        {
+            // Clicked empty area of the list outside any row
+            if (_viewModel.SelectedTask is not null || TaskGrid.SelectedItems.Count > 0)
+            {
+                TaskGrid.UnselectAll();
+                TaskGrid.SelectedItem = null;
+                _viewModel.SelectedTask = null;
+            }
+        }
+    }
+
+    private static T? FindVisualParent<T>(DependencyObject? child) where T : DependencyObject
+    {
+        while (child is not null)
+        {
+            if (child is T parent)
+                return parent;
+
+            if (child is Visual or System.Windows.Media.Media3D.Visual3D)
+                child = VisualTreeHelper.GetParent(child);
+            else if (child is FrameworkContentElement fce)
+                child = fce.Parent;
+            else
+                break;
+        }
+        return null;
+    }
+
     private void TaskGrid_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
         _viewModel.SetBulkSelection(TaskGrid.SelectedItems.OfType<DownloadTask>());
@@ -748,7 +813,7 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
         if (row?.Item is DownloadTask task)
         {
             if (task.Status == TaskStatus.Completed)
-                _viewModel.OpenFile();
+                _viewModel.OpenFile(task);
             else if (task.Status == TaskStatus.Downloading || task.Status == TaskStatus.Queued || task.Status == TaskStatus.Paused)
                 ShowProgressDialog(task);
             else

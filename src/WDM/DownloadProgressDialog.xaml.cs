@@ -9,8 +9,14 @@ using WDM.ViewModels;
 
 namespace WDM;
 
-public sealed class ChunkVisualItem : INotifyPropertyChanged
+/// <summary>A single cell of the file block map: 1/64th of the file.
+/// Status is derived from <see cref="Percent"/>: 0 = pending, 1 = downloading, 2 = done.</summary>
+public sealed class BlockVisualItem : INotifyPropertyChanged
 {
+    public const int Pending = 0;
+    public const int Active = 1;
+    public const int Done = 2;
+
     public int Index { get; set; }
 
     private string _toolTip = "";
@@ -27,24 +33,28 @@ public sealed class ChunkVisualItem : INotifyPropertyChanged
         }
     }
 
-    private double _widthPercent = 0;
-    public double WidthPercent
+    private double _percent = 0;
+    public double Percent
     {
-        get => _widthPercent;
+        get => _percent;
         set
         {
-            if (Math.Abs(_widthPercent - value) > 0.01)
+            if (Math.Abs(_percent - value) > 0.01)
             {
-                _widthPercent = value;
+                _percent = value;
                 OnPropertyChanged();
-                OnPropertyChanged(nameof(FillGridLength));
-                OnPropertyChanged(nameof(RemainingGridLength));
+                OnPropertyChanged(nameof(Status));
             }
         }
     }
 
-    public GridLength FillGridLength => new GridLength(Math.Clamp(WidthPercent, 0, 100), GridUnitType.Star);
-    public GridLength RemainingGridLength => new GridLength(Math.Max(0, 100 - Math.Clamp(WidthPercent, 0, 100)), GridUnitType.Star);
+    public int Status => Percent >= 99.5 ? Done : Percent > 0.5 ? Active : Pending;
+
+    public static string GetToolTip(int index, double percent) => percent >= 99.5
+        ? $"Block #{index}: complete"
+        : percent > 0.5
+            ? $"Block #{index}: downloading — {Math.Round(percent)}%"
+            : $"Block #{index}: pending";
 
     public event PropertyChangedEventHandler? PropertyChanged;
     private void OnPropertyChanged([CallerMemberName] string? name = null) =>
@@ -55,9 +65,24 @@ public partial class DownloadProgressDialog : Window, INotifyPropertyChanged
 {
     private readonly MainViewModel _mainViewModel;
     private double[]? _lastChunkProgress;
+    private long _lastChunkUiTick;
     public DownloadTask Task { get; }
 
-    public ObservableCollection<ChunkVisualItem> ChunkList { get; } = new();
+    public const int BlockCount = 64;
+
+    public ObservableCollection<BlockVisualItem> BlockList { get; } = new();
+
+    /// <summary>e.g. "42 / 64 done" — bound to the file-map header.</summary>
+    public string BlockSummaryText
+    {
+        get
+        {
+            int done = 0;
+            foreach (var b in BlockList)
+                if (b.Status == BlockVisualItem.Done) done++;
+            return $"{done} / {BlockCount} done";
+        }
+    }
 
     public DownloadProgressDialog(DownloadTask task, MainViewModel mainViewModel)
     {
@@ -70,7 +95,7 @@ public partial class DownloadProgressDialog : Window, INotifyPropertyChanged
         _mainViewModel.Engine.ChunkProgressUpdated += Engine_ChunkProgressUpdated;
         _mainViewModel.PropertyChanged += ViewModel_PropertyChanged;
         UpdateState();
-        SetupChunkVisuals();
+        SetupBlockVisuals();
         ApplyYouTubeMode();
     }
 
@@ -123,6 +148,14 @@ public partial class DownloadProgressDialog : Window, INotifyPropertyChanged
     private void CloseClick(object sender, RoutedEventArgs e)
     {
         Close();
+    }
+
+    private static bool IsRiskyExecutable(string path)
+    {
+        string ext = System.IO.Path.GetExtension(path).ToLowerInvariant();
+        return ext is ".exe" or ".msi" or ".bat" or ".cmd" or ".ps1" or ".vbs" or ".vbe"
+            or ".js" or ".jse" or ".wsf" or ".wsh" or ".lnk" or ".scr" or ".com"
+            or ".pif" or ".reg" or ".jar" or ".msc" or ".hta";
     }
 
     public string ProgressTitleText => Task.TotalBytes > 0
@@ -223,46 +256,58 @@ public partial class DownloadProgressDialog : Window, INotifyPropertyChanged
 
     private bool _completionHandled = false;
 
-    private void SetupChunkVisuals()
+    private void SetupBlockVisuals()
     {
-        ChunkList.Clear();
-        int count = Math.Max(1, Task.ChunkCount);
-        for (int i = 0; i < count; i++)
+        BlockList.Clear();
+        for (int i = 0; i < BlockCount; i++)
         {
-            ChunkList.Add(new ChunkVisualItem
+            BlockList.Add(new BlockVisualItem
             {
                 Index = i + 1,
-                ToolTip = $"Thread #{i + 1}",
-                WidthPercent = 0
+                ToolTip = BlockVisualItem.GetToolTip(i + 1, 0),
+                Percent = 0
             });
         }
-        UpdateChunkVisuals();
+        UpdateBlockVisuals();
     }
 
     private void Engine_ChunkProgressUpdated(DownloadTask task, double[] progress)
     {
         if (task.Id != Task.Id)
             return;
+        if (!IsLoaded || Visibility != Visibility.Visible)
+            return;
+        // Coalesce 4Hz engine ticks: block visuals at ~2Hz are indistinguishable.
+        long now = Environment.TickCount64;
+        if (now - _lastChunkUiTick < 500)
+            return;
+        _lastChunkUiTick = now;
         Dispatcher.BeginInvoke(() =>
         {
             _lastChunkProgress = progress;
-            UpdateChunkVisuals();
+            UpdateBlockVisuals();
         });
     }
 
-    private void UpdateChunkVisuals()
+    private void UpdateBlockVisuals()
     {
-        if (ChunkList.Count == 0) return;
+        if (BlockList.Count == 0) return;
 
-        // Use the real per-chunk progress emitted by the engine when available,
-        // aggregating the (potentially many) dynamic segments onto the visible bars.
-        if (_lastChunkProgress is { Length: > 0 })
+        // Aggregate the engine's per-segment progress (binary 0/100 over
+        // potentially hundreds of file segments) onto the fixed 64-block map.
+        // Block identity is file position, not thread — threads pull from a
+        // shared pool, so per-thread bars were synthetic anyway.
+        if (Task.Status == TaskStatus.Completed)
         {
-            int bars = ChunkList.Count;
-            for (int i = 0; i < bars; i++)
+            for (int i = 0; i < BlockCount; i++)
+                SetBlock(i, 100);
+        }
+        else if (_lastChunkProgress is { Length: > 0 })
+        {
+            for (int i = 0; i < BlockCount; i++)
             {
-                double from = i * (_lastChunkProgress.Length / (double)bars);
-                double to = (i + 1) * (_lastChunkProgress.Length / (double)bars);
+                double from = i * (_lastChunkProgress.Length / (double)BlockCount);
+                double to = (i + 1) * (_lastChunkProgress.Length / (double)BlockCount);
                 int start = (int)Math.Floor(from);
                 int end = (int)Math.Ceiling(to);
                 if (end <= start) end = start + 1;
@@ -270,25 +315,35 @@ public partial class DownloadProgressDialog : Window, INotifyPropertyChanged
                 for (int j = start; j < end && j < _lastChunkProgress.Length; j++)
                     sum += _lastChunkProgress[j];
                 double pct = Math.Clamp(sum / (end - start), 0, 100);
-                ChunkList[i].WidthPercent = pct;
-                ChunkList[i].ToolTip = $"Thread #{i + 1}: {Math.Round(pct)}%";
+                SetBlock(i, pct);
             }
-            return;
+        }
+        else
+        {
+            // Fallback when no chunked state exists yet (single stream / probing /
+            // restored state): fill proportionally from overall progress.
+            double currentPercent = Task.Progress;
+            for (int i = 0; i < BlockCount; i++)
+            {
+                double fill = Math.Clamp((currentPercent - i * (100.0 / BlockCount)) * BlockCount, 0, 100);
+                SetBlock(i, fill);
+            }
         }
 
-        // Fallback when no chunked state exists yet (single stream / probing / restored state).
-        double currentPercent = Task.Progress;
-        int count = ChunkList.Count;
-        for (int i = 0; i < count; i++)
-        {
-            double chunkFill = Math.Clamp((currentPercent - i * (100.0 / count)) * count, 0, 100);
-            ChunkList[i].WidthPercent = chunkFill;
-            ChunkList[i].ToolTip = $"Thread #{i + 1}: {Math.Round(chunkFill)}%";
-        }
+        OnPropertyChanged(nameof(BlockSummaryText));
+    }
+
+    private void SetBlock(int index, double percent)
+    {
+        var block = BlockList[index];
+        block.Percent = percent;
+        block.ToolTip = BlockVisualItem.GetToolTip(index + 1, percent);
     }
 
     private void Task_PropertyChanged(object? sender, PropertyChangedEventArgs e)
     {
+        if (!IsLoaded || Visibility != Visibility.Visible)
+            return;
         Dispatcher.BeginInvoke(() =>
         {
             OnPropertyChanged(nameof(ProgressTitleText));
@@ -302,11 +357,12 @@ public partial class DownloadProgressDialog : Window, INotifyPropertyChanged
             if (e.PropertyName == nameof(DownloadTask.ChunkCount))
             {
                 OnPropertyChanged(nameof(ChunkCountText));
-                SetupChunkVisuals();
+                // Block map is file-fixed (64 blocks), so thread-count changes
+                // don't rebuild it — just refresh from current state.
             }
-            // Only update chunk visuals for HTTP tasks; YouTube uses single bar via YouTubeProgress* bindings.
+            // Only update block visuals for HTTP tasks; YouTube uses single bar via YouTubeProgress* bindings.
             if (!Task.IsYouTube)
-                UpdateChunkVisuals();
+                UpdateBlockVisuals();
             else
                 ApplyYouTubeMode();
 
@@ -334,7 +390,9 @@ public partial class DownloadProgressDialog : Window, INotifyPropertyChanged
             if (string.IsNullOrWhiteSpace(fullPath) || !System.IO.File.Exists(fullPath))
                 fullPath = System.IO.Path.Combine(Task.SaveFolder, Task.FileName);
 
-            if (System.IO.File.Exists(fullPath))
+            // Never auto-launch executables on completion — the user can still
+            // open them manually from the Complete dialog (with a warning).
+            if (System.IO.File.Exists(fullPath) && !IsRiskyExecutable(fullPath))
             {
                 try
                 {

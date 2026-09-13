@@ -4,12 +4,20 @@ const WDM_HOST = "http://127.0.0.1:17530";
 
 // Re-entrance guard for URLs handed off to WDM
 const loopGuard = new Map();
+// Media found per tab (url -> { url, label, type, time })
+const tabMediaMap = new Map();
+// Opaque URLs awaiting verification via observed response headers
+// (url -> { tabId, time }). Confirmed video only; everything else is dropped.
+const pendingVerify = new Map();
 setInterval(() => {
   const now = Date.now();
   for (const [url, exp] of loopGuard.entries()) {
     if (exp <= now) loopGuard.delete(url);
   }
-}, 30000);
+  for (const [url, p] of pendingVerify.entries()) {
+    if (now - p.time > 8000) pendingVerify.delete(url);
+  }
+}, 15000);
 
 // Capture on/off, persisted in storage so the toggle survives restarts.
 const STORAGE_KEY = "captureEnabled";
@@ -74,6 +82,21 @@ webext.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return true;
   }
 
+  // Opaque element-src verification: the content script can't read response
+  // headers, so background watches the next webRequest for this URL.
+  if (message.action === "verifyMedia") {
+    try {
+      const url = message.url;
+      const tabId = sender && sender.tab ? sender.tab.id : null;
+      if (url && /^https?:\/\//i.test(url) && tabId != null && tabId >= 0 &&
+          !isYouTubeUrl(url) && !IDM_AUDIO_RE.test(url) && !ARCHIVE_EXT_RE.test(url)) {
+        if (!pendingVerify.has(url)) pendingVerify.set(url, { tabId, time: Date.now() });
+      }
+    } catch {}
+    sendResponse({ received: true });
+    return true;
+  }
+
   if (message.action === "getMediaList") {
     sendResponse({ media: [], wdmActive: isWdmActive });
     return true;
@@ -93,7 +116,7 @@ webext.runtime.onMessage.addListener((message, sender, sendResponse) => {
         const p = message.payload || {};
         // Enrich with Cookie + User-Agent if not already present (IDM does Cookie replay via V())
         try {
-          const cookie = await getCookieHeaderForUrl(p.url, p.referer || p.referer);
+          const cookie = await getCookieHeaderForUrl(p.url, p.referer || p.pageUrl);
           if (cookie) {
             p.headers = p.headers || {};
             if (!p.headers["Cookie"] && !p.headers["cookie"]) p.headers["Cookie"] = cookie;
@@ -124,9 +147,12 @@ const IDM_MIME_MAP = {
   "audio/mp4":"M4A|MP4|M4S","audio/mpeg":"MP3","audio/mp3":"MP3","audio/webm":"WEBM","audio/wav":"WAV","audio/x-wav":"WAV","audio/ogg":"OGG|OPUS",
   "application/dash+xml":"MPD","application/vnd.apple.mpegurl":"M3U8","application/x-mpegurl":"M3U8","application/x-mpegURL":"M3U8","audio/mpegurl":"M3U|M3U8","video/mp2t":"TS|M3U8","application/octet-stream-m3u8":"M3U8"
 };
-const IDM_HLS_RE = /(\.m3u8|\/hls\/|[\?&]format=m3u8|mime=.*mpegurl)/i;
-const IDM_DASH_RE = /(\.mpd|\/dash\/|[\?&]format=mpd|mime=.*dash)/i;
-const IDM_MEDIA_EXTS = /\.(mp4|m4v|m4s|webm|mkv|avi|mov|flv|mpg|mpeg|3gp|3gpp|wmv|asf|ts|m2ts|mp3|m4a|aac|ogg|opus|flac|wav)(\?|$)/i;
+const IDM_HLS_RE = /(\.m3u8|\/hls\/|\/playlist|\/manifest|\/master\.|\/stream\b|[\?&](format|ext)=m3u8|mime=.*mpegurl)/i;
+const IDM_DASH_RE = /(\.mpd|\/dash\/|\/manifest|\/master\.|[\?&](format|ext)=mpd|mime=.*dash)/i;
+// Video-only: the floating button lists downloadable video, never audio.
+// (m4s/ts segments, beacons and inits are filtered separately below.)
+const IDM_VIDEO_RE = /\.(mp4|m4v|webm|mkv|avi|mov|flv)(\?|$)/i;
+const IDM_AUDIO_RE = /\.(mp3|m4a|aac|ogg|opus|flac|wav|wma)(\?|$)/i;
 // Archives/binaries must never be treated as media — let downloads.onCreated handle them
 const ARCHIVE_EXT_RE = /\.(zip|rar|7z|tar|gz|bz2|xz|pdf|exe|msi|dmg|iso)(\?|$)/i;
 
@@ -163,34 +189,28 @@ function isMediaResponse(details) {
   const clen = parseInt(getHeader(headers, "content-length") || "0", 10);
   const ext = getFileExt(url);
 
-  // Filter tiny segments (IDM Hc skips small .ts/.m4s; we also skip small mp3 beacons)
-  if (/\.(ts|m4s|mp3|aac)(\?|$)/i.test(url) && clen > 0 && clen < 80_000) return false;
+  // Audio is never floating-button media (hard deny beats every other signal).
+  if (IDM_AUDIO_RE.test(url)) return false;
+  if (ctype.startsWith("audio/") && !ctype.includes("audio/mpegurl")) return false;
+  // Filter tiny segments (IDM Hc skips small .ts/.m4s)
+  if (/\.(ts|m4s)(\?|$)/i.test(url) && clen > 0 && clen < 80_000) return false;
 
-  // 1) URL pattern quick win
+  // 1) URL pattern quick win — video files and manifests only
   if (IDM_HLS_RE.test(url) || IDM_DASH_RE.test(url)) return true;
-  // Media exts only for master manifests or direct files, not segments
-  if (IDM_MEDIA_EXTS.test(url) && !/\.(ts|m4s)(\?|$)/i.test(url)) {
-    // skip tiny audio beacons detected as .mp3 with small content-length
-    if (/\.(mp3|aac|ogg|opus)(\?|$)/i.test(url) && clen > 0 && clen < 120_000) return false;
-    return true;
-  }
-  // 2) Content-Type mapping
+  if (IDM_VIDEO_RE.test(url)) return true;
+  // 2) Content-Type mapping (video + manifests; audio excluded above)
   if (ctype) {
     if (ctype.startsWith("video/")) return true;
-    if (ctype.startsWith("audio/") && !ctype.includes("audio/mpegurl")) {
-      // allow audio but not tiny beacons
-      if (type === "media" || type === "xmlhttprequest" || type === "other" || ext) return true;
-    }
-    if (IDM_MIME_MAP[ctype]) return true;
+    if (IDM_MIME_MAP[ctype] && !ctype.startsWith("audio/")) return true;
     if (ctype.includes("mpegurl") || ctype.includes("dash+xml") || ctype.includes("mp2t")) return true;
   }
-  // 3) Content-Disposition attachment with media ext (only media, not archives)
+  // 3) Content-Disposition attachment with a video ext
   if (cdisp.includes("attachment")) {
     const m = cdisp.match(/filename[^;=\n]*=(?:[^"]*"([^"]+)"|([^\s;]+))/i);
     const fn = m ? (m[1] || m[2] || "") : "";
     const fext = fn ? (fn.split(".").pop() || "").toUpperCase() : "";
-    if (fext && /^(MP4|M4V|M4S|MP3|M4A|FLV|WEBM|MKV|AVI|MOV|MPD|M3U8)$/i.test(fext)) return true;
-    if (ext && /^(MP4|M4V|M4S|MP3|M4A|FLV|WEBM|MKV|AVI|MOV|MPD|M3U8)$/i.test(ext)) return true;
+    if (fext && /^(MP4|M4V|WEBM|MKV|AVI|MOV|FLV|MPD|M3U8)$/i.test(fext)) return true;
+    if (ext && /^(MP4|M4V|WEBM|MKV|AVI|MOV|FLV|MPD|M3U8)$/i.test(ext)) return true;
   }
   // 4) Segment filtering: very small .ts/.m4s are segments, not master
   if (/\.(ts|m4s)(\?|$)/i.test(url) && clen > 0 && clen < 50_000) return false;
@@ -198,16 +218,47 @@ function isMediaResponse(details) {
 }
 
 function classifyUrl(url) {
+  if (IDM_AUDIO_RE.test(url)) return null;
+  // Explicit extensions and /dash/ vs /hls/ markers first: both manifest
+  // regexes share /manifest|/master patterns, so bare path order would lie.
+  if (/\.m3u8(\?|$)/i.test(url)) return "HLS";
+  if (/\.mpd(\?|$)/i.test(url)) return "DASH";
+  if (/\/dash\//i.test(url)) return "DASH";
   if (IDM_HLS_RE.test(url)) return "HLS";
   if (IDM_DASH_RE.test(url)) return "DASH";
-  if (IDM_MEDIA_EXTS.test(url)) return "Video";
-  return "media";
+  if (IDM_VIDEO_RE.test(url)) return "Video";
+  return null;
 }
+
+// Basenames without title signal ("master.m3u8") are labeled from the tab
+// title downstream so WDM never saves "master.ts".
+function cleanTabTitle(title) {
+  try {
+    let t = (title || "").replace(/\s+/g, " ").trim();
+    t = t.replace(/^\s*(watch|now playing)\s*[:\-–—]\s*/i, "");
+    t = t.replace(/\s*[-–—|»•]\s*[^-–—|»•]*$/, "");
+    t = t.replace(/^\s*(watch|now playing)\s+/i, "");
+    if (t.length > 120) t = t.slice(0, 120).trim();
+    return t.length >= 4 ? t : "";
+  } catch { return ""; }
+}
+const GENERIC_MEDIA_RE = /^(master|index|playlist|chunklist|manifest|stream|play|video|media|file|download|index-v1-a\d+|seg-?\d*)(\.(m3u8|mpd|mp4|webm|mkv|mov|flv))?$/i;
+
+const API_BODY_RE = /(\/api\/stream|\/api\/videos?\b|\/api\/player|\/player-core|\/api\/streaming)\b/i;
 
 function registerTabMedia(tabId, url, hint) {
   if (!url || !tabId || tabId < 0) return;
   if (isYouTubeUrl(url)) return;
   if (ARCHIVE_EXT_RE.test(url)) return;
+  if (IDM_AUDIO_RE.test(url)) return;
+  if (/\.(ts|m4s|m2ts)(\?|$)/i.test(url)) return; // Don't track individual stream fragments
+  if (/(seg|chunk|segment)[-_0-9]+(\.|\?|$)/i.test(url)) return; // Skip chunk/segment URLs
+  // Player API endpoints are body-scanned, never listed (same rule as sniffer).
+  try {
+    const _u = new URL(url);
+    if (API_BODY_RE.test(_u.pathname) &&
+        !/\.(m3u8|mpd|mp4|webm|mkv|avi|mov|flv)(\?|$)/i.test(url)) return;
+  } catch {}
   try { url = new URL(url, "http://dummy").href; } catch {}
   try { if (/^https?:/i.test(url)) url = new URL(url).href; } catch {}
   // de-duplicate generic test beacons + DASH inits
@@ -216,15 +267,33 @@ function registerTabMedia(tabId, url, hint) {
     if (/(^|\/)(failure|no_input|open|success)\.mp3$/i.test(p)) return;
     if (/(^|\/)init\.mp4(\?|$)/i.test(p)) return;
   } catch {}
+  const kind = hint === "HLS" || hint === "DASH" || hint === "Video" ? hint : classifyUrl(url);
+  if (!kind) return; // unverified opaque URLs stay hidden until verified
   if (!tabMediaMap.has(tabId)) tabMediaMap.set(tabId, new Map());
   const map = tabMediaMap.get(tabId);
   if (map.has(url)) return;
+  if (map.size >= 25) {
+    const oldestKey = map.keys().next().value;
+    if (oldestKey) map.delete(oldestKey);
+  }
   let label;
   try { label = new URL(url).pathname.split("/").pop() || ""; } catch { label = url; }
   if (label.includes("?")) label = label.split("?")[0];
-  const info = { url, label: label || "Media", type: hint || classifyUrl(url), time: Date.now() };
+  try { label = decodeURIComponent(label); } catch {}
+  const info = { url, label: label || "Video", type: kind, time: Date.now() };
   map.set(url, info);
   updateBadge(tabId);
+  // Resolve a display title for generic basenames without blocking registration.
+  try {
+    if (!label || GENERIC_MEDIA_RE.test(label)) {
+      webext.tabs.get(tabId).then((tab) => {
+        try {
+          const title = cleanTabTitle(tab && tab.title);
+          if (title && map.get(url) === info) info.label = title;
+        } catch {}
+      }).catch(() => {});
+    }
+  } catch {}
   try { webext.tabs.sendMessage(tabId, { action: "wdmMediaHint", url, hint: info.type }).catch(()=>{}); } catch {}
 }
 
@@ -233,6 +302,20 @@ try {
   if (webext.webRequest && webext.webRequest.onHeadersReceived) {
     webext.webRequest.onHeadersReceived.addListener((details) => {
       try {
+        // Pending opaque URLs: confirm via observed content-type (passive, no
+        // extra requests, no CORS issues). Video/HLS/DASH confirms, else drop.
+        const pend = pendingVerify.get(details.url);
+        if (pend) {
+          pendingVerify.delete(details.url);
+          if (pend.tabId === details.tabId) {
+            const ctype = (getHeader(details.responseHeaders, "content-type") || "").toLowerCase();
+            if (ctype.startsWith("video/") || ctype.includes("mpegurl") || ctype.includes("m3u8") ||
+                ctype.includes("dash+xml") || ctype.includes("mp2t")) {
+              registerTabMedia(details.tabId, details.url, classifyUrl(details.url) || "Video");
+              return;
+            }
+          }
+        }
         if (isMediaResponse(details)) {
           registerTabMedia(details.tabId, details.url, classifyUrl(details.url));
         }
@@ -244,11 +327,8 @@ try {
       try {
         const url = details.url || "";
         if (isYouTubeUrl(url)) return;
-        if (IDM_HLS_RE.test(url) || IDM_DASH_RE.test(url)) {
-          if (details.type === "xmlhttprequest" || details.type === "media" || details.type === "other") {
-            registerTabMedia(details.tabId, url, classifyUrl(url));
-          }
-        } else if (IDM_MEDIA_EXTS.test(url) && !/\.(ts|m4s)(\?|$)/i.test(url)) {
+        if (IDM_AUDIO_RE.test(url)) return;
+        if (IDM_HLS_RE.test(url) || IDM_DASH_RE.test(url) || IDM_VIDEO_RE.test(url)) {
           if (details.type === "xmlhttprequest" || details.type === "media" || details.type === "other") {
             registerTabMedia(details.tabId, url, classifyUrl(url));
           }
@@ -327,11 +407,6 @@ webext.downloads.onCreated.addListener(async (item) => {
   loopGuard.set(downloadUrl, Date.now() + 15000);
 
   try {
-    await webext.downloads.cancel(item.id);
-    await webext.downloads.erase({ id: item.id }).catch(() => {});
-  } catch {}
-
-  try {
     const headers = {};
     headers["User-Agent"] = navigator.userAgent;
     const cookieHeader = await getCookieHeaderForUrl(downloadUrl, item.referrer);
@@ -347,12 +422,26 @@ webext.downloads.onCreated.addListener(async (item) => {
     } catch {}
 
     await sendToWdm(downloadUrl, item.filename, item.referrer, headers, pageTitle);
+
+    try {
+      await webext.downloads.cancel(item.id);
+      await webext.downloads.erase({ id: item.id }).catch(() => {});
+    } catch {}
   } catch (err) {
+    loopGuard.delete(downloadUrl);
     console.warn("WDM handoff failed:", err);
   }
 });
 
 async function sendToWdm(url, filename, referrer, headers, pageTitle) {
+  headers = headers || {};
+  // Derive Origin from the referrer when the content script didn't supply one,
+  // so HLS/DASH CDNs that gate on Origin still accept the desktop request.
+  try {
+    if (!headers["Origin"] && !headers["origin"] && referrer && /^https?:\/\//i.test(referrer)) {
+      headers["Origin"] = new URL(referrer).origin;
+    }
+  } catch {}
   const response = await fetch(`${WDM_HOST}/download`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },

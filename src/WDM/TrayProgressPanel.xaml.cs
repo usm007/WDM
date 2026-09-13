@@ -63,6 +63,7 @@ public partial class TrayProgressPanel : Window, INotifyPropertyChanged
     public void ShowPanel(DownloadTask task)
     {
         Task = task;
+        _refreshTimer.Start();
         Refresh();
         Show();
         RestorePosition();
@@ -71,6 +72,7 @@ public partial class TrayProgressPanel : Window, INotifyPropertyChanged
 
     public void HidePanel()
     {
+        _refreshTimer.Stop();
         Hide();
     }
 
@@ -78,18 +80,22 @@ public partial class TrayProgressPanel : Window, INotifyPropertyChanged
     {
         var settings = _viewModel.Settings;
         var area = SystemParameters.WorkArea;
+        double width = ActualWidth > 0 ? ActualWidth : (double.IsNaN(Width) ? 180 : Width);
+        double height = ActualHeight > 0 ? ActualHeight : (double.IsNaN(Height) ? 36 : Height);
         if (settings.ProgressPanelLeft is double left && settings.ProgressPanelTop is double top)
         {
             // Keep it on screen in case the display changed.
-            left = Math.Clamp(left, area.Left, area.Right - ActualWidth);
-            top = Math.Clamp(top, area.Top, area.Bottom - ActualHeight);
+            double maxLeft = Math.Max(area.Left, area.Right - width);
+            double maxTop = Math.Max(area.Top, area.Bottom - height);
+            left = Math.Clamp(left, area.Left, maxLeft);
+            top = Math.Clamp(top, area.Top, maxTop);
             Left = left;
             Top = top;
         }
         else
         {
-            Left = area.Right - ActualWidth - 8;
-            Top = area.Bottom - ActualHeight - 8;
+            Left = Math.Max(area.Left, area.Right - width - 8);
+            Top = Math.Max(area.Top, area.Bottom - height - 8);
         }
     }
 
@@ -98,8 +104,11 @@ public partial class TrayProgressPanel : Window, INotifyPropertyChanged
     {
         UpdateLayout();
         var area = SystemParameters.WorkArea;
-        Left = area.Right - ActualWidth;
-        Top = Math.Clamp(Top, area.Top, area.Bottom - ActualHeight);
+        double width = ActualWidth > 0 ? ActualWidth : (double.IsNaN(Width) ? 180 : Width);
+        double height = ActualHeight > 0 ? ActualHeight : (double.IsNaN(Height) ? 36 : Height);
+        Left = Math.Max(area.Left, area.Right - width);
+        double maxTop = Math.Max(area.Top, area.Bottom - height);
+        Top = Math.Clamp(Top, area.Top, maxTop);
         _viewModel.Settings.ProgressPanelLeft = Left;
         _viewModel.Settings.ProgressPanelTop = Top;
         _viewModel.PersistSettings();

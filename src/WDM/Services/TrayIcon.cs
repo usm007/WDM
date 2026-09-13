@@ -10,31 +10,33 @@ namespace WDM.Services;
 public sealed class TrayIcon : IDisposable
 {
     private readonly System.Windows.Forms.NotifyIcon _icon;
+    private readonly System.Windows.Forms.ContextMenuStrip _menu;
     private readonly System.Windows.Forms.ToolStripMenuItem _resumeAllItem;
     private Action? _balloonClickAction;
+    private bool _disposed;
 
     public event Action? Activated;
     public event Action? NewDownloadRequested;
 
     public TrayIcon()
     {
-        var menu = new System.Windows.Forms.ContextMenuStrip();
+        _menu = new System.Windows.Forms.ContextMenuStrip();
         _resumeAllItem = new System.Windows.Forms.ToolStripMenuItem("Resume All") { Enabled = false };
         _resumeAllItem.Click += (_, _) => ResumeAllRequested?.Invoke();
-        menu.Items.Add("Open WDM", null, (_, _) => Activated?.Invoke());
-        menu.Items.Add(new System.Windows.Forms.ToolStripSeparator());
-        menu.Items.Add("New Download...", null, (_, _) => NewDownloadRequested?.Invoke());
-        menu.Items.Add("Pause All", null, (_, _) => PauseAllRequested?.Invoke());
-        menu.Items.Add(_resumeAllItem);
-        menu.Items.Add(new System.Windows.Forms.ToolStripSeparator());
-        menu.Items.Add("Exit", null, (_, _) => ExitRequested?.Invoke());
+        _menu.Items.Add("Open WDM", null, (_, _) => Activated?.Invoke());
+        _menu.Items.Add(new System.Windows.Forms.ToolStripSeparator());
+        _menu.Items.Add("New Download...", null, (_, _) => NewDownloadRequested?.Invoke());
+        _menu.Items.Add("Pause All", null, (_, _) => PauseAllRequested?.Invoke());
+        _menu.Items.Add(_resumeAllItem);
+        _menu.Items.Add(new System.Windows.Forms.ToolStripSeparator());
+        _menu.Items.Add("Exit", null, (_, _) => ExitRequested?.Invoke());
 
         _icon = new System.Windows.Forms.NotifyIcon
         {
             Icon = AppIcon.Tray ?? RuntimeFallbackIcon(),
             Text = "WDM — Download Manager",
             Visible = true,
-            ContextMenuStrip = menu,
+            ContextMenuStrip = _menu,
         };
         _icon.DoubleClick += (_, _) => Activated?.Invoke();
         _icon.BalloonTipClicked += (_, _) =>
@@ -52,13 +54,14 @@ public sealed class TrayIcon : IDisposable
     /// Active download state: the floating pill (docked to the right edge) is the progress
     /// indicator, so the native tooltip is suppressed during the download.
     /// </summary>
-    public void SetProgress(int percent, string speedText, string fileName)
+    public void SetProgress(int percent, string speedText, string fileName, int queued = 0, int paused = 0)
     {
         _icon.Text = "";
+        _resumeAllItem.Enabled = queued > 0 || paused > 0;
     }
 
     /// <summary>Idle state: plain tooltip (optionally with counts/speed).</summary>
-    public void SetActiveCount(int active, int queued, long speedBps = 0)
+    public void SetActiveCount(int active, int queued, long speedBps = 0, int paused = 0)
     {
         bool hasWork = active > 0 || queued > 0;
         string label;
@@ -72,7 +75,7 @@ public sealed class TrayIcon : IDisposable
             label = "WDM — Download Manager";
         }
         _icon.Text = label.Length <= 63 ? label : label[..63];
-        _resumeAllItem.Enabled = queued > 0;
+        _resumeAllItem.Enabled = queued > 0 || paused > 0;
     }
 
     public void ShowBalloon(string title, string text)
@@ -89,26 +92,41 @@ public sealed class TrayIcon : IDisposable
 
     public void Dispose()
     {
+        if (_disposed)
+            return;
+        _disposed = true;
         _icon.Visible = false;
         _icon.Dispose();
+        _menu.Dispose();
     }
+
+    [System.Runtime.InteropServices.DllImport("user32.dll")]
+    private static extern bool DestroyIcon(IntPtr hIcon);
 
     private static System.Drawing.Icon RuntimeFallbackIcon()
     {
         // Only reached if the bundled icon asset is missing entirely.
         const int size = 32;
-        var bmp = new System.Drawing.Bitmap(size, size);
+        using var bmp = new System.Drawing.Bitmap(size, size);
         using (var g = System.Drawing.Graphics.FromImage(bmp))
         {
             g.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
-            var bg = new System.Drawing.SolidBrush(System.Drawing.Color.FromArgb(15, 108, 189));
+            using var bg = new System.Drawing.SolidBrush(System.Drawing.Color.FromArgb(15, 108, 189));
             g.FillRoundedRect(bg, 2, 2, size - 4, size - 4, 7);
             using var pen = new System.Drawing.Pen(System.Drawing.Color.White, 2.4f);
             g.DrawLine(pen, size / 2f, 8, size / 2f, size - 11);
             g.DrawLine(pen, size / 2f - 6, size - 15, size / 2f, size - 9);
             g.DrawLine(pen, size / 2f + 6, size - 15, size / 2f, size - 9);
         }
-        return System.Drawing.Icon.FromHandle(bmp.GetHicon());
+        IntPtr hIcon = bmp.GetHicon();
+        try
+        {
+            return (System.Drawing.Icon)System.Drawing.Icon.FromHandle(hIcon).Clone();
+        }
+        finally
+        {
+            DestroyIcon(hIcon);
+        }
     }
 }
 

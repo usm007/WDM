@@ -17,6 +17,7 @@ public static class YouTubeCookieExporter
         var selected = list
             .Where(c => IsGoogleDomain(c.Domain))
             .Where(c => c.Expires == default || c.Expires > DateTime.Now)
+            .DistinctBy(c => (c.Domain, c.Path, c.Name))
             .ToList();
 
         var sb = new StringBuilder();
@@ -26,8 +27,16 @@ public static class YouTubeCookieExporter
         {
             var domain = c.Domain.StartsWith('.') ? c.Domain : "." + c.Domain;
             var secure = c.IsSecure ? "TRUE" : "FALSE";
-            var expires = c.Expires == default ? 0 : new DateTimeOffset(c.Expires.ToUniversalTime()).ToUnixTimeSeconds();
-            sb.AppendLine($"{domain}\tTRUE\t{c.Path}\t{secure}\t{expires}\t{c.Name}\t{c.Value}");
+            var expires = c.Expires == default ? 0 :
+                (c.Expires.Kind == DateTimeKind.Unspecified
+                    ? new DateTimeOffset(DateTime.SpecifyKind(c.Expires, DateTimeKind.Utc)).ToUnixTimeSeconds()
+                    : new DateTimeOffset(c.Expires.ToUniversalTime()).ToUnixTimeSeconds());
+            string path = SanitizeField(c.Path, "/");
+            string name = SanitizeField(c.Name, "");
+            string value = SanitizeField(c.Value, "");
+            if (string.IsNullOrEmpty(name))
+                continue;
+            sb.AppendLine($"{domain}\tTRUE\t{path}\t{secure}\t{expires}\t{name}\t{value}");
         }
 
         Directory.CreateDirectory(Path.GetDirectoryName(CookiePath)!);
@@ -49,8 +58,31 @@ public static class YouTubeCookieExporter
         }
     }
 
-    private static bool IsGoogleDomain(string domain) =>
-        domain.Contains("youtube.com", StringComparison.OrdinalIgnoreCase)
-        || domain.Contains("google.com", StringComparison.OrdinalIgnoreCase)
-        || domain.Contains("ytimg.com", StringComparison.OrdinalIgnoreCase);
+    private static bool IsGoogleDomain(string domain)
+    {
+        if (string.IsNullOrWhiteSpace(domain))
+            return false;
+        domain = domain.Trim().TrimStart('.').ToLowerInvariant();
+        return domain == "youtube.com" || domain.EndsWith(".youtube.com", StringComparison.Ordinal) ||
+               domain == "google.com" || domain.EndsWith(".google.com", StringComparison.Ordinal) ||
+               domain == "ytimg.com" || domain.EndsWith(".ytimg.com", StringComparison.Ordinal) ||
+               domain == "youtu.be" || domain.EndsWith(".youtu.be", StringComparison.Ordinal);
+    }
+
+    /// <summary>Strips tab/CR/LF (Netscape field separators) so a malicious
+    /// cookie value can't inject rogue lines into the file yt-dlp reads.</summary>
+    private static string SanitizeField(string value, string fallback)
+    {
+        if (string.IsNullOrEmpty(value))
+            return fallback;
+        var sb = new StringBuilder(value.Length);
+        foreach (char ch in value)
+        {
+            if (ch is '\r' or '\n' or '\t' or '\0')
+                continue;
+            sb.Append(ch);
+        }
+        string cleaned = sb.ToString();
+        return cleaned.Length > 4096 ? cleaned[..4096] : cleaned;
+    }
 }

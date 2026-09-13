@@ -63,7 +63,19 @@ public partial class UpdateAvailableDialog : Window
     protected override void OnClosed(EventArgs e)
     {
         _isOpen = false;
+        if (Owner is not null)
+        {
+            try { Owner.Activated -= Owner_Activated; } catch { }
+        }
         base.OnClosed(e);
+    }
+
+    private void Owner_Activated(object? s, EventArgs e)
+    {
+        if (IsVisible)
+        {
+            try { Activate(); } catch { }
+        }
     }
 
     protected override void OnSourceInitialized(EventArgs e)
@@ -75,7 +87,7 @@ public partial class UpdateAvailableDialog : Window
         // Ensure dialog is on top of its owner and any other dialogs
         if (Owner != null)
         {
-            Owner.Activated += (s, _) => { if (IsVisible) Activate(); };
+            Owner.Activated += Owner_Activated;
         }
     }
 
@@ -104,7 +116,7 @@ public partial class UpdateAvailableDialog : Window
             try
             {
                 await VelopackUpdateService.DownloadUpdatesAsync(_velopackUpdate, pct =>
-                    Dispatcher.Invoke(() =>
+                    Dispatcher.InvokeAsync(() =>
                     {
                         DownloadProgressBar.Value = pct;
                         ProgressPctText.Text = $"{pct}%";
@@ -152,7 +164,7 @@ public partial class UpdateAvailableDialog : Window
         try
         {
             string installer = await UpdateChecker.DownloadInstallerAsync(_release, progress =>
-                Dispatcher.Invoke(() =>
+                Dispatcher.InvokeAsync(() =>
                 {
                     int pct = (int)Math.Round(progress * 100);
                     DownloadProgressBar.Value = pct;

@@ -47,9 +47,11 @@ public partial class RefreshLinkDialog : Window
 
     private string GetTargetPageUrl()
     {
-        if (!string.IsNullOrWhiteSpace(_task.Referer) && Uri.TryCreate(_task.Referer, UriKind.Absolute, out _))
+        if (!string.IsNullOrWhiteSpace(_task.Referer) && Uri.TryCreate(_task.Referer, UriKind.Absolute, out var refererUri) &&
+            (refererUri.Scheme == Uri.UriSchemeHttp || refererUri.Scheme == Uri.UriSchemeHttps))
             return _task.Referer;
-        if (!string.IsNullOrWhiteSpace(_task.Url) && Uri.TryCreate(_task.Url, UriKind.Absolute, out _))
+        if (!string.IsNullOrWhiteSpace(_task.Url) && Uri.TryCreate(_task.Url, UriKind.Absolute, out var urlUri) &&
+            (urlUri.Scheme == Uri.UriSchemeHttp || urlUri.Scheme == Uri.UriSchemeHttps || urlUri.Scheme == Uri.UriSchemeFtp))
             return _task.Url;
         return "";
     }
@@ -72,9 +74,12 @@ public partial class RefreshLinkDialog : Window
     {
         try
         {
+            if (!Uri.TryCreate(url, UriKind.Absolute, out var uri) ||
+                (uri.Scheme != Uri.UriSchemeHttp && uri.Scheme != Uri.UriSchemeHttps))
+                return;
             Process.Start(new ProcessStartInfo
             {
-                FileName = url,
+                FileName = uri.ToString(),
                 UseShellExecute = true
             });
         }

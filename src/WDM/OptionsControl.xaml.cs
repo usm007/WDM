@@ -34,8 +34,8 @@ public partial class OptionsControl : UserControl
         _isInitializingAppearance = true;
         FolderBox.Text = s.DownloadFolder;
         ChunksBox.SelectedIndex = ChunkIndex(s.DefaultChunkCount);
-        MaxConcurrentBox.SelectedIndex = Math.Clamp(s.MaxConcurrentDownloads - 1, 0, MaxConcurrentBox.Items.Count - 1);
-        RetriesBox.SelectedIndex = Math.Clamp(RetryIndex(s.MaxRetries), 0, RetriesBox.Items.Count - 1);
+        MaxConcurrentBox.SelectedIndex = Math.Clamp(s.MaxConcurrentDownloads - 1, 0, Math.Max(0, MaxConcurrentBox.Items.Count - 1));
+        RetriesBox.SelectedIndex = Math.Clamp(RetryIndex(s.MaxRetries), 0, Math.Max(0, RetriesBox.Items.Count - 1));
         SpeedBox.Text = s.GlobalSpeedLimitKbps.ToString();
 
         RouteBox.IsChecked = s.RouteByCategory;
@@ -51,6 +51,7 @@ public partial class OptionsControl : UserControl
         NotifyBox.IsChecked = s.NotifyOnCompletion;
         TrayProgressBox.IsChecked = s.ShowTrayProgress;
         MinimizeToTrayBox.IsChecked = s.MinimizeToTray;
+        if (TitleSyncBox != null) TitleSyncBox.IsChecked = s.EnableTitleSync;
         RunAtStartupBox.IsChecked = s.RunAtStartup;
 
         UpdateYouTubeUI();
@@ -263,6 +264,7 @@ public partial class OptionsControl : UserControl
         if (NotifyBox != null) s.NotifyOnCompletion = NotifyBox.IsChecked == true;
         if (TrayProgressBox != null) s.ShowTrayProgress = TrayProgressBox.IsChecked == true;
         if (MinimizeToTrayBox != null) s.MinimizeToTray = MinimizeToTrayBox.IsChecked == true;
+        if (TitleSyncBox != null) s.EnableTitleSync = TitleSyncBox.IsChecked == true;
         if (RunAtStartupBox != null) s.RunAtStartup = RunAtStartupBox.IsChecked == true;
         if (CheckForUpdatesBox != null) s.CheckForUpdates = CheckForUpdatesBox.IsChecked == true;
 
@@ -274,7 +276,7 @@ public partial class OptionsControl : UserControl
             _viewModel.IsDarkTheme = s.UseDarkTheme;
         }
 
-        TaskStore.SaveSettings(s);
+        _viewModel.PersistSettings();
     }
 
     private void CloseClick(object sender, RoutedEventArgs e)

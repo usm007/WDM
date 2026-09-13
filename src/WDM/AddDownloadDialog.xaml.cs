@@ -43,6 +43,12 @@ public partial class AddDownloadDialog : Window
         {
             HeadersBox.Text = string.Join("\n", prefillHeaders.Select(kv => $"{kv.Key}: {kv.Value}"));
         }
+        Closed += (_, _) =>
+        {
+            try { _probeCts?.Cancel(); } catch { }
+            try { _probeCts?.Dispose(); } catch { }
+            _probeCts = null;
+        };
 
         Loaded += (_, _) =>
         {
@@ -61,6 +67,26 @@ public partial class AddDownloadDialog : Window
                 AutoPasteClipboardUrl();
             }
         };
+    }
+
+    public bool IsEmpty => string.IsNullOrWhiteSpace(UrlBox.Text);
+
+    public void UpdatePrefill(string? url, string? fileName = null, string? referer = null, Dictionary<string, string>? headers = null)
+    {
+        if (!string.IsNullOrWhiteSpace(url))
+        {
+            UrlBox.Text = url.Trim();
+            if (!string.IsNullOrWhiteSpace(fileName))
+            {
+                NameBox.Text = DownloadEngine.SanitizeFileName(fileName);
+            }
+            if (headers is not null && headers.Count > 0 && HeadersBox is not null)
+            {
+                HeadersBox.Text = string.Join("\n", headers.Select(kv => $"{kv.Key}: {kv.Value}"));
+            }
+            UrlBox.SelectAll();
+            UrlBox.Focus();
+        }
     }
 
     protected override void OnSourceInitialized(EventArgs e)
@@ -199,7 +225,8 @@ public partial class AddDownloadDialog : Window
 
     private async void ProbeYouTubeUrlAsync(string url)
     {
-        _probeCts?.Cancel();
+        try { _probeCts?.Cancel(); } catch { }
+        try { _probeCts?.Dispose(); } catch { }
         _probeCts = new CancellationTokenSource();
         var ct = _probeCts.Token;
 
@@ -211,7 +238,7 @@ public partial class AddDownloadDialog : Window
         try
         {
             var res = await MediaResolver.ResolveAsync(url, ct);
-            if (ct.IsCancellationRequested) return;
+            if (ct.IsCancellationRequested || !IsLoaded) return;
 
             if (res.Items.Count > 0)
             {
@@ -381,13 +408,18 @@ public partial class AddDownloadDialog : Window
 
     private async void ProbeUrlAsync(string url)
     {
-        _probeCts?.Cancel();
+        try { _probeCts?.Cancel(); } catch { }
+        try { _probeCts?.Dispose(); } catch { }
         _probeCts = new CancellationTokenSource();
         var ct = _probeCts.Token;
 
         ProbeBadge.Visibility = Visibility.Visible;
         ProbeIcon.Symbol = SymbolRegular.ArrowSync24;
         ProbeText.Text = "Inspecting URL capabilities...";
+
+        // Note: embed/player pages are caught via the browser extension (overlay
+        // "Resolve in WDM" or auto-captured streams), not by pasting. The engine
+        // still resolves page URLs sent by the extension when the download starts.
 
         try
         {
@@ -454,7 +486,7 @@ public partial class AddDownloadDialog : Window
                 NameBox.Text = _lastDerivedName;
             }
 
-            if (ct.IsCancellationRequested)
+            if (ct.IsCancellationRequested || !IsLoaded)
                 return;
 
             string sizeStr = totalBytes > 0 ? DownloadTask.FormatBytes(totalBytes) : "Unknown size";
@@ -476,6 +508,8 @@ public partial class AddDownloadDialog : Window
                 ProbeIcon.Symbol = SymbolRegular.Info24;
                 ProbeText.Text = $"{sizeStr} • Single-thread download (Server doesn't support resuming)";
             }
+
+            await TryAutoSyncTitleAsync(url, ct);
         }
         catch (OperationCanceledException)
         {
@@ -489,6 +523,108 @@ public partial class AddDownloadDialog : Window
                 ProbeText.Text = "URL ready for download";
             }
         }
+    }
+
+    private static bool IsGenericName(string name) =>
+        string.IsNullOrWhiteSpace(name)
+        || FileNameHelper.IsManifestStem(Path.GetFileNameWithoutExtension(name.Trim()))
+        || name.Trim().StartsWith("download_", StringComparison.OrdinalIgnoreCase)
+        || name.Trim().EndsWith(".bin", StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>Automatic title sync after probing: only when the name is still
+    /// generic/derived (never touches user edits) and a source page is known.</summary>
+    private async Task TryAutoSyncTitleAsync(string url, CancellationToken ct)
+    {
+        if (!_viewModel.Settings.EnableTitleSync || ct.IsCancellationRequested)
+            return;
+        string current = NameBox.Text.Trim();
+        if (!string.IsNullOrWhiteSpace(current) && current != _lastDerivedName && !IsGenericName(current))
+            return;
+        string? synced = await FetchSyncedTitleAsync(ct).ConfigureAwait(true);
+        if (ct.IsCancellationRequested || string.IsNullOrWhiteSpace(synced))
+            return;
+        string live = NameBox.Text.Trim();
+        if (!string.IsNullOrWhiteSpace(live) && live != current && live != _lastDerivedName)
+            return; // user typed meanwhile
+        if (ApplySyncedTitle(synced))
+            ProbeText.Text += " • Title synced from the page (toggle in Settings)";
+    }
+
+    private async void SyncTitle_Click(object sender, RoutedEventArgs e)
+    {
+        string? synced;
+        try
+        {
+            SyncTitleButton.IsEnabled = false;
+            using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+            synced = await FetchSyncedTitleAsync(timeout.Token).ConfigureAwait(true);
+        }
+        catch
+        {
+            synced = null;
+        }
+        finally
+        {
+            SyncTitleButton.IsEnabled = true;
+        }
+        if (string.IsNullOrWhiteSpace(synced))
+        {
+            ProbeIcon.Symbol = SymbolRegular.Warning24;
+            ProbeText.Text = string.IsNullOrWhiteSpace(_prefillReferer)
+                ? "No source page — title sync needs a browser capture"
+                : "Could not sync a title from the page";
+            return;
+        }
+        if (ApplySyncedTitle(synced))
+        {
+            ProbeIcon.Symbol = SymbolRegular.CheckmarkCircle24;
+            ProbeText.Text = "Title synced from the page";
+        }
+    }
+
+    private async Task<string?> FetchSyncedTitleAsync(CancellationToken ct)
+    {
+        if (ct.IsCancellationRequested)
+            return null;
+        var headers = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var kv in ParseHeaders())
+            headers[kv.Key] = kv.Value;
+        if (!string.IsNullOrWhiteSpace(_prefillReferer) && !headers.ContainsKey("Referer"))
+            headers["Referer"] = _prefillReferer;
+        if (_prefillHeaders is not null)
+        {
+            foreach (var kv in _prefillHeaders)
+                headers.TryAdd(kv.Key, kv.Value);
+        }
+        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        timeout.CancelAfter(TimeSpan.FromSeconds(8));
+        using var http = Services.TitleSync.TitleFetcher.CreateClient();
+        try
+        {
+            return await Services.TitleSync.TitleFetcher.TryFetchTitleAsync(
+                _prefillReferer, _prefillReferer, headers, http, timeout.Token).ConfigureAwait(true);
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    /// <summary>Applies a synced title keeping the current extension. Returns false
+    /// when the result is unusable (still generic).</summary>
+    private bool ApplySyncedTitle(string title)
+    {
+        string current = NameBox.Text.Trim();
+        string ext = Path.GetExtension(string.IsNullOrWhiteSpace(current) ? _lastDerivedName : current);
+        string cleaned = FileNameHelper.CleanPageTitle(title);
+        if (string.IsNullOrWhiteSpace(cleaned))
+            return false;
+        string synced = DownloadEngine.SanitizeFileName(cleaned + ext, referer: _prefillReferer);
+        if (string.IsNullOrWhiteSpace(synced) || IsGenericName(synced))
+            return false;
+        _lastDerivedName = synced;
+        NameBox.Text = synced;
+        return true;
     }
 
     private void CategoryBox_SelectionChanged(object sender, SelectionChangedEventArgs e) => ApplyRouting();
@@ -533,7 +669,7 @@ public partial class AddDownloadDialog : Window
 
         string saveFolder = string.IsNullOrWhiteSpace(FolderBox.Text) ? DownloadTask.DefaultSaveFolder : FolderBox.Text;
 
-        if (_viewModel.ExistingUrl(url) || _viewModel.IsDuplicateFile(finalFileName, saveFolder))
+        if (_viewModel.IsDuplicateFile(finalFileName, saveFolder))
         {
             string numberedFileName = _viewModel.GetNumberedFileName(finalFileName, saveFolder);
             var dupDialog = new DuplicateDownloadDialog(url, finalFileName, numberedFileName)

@@ -30,6 +30,12 @@ public sealed class DownloadEngine
     /// the task; the engine itself takes no further action for that task.</summary>
     public event Action<DownloadTask>? CloudflareBlocked;
 
+    /// <summary>Raised when an embed page demands human interaction (captcha,
+    /// device attestation, login) before releasing its stream. The UI layer should
+    /// notify the user and open the page in the embedded browser; the task is left
+    /// Failed until retried.</summary>
+    public event Action<DownloadTask, string>? EmbedInteractionRequired;
+
     public DownloadEngine()
     {
         _http = CreateClient();
@@ -106,7 +112,16 @@ public sealed class DownloadEngine
         bool startNow;
         lock (_lock)
         {
-            if (_sessions.ContainsKey(task.Id) || _queue.Contains(task))
+            if (_sessions.ContainsKey(task.Id))
+            {
+                // Pause->Start race: old session still unwinding. Queue a restart
+                // so PumpQueue picks it up when the old session finishes instead
+                // of silently dropping the resume.
+                if (task.Status == TaskStatus.Paused && !_queue.Contains(task))
+                    _queue.Add(task);
+                return;
+            }
+            if (_queue.Contains(task))
                 return;
 
             if (_sessions.Count >= _maxConcurrent)
@@ -125,6 +140,18 @@ public sealed class DownloadEngine
             BeginSession(task);
         }
         _meter.Start();
+    }
+
+    public void Resume(DownloadTask task)
+    {
+        lock (_lock)
+        {
+            if (task.Status != TaskStatus.Paused)
+                return;
+            task.Error = null;
+            task.Eta = "";
+        }
+        Start(task);
     }
 
     /// <summary>Swaps the task's download link. The stored ETag/Last-Modified identity
@@ -149,13 +176,22 @@ public sealed class DownloadEngine
 
     public void Pause(DownloadTask task)
     {
+        Session? session;
+        lock (_lock) _sessions.TryGetValue(task.Id, out session);
+        if (session is not null)
+        {
+            try { session.Cancel(); } catch { }
+            lock (_lock)
+            {
+                task.Status = TaskStatus.Paused;
+                task.SpeedBps = 0;
+                task.Eta = "";
+            }
+            TaskChanged?.Invoke();
+            return;
+        }
         lock (_lock)
         {
-            if (_sessions.TryGetValue(task.Id, out var session))
-            {
-                session.Cancel();
-                return;
-            }
             // Queued tasks have no session yet; take them out of the queue so they
             // don't start when a slot frees up.
             if (_queue.Remove(task))
@@ -173,7 +209,9 @@ public sealed class DownloadEngine
         Session[] snapshot;
         lock (_lock) snapshot = _sessions.Values.ToArray();
         foreach (var session in snapshot)
-            session.Cancel();
+        {
+            try { session.Cancel(); } catch { }
+        }
 
         // Also hold back queued tasks so they don't sneak in when a slot frees up.
         DownloadTask[] queued;
@@ -211,6 +249,7 @@ public sealed class DownloadEngine
         if (session is null)
         {
             RemoveQueued(task);
+            ReleaseReservedPath(task.FullPath);
             task.Status = TaskStatus.Paused;
             task.Error = "Stopped";
             TaskChanged?.Invoke();
@@ -238,12 +277,15 @@ public sealed class DownloadEngine
                 catch { /* session state already reconciled by RunSessionAsync */ }
             }
             // Only clean up the partial files if the task wasn't restarted in the
-            // meantime (a new session for the same task would be writing there).
+            // meantime (a new session for the same task would be writing there),
+            // and never delete a file that just completed.
             lock (_lock)
             {
                 if (_sessions.ContainsKey(task.Id))
                     return;
             }
+            if (task.Status == TaskStatus.Completed)
+                return;
             TryDelete(session.StatePath);
             TryDelete(task.FullPath);
             session.Dispose();
@@ -253,6 +295,7 @@ public sealed class DownloadEngine
     public void Remove(DownloadTask task, bool deleteFiles = false)
     {
         RemoveQueued(task);
+        ReleaseReservedPath(task.FullPath);
 
         Session? session;
         lock (_lock) _sessions.TryGetValue(task.Id, out session);
@@ -297,6 +340,7 @@ public sealed class DownloadEngine
 
     public void MoveQueued(DownloadTask task, int direction)
     {
+        bool moved;
         lock (_lock)
         {
             int index = _queue.IndexOf(task);
@@ -304,24 +348,34 @@ public sealed class DownloadEngine
             if (index < 0 || target < 0 || target >= _queue.Count)
                 return;
             (_queue[index], _queue[target]) = (_queue[target], _queue[index]);
-            TaskChanged?.Invoke();
+            moved = true;
         }
+        if (moved)
+            TaskChanged?.Invoke();
     }
 
     private void RemoveQueued(DownloadTask task)
     {
-        lock (_lock)
-        {
-            if (_queue.Remove(task))
-                TaskChanged?.Invoke();
-        }
+        bool removed;
+        lock (_lock) removed = _queue.Remove(task);
+        if (removed)
+            TaskChanged?.Invoke();
     }
 
     private void BeginSession(DownloadTask task)
     {
         var session = new Session(task);
-        lock (_lock) _sessions[task.Id] = session;
+        lock (_lock)
+        {
+            _queue.Remove(task);
+            _sessions[task.Id] = session;
+        }
         task.Status = TaskStatus.Downloading;
+        // Show "working" state immediately: the resolve/probe gap runs after
+        // this with no bytes, speed or size yet (see RunSessionAsync).
+        task.IsPreparing = true;
+        task.PhaseText = task.IsYouTube ? "Preparing video…" : "Resolving stream…";
+        task.Eta = "";
         TaskChanged?.Invoke();
         // Track the run so Stop/Remove can wait for every in-flight chunk worker to
         // unwind before touching the partial files.
@@ -371,7 +425,94 @@ public sealed class DownloadEngine
         task.LinkRefreshed = false;
         try
         {
+            // Embed/player pages (/e/, /embed/) resolve to a direct stream first.
+            // A stored SourcePageUrl always re-resolves so expiring signed links
+            // (firestream/dood/voe/byse) are refreshed on every start/resume.
+            string? pageForResolve = null;
+            if (!task.IsYouTube)
+            {
+                if (!string.IsNullOrWhiteSpace(task.SourcePageUrl))
+                    pageForResolve = task.SourcePageUrl;
+                else if (StreamHintIs(task, "page"))
+                    pageForResolve = task.Url;
+                else if (Embed.EmbedResolver.IsEmbedCandidate(task.Url)
+                    && !StreamHintIs(task, "HLS", "DASH", "Video"))
+                    pageForResolve = task.Url;
+            }
+            if (pageForResolve is not null)
+            {
+                task.PhaseText = "Resolving stream…";
+                try
+                {
+                    var embed = await Embed.EmbedResolver.TryResolveAsync(
+                        pageForResolve, task.Referer, task.Headers, session.Token);
+                    if (embed is not null)
+                    {
+                        task.SourcePageUrl = embed.SourcePageUrl;
+                        task.Url = embed.DirectUrl;
+                        if (!string.IsNullOrWhiteSpace(embed.Referer))
+                            task.Referer = embed.Referer;
+                        foreach (var kv in embed.Headers)
+                            task.Headers[kv.Key] = kv.Value;
+                        task.Headers.Remove("X-WDM-StreamType");
+                        if (!string.IsNullOrWhiteSpace(embed.Title) &&
+                            (string.IsNullOrWhiteSpace(task.FileName) ||
+                             IsGenericOrPlaceholderName(task.FileName, pageForResolve)))
+                        {
+                            string ext = embed.IsHls ? ".ts" : ".mp4";
+                            task.FileName = ReserveRenamedFile(task,
+                                SanitizeFileName(embed.Title + ext, referer: task.Referer));
+                        }
+                        TaskChanged?.Invoke();
+                    }
+                }
+                catch (Embed.EmbedInteractionRequiredException ex)
+                {
+                    task.Error = ex.Message + " Open the page in the WDM browser to continue.";
+                    task.Status = TaskStatus.Failed;
+                    EmbedInteractionRequired?.Invoke(task, pageForResolve);
+                    TaskChanged?.Invoke();
+                    return;
+                }
+                catch
+                {
+                    // Resolver miss: fall through and probe the original URL so a
+                    // directly downloadable link still works.
+                }
+            }
+
+            // Internet title sync for auto-start captures that skipped the dialog:
+            // when the name is still generic and no page title was captured, fetch
+            // one (oEmbed, then page metadata) into X-WDM-PageTitle. Best-effort,
+            // capped at a few seconds, never fails the download.
+            try
+            {
+                if (TaskStore.LoadSettings().EnableTitleSync
+                    && string.IsNullOrWhiteSpace(PageTitleHint(task)))
+                {
+                    string? page = !string.IsNullOrWhiteSpace(task.SourcePageUrl) ? task.SourcePageUrl : task.Referer;
+                    if (TitleSync.TitleFetcher.ShouldAttempt(task.FileName, page))
+                    {
+                        using var titleCts = CancellationTokenSource.CreateLinkedTokenSource(session.Token);
+                        titleCts.CancelAfter(TimeSpan.FromSeconds(8));
+                        using var titleHttp = TitleSync.TitleFetcher.CreateClient();
+                        string? fetched = await TitleSync.TitleFetcher.TryFetchTitleAsync(
+                            page, task.Referer, task.Headers, titleHttp, titleCts.Token);
+                        if (!string.IsNullOrWhiteSpace(fetched))
+                        {
+                            task.Headers["X-WDM-PageTitle"] = fetched.Trim();
+                            TaskChanged?.Invoke();
+                        }
+                    }
+                }
+            }
+            catch
+            {
+                // Title sync is cosmetic; ignore everything here.
+            }
+
             long previousTotalBytes = task.TotalBytes;
+            task.PhaseText = "Connecting to server…";
             var meta = await ProbeAsync(task, session.Token);
             task.TotalBytes = meta.TotalBytes;
             session.CurrentUrlIndex = meta.UrlIndex;
@@ -404,16 +545,20 @@ public sealed class DownloadEngine
 
                 if (!string.IsNullOrWhiteSpace(resolved) && !IsGenericOrPlaceholderName(resolved, task.Url))
                 {
-                    task.FileName = SanitizeFileName(resolved, referer: task.Referer);
-                    task.FileName = EnsureUniqueName(task.SaveFolder, task.FileName, task.Id);
+                    task.FileName = SanitizeFileName(resolved, PageTitleHint(task), task.Referer);
+                    task.FileName = ReserveRenamedFile(task, task.FileName);
                 }
                 else if (string.IsNullOrWhiteSpace(task.FileName))
                 {
-                    task.FileName = SanitizeFileName(resolved ?? DeriveName(task.Url, meta.ContentType), referer: task.Referer);
-                    task.FileName = EnsureUniqueName(task.SaveFolder, task.FileName, task.Id);
+                    task.FileName = SanitizeFileName(resolved ?? DeriveName(task.Url, meta.ContentType), PageTitleHint(task), task.Referer);
+                    task.FileName = ReserveRenamedFile(task, task.FileName);
                 }
             }
             Directory.CreateDirectory(task.SaveFolder);
+
+            // Size is known now; transfer workers start next — this is the last
+            // preparing step before bytes flow and RefreshSpeeds clears the flag.
+            task.PhaseText = meta.IsHls ? "Preparing video…" : "Starting download…";
 
             // On a fresh start we record the server's file identity for later resume
             // checks; on a resume we verify nothing changed before writing more bytes.
@@ -439,14 +584,22 @@ public sealed class DownloadEngine
 
             if (meta.IsHls)
             {
+                meta.ProbeBody?.Dispose();
+                meta = meta with { ProbeBody = null };
                 await RunHlsAsync(session, meta.ContentType);
             }
             else if (meta.IsDash)
             {
+                meta.ProbeBody?.Dispose();
+                meta = meta with { ProbeBody = null };
                 await RunDashAsync(session, meta.ContentType);
             }
             else if (meta.TotalBytes > 0 && meta.SupportsRanges)
+            {
+                meta.ProbeBody?.Dispose();
+                meta = meta with { ProbeBody = null };
                 await RunChunkedAsync(session, meta.TotalBytes);
+            }
             else
                 await RunSingleStreamAsync(session, meta.ProbeBody);
 
@@ -456,6 +609,8 @@ public sealed class DownloadEngine
             task.Progress = 100;
             task.SpeedBps = 0;
             task.Eta = "";
+            task.IsPreparing = false;
+            task.PhaseText = "";
             TaskCompleted?.Invoke(task);
         }
         catch (OperationCanceledException)
@@ -471,10 +626,14 @@ public sealed class DownloadEngine
                 task.Progress = 100;
                 task.SpeedBps = 0;
                 task.Eta = "";
+                task.IsPreparing = false;
+                task.PhaseText = "";
                 TaskCompleted?.Invoke(task);
                 return;
             }
             task.Status = TaskStatus.Paused;
+            task.IsPreparing = false;
+            task.PhaseText = "";
         }
         catch (Exception ex)
         {
@@ -493,10 +652,19 @@ public sealed class DownloadEngine
             {
                 task.Status = ex is FileChangedException ? TaskStatus.Paused : TaskStatus.Failed;
                 task.Error = ex.Message;
+                task.IsPreparing = false;
+                task.PhaseText = "";
             }
         }
         finally
         {
+            // Flush the chunk bitmap so a pause/cancel inside the 1s
+            // SaveIfDirty window doesn't re-download a second of work.
+            // Completed downloads already deleted the state file — skip them.
+            if (task.Status != TaskStatus.Completed)
+            {
+                try { session.State?.Save(session.StatePath); } catch { }
+            }
             session.Finish();
             lock (_lock)
             {
@@ -545,9 +713,16 @@ public sealed class DownloadEngine
         foreach (string url in AllUrls(task))
         {
             var meta = await ProbeUrlAsync(task, url, index, ct);
-            fallback ??= meta;
             if (meta.TotalBytes > 0 || !string.IsNullOrWhiteSpace(meta.SuggestedName))
+            {
+                // A losing mirror's kept-alive probe body would leak its socket.
+                fallback?.ProbeBody?.Dispose();
                 return meta;
+            }
+            // Losing probes are never consumed — release any kept body now.
+            meta.ProbeBody?.Dispose();
+            meta = meta with { ProbeBody = null };
+            fallback ??= meta;
             index++;
         }
         return fallback ?? new ProbeMeta(-1, false, null, null, false, false, null, null, null, 0);
@@ -661,8 +836,16 @@ public sealed class DownloadEngine
         //    query param, even when the response omits the header.
         suggestedName ??= FileNameHelper.FileNameFromS3Query(url);
 
-        bool isHls = IsHlsContentType(contentType) || LooksLikeHlsUrl(url);
-        bool isDash = IsDashContentType(contentType) || LooksLikeDashUrl(url);
+        bool isHls = IsHlsContentType(contentType) || LooksLikeHlsUrl(url) || StreamHintIs(task, "HLS");
+        bool isDash = !isHls && (IsDashContentType(contentType) || LooksLikeDashUrl(url) || StreamHintIs(task, "DASH"));
+        if (!isHls && !isDash && (StreamHintIs(task, "Stream", "HLS") || LooksLikeHlsUrl(url) || LooksLikeDashUrl(url)))
+        {
+            // Ambiguous tokenized manifest: confirm via content signature instead of
+            // downloading an HTML page as a .bin (e.g. playlist endpoints serving #EXTM3U
+            // with a generic content-type).
+            if (await SniffHlsContentAsync(task, url, ct))
+                isHls = true;
+        }
         return new ProbeMeta(totalBytes, supportsRanges, suggestedName, contentType, isHls, isDash, etag, lastModified, probeBody, urlIndex);
     }
 
@@ -737,16 +920,86 @@ public sealed class DownloadEngine
     {
         if (!Uri.TryCreate(url, UriKind.Absolute, out var uri))
             return false;
-        return uri.AbsolutePath.EndsWith(".m3u8", StringComparison.OrdinalIgnoreCase)
-            || uri.Query.Contains(".m3u8", StringComparison.OrdinalIgnoreCase);
+        string path = uri.AbsolutePath;
+        string query = uri.Query;
+        if (path.EndsWith(".m3u8", StringComparison.OrdinalIgnoreCase)
+            || query.Contains(".m3u8", StringComparison.OrdinalIgnoreCase))
+            return true;
+        // Tokenized manifests often carry no .m3u8 literal (e.g. /playlist, /manifest,
+        // /hls/, /master, /stream). Match the same IDM-grade patterns as the extension.
+        if (path.Contains("/hls/", StringComparison.OrdinalIgnoreCase)
+            || path.Contains("/playlist", StringComparison.OrdinalIgnoreCase)
+            || path.Contains("/manifest", StringComparison.OrdinalIgnoreCase)
+            || path.Contains("/master", StringComparison.OrdinalIgnoreCase)
+            || System.Text.RegularExpressions.Regex.IsMatch(path, @"/stream\b", System.Text.RegularExpressions.RegexOptions.IgnoreCase))
+            return true;
+        return query.Contains("format=m3u8", StringComparison.OrdinalIgnoreCase)
+            || query.Contains("ext=m3u8", StringComparison.OrdinalIgnoreCase);
     }
 
     private static bool LooksLikeDashUrl(string url)
     {
         if (!Uri.TryCreate(url, UriKind.Absolute, out var uri))
             return false;
-        return uri.AbsolutePath.EndsWith(".mpd", StringComparison.OrdinalIgnoreCase)
-            || uri.Query.Contains(".mpd", StringComparison.OrdinalIgnoreCase);
+        string path = uri.AbsolutePath;
+        string query = uri.Query;
+        if (path.EndsWith(".mpd", StringComparison.OrdinalIgnoreCase)
+            || query.Contains(".mpd", StringComparison.OrdinalIgnoreCase))
+            return true;
+        if (path.Contains("/dash/", StringComparison.OrdinalIgnoreCase)
+            || path.Contains("/manifest", StringComparison.OrdinalIgnoreCase)
+            || path.Contains("/master", StringComparison.OrdinalIgnoreCase))
+            return true;
+        return query.Contains("format=mpd", StringComparison.OrdinalIgnoreCase)
+            || query.Contains("ext=mpd", StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>Stream classification forwarded by the browser extension
+    /// (CaptureServer injects it as X-WDM-StreamType). Lets tokenized manifests
+    /// without a literal .m3u8/.mpd route to the right downloader.</summary>
+    private static bool StreamHintIs(DownloadTask task, params string[] kinds)
+    {
+        if (task.Headers.TryGetValue("X-WDM-StreamType", out var hint) && !string.IsNullOrWhiteSpace(hint))
+        {
+            foreach (var kind in kinds)
+            {
+                if (hint.Equals(kind, StringComparison.OrdinalIgnoreCase))
+                    return true;
+            }
+        }
+        return false;
+    }
+
+    /// <summary>Content-sniff fallback: fetch the first byte range and check for
+    /// an HLS playlist signature. Only used when the URL is stream-ish (or the
+    /// extension flagged it) but headers/patterns were inconclusive.</summary>
+    private async Task<bool> SniffHlsContentAsync(DownloadTask task, string url, CancellationToken ct)
+    {
+        try
+        {
+            using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            cts.CancelAfter(TimeSpan.FromSeconds(6));
+            using var request = BuildRequest(HttpMethod.Get, task, new RangeHeaderValue(0, 1023), url);
+            using var response = await _http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cts.Token);
+            if (!response.IsSuccessStatusCode && response.StatusCode != HttpStatusCode.PartialContent)
+                return false;
+            // Cap the sniff read: a server ignoring Range could otherwise make
+            // us buffer an entire (multi-GB) file just to check a magic prefix.
+            const int sniffCap = 64 * 1024;
+            await using var stream = await response.Content.ReadAsStreamAsync(cts.Token);
+            var buf = new byte[sniffCap];
+            int total = 0, n;
+            while (total < sniffCap && (n = await stream.ReadAsync(buf.AsMemory(total, sniffCap - total), cts.Token)) > 0)
+                total += n;
+            if (total < 7)
+                return false;
+            string head = System.Text.Encoding.UTF8.GetString(buf, 0, Math.Min(total, 512)).TrimStart('\uFEFF', ' ', '\t', '\r', '\n');
+            return head.StartsWith("#EXTM3U", StringComparison.OrdinalIgnoreCase);
+        }
+        catch
+        {
+            return false;
+        }
     }
 
     private static bool IsHlsContentType(string? contentType) =>
@@ -806,13 +1059,16 @@ public sealed class DownloadEngine
         chunkSize = Math.Clamp(chunkSize, 128 * 1024, 16 * 1024 * 1024);
         if (chunkSize < 1)
             chunkSize = 1;
-        int chunkCount = (int)((totalBytes + chunkSize - 1) / chunkSize);
+        long chunkCountLong = (totalBytes + chunkSize - 1) / chunkSize;
+        if (chunkCountLong < 1 || chunkCountLong > 100_000)
+            throw new InvalidOperationException("Server reported an implausible file size.");
+        int chunkCount = (int)chunkCountLong;
 
         session.State = ChunkState.Load(session.StatePath, totalBytes, chunkSize, chunkCount);
         session.ChunkSize = chunkSize;
         session.NextChunk = session.State.GetNextIncomplete(0);
         Interlocked.Exchange(ref session.BytesDownloaded, session.State.CompletedBytes);
-        session.LastBytes = session.State.CompletedBytes;
+        Interlocked.Exchange(ref session.LastBytes, session.State.CompletedBytes);
 
         await using (var prealloc = new FileStream(task.FullPath, FileMode.OpenOrCreate, FileAccess.Write, FileShare.ReadWrite))
         {
@@ -843,19 +1099,19 @@ public sealed class DownloadEngine
 
         while (true)
         {
-            int index = Interlocked.Increment(ref session.NextChunk) - 1;
-            if (index >= state.ChunkCount)
-                return;
-            if (state.IsCompleted(index))
+            int index;
+            lock (session.ClaimLock)
             {
-                int nextIncomplete = state.GetNextIncomplete(index);
-                if (nextIncomplete >= state.ChunkCount)
+                // Atomically claim the smallest incomplete chunk at or past the
+                // cursor so two workers can never take the same index and no
+                // incomplete index is skipped.
+                index = state.GetNextIncomplete(session.NextChunk);
+                if (index >= state.ChunkCount)
                     return;
-                Interlocked.CompareExchange(ref session.NextChunk, nextIncomplete + 1, index + 1);
-                index = nextIncomplete;
-                if (state.IsCompleted(index))
-                    continue;
+                session.NextChunk = index + 1;
             }
+            if (state.IsCompleted(index))
+                continue;
 
             long from = (long)index * session.ChunkSize;
             long to = Math.Min(from + session.ChunkSize, task.TotalBytes) - 1;
@@ -873,6 +1129,8 @@ public sealed class DownloadEngine
     {
         var task = session.Task;
         int attempt = 0;
+        int rotations = 0;
+        int urlCount = 1 + (task.Mirrors?.Count ?? 0);
         while (true)
         {
             long chunkBytes;
@@ -880,7 +1138,7 @@ public sealed class DownloadEngine
             {
                 chunkBytes = await DownloadChunkAsync(session, output, from, to);
             }
-            catch (Exception ex) when ((IsTransient(ex) || ex is InvalidOperationException or HttpRequestException) &&
+            catch (Exception ex) when ((IsTransient(ex) || ex is HttpRequestException) &&
                                        !session.Token.IsCancellationRequested)
             {
                 if (attempt < MaxRetries)
@@ -890,9 +1148,11 @@ public sealed class DownloadEngine
                     continue;
                 }
                 // Retries on the current URL are exhausted; fall over to the next
-                // mirror and give the chunk a fresh set of attempts.
-                if (session.RotateUrl(task))
+                // mirror and give the chunk a fresh set of attempts — but only
+                // until every URL has been tried, otherwise this loops forever.
+                if (session.RotateUrl(task) && rotations < urlCount)
                 {
+                    rotations++;
                     attempt = 0;
                     continue;
                 }
@@ -920,6 +1180,9 @@ public sealed class DownloadEngine
                     throw new CloudflareBlockedException(CloudflareMessage(session.CurrentUrl(task)));
                 if (response.StatusCode != HttpStatusCode.PartialContent)
                     throw new InvalidOperationException("Server does not support range downloads.");
+                var cr = response.Content.Headers.ContentRange;
+                if (cr?.From != from || cr?.To != to)
+                    throw new HttpRequestException($"Server returned wrong range (asked {from}-{to}, got {cr?.From}-{cr?.To}).");
 
                 await using var input = await response.Content.ReadAsStreamAsync(session.Token);
                 output.Position = from;
@@ -951,6 +1214,11 @@ public sealed class DownloadEngine
         }
     }
 
+    /// <summary>Page title captured by the browser extension (X-WDM-PageTitle).
+    /// Used for filename recovery when the manifest URL carries no title.</summary>
+    private static string? PageTitleHint(DownloadTask task) =>
+        task.Headers.TryGetValue("X-WDM-PageTitle", out var t) && !string.IsNullOrWhiteSpace(t) ? t : null;
+
     private async Task RunHlsAsync(Session session, string? contentType)
     {
         var task = session.Task;
@@ -964,7 +1232,22 @@ public sealed class DownloadEngine
             || task.FileName.EndsWith(".m3u", StringComparison.OrdinalIgnoreCase))
         {
             task.FileName = Path.ChangeExtension(task.FileName, extension);
-            task.FileName = EnsureUniqueName(task.SaveFolder, task.FileName, task.Id);
+            task.FileName = ReserveRenamedFile(task, task.FileName);
+        }
+        // Manifest basenames without title signal ("master.ts") survive when the
+        // page title was junk at capture time — retry once with the captured title.
+        if (FileNameHelper.IsManifestStem(Path.GetFileNameWithoutExtension(task.FileName)))
+        {
+            string? hint = PageTitleHint(task);
+            if (!string.IsNullOrWhiteSpace(hint))
+            {
+                string recovered = SanitizeFileName(FileNameHelper.CleanPageTitle(hint) + extension, referer: task.Referer);
+                if (!FileNameHelper.IsManifestStem(Path.GetFileNameWithoutExtension(recovered)))
+                {
+                    task.FileName = ReserveRenamedFile(task, recovered);
+                    TaskChanged?.Invoke();
+                }
+            }
         }
 
         await HlsDownloader.DownloadAsync(
@@ -983,6 +1266,73 @@ public sealed class DownloadEngine
             task.Headers);
 
         session.Token.ThrowIfCancellationRequested();
+
+        // Remux the TS concat into .mp4 (same basename) when ffmpeg is available
+        // so the finished file is "My Film.mp4", not "My Film.ts".
+        if (task.FileName.EndsWith(".ts", StringComparison.OrdinalIgnoreCase)
+            && File.Exists(EngineManager.FfmpegPath)
+            && File.Exists(task.FullPath))
+        {
+            await RemuxTsToMp4Async(session, task);
+        }
+    }
+
+    private async Task RemuxTsToMp4Async(Session session, DownloadTask task)
+    {
+        string tsPath = task.FullPath;
+        string mp4Path = Path.ChangeExtension(tsPath, ".mp4");
+        if (File.Exists(mp4Path))
+            mp4Path = Path.Combine(task.SaveFolder,
+                Path.GetFileNameWithoutExtension(task.FileName) + $"_{DateTime.Now:HHmmss}.mp4");
+        try
+        {
+            var psi = new ProcessStartInfo
+            {
+                FileName = EngineManager.FfmpegPath,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                UseShellExecute = false,
+                CreateNoWindow = true
+            };
+            psi.ArgumentList.Add("-hide_banner");
+            psi.ArgumentList.Add("-loglevel");
+            psi.ArgumentList.Add("error");
+            psi.ArgumentList.Add("-y");
+            psi.ArgumentList.Add("-i");
+            psi.ArgumentList.Add(tsPath);
+            psi.ArgumentList.Add("-c");
+            psi.ArgumentList.Add("copy");
+            psi.ArgumentList.Add("-movflags");
+            psi.ArgumentList.Add("+faststart");
+            psi.ArgumentList.Add(mp4Path);
+
+            using var proc = Process.Start(psi);
+            if (proc is null)
+                return;
+            using var reg = session.Token.Register(() => { try { proc.Kill(); } catch {} });
+            // Drain both redirected streams to avoid pipe-full deadlock on large remuxes.
+            var stdoutDrain = proc.StandardOutput.ReadToEndAsync();
+            var stderrDrain = proc.StandardError.ReadToEndAsync();
+            await proc.WaitForExitAsync(session.Token);
+            try { await Task.WhenAll(stdoutDrain, stderrDrain); } catch { }
+            if (proc.ExitCode == 0 && File.Exists(mp4Path) && new FileInfo(mp4Path).Length > 0)
+            {
+                try { File.Delete(tsPath); } catch { }
+                task.FileName = ReserveRenamedFile(task, Path.GetFileName(mp4Path));
+                task.TotalBytes = new FileInfo(mp4Path).Length;
+                Interlocked.Exchange(ref session.BytesDownloaded, task.TotalBytes);
+                Interlocked.Exchange(ref session.LastBytes, task.TotalBytes);
+                TaskChanged?.Invoke();
+            }
+            else
+            {
+                try { if (File.Exists(mp4Path)) File.Delete(mp4Path); } catch { }
+            }
+        }
+        catch
+        {
+            // Remux is best-effort; the .ts output remains fully playable.
+        }
     }
 
     private async Task RunDashAsync(Session session, string? contentType)
@@ -994,7 +1344,7 @@ public sealed class DownloadEngine
         if (task.FileName.EndsWith(".mpd", StringComparison.OrdinalIgnoreCase))
         {
             task.FileName = Path.ChangeExtension(task.FileName, extension);
-            task.FileName = EnsureUniqueName(task.SaveFolder, task.FileName, task.Id);
+            task.FileName = ReserveRenamedFile(task, task.FileName);
         }
 
         // If ffmpeg is available, we stream and mux via ffmpeg directly
@@ -1025,6 +1375,17 @@ public sealed class DownloadEngine
             using var proc = Process.Start(psi) ?? throw new InvalidOperationException("Failed to launch ffmpeg for DASH stream.");
             using var reg = session.Token.Register(() => { try { proc.Kill(); } catch {} });
 
+            // Drain stdout (moov/header chatter) in the background so it can't
+            // fill the pipe while we read progress from stderr.
+            var stdoutDrain = Task.Run(async () =>
+            {
+                try
+                {
+                    var buf = new byte[81920];
+                    while (await proc.StandardOutput.BaseStream.ReadAsync(buf, session.Token) > 0) { }
+                }
+                catch { }
+            }, session.Token);
             string? errLine;
             while ((errLine = await proc.StandardError.ReadLineAsync(session.Token)) != null)
             {
@@ -1037,13 +1398,13 @@ public sealed class DownloadEngine
             }
 
             await proc.WaitForExitAsync(session.Token);
+            try { await stdoutDrain; } catch { }
             if (proc.ExitCode != 0)
                 throw new InvalidOperationException($"ffmpeg exited with code {proc.ExitCode} while capturing DASH stream.");
         }
         else
         {
-            // Fallback: single stream grab
-            await RunSingleStreamAsync(session, null);
+            throw new InvalidOperationException("ffmpeg is required to capture DASH streams (.mpd). Please install ffmpeg.");
         }
 
         session.Token.ThrowIfCancellationRequested();
@@ -1078,6 +1439,8 @@ public sealed class DownloadEngine
         }
 
         int attempt = 0;
+        int rotations = 0;
+        int urlCount = 1 + (task.Mirrors?.Count ?? 0);
         while (true)
         {
             try
@@ -1092,8 +1455,9 @@ public sealed class DownloadEngine
                     await BackoffAsync(attempt, session.Token);
                     attempt++;
                 }
-                else if (session.RotateUrl(task))
+                else if (session.RotateUrl(task) && rotations < urlCount)
                 {
+                    rotations++;
                     attempt = 0;
                 }
                 else
@@ -1114,11 +1478,10 @@ public sealed class DownloadEngine
             string? dispositionName = NameFromDisposition(response.Content.Headers.ContentDisposition);
             if (!string.IsNullOrWhiteSpace(dispositionName))
             {
-                string newName = SanitizeFileName(dispositionName, referer: task.Referer);
-                newName = EnsureUniqueName(task.SaveFolder, newName, task.Id);
-                if (!string.Equals(task.FileName, newName, StringComparison.OrdinalIgnoreCase))
+                string sanitized = SanitizeFileName(dispositionName, referer: task.Referer);
+                if (!string.Equals(task.FileName, sanitized, StringComparison.OrdinalIgnoreCase))
                 {
-                    task.FileName = newName;
+                    task.FileName = ReserveRenamedFile(task, sanitized);
                 }
             }
         }
@@ -1154,12 +1517,23 @@ public sealed class DownloadEngine
             if (IsCloudflareChallenge(response))
                 throw new CloudflareBlockedException(CloudflareMessage(session.CurrentUrl(task)));
             // Resuming at EOF: server says the range is unsatisfiable because the file
-            // is already fully downloaded. Treat that as success.
+            // is already fully downloaded. Treat that as success — but only when
+            // the on-disk size exactly matches the server's length. Otherwise the
+            // server shrank the file and we'd mark a corrupt over-long file done.
             if (response.StatusCode == HttpStatusCode.RequestedRangeNotSatisfiable && existingLength > 0)
             {
                 if (response.Content.Headers.ContentRange?.Length is long len && len > 0)
+                {
+                    if (existingLength != len)
+                        throw new FileChangedException($"The file size changed on the server (local {existingLength} vs remote {len}). Paused to avoid a corrupt file.");
                     task.TotalBytes = len;
+                }
+                else if (task.TotalBytes > 0 && existingLength != task.TotalBytes)
+                {
+                    throw new FileChangedException("The server rejected the resume range and the local size does not match. Paused to avoid a corrupt file.");
+                }
                 Interlocked.Exchange(ref session.BytesDownloaded, existingLength);
+                Interlocked.Exchange(ref session.LastBytes, existingLength);
                 return;
             }
 
@@ -1170,11 +1544,10 @@ public sealed class DownloadEngine
                 string? dispositionName = NameFromDisposition(response.Content.Headers.ContentDisposition);
                 if (!string.IsNullOrWhiteSpace(dispositionName))
                 {
-                    string newName = SanitizeFileName(dispositionName, referer: task.Referer);
-                    newName = EnsureUniqueName(task.SaveFolder, newName, task.Id);
-                    if (!string.Equals(task.FileName, newName, StringComparison.OrdinalIgnoreCase))
+                    string sanitized = SanitizeFileName(dispositionName, referer: task.Referer);
+                    if (!string.Equals(task.FileName, sanitized, StringComparison.OrdinalIgnoreCase))
                     {
-                        task.FileName = newName;
+                        task.FileName = ReserveRenamedFile(task, sanitized);
                     }
                 }
             }
@@ -1184,17 +1557,24 @@ public sealed class DownloadEngine
             {
                 existingLength = 0;
             }
+            else
+            {
+                // Server honored our resume offset — verify it started where asked.
+                var cr = response.Content.Headers.ContentRange;
+                if (cr?.From is long gotFrom && gotFrom != existingLength)
+                    throw new HttpRequestException($"Server resumed at wrong offset (asked {existingLength}, got {gotFrom}).");
+            }
 
             if (response.Content.Headers.ContentLength is long length && length > 0)
             {
                 if (isPartial)
                     task.TotalBytes = existingLength + length;
-                else if (task.TotalBytes < 0)
+                else
                     task.TotalBytes = length;
             }
 
             Interlocked.Exchange(ref session.BytesDownloaded, existingLength);
-            session.LastBytes = existingLength;
+            Interlocked.Exchange(ref session.LastBytes, existingLength);
 
             await using var input = await response.Content.ReadAsStreamAsync(session.Token);
             FileMode mode = isPartial && existingLength > 0 ? FileMode.Append : FileMode.Create;
@@ -1224,16 +1604,25 @@ public sealed class DownloadEngine
         foreach (var session in snapshot)
         {
             long now = Interlocked.Read(ref session.BytesDownloaded);
-            double speed = Math.Max(0, (now - session.LastBytes) * 4.0);
-            session.LastBytes = now;
+            long last = Interlocked.Read(ref session.LastBytes);
+            double speed = Math.Max(0, (now - last) * 4.0);
+            Interlocked.Exchange(ref session.LastBytes, now);
             session.Task.SpeedBps = speed;
             session.Task.DownloadedBytes = now;
             total += (long)speed;
 
+            // First real bytes flowing: leave the preparing state so the dialog
+            // swaps the status line + marquee for live speed/ETA/percent.
+            if (session.Task.IsPreparing && speed > 1)
+            {
+                session.Task.IsPreparing = false;
+                session.Task.PhaseText = "";
+            }
+
             if (session.Task.TotalBytes > 0)
             {
-                int percent = (int)(now * 100 / session.Task.TotalBytes);
-                session.Task.Progress = Math.Clamp(percent, 0, 100);
+                double percent = (double)now * 100.0 / session.Task.TotalBytes;
+                session.Task.Progress = Math.Clamp((int)percent, 0, 100);
                 double remaining = session.Task.TotalBytes - now;
                 session.Task.Eta = speed > 1 ? FormatEta(remaining / speed) : "";
             }
@@ -1303,15 +1692,26 @@ public sealed class DownloadEngine
 
     private static HttpRequestMessage BuildRequest(HttpMethod method, DownloadTask task, RangeHeaderValue? range, string? url = null)
     {
-        var request = new HttpRequestMessage(method, url ?? task.Url);
+        string targetUrl = url ?? task.Url;
+        var request = new HttpRequestMessage(method, targetUrl);
         if (range is not null)
             request.Headers.Range = range;
         if (!string.IsNullOrWhiteSpace(task.Referer) && Uri.TryCreate(task.Referer, UriKind.Absolute, out var referer))
             request.Headers.Referrer = referer;
+        bool sameHost = IsSameHost(targetUrl, task.Url);
         // Apply per-task custom headers (e.g. Cookie, Authorization, Referer).
         foreach (var kv in task.Headers)
         {
             if (string.IsNullOrWhiteSpace(kv.Key) || string.IsNullOrWhiteSpace(kv.Value))
+                continue;
+            // Internal routing hints (e.g. X-WDM-StreamType) must never leave the client.
+            if (kv.Key.StartsWith("X-WDM-", StringComparison.OrdinalIgnoreCase))
+                continue;
+            // Session credentials belong to the original host — never forward
+            // them to a mirror CDN on a different host.
+            if (!sameHost && (kv.Key.Equals("Cookie", StringComparison.OrdinalIgnoreCase) ||
+                              kv.Key.Equals("Authorization", StringComparison.OrdinalIgnoreCase) ||
+                              kv.Key.Equals("Proxy-Authorization", StringComparison.OrdinalIgnoreCase)))
                 continue;
             request.Headers.TryAddWithoutValidation(kv.Key, kv.Value);
         }
@@ -1332,6 +1732,18 @@ public sealed class DownloadEngine
             request.Headers.TryAddWithoutValidation("Referer", $"{targetUri.Scheme}://{host}/");
         }
         return request;
+    }
+
+    private static bool IsSameHost(string a, string b)
+    {
+        try
+        {
+            if (!Uri.TryCreate(a, UriKind.Absolute, out var ua) ||
+                !Uri.TryCreate(b, UriKind.Absolute, out var ub))
+                return true;
+            return string.Equals(ua.Host, ub.Host, StringComparison.OrdinalIgnoreCase);
+        }
+        catch { return true; }
     }
 
     private static bool IsCloudflareChallenge(HttpResponseMessage response)
@@ -1368,7 +1780,10 @@ public sealed class DownloadEngine
     {
         if (Uri.TryCreate(url, UriKind.Absolute, out var uri))
         {
-            string name = Uri.UnescapeDataString(Path.GetFileName(uri.AbsolutePath));
+            string raw = Path.GetFileName(uri.AbsolutePath);
+            string name;
+            try { name = Uri.UnescapeDataString(raw); }
+            catch { name = raw; }
             if (!string.IsNullOrWhiteSpace(name) && LooksLikeFileName(name))
             {
                 // HLS manifests download as a single concatenated media file.
@@ -1569,6 +1984,20 @@ public sealed class DownloadEngine
         lock (_lock) _reservedPaths.Remove(task.FullPath);
     }
 
+    private void ReleaseReservedPath(string fullPath)
+    {
+        lock (_lock) _reservedPaths.Remove(fullPath);
+    }
+
+    private string ReserveRenamedFile(DownloadTask task, string newFileName)
+    {
+        string oldFull = task.FullPath;
+        string reserved = EnsureUniqueName(task.SaveFolder, newFileName, task.Id);
+        if (!string.Equals(oldFull, Path.Combine(task.SaveFolder, reserved), StringComparison.OrdinalIgnoreCase))
+            ReleaseReservedPath(oldFull);
+        return reserved;
+    }
+
     private static string StatePath(DownloadTask task) => $"{task.FullPath}.wdmstate";
 
     private static void TryDelete(string path)
@@ -1644,6 +2073,7 @@ public sealed class DownloadEngine
         public SpeedGovernor Governor { get; } = new();
 
         public int CurrentUrlIndex;
+        public readonly object ClaimLock = new();
         public string CurrentUrl(DownloadTask task)
         {
             var mirrors = task.Mirrors;
@@ -1667,14 +2097,17 @@ public sealed class DownloadEngine
         /// only after every chunk worker and file stream has unwound.</summary>
         public Task? RunningTask { get; set; }
 
-        public void Cancel() => Cts.Cancel();
+        public void Cancel()
+        {
+            try { Cts.Cancel(); } catch (ObjectDisposedException) { }
+        }
 
         public void Finish()
         {
-            lock (this)
+            lock (ClaimLock)
             {
                 Done = true;
-                Cts.Cancel();
+                try { Cts.Cancel(); } catch (ObjectDisposedException) { }
             }
         }
 
@@ -1707,7 +2140,7 @@ public sealed class DownloadEngine
             {
                 lock (_lock)
                 {
-                    int completed = (int)_completed;
+                    long completed = _completed;
                     if (completed <= 0)
                         return 0;
                     // The final chunk is usually smaller than _chunkSize, so count it by its real length.
@@ -1891,6 +2324,9 @@ public sealed class DownloadEngine
         // progress window never flashes "Checking server support..." (see screenshot).
         task.ResumeCapabilityText = "YouTube — via yt-dlp (single stream)";
         task.IsResumable = false;
+        task.IsPreparing = true;
+        task.PhaseText = "Preparing video…";
+        task.Eta = "";
         TaskChanged?.Invoke();
 
         try
@@ -1962,6 +2398,8 @@ public sealed class DownloadEngine
                 task.Status = TaskStatus.Paused;
                 task.SpeedBps = 0;
                 task.Eta = "";
+                task.IsPreparing = false;
+                task.PhaseText = "";
             }
             else if (proc.ExitCode == 0)
             {
@@ -1985,7 +2423,10 @@ public sealed class DownloadEngine
                                     .OrderByDescending(f => f.LastWriteTimeUtc)
                                     .FirstOrDefault();
                                 if (newest != null && (DateTime.UtcNow - newest.LastWriteTimeUtc).TotalMinutes < 5)
+                                {
                                     fileLen = newest.Length;
+                                    task.FileName = ReserveRenamedFile(task, newest.Name);
+                                }
                             }
                         }
                         catch { }
@@ -2000,6 +2441,8 @@ public sealed class DownloadEngine
                 task.CompletedAt = DateTime.Now;
                 task.SpeedBps = 0;
                 task.Eta = "";
+                task.IsPreparing = false;
+                task.PhaseText = "";
                 TaskCompleted?.Invoke(task);
             }
             else
@@ -2008,6 +2451,8 @@ public sealed class DownloadEngine
                 task.Error = "yt-dlp exited with error code " + proc.ExitCode;
                 task.SpeedBps = 0;
                 task.Eta = "";
+                task.IsPreparing = false;
+                task.PhaseText = "";
             }
         }
         catch (OperationCanceledException)
@@ -2015,6 +2460,8 @@ public sealed class DownloadEngine
             task.Status = TaskStatus.Paused;
             task.SpeedBps = 0;
             task.Eta = "";
+            task.IsPreparing = false;
+            task.PhaseText = "";
         }
         catch (Exception ex)
         {
@@ -2022,17 +2469,43 @@ public sealed class DownloadEngine
             task.Error = ex.Message;
             task.SpeedBps = 0;
             task.Eta = "";
+            task.IsPreparing = false;
+            task.PhaseText = "";
         }
         finally
         {
-            lock (_lock) _sessions.Remove(task.Id);
+            session.Finish();
+            lock (_lock)
+            {
+                if (_sessions.TryGetValue(task.Id, out var current) &&
+                    ReferenceEquals(current, session))
+                {
+                    _sessions.Remove(task.Id);
+                }
+            }
+            ReleaseReservedPath(task);
             TaskChanged?.Invoke();
             PumpQueue();
+            lock (_lock)
+            {
+                if (ActiveCount == 0 && QueuedCount == 0)
+                    _meter.Stop();
+            }
+            session.Dispose();
         }
     }
 
     private static void ParseYtDlpOutputLine(string line, DownloadTask task)
     {
+        // Any yt-dlp output means the process is alive and working — leave the
+        // preparing state so the dialog swaps the status line for live stats.
+        if (task.IsPreparing && (line.StartsWith("[download]", StringComparison.OrdinalIgnoreCase)
+            || line.StartsWith("[Merger]", StringComparison.OrdinalIgnoreCase)
+            || line.StartsWith("[ExtractAudio]", StringComparison.OrdinalIgnoreCase)))
+        {
+            task.IsPreparing = false;
+            task.PhaseText = "";
+        }
         if (line.StartsWith("[download] Destination: "))
         {
             var dest = line.Substring("[download] Destination: ".Length).Trim();

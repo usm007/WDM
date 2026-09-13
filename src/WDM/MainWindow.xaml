@@ -107,10 +107,6 @@
                         <TextBlock Text="Ctrl+F" FontSize="9" FontFamily="{StaticResource Font.Code}" Foreground="{DynamicResource Brush.TextMuted}" />
                     </Border>
 
-                    <!-- Filter Funnel Icon Button -->
-                    <Button Style="{StaticResource Button.CommandBarIcon}" ToolTip="Filter downloads">
-                        <ui:SymbolIcon Symbol="Filter24" FontSize="16" Foreground="{DynamicResource Brush.TextDim}" />
-                    </Button>
 
                     <!-- Utility Controls: Settings, Theme, About -->
                     <Button Style="{StaticResource Button.CommandBarIcon}" Command="{Binding OptionsCommand}" ToolTip="Settings (Ctrl+,)">
@@ -121,8 +117,36 @@
                         <ui:SymbolIcon Symbol="{Binding ThemeSymbol}" FontSize="16" Foreground="{DynamicResource Brush.TextDim}" />
                     </Button>
 
-                    <Button Style="{StaticResource Button.CommandBarIcon}" Command="{Binding AboutCommand}" ToolTip="About Windows Download Manager">
-                        <ui:SymbolIcon Symbol="Info24" FontSize="16" Foreground="{DynamicResource Brush.Accent}" />
+                    <Button Style="{StaticResource Button.CommandBarIcon}" Command="{Binding AboutCommand}" ToolTip="{Binding AboutButtonToolTip}"
+                            AutomationProperties.Name="{Binding AboutButtonToolTip}">
+                        <ui:SymbolIcon Symbol="{Binding AboutButtonSymbol}" FontSize="16" Foreground="{DynamicResource Brush.Accent}">
+                            <ui:SymbolIcon.RenderTransform>
+                                <TranslateTransform Y="0" />
+                            </ui:SymbolIcon.RenderTransform>
+                            <ui:SymbolIcon.Style>
+                                <Style TargetType="ui:SymbolIcon">
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding IsUpdateAvailable}" Value="True">
+                                            <DataTrigger.EnterActions>
+                                                <BeginStoryboard x:Name="UpdateBounce">
+                                                    <Storyboard RepeatBehavior="Forever" AutoReverse="True">
+                                                        <DoubleAnimation Storyboard.TargetProperty="(UIElement.RenderTransform).(TranslateTransform.Y)"
+                                                                          From="0" To="-3" Duration="0:0:0.55">
+                                                            <DoubleAnimation.EasingFunction>
+                                                                <SineEase EasingMode="EaseInOut" />
+                                                            </DoubleAnimation.EasingFunction>
+                                                        </DoubleAnimation>
+                                                    </Storyboard>
+                                                </BeginStoryboard>
+                                            </DataTrigger.EnterActions>
+                                            <DataTrigger.ExitActions>
+                                                <StopStoryboard BeginStoryboardName="UpdateBounce" />
+                                            </DataTrigger.ExitActions>
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </ui:SymbolIcon.Style>
+                        </ui:SymbolIcon>
                     </Button>
                 </StackPanel>
 
@@ -291,6 +315,7 @@
                               ItemsSource="{Binding TasksView}"
                               SelectedItem="{Binding SelectedTask}"
                               SelectionChanged="TaskGrid_SelectionChanged"
+                              PreviewMouseLeftButtonDown="TaskGrid_PreviewMouseLeftButtonDown"
                               IsReadOnly="True"
                               AutoGenerateColumns="False"
                               CanUserAddRows="False"

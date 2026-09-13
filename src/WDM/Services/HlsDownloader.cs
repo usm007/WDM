@@ -13,6 +13,7 @@ public static class HlsDownloader
     private sealed class Segment
     {
         public string Uri = "";
+        public string? KeyUri;
         public byte[]? Key;
         public byte[]? Iv;
         public long Start;
@@ -53,10 +54,12 @@ public static class HlsDownloader
         // Discover each segment's size so the engine can show real progress and ETA.
         await ProbeSegmentSizesAsync(http, playlist, referer, headers, ct);
         setTotalBytes(playlist.TotalBytes);
+        if (initSegment is not null)
+            addBytes(initSegment.Length);
 
         string tempDir = Path.Combine(
             Path.GetDirectoryName(outputFile) ?? Directory.GetCurrentDirectory(),
-            $".wdmseg_{Path.GetFileNameWithoutExtension(outputFile)}");
+            $".wdmseg_{Path.GetFileNameWithoutExtension(outputFile)}_{Guid.NewGuid():N}");
         Directory.CreateDirectory(tempDir);
         try
         {
@@ -71,35 +74,62 @@ public static class HlsDownloader
                 CancellationToken = segCt
             };
 
+            Exception? firstError = null;
             var indexedSegments = playlist.Segments.Select((seg, index) => (seg, index));
-            await Parallel.ForEachAsync(indexedSegments, parallelOptions, async (item, token) =>
+            try
             {
-                try
+                await Parallel.ForEachAsync(indexedSegments, parallelOptions, async (item, token) =>
                 {
-                    string tempFile = Path.Combine(tempDir, $"seg_{item.index:D6}.part");
-                    long length = await DownloadSegmentAsync(http, item.seg, referer, headers, tempFile, token, throttle);
-                    addBytes(length);
-                }
-                catch when (!token.IsCancellationRequested)
-                {
-                    // Signal all sibling segments to stop on first error.
-                    failCts.Cancel();
-                    throw;
-                }
-            });
+                    try
+                    {
+                        string tempFile = Path.Combine(tempDir, $"seg_{item.index:D6}.part");
+                        long length = await DownloadSegmentAsync(http, item.seg, referer, headers, tempFile, token, throttle);
+                        addBytes(length);
+                    }
+                    catch (Exception ex) when (!ct.IsCancellationRequested)
+                    {
+                        // Real segment failure (not user cancel): record the first
+                        // error and stop siblings. Checked against the USER token
+                        // so fail-fast cancels aren't misreported as Paused.
+                        Interlocked.CompareExchange(ref firstError, ex, null);
+                        try { failCts.Cancel(); } catch { }
+                        throw;
+                    }
+                });
+            }
+            catch (OperationCanceledException) when (firstError is not null && !ct.IsCancellationRequested)
+            {
+                // Sibling iterations were cancelled by our own fail-fast, not by
+                // the user — surface the real failure so the engine marks Failed.
+                System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(firstError).Throw();
+            }
+            if (firstError is not null && !ct.IsCancellationRequested)
+                System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(firstError).Throw();
             ct.ThrowIfCancellationRequested();
 
             // Concatenate in playlist order.
-            await using var output = new FileStream(outputFile, FileMode.Create, FileAccess.Write, FileShare.Read);
-            if (initSegment is not null)
-                await output.WriteAsync(initSegment, ct);
-            for (int i = 0; i < playlist.Segments.Count; i++)
+            bool concatenationComplete = false;
+            try
             {
-                string tempFile = Path.Combine(tempDir, $"seg_{i:D6}.part");
-                if (!File.Exists(tempFile))
-                    throw new InvalidOperationException($"Missing HLS segment {i}.");
-                await using var input = new FileStream(tempFile, FileMode.Open, FileAccess.Read, FileShare.Read);
-                await input.CopyToAsync(output, 128 * 1024, ct);
+                await using var output = new FileStream(outputFile, FileMode.Create, FileAccess.Write, FileShare.Read);
+                if (initSegment is not null)
+                    await output.WriteAsync(initSegment, ct);
+                for (int i = 0; i < playlist.Segments.Count; i++)
+                {
+                    string tempFile = Path.Combine(tempDir, $"seg_{i:D6}.part");
+                    if (!File.Exists(tempFile))
+                        throw new InvalidOperationException($"Missing HLS segment {i}.");
+                    await using var input = new FileStream(tempFile, FileMode.Open, FileAccess.Read, FileShare.Read);
+                    await input.CopyToAsync(output, 128 * 1024, ct);
+                }
+                concatenationComplete = true;
+            }
+            finally
+            {
+                if (!concatenationComplete)
+                {
+                    try { File.Delete(outputFile); } catch { }
+                }
             }
         }
         finally
@@ -154,21 +184,57 @@ public static class HlsDownloader
     {
         if (!string.IsNullOrWhiteSpace(referer) && Uri.TryCreate(referer, UriKind.Absolute, out var r))
             req.Headers.Referrer = r;
+        bool hasOrigin = false;
+        string? targetHost = null;
+        try
+        {
+            if (req.RequestUri is not null)
+                targetHost = req.RequestUri.Host;
+        }
+        catch { }
         if (headers != null)
         {
             foreach (var kv in headers)
             {
                 if (string.IsNullOrWhiteSpace(kv.Key) || string.IsNullOrWhiteSpace(kv.Value)) continue;
                 if (kv.Key.Equals("Referer", StringComparison.OrdinalIgnoreCase) || kv.Key.Equals("Referrer", StringComparison.OrdinalIgnoreCase)) continue;
+                if (kv.Key.Equals("Origin", StringComparison.OrdinalIgnoreCase)) hasOrigin = true;
+                // Internal routing hints must never leave the client.
+                if (kv.Key.StartsWith("X-WDM-", StringComparison.OrdinalIgnoreCase)) continue;
+                // Session credentials belong to the page host — never forward
+                // them to a segment/key CDN on a different host.
+                if ((kv.Key.Equals("Cookie", StringComparison.OrdinalIgnoreCase) ||
+                     kv.Key.Equals("Authorization", StringComparison.OrdinalIgnoreCase)) &&
+                    !string.IsNullOrEmpty(targetHost) && !IsSameHostName(referer, targetHost))
+                    continue;
                 req.Headers.TryAddWithoutValidation(kv.Key, kv.Value);
             }
         }
+        // Player CDNs often gate on Origin; derive it from the referer when absent.
+        if (!hasOrigin && !string.IsNullOrWhiteSpace(referer) && Uri.TryCreate(referer, UriKind.Absolute, out var ru))
+            req.Headers.TryAddWithoutValidation("Origin", ru.GetLeftPart(UriPartial.Authority));
+    }
+
+    private static bool IsSameHostName(string? referer, string targetHost)
+    {
+        try
+        {
+            // No referer to compare against: only forward credentials when the
+            // target IS the referer host is unknown — be conservative and allow,
+            // since single-host HLS (no referer) is the common case.
+            if (string.IsNullOrWhiteSpace(referer))
+                return true;
+            if (!Uri.TryCreate(referer, UriKind.Absolute, out var ru))
+                return true;
+            return string.Equals(ru.Host, targetHost, StringComparison.OrdinalIgnoreCase);
+        }
+        catch { return true; }
     }
 
     private static async Task<long> ProbeSizeAsync(HttpClient http, string url, string? referer, Dictionary<string, string>? headers, CancellationToken ct)
     {
         int attempt = 0;
-        while (true)
+        while (attempt <= MaxRetries)
         {
             try
             {
@@ -177,25 +243,37 @@ public static class HlsDownloader
                 ApplyHeaders(request, referer, headers);
                 using var response = await http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, ct);
                 long length = response.Content.Headers.ContentLength ?? 0;
-                if (length > 0)
+                if (response.IsSuccessStatusCode && length > 0)
                     return length;
-                // Some CDNs reject HEAD; fall back to a ranged GET for the size.
-                if (response.StatusCode != System.Net.HttpStatusCode.OK)
-                    return 0;
+
+                // CDNs rejecting HEAD (e.g. 405/403) or returning 0 length: fall back to a ranged GET for the size.
                 using var get = new HttpRequestMessage(HttpMethod.Get, url);
                 get.Headers.Range = new System.Net.Http.Headers.RangeHeaderValue(0, 0);
                 ApplyHeaders(get, referer, headers);
                 using var getResp = await http.SendAsync(get, HttpCompletionOption.ResponseHeadersRead, ct);
                 if (getResp.Content.Headers.ContentRange?.Length is long total && total > 0)
                     return total;
-                return getResp.Content.Headers.ContentLength ?? 0;
+                if (getResp.Content.Headers.ContentLength is long getLen && getLen > 0)
+                    return getLen;
+                return 0;
+            }
+            catch (OperationCanceledException) when (ct.IsCancellationRequested)
+            {
+                throw;
             }
             catch (Exception) when (attempt < MaxRetries && !ct.IsCancellationRequested)
             {
                 attempt++;
                 await Task.Delay(Math.Min(4000, 500 * attempt), ct);
             }
+            catch
+            {
+                // Probe failure after retries shouldn't fail the entire HLS download;
+                // return 0 (size unknown) so the segment download loop can proceed.
+                return 0;
+            }
         }
+        return 0;
     }
 
     private static async Task<Playlist> ResolvePlaylistAsync(
@@ -290,6 +368,7 @@ public static class HlsDownloader
 
     private static Playlist? ParsePlaylist(string text, string baseUrl)
     {
+        const int maxSegments = 10000;
         var result = new Playlist();
         string? keyUri = null;
         string? keyIv = null;
@@ -377,11 +456,14 @@ public static class HlsDownloader
             // Attach the current key (if any); IV defaults to the media sequence number.
             if (!string.IsNullOrEmpty(keyUri))
             {
+                seg.KeyUri = keyUri;
                 seg.Key = new byte[0]; // placeholder: real key resolved in PrepareKeysAsync
                 seg.Iv = ParseIv(keyIv, haveMediaSequence ? mediaSequence : segmentOrdinal);
             }
             result.Segments.Add(seg);
             segmentOrdinal++;
+            if (result.Segments.Count > maxSegments)
+                throw new InvalidOperationException($"HLS playlist has too many segments (>{maxSegments}) — refusing.");
             if (haveMediaSequence)
                 mediaSequence++;
         }
@@ -414,39 +496,17 @@ public static class HlsDownloader
         HttpClient http, string manifestUrl, string? referer, Dictionary<string, string>? headers, Playlist playlist, CancellationToken ct)
     {
         var keyCache = new Dictionary<string, byte[]>(StringComparer.Ordinal);
-
-        // Walk the playlist text once more to map each segment index to its key URI.
-        string text = await FetchTextAsync(http, manifestUrl, referer, headers, ct);
-        string[] lines = text.Split('\n');
-        string? currentKeyUri = null;
-        int segIndex = 0;
-        foreach (var rawLine in lines)
+        foreach (var seg in playlist.Segments)
         {
-            string line = rawLine.Trim();
-            if (line.StartsWith("#EXT-X-KEY:", StringComparison.OrdinalIgnoreCase))
+            if (!string.IsNullOrEmpty(seg.KeyUri))
             {
-                string method = GetAttribute(line, "METHOD") ?? "NONE";
-                currentKeyUri = method.Equals("AES-128", StringComparison.OrdinalIgnoreCase)
-                    ? GetAttribute(line, "URI")?.Trim('"')
-                    : null;
-                continue;
-            }
-            if (line.Length == 0 || line.StartsWith("#"))
-                continue;
-            if (segIndex >= playlist.Segments.Count)
-                break;
-
-            var seg = playlist.Segments[segIndex];
-            if (!string.IsNullOrEmpty(currentKeyUri))
-            {
-                if (!keyCache.TryGetValue(currentKeyUri, out var key))
+                if (!keyCache.TryGetValue(seg.KeyUri, out var key))
                 {
-                    key = await DownloadBytesAsync(http, ResolveUrl(manifestUrl, currentKeyUri), referer, headers, ct);
-                    keyCache[currentKeyUri] = key;
+                    key = await DownloadBytesAsync(http, ResolveUrl(manifestUrl, seg.KeyUri), referer, headers, ct);
+                    keyCache[seg.KeyUri] = key;
                 }
                 seg.Key = key;
             }
-            segIndex++;
         }
     }
 
@@ -459,12 +519,9 @@ public static class HlsDownloader
         CancellationToken ct,
         Func<long, CancellationToken, Task> throttle)
     {
-        if (File.Exists(tempFile))
-        {
-            var existingInfo = new FileInfo(tempFile);
-            if (existingInfo.Length > 0 && (seg.Length <= 0 || existingInfo.Length == seg.Length))
-                return existingInfo.Length;
-        }
+        // tempDir is unique per session (Guid suffix), so never reuse stale
+        // partial files from crashed runs — always download fresh.
+        try { if (File.Exists(tempFile)) File.Delete(tempFile); } catch { }
 
         int attempt = 0;
         while (true)
@@ -496,10 +553,17 @@ public static class HlsDownloader
                 }
                 return output.Length;
             }
-            catch (Exception) when (attempt < MaxRetries && !ct.IsCancellationRequested)
+            catch (Exception ex) when (attempt < MaxRetries && !ct.IsCancellationRequested &&
+                                       (ex is HttpRequestException || ex is IOException || ex is TaskCanceledException))
             {
                 attempt++;
+                try { if (File.Exists(tempFile)) File.Delete(tempFile); } catch { }
                 await Task.Delay(Math.Min(4000, 500 * attempt), ct);
+            }
+            catch
+            {
+                try { if (File.Exists(tempFile)) File.Delete(tempFile); } catch { }
+                throw;
             }
         }
     }
@@ -540,7 +604,8 @@ public static class HlsDownloader
                 response.EnsureSuccessStatusCode();
                 return await response.Content.ReadAsByteArrayAsync(ct);
             }
-            catch (Exception) when (attempt < MaxRetries && !ct.IsCancellationRequested)
+            catch (Exception ex) when (attempt < MaxRetries && !ct.IsCancellationRequested &&
+                                       (ex is HttpRequestException || ex is IOException || ex is TaskCanceledException))
             {
                 attempt++;
                 await Task.Delay(Math.Min(4000, 500 * attempt), ct);
@@ -550,6 +615,7 @@ public static class HlsDownloader
 
     private static async Task<string> FetchTextAsync(HttpClient http, string url, string? referer, Dictionary<string, string>? headers, CancellationToken ct)
     {
+        const int maxPlaylistBytes = 10 * 1024 * 1024;
         int attempt = 0;
         while (true)
         {
@@ -560,9 +626,24 @@ public static class HlsDownloader
                 ApplyHeaders(request, referer, headers);
                 using var response = await http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, ct);
                 response.EnsureSuccessStatusCode();
-                return await response.Content.ReadAsStringAsync(ct);
+                // Bound playlist reads: a manifest URL returning a full media
+                // file would otherwise OOM the process as a single string.
+                await using var stream = await response.Content.ReadAsStreamAsync(ct);
+                using var reader = new StreamReader(stream, Encoding.UTF8, detectEncodingFromByteOrderMarks: true);
+                var sb = new StringBuilder(8192);
+                var buf = new char[8192];
+                int n, total = 0;
+                while ((n = await reader.ReadAsync(buf.AsMemory(0, buf.Length), ct)) > 0)
+                {
+                    total += n;
+                    if (total > maxPlaylistBytes)
+                        throw new InvalidOperationException("HLS playlist too large — refusing to parse.");
+                    sb.Append(buf, 0, n);
+                }
+                return sb.ToString();
             }
-            catch (Exception) when (attempt < MaxRetries && !ct.IsCancellationRequested)
+            catch (Exception ex) when (attempt < MaxRetries && !ct.IsCancellationRequested &&
+                                       (ex is HttpRequestException || ex is IOException || ex is TaskCanceledException))
             {
                 attempt++;
                 await Task.Delay(Math.Min(4000, 500 * attempt), ct);
@@ -581,10 +662,17 @@ public static class HlsDownloader
 
     private static string? GetAttribute(string line, string name)
     {
-        int idx = line.IndexOf(name + "=", StringComparison.OrdinalIgnoreCase);
+        string needle = name + "=";
+        int idx = 0;
+        while ((idx = line.IndexOf(needle, idx, StringComparison.OrdinalIgnoreCase)) >= 0)
+        {
+            if (idx == 0 || line[idx - 1] is ',' or ':' or ' ' or '\t')
+                break;
+            idx += needle.Length;
+        }
         if (idx < 0)
             return null;
-        int start = idx + name.Length + 1;
+        int start = idx + needle.Length;
 
         // Scan for the end of the value, respecting quoted strings that may
         // contain commas (e.g. CODECS="avc1.42c01e,mp4a.40.2" or URI query strings).

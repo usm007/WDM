@@ -212,7 +212,7 @@ public partial class AboutDialog : Window
             try
             {
                 await VelopackUpdateService.DownloadUpdatesAsync(_inlineVelopack, pct =>
-                    Dispatcher.Invoke(() =>
+                    Dispatcher.InvokeAsync(() =>
                     {
                         InlineDownloadProgressBar.Value = pct;
                         InlineProgressPctText.Text = $"{pct}%";
@@ -248,7 +248,7 @@ public partial class AboutDialog : Window
         try
         {
             string installer = await UpdateChecker.DownloadInstallerAsync(_inlineRelease, progress =>
-                Dispatcher.Invoke(() =>
+                Dispatcher.InvokeAsync(() =>
                 {
                     int pct = (int)Math.Round(progress * 100);
                     InlineDownloadProgressBar.Value = pct;

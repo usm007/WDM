@@ -125,10 +125,19 @@
                 <!-- File name -->
                 <TextBlock Grid.Row="2" Grid.Column="0" Text="File name" FontSize="13" FontWeight="SemiBold"
                            Foreground="{DynamicResource Brush.Text}" VerticalAlignment="Center" Margin="0,0,10,10" />
-                <ui:TextBox Grid.Row="2" Grid.Column="1" x:Name="NameBox" TextChanged="NameBox_TextChanged"
-                            VerticalContentAlignment="Center" Padding="8,0" Height="32" FontSize="13" Margin="0,0,0,10"
-                            PlaceholderText="File name" ClearButtonEnabled="True"
-                            AutomationProperties.Name="File name" />
+                <Grid Grid.Row="2" Grid.Column="1" Margin="0,0,0,10">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <ui:TextBox x:Name="NameBox" TextChanged="NameBox_TextChanged"
+                                VerticalContentAlignment="Center" Padding="8,0" Height="32" FontSize="13"
+                                PlaceholderText="File name" ClearButtonEnabled="True"
+                                AutomationProperties.Name="File name" />
+                    <ui:Button Grid.Column="1" x:Name="SyncTitleButton" Content="Sync title" Appearance="Secondary"
+                               Click="SyncTitle_Click" Margin="6,0,0,0" Padding="12,0" Height="32" FontSize="12"
+                               ToolTip="Fetch the video title from the source page (info endpoints, then page metadata)" />
+                </Grid>
 
                 <!-- Category -->
                 <TextBlock Grid.Row="3" Grid.Column="0" Text="Category" FontSize="13" FontWeight="SemiBold"

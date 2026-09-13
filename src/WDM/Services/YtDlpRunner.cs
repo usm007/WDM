@@ -45,14 +45,32 @@ public static class YtDlpRunner
                     psi.ArgumentList.Add(cookieFile);
                 }
             }
-            else
+            else if (IsAllowedBrowserName(s.YouTubeBrowserCookies))
             {
                 psi.ArgumentList.Add("--cookies-from-browser");
-                psi.ArgumentList.Add(s.YouTubeBrowserCookies);
+                psi.ArgumentList.Add(s.YouTubeBrowserCookies.Trim().ToLowerInvariant());
             }
         }
 
         return psi;
+    }
+
+    /// <summary>Allow-list for yt-dlp --cookies-from-browser (settings.json is
+    /// user-editable; an arbitrary value would be passed straight to yt-dlp).</summary>
+    private static bool IsAllowedBrowserName(string value)
+    {
+        string v = value.Trim().ToLowerInvariant();
+        // Optional ":profile" suffix (e.g. "chrome:Default").
+        int colon = v.IndexOf(':');
+        string browser = colon >= 0 ? v[..colon] : v;
+        string profile = colon >= 0 ? v[(colon + 1)..] : "";
+        bool known = browser is "chrome" or "chromium" or "edge" or "brave" or "vivaldi"
+            or "opera" or "firefox" or "safari" or "whale" or "arc";
+        if (!known)
+            return false;
+        if (profile.Length > 128 || profile.Any(ch => char.IsWhiteSpace(ch) || ch is '"' or '\'' or ';' or '&' or '|' or '`' or '$'))
+            return false;
+        return true;
     }
 
     public static async Task<string> RunJsonAsync(string url, CancellationToken ct)
@@ -89,6 +107,9 @@ public static class YtDlpRunner
 
         output.Append(await outTask);
         error.Append(await errTask);
+
+        if (output.Length > 20 * 1024 * 1024)
+            throw new YtDlpException("Metadata response too large — refusing to parse.");
 
         if (proc.ExitCode != 0)
         {

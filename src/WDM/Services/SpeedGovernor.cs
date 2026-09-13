@@ -33,12 +33,13 @@ public sealed class SpeedGovernor
             return;
 
         double rate = kbps * 1024.0; // bytes per second
+        double maxTokens = Math.Max(rate, bytes);
         while (true)
         {
             double waitMs;
             lock (_lock)
             {
-                Refill(rate);
+                Refill(rate, maxTokens);
                 if (_tokens >= bytes)
                 {
                     _tokens -= bytes;
@@ -57,11 +58,11 @@ public sealed class SpeedGovernor
         }
     }
 
-    private void Refill(double rate)
+    private void Refill(double rate, double maxTokens)
     {
         long now = Stopwatch.GetTimestamp();
         double seconds = (now - _lastTick) / (double)Stopwatch.Frequency;
         _lastTick = now;
-        _tokens = Math.Min(_tokens + seconds * rate, rate); // cap burst to ~1 second
+        _tokens = Math.Min(_tokens + seconds * rate, maxTokens); // allow buffer size if larger than 1 second rate
     }
 }

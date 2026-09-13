@@ -13,7 +13,10 @@ namespace WDM.ViewModels;
 public sealed class MainViewModel : INotifyPropertyChanged
 {
     private readonly Dispatcher _dispatcher;
-    private readonly System.Timers.Timer _saveTimer;
+    private readonly DispatcherTimer _saveTimer;
+    /// <summary>When true, persistence is disabled (screenshot generator /
+    /// design-time VM must never overwrite the user's tasks.json).</summary>
+    public bool PersistenceSuppressed { get; private set; }
     /// <summary>Tasks currently running the automatic Cloudflare challenge solver window;
     /// prevents opening multiple concurrent solver windows for the same task.</summary>
     private readonly HashSet<Guid> _cfSolving = new();
@@ -101,6 +104,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
             SaveTasksSoon();
         });
         Engine.CloudflareBlocked += task => Dispatch(() => AutoSolveCloudflare(task));
+        Engine.EmbedInteractionRequired += (task, pageUrl) => Dispatch(() => SolveEmbedInteraction(task, pageUrl));
 
         OpenAddDialogCommand = new RelayCommand(_ => OpenAddDialog());
         PauseCommand = new RelayCommand(_ => PauseSelected(), _ => CanPause);
@@ -155,7 +159,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
         ToggleThemeCommand = new RelayCommand(_ => IsDarkTheme = !IsDarkTheme);
         ClearSearchCommand = new RelayCommand(_ => SearchText = "");
         AboutCommand = new RelayCommand(_ => AboutRequested?.Invoke());
-        StartQueueCommand = new RelayCommand(_ => Engine.ResumeAll());
+        StartQueueCommand = new RelayCommand(_ => ResumeAll());
         StopQueueCommand = new RelayCommand(_ => Engine.PauseAll());
         ShowProgressDialogCommand = new RelayCommand(_ =>
         {
@@ -206,11 +210,15 @@ public sealed class MainViewModel : INotifyPropertyChanged
         Filters.Add(new FilterItem(FilterKind.Compressed));
         Filters.Add(new FilterItem(FilterKind.Program));
 
-        _saveTimer = new System.Timers.Timer(1500)
+        _saveTimer = new DispatcherTimer
         {
-            AutoReset = false,
+            Interval = TimeSpan.FromMilliseconds(1500),
         };
-        _saveTimer.Elapsed += (_, _) => SaveTasks();
+        _saveTimer.Tick += (_, _) =>
+        {
+            _saveTimer.Stop();
+            SaveTasks();
+        };
 
         LoadPersistedTasks();
         UpdateStatus();
@@ -285,6 +293,34 @@ public sealed class MainViewModel : INotifyPropertyChanged
     public Wpf.Ui.Controls.SymbolRegular ThemeSymbol => IsDarkTheme ? Wpf.Ui.Controls.SymbolRegular.WeatherSunny24 : Wpf.Ui.Controls.SymbolRegular.WeatherMoon24;
     public string ThemeButtonLabel => IsDarkTheme ? "Light" : "Dark";
     public string ThemeButtonToolTip => IsDarkTheme ? "Switch to light theme" : "Switch to dark theme";
+
+    private bool _isUpdateAvailable;
+    /// <summary>True when the background update check found a newer release. Drives the
+    /// top-bar About button to swap to an animated ArrowDownload24 update icon.</summary>
+    public bool IsUpdateAvailable
+    {
+        get => _isUpdateAvailable;
+        set
+        {
+            if (_isUpdateAvailable == value)
+                return;
+            _isUpdateAvailable = value;
+            OnPropertyChanged(nameof(IsUpdateAvailable));
+            OnPropertyChanged(nameof(AboutButtonSymbol));
+            OnPropertyChanged(nameof(AboutButtonToolTip));
+        }
+    }
+
+    /// <summary>Pending release surfaced by the background check; opened when the update icon is clicked.</summary>
+    public ReleaseInfo? PendingRelease { get; set; }
+    public object? PendingVelopack { get; set; }
+
+    public Wpf.Ui.Controls.SymbolRegular AboutButtonSymbol => IsUpdateAvailable
+        ? Wpf.Ui.Controls.SymbolRegular.ArrowDownload24
+        : Wpf.Ui.Controls.SymbolRegular.Info24;
+    public string AboutButtonToolTip => IsUpdateAvailable
+        ? "Update available - click to install"
+        : "About Windows Download Manager";
 
     public void SetSidebarWidth(double width)
     {
@@ -490,28 +526,41 @@ public sealed class MainViewModel : INotifyPropertyChanged
     {
         foreach (var record in TaskStore.LoadTasks())
         {
+            if (string.IsNullOrWhiteSpace(record.Url))
+                continue;
             var task = new DownloadTask(_dispatcher)
             {
-                Url = record.Url,
+                Url = record.Url.Trim(),
+                SourcePageUrl = record.SourcePageUrl,
                 Referer = record.Referer,
-                Headers = record.Headers,
-                Mirrors = record.Mirrors?.ToList() ?? new(),
+                Headers = record.Headers ?? new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase),
+                Mirrors = record.Mirrors?.Where(m => !string.IsNullOrWhiteSpace(m)).ToList() ?? new(),
                 Etag = record.Etag,
                 LastModified = record.LastModified,
                 FileName = record.FileName,
                 SaveFolder = string.IsNullOrWhiteSpace(record.SaveFolder) ? DownloadTask.DefaultSaveFolder : record.SaveFolder,
-                ChunkCount = record.ChunkCount,
+                ChunkCount = Math.Clamp(record.ChunkCount, 0, 32),
                 TotalBytes = record.TotalBytes,
-                DownloadedBytes = record.DownloadedBytes,
-                Progress = record.Progress,
-                SpeedLimitKbps = record.SpeedLimitKbps,
+                DownloadedBytes = Math.Max(0, record.DownloadedBytes),
+                Progress = Math.Clamp(record.Progress, 0, 100),
+                SpeedLimitKbps = Math.Max(0, record.SpeedLimitKbps),
                 Priority = record.Priority,
                 Category = record.Category,
                 Checksum = record.Checksum,
                 Error = record.Error,
                 AddedAt = record.AddedAt == default ? DateTime.Now : record.AddedAt,
                 CompletedAt = record.CompletedAt,
+                IsYouTube = record.IsYouTube || MediaResolver.IsYoutubeUrl(record.Url),
+                YouTubeFormatArg = record.YouTubeFormatArg,
+                YouTubeExtraArgs = record.YouTubeExtraArgs,
+                YouTubeVideoId = record.YouTubeVideoId,
+                ThumbnailUrl = record.ThumbnailUrl,
             };
+            // Embed-resolved tasks persist the player page alongside the (expiring)
+            // direct CDN URL; always restart from the page so the engine resolves a
+            // fresh signed link instead of reusing a stale one.
+            if (!string.IsNullOrWhiteSpace(task.SourcePageUrl))
+                task.Url = task.SourcePageUrl;
             // The engine queue is not persisted, so nothing can ever start a task that
             // was still queued when the app closed. Land those as Paused instead of
             // leaving a dead "Queued" row the user cannot resume.
@@ -605,6 +654,36 @@ public sealed class MainViewModel : INotifyPropertyChanged
                 {
                     task.Url = window.FinalRedirectUrl;
                 }
+                task.Status = TaskStatus.Queued;
+                task.Error = null;
+                Engine.Start(task);
+            }
+        }
+        finally
+        {
+            _cfSolving.Remove(task.Id);
+        }
+    }
+
+    /// <summary>Opens the embedded browser when an embed host demands human
+    /// interaction. Solved session cookies are replayed, then the task restarts
+    /// so the embed resolver runs fresh against the cleared session.</summary>
+    private void SolveEmbedInteraction(DownloadTask task, string pageUrl)
+    {
+        if (task.Status != TaskStatus.Failed)
+            return;
+        if (!_cfSolving.Add(task.Id))
+            return;
+        try
+        {
+            var window = new EmbedInteractionWindow(task, pageUrl)
+            {
+                Owner = Application.Current.MainWindow
+            };
+            if (window.ShowDialog() == true)
+            {
+                if (!string.IsNullOrWhiteSpace(window.ExtractedCookies))
+                    task.Headers["Cookie"] = window.ExtractedCookies;
                 task.Status = TaskStatus.Queued;
                 task.Error = null;
                 Engine.Start(task);
@@ -806,6 +885,11 @@ public sealed class MainViewModel : INotifyPropertyChanged
 
     public void RemoveSelected(bool deleteFiles = false)
     {
+        if (SelectedTasks.Count > 1)
+        {
+            BulkRemoveCommand.Execute(null);
+            return;
+        }
         if (SelectedTask is null)
             return;
         var task = SelectedTask;
@@ -861,13 +945,17 @@ public sealed class MainViewModel : INotifyPropertyChanged
             }
 
             string? script = Settings.PostDownloadScript;
-            if (!string.IsNullOrWhiteSpace(script) && File.Exists(script) && File.Exists(task.FullPath))
+            if (!string.IsNullOrWhiteSpace(script) && File.Exists(task.FullPath))
             {
-                Process.Start(new ProcessStartInfo(script)
+                string fullScript = Path.GetFullPath(script.Trim());
+                if (File.Exists(fullScript) && IsAllowedPostDownloadScript(fullScript))
                 {
-                    UseShellExecute = true,
-                    Arguments = $"\"{task.FullPath}\"",
-                });
+                    Process.Start(new ProcessStartInfo(fullScript)
+                    {
+                        UseShellExecute = true,
+                        Arguments = $"\"{task.FullPath}\"",
+                    });
+                }
             }
         }
         catch
@@ -881,6 +969,20 @@ public sealed class MainViewModel : INotifyPropertyChanged
         using var stream = File.OpenRead(path);
         using var sha = System.Security.Cryptography.SHA256.Create();
         return Convert.ToHexString(sha.ComputeHash(stream));
+    }
+
+    private static bool IsRiskyExecutable(string path)
+    {
+        string ext = Path.GetExtension(path).ToLowerInvariant();
+        return ext is ".exe" or ".msi" or ".bat" or ".cmd" or ".ps1" or ".vbs" or ".vbe"
+            or ".js" or ".jse" or ".wsf" or ".wsh" or ".lnk" or ".scr" or ".com"
+            or ".pif" or ".reg" or ".jar" or ".msc" or ".hta";
+    }
+
+    private static bool IsAllowedPostDownloadScript(string fullPath)
+    {
+        string ext = Path.GetExtension(fullPath).ToLowerInvariant();
+        return ext is ".exe" or ".bat" or ".cmd" or ".ps1" or ".py" or ".pyw";
     }
 
     public void ClearCompleted()
@@ -933,18 +1035,29 @@ public sealed class MainViewModel : INotifyPropertyChanged
 
     public void RevealSelected() => RevealTask(SelectedTask);
 
-    public void OpenFile()
+    public void OpenFile(DownloadTask? task = null)
     {
-        if (SelectedTask?.Status != TaskStatus.Completed)
+        task ??= SelectedTask;
+        if (task?.Status != TaskStatus.Completed)
             return;
-        if (File.Exists(SelectedTask.FullPath))
+        if (File.Exists(task.FullPath))
         {
-            Process.Start(new ProcessStartInfo(SelectedTask.FullPath) { UseShellExecute = true });
+            if (IsRiskyExecutable(task.FullPath))
+            {
+                var answer = MessageBox.Show(
+                    $"\"{task.FileName}\" is an executable downloaded from the internet.\n\nOnly open it if you trust the source.\n\nOpen it now?",
+                    "Security warning",
+                    MessageBoxButton.YesNo,
+                    MessageBoxImage.Warning);
+                if (answer != MessageBoxResult.Yes)
+                    return;
+            }
+            Process.Start(new ProcessStartInfo(task.FullPath) { UseShellExecute = true });
         }
         else
         {
             MessageBox.Show(
-                $"\"{SelectedTask.FileName}\" is marked as completed, but the file no longer exists at:\n{SelectedTask.FullPath}",
+                $"\"{task.FileName}\" is marked as completed, but the file no longer exists at:\n{task.FullPath}",
                 "File not found",
                 MessageBoxButton.OK,
                 MessageBoxImage.Warning);
@@ -993,20 +1106,39 @@ public sealed class MainViewModel : INotifyPropertyChanged
         }
     }
 
+    public void SuppressPersistence()
+    {
+        PersistenceSuppressed = true;
+        _saveTimer.Stop();
+    }
+
     public void SaveTasksSoon()
     {
+        if (PersistenceSuppressed)
+            return;
         _saveTimer.Stop();
         _saveTimer.Start();
     }
 
     public void SaveTasksNow()
     {
+        if (PersistenceSuppressed)
+            return;
         _saveTimer.Stop();
         SaveTasks();
     }
 
     private void SaveTasks()
     {
+        if (PersistenceSuppressed)
+            return;
+        // Always on the UI thread (DispatcherTimer tick or explicit UI call):
+        // TaskStore + UpdateStatus touch ObservableCollections bound to the view.
+        if (!_dispatcher.CheckAccess())
+        {
+            _dispatcher.BeginInvoke(SaveTasks);
+            return;
+        }
         TaskStore.SaveTasks(Tasks);
         UpdateStatus();
     }
@@ -1111,22 +1243,29 @@ public sealed class MainViewModel : INotifyPropertyChanged
             return;
         if (Tasks.Any(t => t.Status == TaskStatus.Downloading || t.Status == TaskStatus.Queued))
             return;
-        // One-shot: consume the flag before shutting down so a reboot +
-        // relaunch (or a second completion event) can't shut down again.
+        // Failed tasks still need attention (retry) — don't shut down over them.
+        if (Tasks.Any(t => t.Status == TaskStatus.Failed))
+            return;
+        // One-shot: consume the flag only once the shutdown command is issued,
+        // so a failed shutdown.exe keeps the request armed for the next check.
+        if (!TriggerSystemShutdown())
+            return;
         _shutdownWhenQueueComplete = false;
         OnPropertyChanged(nameof(ShutdownWhenQueueComplete));
-        TriggerSystemShutdown();
     }
 
-    private static void TriggerSystemShutdown()
+    private static bool TriggerSystemShutdown()
     {
         try
         {
-            Process.Start(new ProcessStartInfo("shutdown", "/s /t 60 /c \"WDM: All downloads completed. Shutting down in 60 seconds. Run 'shutdown /a' in a terminal to abort.\"")
+            var proc = Process.Start(new ProcessStartInfo("shutdown", "/s /t 60 /c \"WDM: All downloads completed. Shutting down in 60 seconds. Run 'shutdown /a' in a terminal to abort.\"")
             {
                 CreateNoWindow = true,
                 UseShellExecute = false,
             });
+            if (proc is null)
+                throw new InvalidOperationException("Could not start the shutdown process.");
+            return true;
         }
         catch (Exception ex)
         {
@@ -1135,6 +1274,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
                 "Shutdown failed",
                 MessageBoxButton.OK,
                 MessageBoxImage.Warning);
+            return false;
         }
     }
 

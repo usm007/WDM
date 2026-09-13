@@ -16,9 +16,14 @@ public partial class TaskPropertiesDialog : Wpf.Ui.Controls.FluentWindow
 
         FileNameText.Text = task.FileName;
         StatusText.Text = task.StatusText;
-        StatusText.Foreground = new System.Windows.Media.SolidColorBrush(
-            (System.Windows.Media.Color)System.Windows.Media.ColorConverter.ConvertFromString(
-                ViewModels.TaskStatusToColorConverter.ColorHex(task.Status)));
+        try
+        {
+            var converted = System.Windows.Media.ColorConverter.ConvertFromString(
+                ViewModels.TaskStatusToColorConverter.ColorHex(task.Status));
+            if (converted is System.Windows.Media.Color color)
+                StatusText.Foreground = new System.Windows.Media.SolidColorBrush(color);
+        }
+        catch { }
         UrlText.Text = task.Url;
         FolderText.Text = task.SaveFolder;
         SizeText.Text = task.SizeText;
@@ -32,7 +37,7 @@ public partial class TaskPropertiesDialog : Wpf.Ui.Controls.FluentWindow
         PriorityText.Text = task.Priority.ToString();
         ChecksumText.Text = string.IsNullOrWhiteSpace(task.Checksum) ? "Not computed" : task.Checksum;
 
-        if (task.Headers.Count > 0)
+        if (task.Headers is { Count: > 0 })
         {
             HeadersText.Text = string.Join("\n", task.Headers.Select(kv => $"{kv.Key}: {kv.Value}"));
         }

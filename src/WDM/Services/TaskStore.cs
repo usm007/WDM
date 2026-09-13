@@ -1,3 +1,4 @@
+using System.Linq;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using WDM.Models;
@@ -30,6 +31,11 @@ public sealed class AppSettings
     // YouTube & Media downloads
     public bool EnableYouTubeDownloads { get; set; } = true;
     public string? YouTubeBrowserCookies { get; set; } = "none";
+
+    // Internet title sync: fetch the video title from the source page (oEmbed,
+    // then page metadata) when the filename carries no title. Uses the capture's
+    // own Cookie/UA session; re-requests an already-visited page.
+    public bool EnableTitleSync { get; set; } = true;
 
     // Updates
     public bool CheckForUpdates { get; set; } = true;
@@ -221,13 +227,50 @@ public sealed class TaskStore
         {
             string src = Path.Combine(LegacyAppDir, name);
             string dst = Path.Combine(AppDir, name);
-            if (!Directory.Exists(src) || Directory.Exists(dst))
+            if (!Directory.Exists(src))
                 return false;
-            CopyDirectory(src, dst);
-            try { Directory.Delete(src, recursive: true); } catch { }
+            if (!Directory.Exists(dst))
+            {
+                CopyDirectory(src, dst);
+                try { Directory.Delete(src, recursive: true); } catch { }
+                return true;
+            }
+            // A previous run left a split directory (partial copy then abort):
+            // merge files missing at the destination instead of skipping forever.
+            MergeMissing(src, dst);
+            try
+            {
+                if (!Directory.EnumerateFileSystemEntries(src).Any())
+                    Directory.Delete(src, recursive: true);
+            }
+            catch { }
             return true;
         }
         catch (Exception ex) { LogNonFatal(ex); return false; }
+    }
+
+    private static void MergeMissing(string src, string dst)
+    {
+        try
+        {
+            Directory.CreateDirectory(dst);
+            foreach (string file in Directory.GetFiles(src))
+            {
+                try
+                {
+                    string target = Path.Combine(dst, Path.GetFileName(file));
+                    if (!File.Exists(target))
+                        File.Copy(file, target);
+                }
+                catch (Exception ex) { LogNonFatal(ex); }
+            }
+            foreach (string dir in Directory.GetDirectories(src))
+            {
+                try { MergeMissing(dir, Path.Combine(dst, Path.GetFileName(dir))); }
+                catch (Exception ex) { LogNonFatal(ex); }
+            }
+        }
+        catch (Exception ex) { LogNonFatal(ex); }
     }
 
     private static void CopyDirectory(string src, string dst)
@@ -244,13 +287,52 @@ public sealed class TaskStore
         try
         {
             if (File.Exists(SettingsPath))
-                return JsonSerializer.Deserialize<AppSettings>(File.ReadAllText(SettingsPath), JsonOptions) ?? new AppSettings();
+            {
+                var loaded = JsonSerializer.Deserialize<AppSettings>(File.ReadAllText(SettingsPath), JsonOptions) ?? new AppSettings();
+                return ValidateSettings(loaded);
+            }
         }
         catch (Exception ex)
         {
             LogNonFatal(ex);
         }
         return new AppSettings();
+    }
+
+    /// <summary>Clamps hand-edited or out-of-range settings to safe values so a
+    /// corrupt settings.json can never cause thread explosions, unbounded
+    /// retries, or crash loops downstream.</summary>
+    private static AppSettings ValidateSettings(AppSettings s)
+    {
+        s.MaxConcurrentDownloads = Math.Clamp(s.MaxConcurrentDownloads, 1, 16);
+        s.MaxRetries = Math.Clamp(s.MaxRetries, 0, 20);
+        s.DefaultChunkCount = Math.Clamp(s.DefaultChunkCount, 0, 32);
+        s.GlobalSpeedLimitKbps = Math.Clamp(s.GlobalSpeedLimitKbps, 0, 1_000_000);
+        if (string.IsNullOrWhiteSpace(s.DownloadFolder))
+            s.DownloadFolder = DownloadTask.DefaultSaveFolder;
+        else
+        {
+            try
+            {
+                string full = Path.GetFullPath(s.DownloadFolder);
+                if (full.IndexOfAny(Path.GetInvalidPathChars()) >= 0)
+                    s.DownloadFolder = DownloadTask.DefaultSaveFolder;
+                else
+                    s.DownloadFolder = full;
+            }
+            catch { s.DownloadFolder = DownloadTask.DefaultSaveFolder; }
+        }
+        if (s.CategoryFolders is null)
+            s.CategoryFolders = new AppSettings().CategoryFolders;
+        else
+        {
+            foreach (var key in s.CategoryFolders.Keys.ToList())
+            {
+                if (string.IsNullOrWhiteSpace(s.CategoryFolders[key]))
+                    s.CategoryFolders.Remove(key);
+            }
+        }
+        return s;
     }
 
     public static void SaveSettings(AppSettings settings)
@@ -400,6 +482,7 @@ public sealed class TaskStore
             var records = tasks.Select(t => new TaskRecord
             {
                 Url = t.Url,
+                SourcePageUrl = t.SourcePageUrl,
                 Referer = t.Referer,
                 Headers = t.Headers,
                 Mirrors = t.Mirrors?.ToList() ?? new(),
@@ -419,12 +502,17 @@ public sealed class TaskStore
                 Error = t.Error,
                 AddedAt = t.AddedAt,
                 CompletedAt = t.CompletedAt,
+                IsYouTube = t.IsYouTube,
+                YouTubeFormatArg = t.YouTubeFormatArg,
+                YouTubeExtraArgs = t.YouTubeExtraArgs,
+                YouTubeVideoId = t.YouTubeVideoId,
+                ThumbnailUrl = t.ThumbnailUrl,
             }).ToList();
             AtomicFile.Write(TasksPath, JsonSerializer.Serialize(records, JsonOptions));
         }
-        catch
+        catch (Exception ex)
         {
-            // Ignore persistence failures.
+            LogNonFatal(ex);
         }
     }
 }
@@ -432,6 +520,7 @@ public sealed class TaskStore
 public sealed class TaskRecord
 {
     public string Url { get; set; } = "";
+    public string? SourcePageUrl { get; set; }
     public string? Referer { get; set; }
     public Dictionary<string, string> Headers { get; set; } = new(StringComparer.OrdinalIgnoreCase);
     public List<string> Mirrors { get; set; } = new();
@@ -451,4 +540,9 @@ public sealed class TaskRecord
     public string? Error { get; set; }
     public DateTime AddedAt { get; set; } = DateTime.Now;
     public DateTime? CompletedAt { get; set; }
+    public bool IsYouTube { get; set; }
+    public string? YouTubeFormatArg { get; set; }
+    public string? YouTubeExtraArgs { get; set; }
+    public string? YouTubeVideoId { get; set; }
+    public string? ThumbnailUrl { get; set; }
 }

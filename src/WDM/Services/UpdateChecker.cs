@@ -71,10 +71,14 @@ public static class UpdateChecker
         {
             if (!asset.TryGetProperty("name", out var n) || n.GetString() is not string name)
                 continue;
-            if (name.EndsWith(".exe", StringComparison.OrdinalIgnoreCase)
-                && asset.TryGetProperty("browser_download_url", out var u))
+            // Strict naming: only our own setup asset, not any random .exe.
+            if (!name.StartsWith("WDM_Setup_", StringComparison.OrdinalIgnoreCase) ||
+                !name.EndsWith(".exe", StringComparison.OrdinalIgnoreCase))
+                continue;
+            if (asset.TryGetProperty("browser_download_url", out var u) &&
+                u.GetString() is string dl && IsTrustedDownloadUrl(dl))
             {
-                return u.GetString();
+                return dl;
             }
         }
         return null;
@@ -116,10 +120,11 @@ public static class UpdateChecker
     /// Verifies the downloaded file is a valid PE executable before returning.</summary>
     public static async Task<string> DownloadInstallerAsync(ReleaseInfo release, Action<double>? onProgress = null, CancellationToken ct = default)
     {
-        if (string.IsNullOrWhiteSpace(release.InstallerUrl))
-            throw new InvalidOperationException("The latest release has no installer asset.");
+        if (string.IsNullOrWhiteSpace(release.InstallerUrl) || !IsTrustedDownloadUrl(release.InstallerUrl))
+            throw new InvalidOperationException("The latest release has no trusted installer asset.");
 
-        string target = Path.Combine(Path.GetTempPath(), $"WDM_Setup_{release.Version}.exe");
+        string fileName = $"WDM_Setup_{release.Version}_{Guid.NewGuid():N}.exe";
+        string target = Path.Combine(Path.GetTempPath(), fileName);
         using var http = new HttpClient { Timeout = TimeSpan.FromMinutes(10) };
         http.DefaultRequestHeaders.UserAgent.ParseAdd($"WDM/{CurrentVersion}");
 
@@ -127,8 +132,10 @@ public static class UpdateChecker
         response.EnsureSuccessStatusCode();
 
         long total = response.Content.Headers.ContentLength ?? -1;
+        if (total > 500 * 1024 * 1024)
+            throw new InvalidOperationException("Installer too large — refusing download.");
         using var source = await response.Content.ReadAsStreamAsync(ct);
-        using var file = File.Create(target);
+        using var file = new FileStream(target, FileMode.CreateNew, FileAccess.Write, FileShare.None, 81920, useAsync: true);
 
         var buffer = new byte[81920];
         long read = 0;
@@ -139,6 +146,8 @@ public static class UpdateChecker
                 break;
             await file.WriteAsync(buffer.AsMemory(0, n), ct);
             read += n;
+            if (read > 500 * 1024 * 1024)
+                throw new InvalidOperationException("Installer exceeded size limit during download.");
             if (total > 0)
                 onProgress?.Invoke((double)read / total);
         }
@@ -150,19 +159,41 @@ public static class UpdateChecker
         return target;
     }
 
+    private static bool IsTrustedDownloadUrl(string url)
+    {
+        try
+        {
+            if (!Uri.TryCreate(url, UriKind.Absolute, out var uri) || uri.Scheme != Uri.UriSchemeHttps)
+                return false;
+            string host = uri.Host.ToLowerInvariant();
+            return host == "github.com" || host.EndsWith(".github.com", StringComparison.Ordinal) ||
+                   host == "objects.githubusercontent.com" ||
+                   host == "release-assets.githubusercontent.com" ||
+                   host == "api.github.com";
+        }
+        catch { return false; }
+    }
+
     /// <summary>Verifies a downloaded installer is a valid PE executable and logs its SHA-256 hash.
     /// Throws if the file is corrupt, too small, or not a valid Windows executable.</summary>
     private static void VerifyInstallerIntegrity(string path)
     {
         var info = new FileInfo(path);
-        if (info.Length < 1024)
+        if (info.Length < 1024 * 1024)
             throw new InvalidOperationException($"Downloaded installer is suspiciously small ({info.Length} bytes) — likely corrupt.");
 
-        // Check for MZ (PE) header
+        // Check MZ + PE signature via e_lfanew.
         using var fs = File.OpenRead(path);
-        var header = new byte[2];
-        if (fs.Read(header, 0, 2) != 2 || header[0] != 'M' || header[1] != 'Z')
+        var header = new byte[64];
+        if (fs.Read(header, 0, header.Length) != header.Length || header[0] != 'M' || header[1] != 'Z')
             throw new InvalidOperationException("Downloaded file is not a valid Windows executable (missing MZ header).");
+        int peOffset = BitConverter.ToInt32(header, 0x3C);
+        if (peOffset < 0 || peOffset > info.Length - 6)
+            throw new InvalidOperationException("Downloaded file has a corrupt PE header.");
+        fs.Seek(peOffset, SeekOrigin.Begin);
+        var pe = new byte[6];
+        if (fs.Read(pe, 0, pe.Length) != pe.Length || pe[0] != 'P' || pe[1] != 'E' || pe[2] != 0 || pe[3] != 0)
+            throw new InvalidOperationException("Downloaded file is not a valid PE executable.");
         fs.Close();
 
         // Compute SHA-256 for audit trail
@@ -177,8 +208,15 @@ public static class UpdateChecker
     /// "WDM is already installed" modal in the screenshot never appears during a silent auto-update.</summary>
     public static Process? LaunchInstaller(string installerPath, bool silent = false)
     {
+        if (string.IsNullOrWhiteSpace(installerPath) || !File.Exists(installerPath) ||
+            !installerPath.EndsWith(".exe", StringComparison.OrdinalIgnoreCase))
+            throw new InvalidOperationException("Invalid installer path.");
+        string full = Path.GetFullPath(installerPath);
+        string temp = Path.GetFullPath(Path.GetTempPath());
+        if (!full.StartsWith(temp, StringComparison.OrdinalIgnoreCase))
+            throw new InvalidOperationException("Installer must be inside the temp folder.");
         string args = silent ? "/VERYSILENT /SUPPRESSMSGBOXES --silent" : "";
-        var psi = new ProcessStartInfo(installerPath, args) { UseShellExecute = true };
+        var psi = new ProcessStartInfo(full, args) { UseShellExecute = true };
         return Process.Start(psi);
     }
 
@@ -214,7 +252,18 @@ public static class UpdateChecker
     {
         try
         {
-            Process.Start(new ProcessStartInfo(string.IsNullOrWhiteSpace(url) ? ReleasesPage : url) { UseShellExecute = true });
+            string target = ReleasesPage;
+            if (!string.IsNullOrWhiteSpace(url) &&
+                Uri.TryCreate(url, UriKind.Absolute, out var uri) &&
+                uri.Scheme == Uri.UriSchemeHttps &&
+                (uri.Host.Equals("github.com", StringComparison.OrdinalIgnoreCase) ||
+                 uri.Host.EndsWith(".github.com", StringComparison.OrdinalIgnoreCase)))
+            {
+                // Only allow links inside our own repo.
+                if (uri.AbsolutePath.StartsWith($"/{RepositoryOwner}/{RepositoryName}", StringComparison.OrdinalIgnoreCase))
+                    target = uri.ToString();
+            }
+            Process.Start(new ProcessStartInfo(target) { UseShellExecute = true });
         }
         catch
         {

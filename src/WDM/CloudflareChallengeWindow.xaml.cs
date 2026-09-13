@@ -25,6 +25,7 @@ public partial class CloudflareChallengeWindow : Wpf.Ui.Controls.FluentWindow
         Title = $"Cloudflare Protection — {task.DisplayFileName}";
 
         Loaded += async (_, _) => await InitWebViewAsync();
+        Closed += (_, _) => DetachWebView();
     }
 
     protected override void OnSourceInitialized(EventArgs e)
@@ -51,12 +52,50 @@ public partial class CloudflareChallengeWindow : Wpf.Ui.Controls.FluentWindow
             WebView.CoreWebView2.DownloadStarting += WebView_DownloadStarting;
 
             LoadingOverlay.Visibility = Visibility.Collapsed;
-            WebView.Source = new Uri(_task.Url);
+            if (!Uri.TryCreate(_task.Url, UriKind.Absolute, out var target) ||
+                (target.Scheme != Uri.UriSchemeHttp && target.Scheme != Uri.UriSchemeHttps))
+            {
+                MessageBox.Show(this, "This download has no valid page URL to solve.", "WebView Error", MessageBoxButton.OK, MessageBoxImage.Error);
+                return;
+            }
+            WebView.Source = target;
         }
         catch (Exception ex)
         {
             LoadingOverlay.Visibility = Visibility.Collapsed;
             MessageBox.Show(this, $"Failed to initialize browser engine: {ex.Message}", "WebView Error", MessageBoxButton.OK, MessageBoxImage.Error);
+        }
+    }
+
+    private void DetachWebView()
+    {
+        try
+        {
+            if (WebView.CoreWebView2 is not null)
+            {
+                WebView.CoreWebView2.NavigationCompleted -= WebView_NavigationCompleted;
+                WebView.CoreWebView2.DownloadStarting -= WebView_DownloadStarting;
+            }
+        }
+        catch { }
+        try { WebView.Dispose(); } catch { }
+    }
+
+    private bool TryComplete(bool result)
+    {
+        // The user may have closed the window mid-callback — setting
+        // DialogResult on a closed window throws InvalidOperationException.
+        try
+        {
+            if (!IsLoaded && !IsVisible)
+                return false;
+            DialogResult = result;
+            Close();
+            return true;
+        }
+        catch (InvalidOperationException)
+        {
+            return false;
         }
     }
 
@@ -84,8 +123,7 @@ public partial class CloudflareChallengeWindow : Wpf.Ui.Controls.FluentWindow
         // Clearance cookies live on the original host, not the redirect target.
         await CaptureCookiesAsync(WebView.Source.ToString());
         ClearanceCaptured = true;
-        DialogResult = true;
-        Close();
+        TryComplete(true);
     }
 
     private async Task CaptureCookiesAsync(string targetUrl)
@@ -105,8 +143,7 @@ public partial class CloudflareChallengeWindow : Wpf.Ui.Controls.FluentWindow
             {
                 StatusText.Text = "Cloudflare clearance captured successfully! Resuming download...";
                 ClearanceCaptured = true;
-                DialogResult = true;
-                Close();
+                TryComplete(true);
             }
         }
         catch
@@ -118,8 +155,7 @@ public partial class CloudflareChallengeWindow : Wpf.Ui.Controls.FluentWindow
     private async void ApplyClearance_Click(object sender, RoutedEventArgs e)
     {
         await CaptureCookiesAsync(WebView.Source.ToString());
-        DialogResult = true;
-        Close();
+        TryComplete(true);
     }
 
     private void Cancel_Click(object sender, RoutedEventArgs e)

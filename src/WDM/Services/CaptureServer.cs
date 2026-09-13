@@ -23,6 +23,7 @@ public sealed class CaptureServer : IDisposable
     private readonly TcpListener _listener;
     private readonly Action<string, string?, string?, Dictionary<string, string>, string?> _onCapture;
     private readonly CancellationTokenSource _cts = new();
+    private readonly SemaphoreSlim _throttle = new(20, 20);
     private bool _running;
 
     public bool IsConnected { get; private set; }
@@ -72,6 +73,17 @@ public sealed class CaptureServer : IDisposable
 
     private async Task HandleClientAsync(TcpClient client)
     {
+        bool acquired = false;
+        try
+        {
+            await _throttle.WaitAsync(_cts.Token).ConfigureAwait(false);
+            acquired = true;
+        }
+        catch
+        {
+            client.Dispose();
+            return;
+        }
         using (client)
         {
             try
@@ -100,6 +112,7 @@ public sealed class CaptureServer : IDisposable
 
                 long contentLength = 0;
                 bool expectContinue = false;
+                string? origin = null;
                 while (!string.IsNullOrEmpty(line = await reader.ReadLineAsync()))
                 {
                     var colon = line.IndexOf(':');
@@ -107,15 +120,23 @@ public sealed class CaptureServer : IDisposable
                         continue;
                     string name = line[..colon].Trim();
                     string value = line[(colon + 1)..].Trim();
+                    if (value.Length > 4096)
+                        value = value[..4096];
                     if (name.Equals("Content-Length", StringComparison.OrdinalIgnoreCase))
+                    {
                         long.TryParse(value, out contentLength);
+                        if (contentLength < 0)
+                            contentLength = 0;
+                    }
                     else if (name.Equals("Expect", StringComparison.OrdinalIgnoreCase))
                         expectContinue = value.Contains("100-continue", StringComparison.OrdinalIgnoreCase);
+                    else if (name.Equals("Origin", StringComparison.OrdinalIgnoreCase))
+                        origin = value;
                 }
 
                 if (contentLength > 10 * 1024 * 1024)
                 {
-                    await WriteResponseAsync(stream, HttpStatusCode.RequestEntityTooLarge, "Payload Too Large");
+                    await WriteResponseAsync(stream, HttpStatusCode.RequestEntityTooLarge, "Payload Too Large", origin);
                     return;
                 }
 
@@ -127,7 +148,8 @@ public sealed class CaptureServer : IDisposable
                 string body = "";
                 if (contentLength > 0)
                 {
-                    var buffer = new char[contentLength];
+                    int len = (int)Math.Min(contentLength, 10 * 1024 * 1024);
+                    var buffer = new char[len];
                     int read = 0;
                     while (read < buffer.Length)
                     {
@@ -141,34 +163,86 @@ public sealed class CaptureServer : IDisposable
 
                 if (method == "OPTIONS")
                 {
-                    await WriteResponseAsync(stream, HttpStatusCode.NoContent, "");
+                    await WriteResponseAsync(stream, HttpStatusCode.NoContent, "", origin);
                     return;
                 }
 
                 if (method == "GET" && path == "/ping")
                 {
-                    IsConnected = true;
-                    ExtensionConnected?.Invoke();
+                    // Presence probe: do not trust it for security decisions.
                     string ver = typeof(CaptureServer).Assembly.GetName().Version?.ToString(3) ?? "2.5.2";
-                    await WriteResponseAsync(stream, HttpStatusCode.OK, $"{{\"status\":\"ok\",\"version\":\"{ver}\"}}");
+                    await WriteResponseAsync(stream, HttpStatusCode.OK, $"{{\"status\":\"ok\",\"version\":\"{ver}\"}}", origin);
                     return;
                 }
 
                 if (method == "POST" && path == "/download")
                 {
+                    // Reject CSRF from arbitrary websites: only the extension
+                    // (chrome-/moz-extension origin or no Origin like background
+                    // fetch) may drive downloads. Web pages send http(s) Origin.
+                    if (IsBrowserWebOrigin(origin))
+                    {
+                        await WriteResponseAsync(stream, HttpStatusCode.Forbidden, "{\"error\":\"forbidden origin\"}", origin);
+                        return;
+                    }
                     try
                     {
                         var payload = JsonSerializer.Deserialize<CapturePayload>(body, JsonOptions);
                         if (payload is null || string.IsNullOrWhiteSpace(payload.Url))
                             throw new InvalidOperationException("Empty url");
+                        string url = payload.Url.Trim();
+                        if (url.Length > 2048 || !IsAllowedCaptureUrl(url))
+                            throw new InvalidOperationException("Bad url");
+                        string? fileName = SanitizeCaptureFileName(payload.FileName);
+                        string? referer = SanitizeCaptureUrl(payload.Referer, 2048);
+                        string? pageTitle = payload.PageTitle is null ? null :
+                            payload.PageTitle.Trim().Length > 500 ? payload.PageTitle.Trim()[..500] : payload.PageTitle.Trim();
+                        if (string.IsNullOrWhiteSpace(pageTitle))
+                            pageTitle = null;
                         IsConnected = true;
                         ExtensionConnected?.Invoke();
-                        _onCapture(payload.Url, payload.FileName, payload.Referer, payload.Headers, payload.PageTitle);
-                        await WriteResponseAsync(stream, HttpStatusCode.OK, "{\"accepted\":true}");
+                        var headers = SanitizeCaptureHeaders(payload.Headers);
+                        // Preserve the extension's stream classification so the engine can
+                        // force HLS/DASH routing even for tokenized manifests without a
+                        // literal .m3u8/.mpd in the URL. "page" means the URL is a player
+                        // page that still needs embed resolution, not a direct download.
+                        if (!string.IsNullOrWhiteSpace(payload.StreamType) &&
+                            (payload.StreamType.Equals("HLS", StringComparison.OrdinalIgnoreCase) ||
+                             payload.StreamType.Equals("DASH", StringComparison.OrdinalIgnoreCase) ||
+                             payload.StreamType.Equals("Stream", StringComparison.OrdinalIgnoreCase) ||
+                             payload.StreamType.Equals("page", StringComparison.OrdinalIgnoreCase)) &&
+                            !headers.ContainsKey("X-WDM-StreamType"))
+                        {
+                            headers["X-WDM-StreamType"] = payload.StreamType;
+                        }
+                        // Player CDNs often gate on Origin; derive it from the Referer
+                        // when the content script didn't supply one.
+                        if (!headers.ContainsKey("Origin") &&
+                            !string.IsNullOrWhiteSpace(referer) &&
+                            Uri.TryCreate(referer, UriKind.Absolute, out var refererUri) &&
+                            (refererUri.Scheme == Uri.UriSchemeHttp || refererUri.Scheme == Uri.UriSchemeHttps))
+                        {
+                            headers["Origin"] = refererUri.GetLeftPart(UriPartial.Authority);
+                        }
+                        // Keep explicit VideoUrl/AudioUrl hints (used by refresh flows)
+                        // reachable downstream via headers when the payload URL is a page.
+                        string? videoHint = SanitizeCaptureUrl(payload.VideoUrl, 2048);
+                        string? audioHint = SanitizeCaptureUrl(payload.AudioUrl, 2048);
+                        if (!string.IsNullOrWhiteSpace(videoHint) && !headers.ContainsKey("X-WDM-VideoUrl"))
+                            headers["X-WDM-VideoUrl"] = videoHint;
+                        if (!string.IsNullOrWhiteSpace(audioHint) && !headers.ContainsKey("X-WDM-AudioUrl"))
+                            headers["X-WDM-AudioUrl"] = audioHint;
+                        // Carry the page title for filename recovery: manifest URLs
+                        // ("master.m3u8") carry no title, so the engine falls back to
+                        // this when the prefill name is still generic.
+                        if (!string.IsNullOrWhiteSpace(pageTitle) && !headers.ContainsKey("X-WDM-PageTitle"))
+                            headers["X-WDM-PageTitle"] = pageTitle;
+                        _onCapture(url, fileName, referer, headers, pageTitle);
+                        await WriteResponseAsync(stream, HttpStatusCode.OK, "{\"accepted\":true}", origin);
                     }
                     catch
                     {
-                        await WriteResponseAsync(stream, HttpStatusCode.BadRequest, "{\"error\":\"invalid request\"}");
+                        await WriteResponseAsync(stream, HttpStatusCode.BadRequest, "{\"error\":\"invalid request\"}", origin);
                     }
                     return;
                 }
@@ -177,26 +251,61 @@ public sealed class CaptureServer : IDisposable
                 // Returns available quality tiers for a YouTube (or any yt-dlp-supported) URL.
                 if (method == "GET" && path == "/resolve")
                 {
-                    string? videoUrl = null;
-                    foreach (var pair in queryString.Split('&'))
+                    if (IsBrowserWebOrigin(origin))
                     {
-                        var kv = pair.Split('=', 2);
-                        if (kv.Length == 2 && kv[0].Equals("url", StringComparison.OrdinalIgnoreCase))
+                        await WriteResponseAsync(stream, HttpStatusCode.Forbidden, "{\"error\":\"forbidden origin\"}", origin);
+                        return;
+                    }
+                    string? videoUrl = null;
+                    if (queryString.Length <= 4096)
+                    {
+                        foreach (var pair in queryString.Split('&'))
                         {
-                            videoUrl = Uri.UnescapeDataString(kv[1]);
-                            break;
+                            var kv = pair.Split('=', 2);
+                            if (kv.Length == 2 && kv[0].Equals("url", StringComparison.OrdinalIgnoreCase))
+                            {
+                                try { videoUrl = Uri.UnescapeDataString(kv[1]); }
+                                catch { videoUrl = null; }
+                                break;
+                            }
                         }
                     }
 
-                    if (string.IsNullOrWhiteSpace(videoUrl))
+                    if (string.IsNullOrWhiteSpace(videoUrl) || videoUrl.Length > 2048 ||
+                        !IsAllowedCaptureUrl(videoUrl.Trim()) || IsBlockedResolveTarget(videoUrl.Trim()))
                     {
-                        await WriteResponseAsync(stream, HttpStatusCode.BadRequest, "{\"error\":\"missing url param\"}");
+                        await WriteResponseAsync(stream, HttpStatusCode.BadRequest, "{\"error\":\"missing url param\"}", origin);
                         return;
                     }
 
                     try
                     {
-                        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+                        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+                        // Embed/player pages resolve via the generic embed pipeline;
+                        // everything else keeps the yt-dlp path.
+                        if (Embed.EmbedResolver.IsEmbedCandidate(videoUrl) && !MediaResolver.IsYoutubeUrl(videoUrl))
+                        {
+                            var embed = await Embed.EmbedResolver.TryResolveAsync(videoUrl, null, null, cts.Token);
+                            if (embed is null)
+                                throw new InvalidOperationException("Could not resolve an embed stream from this page.");
+                            var embedObj = new ResolveResponse
+                            {
+                                Title = embed.Title ?? DownloadEngine.DeriveName(embed.DirectUrl),
+                                Channel = "",
+                                ThumbnailUrl = "",
+                                IsPlaylist = false,
+                                ItemCount = 1,
+                                DirectUrl = embed.DirectUrl,
+                                StreamType = embed.IsHls ? "HLS" : "Video",
+                                Qualities = new List<QualityResponse>
+                                {
+                                    new() { Label = embed.IsHls ? "HLS stream" : "Best quality (direct)", FormatArg = "direct" },
+                                },
+                            };
+                            string embedJson = JsonSerializer.Serialize(embedObj, JsonWriteOptions);
+                            await WriteResponseAsync(stream, HttpStatusCode.OK, embedJson, origin);
+                            return;
+                        }
                         var resolved = await MediaResolver.ResolveAsync(videoUrl, cts.Token);
 
                         var responseObj = new ResolveResponse
@@ -219,7 +328,7 @@ public sealed class CaptureServer : IDisposable
                         };
 
                         string json = JsonSerializer.Serialize(responseObj, JsonWriteOptions);
-                        await WriteResponseAsync(stream, HttpStatusCode.OK, json);
+                        await WriteResponseAsync(stream, HttpStatusCode.OK, json, origin);
                     }
                     catch (Exception)
                     {
@@ -237,16 +346,23 @@ public sealed class CaptureServer : IDisposable
                             }
                         };
                         string fallbackJson = JsonSerializer.Serialize(fallbackObj, JsonWriteOptions);
-                        await WriteResponseAsync(stream, HttpStatusCode.OK, fallbackJson);
+                        await WriteResponseAsync(stream, HttpStatusCode.OK, fallbackJson, origin);
                     }
                     return;
                 }
 
-                await WriteResponseAsync(stream, HttpStatusCode.NotFound, "");
+                await WriteResponseAsync(stream, HttpStatusCode.NotFound, "", origin);
             }
             catch
             {
                 // Client hung up mid-request; nothing to do.
+            }
+            finally
+            {
+                if (acquired)
+                {
+                    try { _throttle.Release(); } catch (ObjectDisposedException) { }
+                }
             }
         }
     }
@@ -260,15 +376,18 @@ public sealed class CaptureServer : IDisposable
         return unit == 0 ? $"{value:0} {units[unit]}" : $"{value:0.0} {units[unit]}";
     }
 
-    private static async Task WriteResponseAsync(Stream stream, HttpStatusCode status, string body)
+    private static async Task WriteResponseAsync(Stream stream, HttpStatusCode status, string body, string? requestOrigin = null)
     {
         byte[] bodyBytes = Encoding.UTF8.GetBytes(body);
+        // Never blanket-trust the web: only echo extension origins.
+        string allowOrigin = IsAllowedExtensionOrigin(requestOrigin) ? requestOrigin! : "null";
         string headers =
             $"HTTP/1.1 {(int)status} {status}\r\n" +
             "Content-Type: application/json\r\n" +
-            "Access-Control-Allow-Origin: *\r\n" +
+            $"Access-Control-Allow-Origin: {allowOrigin}\r\n" +
             "Access-Control-Allow-Methods: POST, GET, OPTIONS\r\n" +
             "Access-Control-Allow-Headers: Content-Type\r\n" +
+            "Vary: Origin\r\n" +
             $"Content-Length: {bodyBytes.Length}\r\n" +
             "Connection: close\r\n\r\n";
         byte[] headerBytes = Encoding.UTF8.GetBytes(headers);
@@ -297,6 +416,134 @@ public sealed class CaptureServer : IDisposable
             // Ignore.
         }
         _cts.Dispose();
+        _throttle.Dispose();
+    }
+
+    private static bool IsBrowserWebOrigin(string? origin)
+    {
+        if (string.IsNullOrWhiteSpace(origin))
+            return false;
+        origin = origin.Trim();
+        return origin.StartsWith("http://", StringComparison.OrdinalIgnoreCase) ||
+               origin.StartsWith("https://", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool IsAllowedExtensionOrigin(string? origin)
+    {
+        if (string.IsNullOrWhiteSpace(origin))
+            return false;
+        origin = origin.Trim();
+        return origin.StartsWith("chrome-extension://", StringComparison.OrdinalIgnoreCase) ||
+               origin.StartsWith("moz-extension://", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool IsAllowedCaptureUrl(string url)
+    {
+        if (!Uri.TryCreate(url, UriKind.Absolute, out var uri))
+            return false;
+        if (uri.Scheme != Uri.UriSchemeHttp && uri.Scheme != Uri.UriSchemeHttps)
+            return false;
+        if (string.IsNullOrWhiteSpace(uri.Host))
+            return false;
+        return true;
+    }
+
+    private static string? SanitizeCaptureUrl(string? url, int maxLen)
+    {
+        if (string.IsNullOrWhiteSpace(url))
+            return null;
+        url = url.Trim();
+        if (url.Length > maxLen)
+            return null;
+        if (!IsAllowedCaptureUrl(url))
+            return null;
+        return url;
+    }
+
+    private static string? SanitizeCaptureFileName(string? name)
+    {
+        if (string.IsNullOrWhiteSpace(name))
+            return null;
+        name = name.Trim();
+        if (name.Length > 255)
+            name = name[..255];
+        // Strip any path: traversal, absolute paths, separators.
+        name = name.Replace('/', Path.DirectorySeparatorChar).Replace('\\', Path.DirectorySeparatorChar);
+        try { name = Path.GetFileName(name) ?? ""; }
+        catch { return null; }
+        name = name.Trim().Trim('.');
+        if (string.IsNullOrWhiteSpace(name))
+            return null;
+        foreach (char c in Path.GetInvalidFileNameChars())
+            name = name.Replace(c, '_');
+        return string.IsNullOrWhiteSpace(name) ? null : name;
+    }
+
+    private static Dictionary<string, string> SanitizeCaptureHeaders(Dictionary<string, string>? input)
+    {
+        var output = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        if (input is null)
+            return output;
+        // Allow-list: downstream engine only needs these. Cookies are replayed
+        // for authenticated downloads, but cap count/size to bound abuse.
+        var allowed = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+        {
+            "User-Agent", "Referer", "Origin", "Cookie",
+            "X-WDM-StreamType", "X-WDM-VideoUrl", "X-WDM-AudioUrl", "X-WDM-PageTitle",
+        };
+        int count = 0;
+        foreach (var kv in input)
+        {
+            if (count >= 20)
+                break;
+            if (string.IsNullOrWhiteSpace(kv.Key) || kv.Value is null)
+                continue;
+            string key = kv.Key.Trim();
+            if (!allowed.Contains(key))
+                continue;
+            string val = kv.Value.Trim();
+            if (val.Length > 8192)
+                val = val[..8192];
+            if (val.Contains('\r') || val.Contains('\n'))
+                continue;
+            output[key] = val;
+            count++;
+        }
+        return output;
+    }
+
+    private static bool IsBlockedResolveTarget(string url)
+    {
+        try
+        {
+            if (!Uri.TryCreate(url, UriKind.Absolute, out var uri) || string.IsNullOrWhiteSpace(uri.Host))
+                return true;
+            string host = uri.Host.Trim().Trim('.').ToLowerInvariant();
+            if (host == "localhost" || host.EndsWith(".local", StringComparison.Ordinal) ||
+                host.EndsWith(".localhost", StringComparison.Ordinal) || host == "metadata.google.internal")
+                return true;
+            if (IPAddress.TryParse(host.Trim('[', ']'), out var ip))
+            {
+                if (IPAddress.IsLoopback(ip))
+                    return true;
+                if (ip.AddressFamily == AddressFamily.InterNetwork)
+                {
+                    byte[] b = ip.GetAddressBytes();
+                    if (b[0] == 10) return true;
+                    if (b[0] == 172 && b[1] >= 16 && b[1] <= 31) return true;
+                    if (b[0] == 192 && b[1] == 168) return true;
+                    if (b[0] == 169 && b[1] == 254) return true;
+                    if (b[0] == 0 || b[0] >= 224) return true;
+                }
+                else if (ip.IsIPv6SiteLocal || ip.IsIPv6LinkLocal || ip.IsIPv6Multicast)
+                    return true;
+            }
+            return false;
+        }
+        catch
+        {
+            return true;
+        }
     }
 
     private sealed class CapturePayload
@@ -311,6 +558,7 @@ public sealed class CaptureServer : IDisposable
         public string? StreamType { get; set; }
         public string? VideoUrl { get; set; }
         public string? AudioUrl { get; set; }
+        public string? PageUrl { get; set; }
     }
 
     private sealed class ResolveResponse
@@ -322,6 +570,9 @@ public sealed class CaptureServer : IDisposable
         public string? PlaylistTitle { get; set; }
         public int ItemCount { get; set; }
         public List<QualityResponse> Qualities { get; set; } = new();
+        // Embed-pipeline extras (absent for yt-dlp responses; ignored by old clients).
+        public string? DirectUrl { get; set; }
+        public string? StreamType { get; set; }
     }
 
     private sealed class QualityResponse

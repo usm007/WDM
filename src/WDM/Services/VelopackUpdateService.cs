@@ -127,6 +127,7 @@ public static class VelopackUpdateService
             resp.EnsureSuccessStatusCode();
             long total = resp.Content.Headers.ContentLength ?? -1;
             using var src = await resp.Content.ReadAsStreamAsync(cancelToken).ConfigureAwait(false);
+            Directory.CreateDirectory(Path.GetDirectoryName(targetFile)!);
             using var dst = System.IO.File.Create(targetFile);
             var buf = new byte[81920];
             long read = 0;

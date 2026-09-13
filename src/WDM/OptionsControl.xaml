@@ -444,6 +444,16 @@
                             <ui:ToggleSwitch x:Name="MinimizeToTrayBox" />
                         </ui:CardControl>
 
+                        <ui:CardControl Margin="0,0,0,4">
+                            <ui:CardControl.Header>
+                                <StackPanel>
+                                    <TextBlock Text="Sync video titles from the internet" FontWeight="Medium" FontSize="13" Foreground="{DynamicResource Brush.Text}" />
+                                    <TextBlock Text="When a filename carries no title (e.g. master.ts), fetch it from the source page — official info endpoints first, then page metadata — reusing your capture session. The site sees a second visit to an already-opened page." FontSize="11.5" Foreground="{DynamicResource Brush.TextMuted}" Margin="0,2,0,0" TextWrapping="Wrap" />
+                                </StackPanel>
+                            </ui:CardControl.Header>
+                            <ui:ToggleSwitch x:Name="TitleSyncBox" />
+                        </ui:CardControl>
+
                         <ui:CardControl Margin="0,0,0,12">
                             <ui:CardControl.Header>
                                 <StackPanel>

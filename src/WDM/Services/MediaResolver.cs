@@ -86,8 +86,8 @@ public static class MediaResolver
                         ? entryUrl.GetString()!
                         : $"https://www.youtube.com/watch?v={id}",
                     ThumbnailUrl = $"https://i.ytimg.com/vi/{id}/hqdefault.jpg",
-                    Duration = entry.TryGetProperty("duration", out var entryDuration) && entryDuration.ValueKind == JsonValueKind.Number
-                        ? TimeSpan.FromSeconds(entryDuration.GetDouble())
+                    Duration = entry.TryGetProperty("duration", out var entryDuration)
+                        ? ParseDuration(entryDuration)
                         : null,
                     Index = index
                 });
@@ -118,8 +118,8 @@ public static class MediaResolver
                 : root.TryGetProperty("uploader", out var videoUploader) ? videoUploader.GetString() ?? "" : "",
             Url = $"https://www.youtube.com/watch?v={vid}",
             ThumbnailUrl = $"https://i.ytimg.com/vi/{vid}/hqdefault.jpg",
-            Duration = root.TryGetProperty("duration", out var videoDuration) && videoDuration.ValueKind == JsonValueKind.Number
-                ? TimeSpan.FromSeconds(videoDuration.GetDouble())
+            Duration = root.TryGetProperty("duration", out var videoDuration)
+                ? ParseDuration(videoDuration)
                 : null,
             Index = 1
         };
@@ -130,6 +130,16 @@ public static class MediaResolver
             IsPlaylist = false,
             QualityOptions = BuildQualityOptions(root)
         };
+    }
+
+    private static TimeSpan? ParseDuration(JsonElement el)
+    {
+        if (el.ValueKind == JsonValueKind.Number && el.TryGetDouble(out var sec) &&
+            !double.IsNaN(sec) && !double.IsInfinity(sec) && sec >= 0 && sec <= TimeSpan.MaxValue.TotalSeconds)
+        {
+            return TimeSpan.FromSeconds(sec);
+        }
+        return null;
     }
 
     private static List<QualityOption> BuildQualityOptions(JsonElement root)
@@ -162,9 +172,11 @@ public static class MediaResolver
 
                     if (f.TryGetProperty("height", out var h) && h.ValueKind == JsonValueKind.Number)
                     {
-                        var height = h.GetInt32();
-                        if (!videoSizes.TryGetValue(height, out var cur) || size > cur)
-                            videoSizes[height] = size.Value;
+                        if (h.TryGetInt32(out var height))
+                        {
+                            if (!videoSizes.TryGetValue(height, out var cur) || size > cur)
+                                videoSizes[height] = size.Value;
+                        }
                     }
                 }
             }
@@ -178,18 +190,19 @@ public static class MediaResolver
             {
                 total = bestAudioSize;
             }
-            else if (bestAudioSize is not null)
+            else
             {
+                long audio = bestAudioSize ?? 0;
                 if (height == 0)
                 {
                     if (bestVideoSize is not null)
-                        total = bestVideoSize + bestAudioSize;
+                        total = bestVideoSize + audio;
                 }
                 else
                 {
                     var best = videoSizes.Where(kv => kv.Key <= height).Select(kv => (long?)kv.Value).DefaultIfEmpty(null).Max();
                     if (best is not null)
-                        total = best + bestAudioSize;
+                        total = best + audio;
                 }
             }
 
@@ -210,10 +223,16 @@ public static class MediaResolver
 
     private static long? GetSize(JsonElement f)
     {
-        if (f.TryGetProperty("filesize", out var fs) && fs.ValueKind == JsonValueKind.Number && fs.GetInt64() > 0)
-            return fs.GetInt64();
-        if (f.TryGetProperty("filesize_approx", out var fa) && fa.ValueKind == JsonValueKind.Number && fa.GetInt64() > 0)
-            return fa.GetInt64();
+        if (f.TryGetProperty("filesize", out var fs) && fs.ValueKind == JsonValueKind.Number)
+        {
+            if (fs.TryGetInt64(out long s) && s > 0) return s;
+            if (fs.TryGetDouble(out double d) && d > 0) return (long)d;
+        }
+        if (f.TryGetProperty("filesize_approx", out var fa) && fa.ValueKind == JsonValueKind.Number)
+        {
+            if (fa.TryGetInt64(out long s) && s > 0) return s;
+            if (fa.TryGetDouble(out double d) && d > 0) return (long)d;
+        }
         return null;
     }
 }

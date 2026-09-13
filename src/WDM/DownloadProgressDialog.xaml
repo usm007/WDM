@@ -22,6 +22,7 @@
     <Window.Resources>
         <vm:TaskStatusToBrushConverter x:Key="StatusBrush" />
         <vm:TextToVisibilityConverter x:Key="TextVis" />
+        <BooleanToVisibilityConverter x:Key="BoolToVis" />
 
         <!-- Button.ProgressTab: Real modern Fluent button appearance for tab toggles -->
         <Style x:Key="Button.ProgressTab" TargetType="RadioButton">
@@ -104,12 +105,32 @@
                         <TextBlock Text="{Binding Task.FileName}" FontWeight="SemiBold" FontSize="13.5" Foreground="{DynamicResource Brush.Text}" TextTrimming="CharacterEllipsis" ToolTip="{Binding Task.FileName}" Margin="0,0,0,5" />
                         
                         <!-- Size & Percentage (Clean, non-compact, no extra clutter) -->
-                        <TextBlock FontSize="12" FontFamily="{StaticResource Font.App}" Foreground="{DynamicResource Brush.TextDim}" Margin="0,0,0,10">
+                        <TextBlock FontSize="12" FontFamily="{StaticResource Font.App}" Foreground="{DynamicResource Brush.TextDim}" Margin="0,0,0,6">
                             <Run Text="{Binding Task.DownloadedText, Mode=OneWay}"/><Run Text=" / "/><Run Text="{Binding Task.SizeText, Mode=OneWay}"/><Run Text=" · "/><Run Text="{Binding Task.Progress, Mode=OneWay}"/><Run Text="%"/>
                         </TextBlock>
 
+                        <!-- Preparing status line: visible from session start until first bytes flow -->
+                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="0,0,0,8"
+                                    Visibility="{Binding Task.IsPreparing, Converter={StaticResource BoolToVis}}">
+                            <StackPanel.Triggers>
+                                <EventTrigger RoutedEvent="Loaded">
+                                    <BeginStoryboard>
+                                        <Storyboard RepeatBehavior="Forever">
+                                            <DoubleAnimation Storyboard.TargetName="PrepDot" Storyboard.TargetProperty="Opacity"
+                                                             From="1" To="0.25" Duration="0:0:0.7" AutoReverse="True" />
+                                        </Storyboard>
+                                    </BeginStoryboard>
+                                </EventTrigger>
+                            </StackPanel.Triggers>
+                            <Ellipse x:Name="PrepDot" Width="8" Height="8" Margin="0,0,7,0" VerticalAlignment="Center"
+                                     Fill="{DynamicResource Brush.Accent}" />
+                            <TextBlock Text="{Binding Task.PhaseText, FallbackValue='Preparing…'}" FontSize="12"
+                                       FontFamily="{StaticResource Font.App}" Foreground="{DynamicResource Brush.Accent}"
+                                       VerticalAlignment="Center" />
+                        </StackPanel>
+
                         <!-- Progress Bar -->
-                        <Border Background="{DynamicResource Brush.Border}" Height="6" CornerRadius="3" Margin="0,0,0,12">
+                        <Border Background="{DynamicResource Brush.Border}" Height="6" CornerRadius="3" Margin="0,0,0,4">
                             <Grid Height="6">
                                 <Grid.ColumnDefinitions>
                                     <ColumnDefinition Width="{Binding YouTubeProgressFill}" />
@@ -118,6 +139,11 @@
                                 <Border Grid.Column="0" Background="{DynamicResource Brush.Accent}" CornerRadius="3" />
                             </Grid>
                         </Border>
+
+                        <!-- Indeterminate marquee while preparing (no stats yet) -->
+                        <ProgressBar Height="4" Margin="0,0,0,12" BorderThickness="0" Background="Transparent"
+                                     Foreground="{DynamicResource Brush.Accent}" IsIndeterminate="True"
+                                     Visibility="{Binding Task.IsPreparing, Converter={StaticResource BoolToVis}}" />
 
                         <!-- Metrics Row: Speed, ETA, Threads -->
                         <Grid>
@@ -187,50 +213,61 @@
 
                     <!-- TAB 1: Details Panel (Textual + Graphical) -->
                     <StackPanel x:Name="PanelDetails" Visibility="Collapsed" Margin="0,2,0,8">
-                        <!-- Graphical Chunk Visualization -->
+                        <!-- Graphical File Map (block visualization: 1 block = 1/64 of the file) -->
                         <Border Background="{DynamicResource Brush.SurfaceAlt}" BorderBrush="{DynamicResource Brush.Border}"
                                 BorderThickness="1" CornerRadius="6" Padding="10,8" Margin="0,0,0,8">
                             <StackPanel>
                                 <DockPanel Margin="0,0,0,6">
-                                    <TextBlock Text="THREAD CONNECTIONS" FontSize="10" FontWeight="Bold"
+                                    <TextBlock Text="FILE MAP · 64 SEGMENTS" FontSize="10" FontWeight="Bold"
                                                Foreground="{DynamicResource Brush.TextMuted}" VerticalAlignment="Center" />
-                                    <TextBlock Text="{Binding ChunkCountText}" FontSize="10.5" FontWeight="SemiBold"
+                                    <TextBlock Text="{Binding BlockSummaryText}" FontSize="10.5" FontWeight="SemiBold"
                                                Foreground="{DynamicResource Brush.Accent}" HorizontalAlignment="Right" VerticalAlignment="Center" />
                                 </DockPanel>
 
-                                <!-- Multi-thread chunk visualizer -->
-                                <ItemsControl ItemsSource="{Binding ChunkList}">
+                                <!-- File block map -->
+                                <ItemsControl ItemsSource="{Binding BlockList}">
                                     <ItemsControl.ItemsPanel>
                                         <ItemsPanelTemplate>
-                                            <UniformGrid Columns="4" />
+                                            <UniformGrid Columns="32" />
                                         </ItemsPanelTemplate>
                                     </ItemsControl.ItemsPanel>
                                     <ItemsControl.ItemTemplate>
                                         <DataTemplate>
-                                            <Border Background="{DynamicResource Brush.Surface}" BorderBrush="{DynamicResource Brush.Border}"
-                                                    BorderThickness="1" CornerRadius="4" Padding="5,3" Margin="2"
+                                            <Border Height="14" CornerRadius="2.5" Margin="1.5"
                                                     ToolTip="{Binding ToolTip}">
-                                                <StackPanel>
-                                                    <DockPanel LastChildFill="False" Margin="0,0,0,2">
-                                                        <TextBlock Text="{Binding Index, StringFormat='T#{0}'}" FontSize="9.5" FontWeight="Medium"
-                                                                   Foreground="{DynamicResource Brush.TextMuted}" DockPanel.Dock="Left" />
-                                                        <TextBlock Text="{Binding WidthPercent, StringFormat='{}{0:0}%'}" FontSize="9.5" FontWeight="SemiBold"
-                                                                   Foreground="{DynamicResource Brush.Text}" DockPanel.Dock="Right" />
-                                                    </DockPanel>
-                                                    <Border Background="{DynamicResource Brush.Border}" Height="3" CornerRadius="1.5">
-                                                        <Grid Height="3">
-                                                            <Grid.ColumnDefinitions>
-                                                                <ColumnDefinition Width="{Binding FillGridLength}" />
-                                                                <ColumnDefinition Width="{Binding RemainingGridLength}" />
-                                                            </Grid.ColumnDefinitions>
-                                                            <Border Grid.Column="0" Background="{DynamicResource Brush.Accent}" CornerRadius="1.5" />
-                                                        </Grid>
-                                                    </Border>
-                                                </StackPanel>
+                                                <Border.Style>
+                                                    <Style TargetType="Border">
+                                                        <Setter Property="Background" Value="{DynamicResource Brush.Track}" />
+                                                        <Style.Triggers>
+                                                            <DataTrigger Binding="{Binding Status}" Value="1">
+                                                                <Setter Property="Background" Value="{DynamicResource Brush.AccentSoftStrong}" />
+                                                            </DataTrigger>
+                                                            <DataTrigger Binding="{Binding Status}" Value="2">
+                                                                <Setter Property="Background" Value="{DynamicResource Brush.Accent}" />
+                                                            </DataTrigger>
+                                                        </Style.Triggers>
+                                                    </Style>
+                                                </Border.Style>
                                             </Border>
                                         </DataTemplate>
                                     </ItemsControl.ItemTemplate>
                                 </ItemsControl>
+
+                                <!-- Legend -->
+                                <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
+                                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="0,0,12,0">
+                                        <Border Width="10" Height="10" CornerRadius="2" Background="{DynamicResource Brush.Accent}" VerticalAlignment="Center" Margin="0,0,5,0" />
+                                        <TextBlock Text="Downloaded" FontSize="10.5" Foreground="{DynamicResource Brush.TextMuted}" VerticalAlignment="Center" />
+                                    </StackPanel>
+                                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="0,0,12,0">
+                                        <Border Width="10" Height="10" CornerRadius="2" Background="{DynamicResource Brush.AccentSoftStrong}" VerticalAlignment="Center" Margin="0,0,5,0" />
+                                        <TextBlock Text="Downloading" FontSize="10.5" Foreground="{DynamicResource Brush.TextMuted}" VerticalAlignment="Center" />
+                                    </StackPanel>
+                                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                        <Border Width="10" Height="10" CornerRadius="2" Background="{DynamicResource Brush.Track}" VerticalAlignment="Center" Margin="0,0,5,0" />
+                                        <TextBlock Text="Pending" FontSize="10.5" Foreground="{DynamicResource Brush.TextMuted}" VerticalAlignment="Center" />
+                                    </StackPanel>
+                                </StackPanel>
                             </StackPanel>
                         </Border>
 

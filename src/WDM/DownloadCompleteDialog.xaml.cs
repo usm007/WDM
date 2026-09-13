@@ -64,6 +64,14 @@ public partial class DownloadCompleteDialog : Window
         string path = Task.FullPath;
         if (File.Exists(path))
         {
+            if (IsRiskyExecutable(path))
+            {
+                var answer = MessageBox.Show(this,
+                    $"\"{Task.DisplayFileName}\" is an executable downloaded from the internet.\n\nOnly open it if you trust the source.\n\nOpen it now?",
+                    "Security warning", MessageBoxButton.YesNo, MessageBoxImage.Warning);
+                if (answer != MessageBoxResult.Yes)
+                    return;
+            }
             try
             {
                 Process.Start(new ProcessStartInfo
@@ -114,5 +122,13 @@ public partial class DownloadCompleteDialog : Window
     private void CloseClick(object sender, RoutedEventArgs e)
     {
         Close();
+    }
+
+    private static bool IsRiskyExecutable(string path)
+    {
+        string ext = System.IO.Path.GetExtension(path).ToLowerInvariant();
+        return ext is ".exe" or ".msi" or ".bat" or ".cmd" or ".ps1" or ".vbs" or ".vbe"
+            or ".js" or ".jse" or ".wsf" or ".wsh" or ".lnk" or ".scr" or ".com"
+            or ".pif" or ".reg" or ".jar" or ".msc" or ".hta";
     }
 }
