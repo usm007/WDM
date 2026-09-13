@@ -1,5 +1,7 @@
 # WDM — Windows Download Manager
+.
 <img width="1774" height="887" alt="hero_banner_readme" src="https://github.com/user-attachments/assets/a844553b-0774-452e-9e5a-1a57ccdeddea" />
+.
 > 🌐 Live site: **https://get-wdm.vercel.app**
 
 An IDM-inspired no-nonsense download manager for Windows, written in C# / WPF / .NET 8. **Self-contained .NET 8** — exe releases bundle all libraries, no runtime install needed.
