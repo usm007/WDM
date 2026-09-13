@@ -1,5 +1,5 @@
-# WDM — Windows Download Manager
-
+<img width="585" height="420" alt="03_OptionsDialog_04_YouTube" src="https://github.com/user-attachments/assets/344d3edb-85d7-40fa-8ac9-6d84855fd41b" /># WDM — Windows Download Manager
+<img width="1774" height="887" alt="hero_banner_readme" src="https://github.com/user-attachments/assets/a844553b-0774-452e-9e5a-1a57ccdeddea" />
 > 🌐 Live site: **https://get-wdm.vercel.app**
 
 An IDM-inspired no-nonsense download manager for Windows, written in C# / WPF / .NET 8. **Self-contained .NET 8** — exe releases bundle all libraries, no runtime install needed.
@@ -110,5 +110,24 @@ vpk pack --packId WDM --packVersion 2.5.4 --packDir publish --mainExe WDM.exe --
 - Only Windows is supported (by design).
 
 ## Screenshots
+<img width="588" height="360" alt="01_MainWindow" src="https://github.com/user-attachments/assets/743e8392-f8db-48a8-bcd7-56c02606bd83" />
 
-> Screenshots and hero banner removed to keep the repo lean — will be re-added here later via external URLs. Meanwhile see the live site: **https://get-wdm.vercel.app**.
+<img width="405" height="300" alt="02_AddDownloadDialog" src="https://github.com/user-attachments/assets/9ea9799f-6fcb-47ff-ac8f-d594973411d9" />
+
+<img width="585" height="420" alt="03_OptionsDialog_04_YouTube" src="https://github.com/user-attachments/assets/44c83085-68da-425a-a430-ee7013fda32a" />
+
+<img width="360" height="240" alt="05_DownloadProgressDialog" src="https://github.com/user-attachments/assets/6861a5f5-22f1-4e16-acfb-1403b1188243" />
+
+<img width="375" height="255" alt="06_DownloadCompleteDialog" src="https://github.com/user-attachments/assets/f657a25d-8b0c-4f33-b796-a31214d2e1d1" />
+
+<img width="588" height="360" alt="01_MainWindow" src="https://github.com/user-attachments/assets/22da2da4-70ee-4828-a954-b0963a24b17e" />
+
+<img width="405" height="300" alt="02_AddDownloadDialog" src="https://github.com/user-attachments/assets/990ebfc7-ea75-43b7-b753-1c0935175c5c" />
+
+<img width="585" height="420" alt="03_OptionsDialog_04_YouTube" src="https://github.com/user-attachments/assets/93015098-9ed9-4fb5-917f-543a83dfdbe4" />
+
+<img width="360" height="240" alt="05_DownloadProgressDialog" src="https://github.com/user-attachments/assets/d9aad45d-3197-4382-8af6-ac01a9ec8724" />
+
+<img width="375" height="255" alt="06_DownloadCompleteDialog" src="https://github.com/user-attachments/assets/c1b26080-2813-4629-948c-3143dc4c3a04" />
+
+
