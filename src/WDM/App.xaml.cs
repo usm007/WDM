@@ -97,9 +97,10 @@ public partial class App : Application
         ThemeService.Apply(AppTheme.Default, settings.UseDarkTheme);
 
         // Never show welcome after an update — only on true first-ever run.
-        // If user data already exists (tasks/settings) or LastRunVersion is set, this is an update/relaunch, not a first install.
-        bool hasExistingUserData = File.Exists(Path.Combine(TaskStore.AppDir, "tasks.json")) || File.Exists(Path.Combine(TaskStore.AppDir, "settings.json"));
-        bool isFirstEverRun = string.IsNullOrWhiteSpace(settings.LastRunVersion) && !hasExistingUserData && !settings.HasPromptedExtensionInstall;
+        // InstallState looks beyond data files: an updater whose data was wiped
+        // still leaves install evidence (Velopack state, app bits, Inno key),
+        // so they get the reload notice instead of onboarding.
+        bool isFirstEverRun = InstallState.IsFirstEverRun(settings);
         if (isFirstEverRun && !StartMinimized)
         {
             ShutdownMode = ShutdownMode.OnExplicitShutdown;
@@ -108,9 +109,11 @@ public partial class App : Application
             TaskStore.SaveSettings(settings);
             ShutdownMode = ShutdownMode.OnLastWindowClose;
         }
-        else if (!settings.HasPromptedExtensionInstall && (!string.IsNullOrWhiteSpace(settings.LastRunVersion) || hasExistingUserData))
+        else if (!settings.HasPromptedExtensionInstall && !isFirstEverRun)
         {
-            // Upgraded from older version that never set the flag, or settings had LastRunVersion wiped but user data exists — suppress future welcome
+            // Returning user that never set the flag: upgraded from an older
+            // version, or version stamp wiped but data/install evidence exists.
+            // Suppress future welcome.
             settings.HasPromptedExtensionInstall = true;
             TaskStore.SaveSettings(settings);
         }

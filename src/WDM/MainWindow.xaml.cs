@@ -118,12 +118,11 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
             {
                 // Check if application was updated to a newer version.
                 // Prompt user to reload Chromium browser extensions so latest version loads.
-                // We also handle the case where LastRunVersion was wiped but user data still exists — still show the update/reload notice instead of Welcome.
+                // InstallState also covers the wiped-data case: install evidence alone
+                // still counts as an update, so updaters get this notice — never Welcome.
                 string currentVer = UpdateChecker.CurrentVersion.ToString();
                 string? lastVer = _viewModel.Settings.LastRunVersion;
-                bool hasExistingUserData = File.Exists(System.IO.Path.Combine(TaskStore.AppDir, "tasks.json"));
-                bool isUpdate = (!string.IsNullOrWhiteSpace(lastVer) && lastVer != currentVer)
-                                || (string.IsNullOrWhiteSpace(lastVer) && hasExistingUserData);
+                bool isUpdate = InstallState.IsUpdate(_viewModel.Settings, currentVer);
                 if (isUpdate)
                 {
                     string displayOld = string.IsNullOrWhiteSpace(lastVer) ? "previous" : lastVer;
@@ -461,9 +460,8 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
     }
 
     /// <summary>Checks for updates: Velopack delta first (patch-only, ~2MB), then GitHub full installer as fallback.
-    /// Throttled to once every 15 minutes. Never uses Windows balloon notifications — surfaces the
-    /// program's own update dialog (AboutDialog inline panel) so silent auto-install failures like
-    /// the "WDM is already installed" modal cannot recur.</summary>
+    /// Icon-only: never pops a dialog — sets the animated update icon on the top-bar About button instead.
+    /// Clicking that icon opens the update dialog (AboutDialog inline panel).</summary>
     private async Task CheckForUpdatesAsync()
     {
         var settings = _viewModel.Settings;
@@ -492,11 +490,9 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
                     {
                         try
                         {
-                            RestoreWindow();
-                            var dlg = new AboutDialog();
-                            dlg.Owner = this;
-                            dlg.ShowAvailableUpdate(synthetic, velopackUpdate);
-                            dlg.ShowDialog();
+                            _viewModel.PendingRelease = synthetic;
+                            _viewModel.PendingVelopack = velopackUpdate;
+                            _viewModel.IsUpdateAvailable = true;
                         }
                         catch { }
                     });
@@ -529,11 +525,9 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
             {
                 try
                 {
-                    RestoreWindow();
-                    var dlg = new AboutDialog();
-                    dlg.Owner = this;
-                    dlg.ShowAvailableUpdate(latest, null);
-                    dlg.ShowDialog();
+                    _viewModel.PendingRelease = latest;
+                    _viewModel.PendingVelopack = null;
+                    _viewModel.IsUpdateAvailable = true;
                 }
                 catch { }
             });
@@ -636,8 +630,17 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
 
     private void ShowAbout()
     {
-        var dialog = new AboutDialog();
-        dialog.ShowDialog();
+        if (_viewModel.IsUpdateAvailable && _viewModel.PendingRelease is not null)
+        {
+            var dialog = new AboutDialog();
+            dialog.Owner = this;
+            dialog.ShowAvailableUpdate(_viewModel.PendingRelease, _viewModel.PendingVelopack as Velopack.UpdateInfo);
+            dialog.ShowDialog();
+            return;
+        }
+        var about = new AboutDialog();
+        about.Owner = this;
+        about.ShowDialog();
     }
 
     private void ShowProgressDialog(DownloadTask? task)
