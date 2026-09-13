@@ -24,6 +24,9 @@ public static class BrowserIntegration
     public const string FirefoxAddonUrl =
         "https://addons.mozilla.org/en-US/firefox/addon/wdm-download-catcher/";
 
+    public const string WebGuideUrl =
+        "https://get-wdm.vercel.app/extension-guide.html";
+
     public static string DeployDir => Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
         "WDM", "BrowserExtension");
@@ -195,10 +198,20 @@ public static class BrowserIntegration
     }
 
     /// <summary>
-    /// Opens the detailed browser extension manual & setup guide webpage in the default browser.
+    /// Opens the online browser extension setup guide in the default browser.
     /// </summary>
     public static void OpenExtensionGuide()
     {
+        try
+        {
+            Process.Start(new ProcessStartInfo(WebGuideUrl) { UseShellExecute = true });
+            return;
+        }
+        catch
+        {
+            // Fall through to offline copies below
+        }
+
         try
         {
             string[] candidates = new[]
