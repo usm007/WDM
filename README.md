@@ -1,4 +1,4 @@
-<img width="585" height="420" alt="03_OptionsDialog_04_YouTube" src="https://github.com/user-attachments/assets/344d3edb-85d7-40fa-8ac9-6d84855fd41b" /># WDM — Windows Download Manager
+# WDM — Windows Download Manager
 <img width="1774" height="887" alt="hero_banner_readme" src="https://github.com/user-attachments/assets/a844553b-0774-452e-9e5a-1a57ccdeddea" />
 > 🌐 Live site: **https://get-wdm.vercel.app**
 
