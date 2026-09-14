@@ -40,15 +40,19 @@ public partial class UpdateAvailableDialog : Window
         var reloadWarn = "⚠️ After update, reload the browser extension: chrome://extensions (or edge://extensions) → Reload on WDM.";
         if (velopackUpdate is not null)
         {
+            bool isDelta = VelopackUpdateService.IsDeltaUpdate(velopackUpdate);
+            string desc = VelopackUpdateService.DescribeUpdate(velopackUpdate);
             DetailsText.Text = $"Current: {VelopackUpdateService.CurrentVersion}  →  New: {release.Version}{Environment.NewLine}" +
-                               $"Delta update (patch-only, ~2-5 MB) — no full installer needed.{Environment.NewLine}" +
+                               (isDelta
+                                   ? $"{desc} update (patch-only, 1 version behind) — no installer needed.{Environment.NewLine}"
+                                   : $"{desc} update (2+ versions behind, .NET included) — no installer needed.{Environment.NewLine}") +
                                notesBlock + reloadWarn;
-            InstallButton.Content = "Download Delta & Restart";
+            InstallButton.Content = isDelta ? "Download Delta & Restart" : "Download Full & Restart";
         }
         else if (string.IsNullOrWhiteSpace(release.InstallerUrl) && !string.IsNullOrWhiteSpace(release.UpdatePackageUrl))
         {
             DetailsText.Text = $"Current: {UpdateChecker.CurrentVersion}  →  New: {release.Version}{Environment.NewLine}" +
-                               $"Update package available (delta, ~0.17 MB). Full installer will be uploaded shortly.{Environment.NewLine}" +
+                               $"Update package available (Setup.exe is for new users only).{Environment.NewLine}" +
                                notesBlock + reloadWarn;
             InstallButton.Content = "Open Release Page";
         }
@@ -104,15 +108,17 @@ public partial class UpdateAvailableDialog : Window
         InstallButton.IsEnabled = false;
         LaterButton.IsEnabled = false;
 
-        // Velopack delta path: patch-only update package, NOT full installer — shows progress bar and restarts
+        // Velopack path: nupkg ONLY (delta if 1 behind, self-contained full if 2+ behind).
         if (_velopackUpdate is not null)
         {
+            bool isDelta = VelopackUpdateService.IsDeltaUpdate(_velopackUpdate);
+            string desc = VelopackUpdateService.DescribeUpdate(_velopackUpdate);
             ProgressPanel.Visibility = Visibility.Visible;
-            ProgressStatusText.Text = "Downloading update package…";
-            ProgressDetailText.Text = $"Update package for { _release.Version } (delta, ~15 KB - 5 MB) — not the full installer.";
+            ProgressStatusText.Text = isDelta ? "Downloading delta package…" : "Downloading full package…";
+            ProgressDetailText.Text = $"Update package for { _release.Version } ({desc}) — no installer needed.";
             DownloadProgressBar.Value = 0;
             ProgressPctText.Text = "0%";
-            DetailsText.Text = $"Preparing delta update to { _release.Version }…";
+            DetailsText.Text = $"Preparing {(isDelta ? "delta" : "full")} update to { _release.Version }…";
             try
             {
                 await VelopackUpdateService.DownloadUpdatesAsync(_velopackUpdate, pct =>
@@ -120,10 +126,12 @@ public partial class UpdateAvailableDialog : Window
                     {
                         DownloadProgressBar.Value = pct;
                         ProgressPctText.Text = $"{pct}%";
-                        ProgressStatusText.Text = pct < 100 ? "Downloading update package…" : "Download complete — applying…";
+                        ProgressStatusText.Text = pct < 100
+                            ? (isDelta ? "Downloading delta package…" : "Downloading full package…")
+                            : "Download complete — applying…";
                     }));
                 ProgressStatusText.Text = "Applying update…";
-                ProgressDetailText.Text = "WDM will restart automatically to apply the patch.";
+                ProgressDetailText.Text = "WDM will restart automatically to apply the update.";
                 DownloadProgressBar.Value = 100;
                 ProgressPctText.Text = "100%";
                 DetailsText.Text = "Applying update — WDM will restart…";
@@ -135,7 +143,7 @@ public partial class UpdateAvailableDialog : Window
             catch (Exception ex)
             {
                 ProgressPanel.Visibility = Visibility.Collapsed;
-                DetailsText.Text = $"Delta download failed: {ex.Message}";
+                DetailsText.Text = $"{(isDelta ? "Delta" : "Full package")} download failed: {ex.Message}";
                 InstallButton.IsEnabled = true;
                 LaterButton.IsEnabled = true;
             }
@@ -143,11 +151,11 @@ public partial class UpdateAvailableDialog : Window
         }
 
         // Fallback: full installer or delta-only handling
-        // If only update package (delta) is available and no .exe, open release page instead of failing
+        // If only update package is available and no .exe, open release page instead of failing
         if (string.IsNullOrWhiteSpace(_release.InstallerUrl) && !string.IsNullOrWhiteSpace(_release.UpdatePackageUrl))
         {
             UpdateChecker.OpenReleasesPage(_release.Url);
-            DetailsText.Text = "Full installer not yet available — opened release page. You can download the portable build there.";
+            DetailsText.Text = "Opened release page — portable build available there (Setup.exe is for new users).";
             ProgressPanel.Visibility = Visibility.Collapsed;
             InstallButton.IsEnabled = true;
             LaterButton.IsEnabled = true;

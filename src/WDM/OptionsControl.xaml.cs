@@ -64,6 +64,7 @@ public partial class OptionsControl : UserControl
         }
 
         CheckForUpdatesBox.IsChecked = s.CheckForUpdates;
+        if (AutoUpdateBox != null) AutoUpdateBox.IsChecked = s.AutoDownloadUpdates;
         CurrentVersionText.Text = UpdateChecker.CurrentVersion.ToString();
         LatestVersionText.Text = "—";
         UpdateStatusText.Text = "Click “Check now” to look for a new release on GitHub.";
@@ -109,6 +110,12 @@ public partial class OptionsControl : UserControl
     {
         if (_isInitializingAppearance || _viewModel == null) return;
         PreviewAppearance();
+        SaveCurrentSettings();
+    }
+
+    private void UpdateOption_Changed(object sender, RoutedEventArgs e)
+    {
+        if (_isInitializingAppearance || _viewModel == null) return;
         SaveCurrentSettings();
     }
 
@@ -267,6 +274,7 @@ public partial class OptionsControl : UserControl
         if (TitleSyncBox != null) s.EnableTitleSync = TitleSyncBox.IsChecked == true;
         if (RunAtStartupBox != null) s.RunAtStartup = RunAtStartupBox.IsChecked == true;
         if (CheckForUpdatesBox != null) s.CheckForUpdates = CheckForUpdatesBox.IsChecked == true;
+        if (AutoUpdateBox != null) s.AutoDownloadUpdates = AutoUpdateBox.IsChecked == true;
 
         if (DarkModeBox != null)
         {
@@ -295,7 +303,8 @@ public partial class OptionsControl : UserControl
         _velopackUpdate = null;
         try
         {
-            // Prefer Velopack delta when installed via Velopack (with fallback any-check)
+            // Prefer Velopack packages when installed via Velopack (with fallback any-check).
+            // 1 behind → delta only; 2+ behind → self-contained full nupkg. Setup.exe is new-users only.
             if (VelopackUpdateService.IsVelopackInstalled)
             {
                 var vUpdate = await VelopackUpdateService.CheckForUpdatesAsync();
@@ -305,11 +314,15 @@ public partial class OptionsControl : UserControl
                     _velopackUpdate = vUpdate;
                     var semVer = vUpdate.TargetFullRelease.Version;
                     var target = VelopackUpdateService.ToSystemVersion(semVer);
-                    LatestVersionText.Text = $"v{target} (delta)";
+                    bool isDelta = VelopackUpdateService.IsDeltaUpdate(vUpdate);
+                    string desc = VelopackUpdateService.DescribeUpdate(vUpdate);
+                    LatestVersionText.Text = $"v{target} ({(isDelta ? "delta" : "full")})";
                     OpenReleaseButton.Visibility = Visibility.Visible;
                     DownloadInstallButton.Visibility = Visibility.Visible;
-                    DownloadInstallButton.Content = "Download Delta & Restart";
-                    UpdateStatusText.Text = $"Delta update available: v{target} — patch-only (~0.17 MB), auto-restart.";
+                    DownloadInstallButton.Content = isDelta ? "Download Delta & Restart" : "Download Full & Restart";
+                    UpdateStatusText.Text = isDelta
+                        ? $"{desc} update available: v{target} — patch-only, auto-restart."
+                        : $"{desc} update available: v{target} — 2+ versions behind, full package (.NET included), auto-restart.";
                     return;
                 }
             }
@@ -322,26 +335,38 @@ public partial class OptionsControl : UserControl
             else if (_latestRelease.Version is { } version && version.CompareTo(UpdateChecker.CurrentVersion) > 0)
             {
                 LatestVersionText.Text = _latestRelease.TagName;
-                OpenReleaseButton.Visibility = Visibility.Visible;
                 DownloadInstallButton.Visibility = Visibility.Visible;
-                // Handle delta-only releases (no .exe yet) — try Velopack Any as fallback
+                // Handle delta-only releases (no .exe yet) — try Velopack as fallback.
+                // Setup.exe / portable zip are for new users only; existing Velopack installs use nupkg.
                 if (string.IsNullOrWhiteSpace(_latestRelease.InstallerUrl) && !string.IsNullOrWhiteSpace(_latestRelease.UpdatePackageUrl))
                 {
                     var anyUpdate = await VelopackUpdateService.CheckForUpdatesAnyAsync();
-                    if (anyUpdate != null)
+                    if (anyUpdate != null && VelopackUpdateService.IsVelopackInstalled)
                     {
                         _velopackUpdate = anyUpdate;
-                        DownloadInstallButton.Content = "Download Delta & Restart";
-                        UpdateStatusText.Text = $"Delta update available: {version} — patch-only, auto-restart.";
+                        bool isDelta = VelopackUpdateService.IsDeltaUpdate(anyUpdate);
+                        string desc = VelopackUpdateService.DescribeUpdate(anyUpdate);
+                        // Single primary action — hide the secondary button to avoid duplicate "Open Release Page".
+                        OpenReleaseButton.Visibility = Visibility.Collapsed;
+                        DownloadInstallButton.Content = isDelta ? "Download Delta & Restart" : "Download Full & Restart";
+                        UpdateStatusText.Text = isDelta
+                            ? $"{desc} update available: {version} — patch-only, auto-restart (no installer needed)."
+                            : $"{desc} update available: {version} — full package (.NET included), auto-restart (no installer needed).";
                     }
                     else
                     {
+                        // Non-Velopack (portable/dev) can't apply nupkg deltas — single button to the release page.
+                        // Dedupe: hide secondary button since the primary already opens the page.
+                        OpenReleaseButton.Visibility = Visibility.Collapsed;
                         DownloadInstallButton.Content = "Open Release Page";
-                        UpdateStatusText.Text = $"A new version is available: {_latestRelease.TagName} — full installer not yet uploaded, delta available. Open release page for portable.";
+                        UpdateStatusText.Text = VelopackUpdateService.IsVelopackInstalled
+                            ? $"A new version is available: {_latestRelease.TagName} — update feed unreachable, open release page (Setup.exe / portable are for new users)."
+                            : $"A new version is available: {_latestRelease.TagName} — portable install can't apply delta packages. Open release page for the new portable zip (Setup.exe is for new users).";
                     }
                 }
                 else
                 {
+                    OpenReleaseButton.Visibility = Visibility.Visible;
                     DownloadInstallButton.Content = "Download & Install";
                     UpdateStatusText.Text = $"A new version is available: {_latestRelease.TagName}." +
                         (_latestRelease.PublishedAt is { } published ? $" Published {published.ToLocalTime():yyyy-MM-dd}." : "");
@@ -373,18 +398,23 @@ public partial class OptionsControl : UserControl
 
     private async void DownloadInstallClick(object sender, RoutedEventArgs e)
     {
-        // Velopack delta path: update package ONLY, not full installer — progress bar + auto-restart
+        // Velopack path: nupkg ONLY (delta if 1 behind, self-contained full if 2+ behind).
+        // Setup.exe / portable zip are for new users only — never downloaded here.
         if (_velopackUpdate is not null)
         {
+            bool isDelta = VelopackUpdateService.IsDeltaUpdate(_velopackUpdate);
+            string desc = VelopackUpdateService.DescribeUpdate(_velopackUpdate);
             DownloadInstallButton.IsEnabled = false;
             OpenReleaseButton.IsEnabled = false;
             CheckNowButton.IsEnabled = false;
             UpdateProgressPanel.Visibility = Visibility.Visible;
             UpdateProgressBar.Value = 0;
             UpdateProgressPctText.Text = "0%";
-            UpdateProgressStatusText.Text = "Downloading update package…";
-            UpdateProgressDetailText.Text = "Only the delta package (~15 KB - 5 MB) is being downloaded, not the full installer.";
-            UpdateStatusText.Text = "Downloading update package…";
+            UpdateProgressStatusText.Text = isDelta ? "Downloading delta package…" : "Downloading full package…";
+            UpdateProgressDetailText.Text = isDelta
+                ? $"Only the {desc} is being downloaded — no installer needed."
+                : $"Downloading the {desc} — 2+ versions behind, full package required (no installer needed).";
+            UpdateStatusText.Text = isDelta ? "Downloading delta package…" : "Downloading full package…";
             try
             {
                 await VelopackUpdateService.DownloadUpdatesAsync(_velopackUpdate, pct =>
@@ -393,12 +423,14 @@ public partial class OptionsControl : UserControl
                     {
                         UpdateProgressBar.Value = pct;
                         UpdateProgressPctText.Text = $"{pct}%";
-                        UpdateProgressStatusText.Text = pct < 100 ? "Downloading update package…" : "Download complete — applying…";
-                        UpdateStatusText.Text = $"Downloading update package… {pct}%";
+                        UpdateProgressStatusText.Text = pct < 100
+                            ? (isDelta ? "Downloading delta package…" : "Downloading full package…")
+                            : "Download complete — applying…";
+                        UpdateStatusText.Text = $"{(isDelta ? "Downloading delta package…" : "Downloading full package…")} {pct}%";
                     });
                 });
                 UpdateProgressStatusText.Text = "Applying update…";
-                UpdateProgressDetailText.Text = "WDM will restart automatically to apply the patch.";
+                UpdateProgressDetailText.Text = "WDM will restart automatically to apply the update.";
                 UpdateProgressBar.Value = 100;
                 UpdateProgressPctText.Text = "100%";
                 UpdateStatusText.Text = "Update downloaded — applying and restarting…";
@@ -408,7 +440,7 @@ public partial class OptionsControl : UserControl
             catch (Exception ex)
             {
                 UpdateProgressPanel.Visibility = Visibility.Collapsed;
-                UpdateStatusText.Text = $"Delta download failed: {ex.Message}";
+                UpdateStatusText.Text = $"{(isDelta ? "Delta" : "Full package")} download failed: {ex.Message}";
                 DownloadInstallButton.IsEnabled = true;
                 OpenReleaseButton.IsEnabled = true;
                 CheckNowButton.IsEnabled = true;
@@ -418,6 +450,15 @@ public partial class OptionsControl : UserControl
 
         if (_latestRelease is null)
             return;
+
+        // No trusted installer asset (delta-only release, or portable install that can't
+        // apply nupkg) — the primary button acts as "Open Release Page" in this state.
+        if (string.IsNullOrWhiteSpace(_latestRelease.InstallerUrl))
+        {
+            UpdateChecker.OpenReleasesPage(_latestRelease.Url);
+            UpdateStatusText.Text = "Opened release page — portable build available there (Setup.exe is for new users).";
+            return;
+        }
 
         DownloadInstallButton.IsEnabled = false;
         OpenReleaseButton.IsEnabled = false;

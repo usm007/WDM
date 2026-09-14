@@ -51,7 +51,7 @@ public partial class AboutDialog : Window
         DefaultStrip.Visibility = Visibility.Visible;
         try
         {
-            // Velopack install → delta-only (truly silent); never fall back to Setup.exe which shows the "already installed" prompt
+            // Velopack install → nupkg only (truly silent); never fall back to Setup.exe which shows the "already installed" prompt
             if (VelopackUpdateService.IsVelopackInstalled)
             {
                 var vUpdate = await VelopackUpdateService.CheckForUpdatesAsync()
@@ -60,7 +60,9 @@ public partial class AboutDialog : Window
                 {
                     var semVer = vUpdate.TargetFullRelease.Version;
                     var target = VelopackUpdateService.ToSystemVersion(semVer);
-                    var synthetic = new ReleaseInfo($"v{target}", target, $"WDM {target}", $"https://github.com/usm007/WDM/releases/tag/v{target}", $"Delta update to {target} (patch-only).", DateTime.UtcNow, null);
+                    bool isDelta = VelopackUpdateService.IsDeltaUpdate(vUpdate);
+                    string desc = VelopackUpdateService.DescribeUpdate(vUpdate);
+                    var synthetic = new ReleaseInfo($"v{target}", target, $"WDM {target}", $"https://github.com/usm007/WDM/releases/tag/v{target}", $"{desc} update to {target} ({(isDelta ? "1 behind, patch-only" : "2+ behind, .NET included")}).", DateTime.UtcNow, null);
                     UpdateStatusText.Text = "";
                     ShowInlineUpdate(synthetic, vUpdate);
                     return;
@@ -143,18 +145,22 @@ public partial class AboutDialog : Window
 
         if (velopackUpdate is not null)
         {
-            InlineStatusText.Text = $"Delta (~2-5 MB){notesSuffix} — {warn}";
-            InlineProgressDetailText.Text = $"Delta update for {release.Version} — not the full installer.";
-            InlineProgressStatusText.Text = "Downloading update package…";
-            InlineInstallButton.Content = "Download & Install";
+            bool isDelta = VelopackUpdateService.IsDeltaUpdate(velopackUpdate);
+            string desc = VelopackUpdateService.DescribeUpdate(velopackUpdate);
+            InlineStatusText.Text = $"{desc}{notesSuffix} — {warn}";
+            InlineProgressDetailText.Text = isDelta
+                ? $"Delta update for {release.Version} — no installer needed."
+                : $"Full package for {release.Version} (.NET included) — no installer needed.";
+            InlineProgressStatusText.Text = isDelta ? "Downloading delta package…" : "Downloading full package…";
+            InlineInstallButton.Content = isDelta ? "Download Delta & Restart" : "Download Full & Restart";
         }
         else if (string.IsNullOrWhiteSpace(release.InstallerUrl) && !string.IsNullOrWhiteSpace(release.UpdatePackageUrl))
         {
             // Delta-only release (no .exe yet): same as Settings > Updates —
             // offer Download & Install, resolved to Velopack on click if needed.
             // Never show "Open Release Page" on Velopack installs.
-            InlineStatusText.Text = $"Delta update ready{notesSuffix} — {warn}";
-            InlineProgressDetailText.Text = $"Delta update for {release.Version} — not the full installer.";
+            InlineStatusText.Text = $"Update package ready{notesSuffix} — {warn}";
+            InlineProgressDetailText.Text = $"Update package for {release.Version} — no installer needed (Setup.exe is for new users).";
             InlineProgressStatusText.Text = "Downloading update package…";
             InlineInstallButton.Content = "Download & Install";
         }
@@ -245,13 +251,15 @@ public partial class AboutDialog : Window
         InlineInstallButton.Content = "Download & Install";
         _isDownloading = true;
 
-        // Velopack delta path
+        // Velopack path: delta if 1 behind, self-contained full nupkg if 2+ behind.
         if (_inlineVelopack is not null)
         {
+            bool isDelta = VelopackUpdateService.IsDeltaUpdate(_inlineVelopack);
+            string desc = VelopackUpdateService.DescribeUpdate(_inlineVelopack);
             InlineStatusText.Visibility = Visibility.Collapsed;
             InlineProgressPanel.Visibility = Visibility.Visible;
-            InlineProgressStatusText.Text = "Downloading update package…";
-            InlineProgressDetailText.Text = $"Update package for {_inlineRelease.Version} (delta, ~15 KB - 5 MB) — not the full installer.";
+            InlineProgressStatusText.Text = isDelta ? "Downloading delta package…" : "Downloading full package…";
+            InlineProgressDetailText.Text = $"Update package for {_inlineRelease.Version} ({desc}) — no installer needed.";
             InlineDownloadProgressBar.Value = 0;
             InlineProgressPctText.Text = "0%";
             try
@@ -261,10 +269,12 @@ public partial class AboutDialog : Window
                     {
                         InlineDownloadProgressBar.Value = pct;
                         InlineProgressPctText.Text = $"{pct}%";
-                        InlineProgressStatusText.Text = pct < 100 ? "Downloading update package…" : "Download complete — applying…";
+                        InlineProgressStatusText.Text = pct < 100
+                            ? (isDelta ? "Downloading delta package…" : "Downloading full package…")
+                            : "Download complete — applying…";
                     }));
                 InlineProgressStatusText.Text = "Applying update…";
-                InlineProgressDetailText.Text = "WDM will restart automatically to apply the patch.";
+                InlineProgressDetailText.Text = "WDM will restart automatically to apply the update.";
                 InlineDownloadProgressBar.Value = 100;
                 InlineProgressPctText.Text = "100%";
                 await Task.Delay(600);
@@ -276,7 +286,7 @@ public partial class AboutDialog : Window
                 _isDownloading = false;
                 InlineProgressPanel.Visibility = Visibility.Collapsed;
                 InlineStatusText.Visibility = Visibility.Visible;
-                InlineStatusText.Text = $"Delta download failed: {ex.Message}";
+                InlineStatusText.Text = $"{(isDelta ? "Delta" : "Full package")} download failed: {ex.Message}";
                 InlineLaterButton.IsEnabled = true;
                 InlineInstallButton.IsEnabled = true;
             }

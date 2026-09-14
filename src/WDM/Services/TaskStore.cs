@@ -40,6 +40,10 @@ public sealed class AppSettings
     // Updates
     public bool CheckForUpdates { get; set; } = true;
     public string? LastUpdateCheckUtc { get; set; }
+    /// <summary>When true and the install is Velopack-managed, a found update is
+    /// downloaded and applied automatically at startup (restart without asking).
+    /// Full Setup.exe / portable zip are never auto-run — new users only.</summary>
+    public bool AutoDownloadUpdates { get; set; } = false;
 
     // Automatic retry
     public int MaxRetries { get; set; } = 3;

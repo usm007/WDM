@@ -474,7 +474,8 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
         if (lastCheck is not null && DateTime.UtcNow - lastCheck < TimeSpan.FromMinutes(15))
             return;
 
-        // 1) Velopack → delta-only (never runs Setup.exe which shows the "already installed" dialog)
+        // 1) Velopack → nupkg only (delta if 1 behind, self-contained full if 2+ behind).
+        // Never runs Setup.exe (new users only) which shows the "already installed" dialog.
         if (VelopackUpdateService.IsVelopackInstalled)
         {
             try
@@ -486,9 +487,25 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
                 {
                     settings.LastUpdateCheckUtc = DateTime.UtcNow.ToString("O");
                     _viewModel.PersistSettings();
+                    // Automatic install option: download + restart without asking (Velopack only).
+                    if (settings.AutoDownloadUpdates)
+                    {
+                        _ = Task.Run(async () =>
+                        {
+                            try
+                            {
+                                await VelopackUpdateService.DownloadUpdatesAsync(velopackUpdate, null);
+                                _ = _dispatcher.BeginInvoke(() => VelopackUpdateService.ApplyAndRestart(velopackUpdate.TargetFullRelease));
+                            }
+                            catch { }
+                        });
+                        return;
+                    }
                     var semVer = velopackUpdate.TargetFullRelease.Version;
                     var target = VelopackUpdateService.ToSystemVersion(semVer);
-                    var synthetic = new ReleaseInfo($"v{target}", target, $"WDM {target}", $"https://github.com/usm007/WDM/releases/tag/v{target}", $"Delta update to {target} (patch-only).", DateTime.UtcNow, null);
+                    bool isDelta = VelopackUpdateService.IsDeltaUpdate(velopackUpdate);
+                    string desc = VelopackUpdateService.DescribeUpdate(velopackUpdate);
+                    var synthetic = new ReleaseInfo($"v{target}", target, $"WDM {target}", $"https://github.com/usm007/WDM/releases/tag/v{target}", $"{desc} update to {target} ({(isDelta ? "1 behind, patch-only" : "2+ behind, .NET included")}).", DateTime.UtcNow, null);
                     _ = _dispatcher.BeginInvoke(() =>
                     {
                         try
@@ -509,8 +526,8 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
                     _viewModel.PersistSettings();
                     if (fallback?.Version is not null && fallback.Version.CompareTo(UpdateChecker.CurrentVersion) > 0)
                     {
-                        // Delta-only release: attach Velopack info now so the About
-                        // dialog offers Download & Install (same as Settings).
+                        // Nupkg-only release (no Setup.exe yet): attach Velopack info now so the About
+                        // dialog offers Download & Install (same as Settings). Setup.exe is new-users only.
                         object? pendingVelo = null;
                         if (string.IsNullOrWhiteSpace(fallback.InstallerUrl) && !string.IsNullOrWhiteSpace(fallback.UpdatePackageUrl))
                         {
@@ -518,7 +535,24 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
                             {
                                 var any = await VelopackUpdateService.CheckForUpdatesAsync()
                                     ?? await VelopackUpdateService.CheckForUpdatesAnyAsync();
-                                if (any is not null) pendingVelo = any;
+                                if (any is not null)
+                                {
+                                    if (settings.AutoDownloadUpdates)
+                                    {
+                                        var auto = any;
+                                        _ = Task.Run(async () =>
+                                        {
+                                            try
+                                            {
+                                                await VelopackUpdateService.DownloadUpdatesAsync(auto, null);
+                                                _ = _dispatcher.BeginInvoke(() => VelopackUpdateService.ApplyAndRestart(auto.TargetFullRelease));
+                                            }
+                                            catch { }
+                                        });
+                                        return;
+                                    }
+                                    pendingVelo = any;
+                                }
                             }
                             catch { }
                         }

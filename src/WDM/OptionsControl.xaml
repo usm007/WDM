@@ -519,7 +519,17 @@
                                     <TextBlock Text="Query GitHub for new releases when WDM starts." FontSize="11.5" Foreground="{DynamicResource Brush.TextMuted}" Margin="0,2,0,0" />
                                 </StackPanel>
                             </ui:CardControl.Header>
-                            <ui:ToggleSwitch x:Name="CheckForUpdatesBox" />
+                            <ui:ToggleSwitch x:Name="CheckForUpdatesBox" Checked="UpdateOption_Changed" Unchecked="UpdateOption_Changed" />
+                        </ui:CardControl>
+
+                        <ui:CardControl Margin="0,0,0,12">
+                            <ui:CardControl.Header>
+                                <StackPanel>
+                                    <TextBlock Text="Install updates automatically" FontWeight="Medium" FontSize="13" Foreground="{DynamicResource Brush.Text}" />
+                                    <TextBlock Text="1 behind: delta only. 2+ behind: full package (.NET included). Restarts WDM without asking. Setup.exe / portable zip are for new users only." FontSize="11.5" Foreground="{DynamicResource Brush.TextMuted}" Margin="0,2,0,0" TextWrapping="Wrap" />
+                                </StackPanel>
+                            </ui:CardControl.Header>
+                            <ui:ToggleSwitch x:Name="AutoUpdateBox" Checked="UpdateOption_Changed" Unchecked="UpdateOption_Changed" />
                         </ui:CardControl>
 
                         <TextBlock Text="Version status" FontSize="12.5" FontWeight="SemiBold" Foreground="{DynamicResource Brush.TextDim}" Margin="0,4,0,6" />
@@ -558,7 +568,7 @@
                                             <TextBlock x:Name="UpdateProgressPctText" Grid.Column="1" Text="0%" FontSize="11.5" FontFamily="{StaticResource Font.App}" FontWeight="SemiBold" Foreground="{DynamicResource Brush.Accent}" VerticalAlignment="Center" TextAlignment="Right" MinWidth="44" Margin="8,0,0,0" />
                                         </Grid>
                                         <ProgressBar x:Name="UpdateProgressBar" Style="{StaticResource ProgressBar.Thin}" Height="6" Minimum="0" Maximum="100" Value="0" Margin="0,6,0,2" Foreground="{DynamicResource Brush.Accent}" />
-                                        <TextBlock x:Name="UpdateProgressDetailText" Text="Only the update package is being downloaded (~15 KB delta), not the full installer." FontSize="10.5" Foreground="{DynamicResource Brush.TextMuted}" Margin="0,4,0,0" TextWrapping="Wrap" />
+                                        <TextBlock x:Name="UpdateProgressDetailText" Text="Only the update package is downloaded (delta if 1 behind, full with .NET if 2+ behind). Setup.exe is for new users only." FontSize="10.5" Foreground="{DynamicResource Brush.TextMuted}" Margin="0,4,0,0" TextWrapping="Wrap" />
                                     </StackPanel>
                                 </Border>
 

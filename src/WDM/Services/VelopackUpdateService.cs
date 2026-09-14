@@ -10,11 +10,20 @@ namespace WDM.Services;
 /// Uses GitHub Releases as the update feed (nupkg + RELEASES assets).
 /// When the app is NOT installed via Velopack (dev build, Inno-only portable), all
 /// methods gracefully fall back to <see cref="UpdateChecker"/> full-installer flow.
-/// Delta packages are ~1-5 MB vs full ~60 MB and apply silently without wizard.
+/// Update policy: 1 version behind → delta nupkg only (~0.2-5 MB);
+/// 2+ versions behind → self-contained full nupkg (with .NET, ~70 MB+).
+/// Full Setup.exe / portable zip are for new users only and are never auto-downloaded.
 /// </summary>
 public static class VelopackUpdateService
 {
     private const string RepoUrl = "https://github.com/usm007/WDM";
+
+    /// <summary>Which package Velopack will download for an update.</summary>
+    public enum UpdatePackageKind
+    {
+        Delta,
+        Full,
+    }
 
     /// <summary>True when running from a Velopack-installed location (not dev/Inno portable).</summary>
     public static bool IsVelopackInstalled
@@ -161,6 +170,42 @@ public static class VelopackUpdateService
         }
     }
 
+    /// <summary>Inspects an update: exactly 1 delta → <see cref="UpdatePackageKind.Delta"/>,
+    /// otherwise (0 or 2+ deltas) → <see cref="UpdatePackageKind.Full"/> (self-contained full nupkg).</summary>
+    public static UpdatePackageKind GetUpdateKind(UpdateInfo? update)
+    {
+        try
+        {
+            if (update?.DeltasToTarget is { Length: 1 })
+                return UpdatePackageKind.Delta;
+        }
+        catch { }
+        return UpdatePackageKind.Full;
+    }
+
+    /// <summary>True when the update will download only the small delta package (1 version behind).</summary>
+    public static bool IsDeltaUpdate(UpdateInfo? update) => GetUpdateKind(update) == UpdatePackageKind.Delta;
+
+    /// <summary>Human-readable size, e.g. 0.17 MB / 72.4 MB.</summary>
+    public static string FormatSizeMb(long bytes) => $"{bytes / 1048576.0:F2} MB";
+
+    /// <summary>Short label for UI: "Delta (~X MB)" or "Full (~Y MB, .NET included)".
+    /// Full nupkg is self-contained (bundles .NET) — never the small framework-only package.</summary>
+    public static string DescribeUpdate(UpdateInfo update)
+    {
+        try
+        {
+            if (IsDeltaUpdate(update))
+            {
+                long deltaBytes = update.DeltasToTarget[0]?.Size ?? 0;
+                return deltaBytes > 0 ? $"Delta (~{FormatSizeMb(deltaBytes)})" : "Delta (patch-only)";
+            }
+            long fullBytes = update.TargetFullRelease?.Size ?? 0;
+            return fullBytes > 0 ? $"Full (~{FormatSizeMb(fullBytes)}, .NET included)" : "Full (with .NET)";
+        }
+        catch { return "update package"; }
+    }
+
     private static UpdateManager CreateManager()
     {
         var downloader = new SharedHttpDownloader();
@@ -168,7 +213,8 @@ public static class VelopackUpdateService
         var options = new UpdateOptions
         {
             AllowVersionDowngrade = false,
-            MaximumDeltasBeforeFallback = 10,
+            // 1 version behind → delta only; 2+ behind → self-contained full nupkg.
+            MaximumDeltasBeforeFallback = 1,
         };
         return new UpdateManager(source, options);
     }
@@ -206,15 +252,18 @@ public static class VelopackUpdateService
         var normal = await CheckForUpdatesAsync(ct).ConfigureAwait(false);
         if (normal != null) return normal;
 
-        // Fallback: use Test locator with current assembly version to query GitHub feed directly
-        var currentVer = UpdateChecker.CurrentVersion.ToString();
+        // Fallback: use Test locator with current assembly version to query GitHub feed directly.
+        // Velopack versions are 3-part (2.7.1) while the assembly is 4-part (2.7.1.0) — normalize.
+        var asm = UpdateChecker.CurrentVersion;
+        var currentVer = $"{asm.Major}.{asm.Minor}.{asm.Build}";
         var tempDir = Path.Combine(Path.GetTempPath(), "WDM_Velopack_Check");
         try
         {
             Directory.CreateDirectory(tempDir);
             var locator = new Velopack.Locators.TestVelopackLocator("WDM", currentVer, tempDir, null);
-            var source = new GithubSource(RepoUrl, null, false);
-            var options = new UpdateOptions { MaximumDeltasBeforeFallback = 10 };
+            var downloader = new SharedHttpDownloader();
+            var source = new GithubSource(RepoUrl, null, false, downloader);
+            var options = new UpdateOptions { MaximumDeltasBeforeFallback = 1 };
             var mgr = new UpdateManager(source, options, locator);
             var info = await mgr.CheckForUpdatesAsync().ConfigureAwait(false);
             return info;
