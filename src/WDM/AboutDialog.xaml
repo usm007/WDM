@@ -78,53 +78,55 @@
                             <RowDefinition Height="Auto" />
                         </Grid.RowDefinitions>
 
-                        <!-- Header: icon + title + close X (matches screenshot) -->
-                        <DockPanel Grid.Row="0" Margin="14,12,10,0" LastChildFill="True">
-                            <Button DockPanel.Dock="Right" Style="{StaticResource Button.DialogClose}"
-                                    Click="InlineDismissClick" VerticalAlignment="Center" Margin="6,-4,-4,0" Width="22" Height="22"/>
-                            <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                                <ui:SymbolIcon Symbol="ArrowDownload24" FontSize="18"
-                                               Foreground="{DynamicResource Brush.Accent}" Margin="0,0,8,0" VerticalAlignment="Center" />
-                                <TextBlock Text="A New Version is Available" FontSize="15" FontWeight="SemiBold"
-                                           Foreground="{DynamicResource Brush.Text}" VerticalAlignment="Center" />
-                            </StackPanel>
-                        </DockPanel>
+                        <!-- Header: icon + title (dismiss via Later / window close — no redundant inner X) -->
+                        <StackPanel Grid.Row="0" Orientation="Horizontal" Margin="14,12,14,0" VerticalAlignment="Center">
+                            <ui:SymbolIcon Symbol="ArrowDownload24" FontSize="18"
+                                            Foreground="{DynamicResource Brush.Accent}" Margin="0,0,8,0" VerticalAlignment="Center" />
+                            <TextBlock Text="A New Version is Available" FontSize="15" FontWeight="SemiBold"
+                                        Foreground="{DynamicResource Brush.Text}" VerticalAlignment="Center" />
+                        </StackPanel>
 
                         <!-- Version line -->
-                        <TextBlock x:Name="InlineVersionLine" Grid.Row="1" Margin="14,6,14,0"
-                                   FontSize="12.5" FontFamily="{StaticResource Font.App}"
-                                   Foreground="{DynamicResource Brush.Accent}" Text="WDM 2.5.9 is available"/>
+                        <TextBlock x:Name="InlineVersionLine" Grid.Row="1" Margin="14,4,14,0"
+                                    FontSize="12.5" FontFamily="{StaticResource Font.App}"
+                                    Foreground="{DynamicResource Brush.Accent}" Text="WDM 2.5.9 is available"/>
 
                         <!-- Status / details -->
-                        <TextBlock x:Name="InlineStatusText" Grid.Row="2" Margin="14,6,14,10"
-                                   FontSize="12" Foreground="{DynamicResource Brush.TextMuted}"
-                                   TextWrapping="Wrap" LineHeight="15"
-                                   Text="Downloading the full installer..."/>
+                        <TextBlock x:Name="InlineStatusText" Grid.Row="2" Margin="14,6,14,12"
+                                    FontSize="12" Foreground="{DynamicResource Brush.TextMuted}"
+                                    TextWrapping="Wrap" LineHeight="15"
+                                    Text="Downloading the full installer…"/>
 
                         <!-- Progress area — becomes visible during download, matches screenshot card -->
                         <Border x:Name="InlineProgressPanel" Grid.Row="2" Visibility="Collapsed"
-                                Background="{DynamicResource Brush.SurfaceAlt}"
-                                BorderBrush="{DynamicResource Brush.Border}"
-                                BorderThickness="1" CornerRadius="4" Padding="10,8" Margin="14,0,14,10">
+                                 Background="{DynamicResource Brush.Surface}"
+                                 BorderBrush="{DynamicResource Brush.Border}"
+                                 BorderThickness="1" CornerRadius="6" Padding="12,10" Margin="14,8,14,12">
                             <StackPanel>
-                                <DockPanel Margin="0,0,0,4">
+                                <Grid Margin="0,0,0,2">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
                                     <TextBlock x:Name="InlineProgressStatusText"
-                                               Text="Downloading full installer..." FontSize="11.5" FontWeight="SemiBold"
-                                               Foreground="{DynamicResource Brush.Text}" DockPanel.Dock="Left"
-                                               VerticalAlignment="Center"/>
+                                                Grid.Column="0"
+                                                Text="Downloading full installer…" FontSize="11.5" FontWeight="SemiBold"
+                                                Foreground="{DynamicResource Brush.Text}"
+                                                VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
                                     <TextBlock x:Name="InlineProgressPctText"
-                                               Text="27%" FontSize="11.5" FontFamily="{StaticResource Font.App}" FontWeight="SemiBold"
-                                               Foreground="{DynamicResource Brush.Accent}" DockPanel.Dock="Right"
-                                               VerticalAlignment="Center"/>
-                                </DockPanel>
+                                                Grid.Column="1"
+                                                Text="27%" FontSize="11.5" FontFamily="{StaticResource Font.App}" FontWeight="SemiBold"
+                                                Foreground="{DynamicResource Brush.Accent}"
+                                                VerticalAlignment="Center" TextAlignment="Right" MinWidth="44" Margin="8,0,0,0"/>
+                                </Grid>
                                 <ProgressBar x:Name="InlineDownloadProgressBar"
-                                             Style="{StaticResource ProgressBar.Thin}"
-                                             Height="4" Minimum="0" Maximum="100" Value="27"
-                                             Foreground="{DynamicResource Brush.Accent}" />
+                                              Style="{StaticResource ProgressBar.Thin}"
+                                              Height="6" Minimum="0" Maximum="100" Value="27" Margin="0,6,0,2"
+                                              Foreground="{DynamicResource Brush.Accent}" />
                                 <TextBlock x:Name="InlineProgressDetailText"
-                                           Text="Downloading full installer package for this release."
-                                           FontSize="10.5" Foreground="{DynamicResource Brush.TextMuted}"
-                                           Margin="0,4,0,0" TextWrapping="Wrap"/>
+                                            Text="Downloading full installer package for this release."
+                                            FontSize="10.5" Foreground="{DynamicResource Brush.TextMuted}"
+                                            Margin="0,4,0,0" TextWrapping="Wrap"/>
                             </StackPanel>
                         </Border>
 
@@ -148,9 +150,11 @@
                                    VerticalAlignment="Center" Margin="0,0,8,0" />
                         <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
                             <ui:Button x:Name="CheckUpdateButton" Content="Check for updates" Appearance="Secondary"
-                                       MinWidth="110" Height="32" Margin="0,0,8,0" Click="CheckUpdateClick" />
+                                       Style="{StaticResource Button.SecondaryAction}"
+                                        MinWidth="110" Height="32" Margin="0,0,8,0" Click="CheckUpdateClick" />
                             <ui:Button Content="Close" Appearance="Primary" IsDefault="True" IsCancel="True"
-                                       MinWidth="75" Height="32" Click="CloseClick" />
+                                       Style="{StaticResource Button.PrimaryAction}"
+                                        MinWidth="75" Height="32" Click="CloseClick" />
                         </StackPanel>
                     </Grid>
 
@@ -162,9 +166,11 @@
                         </Grid.ColumnDefinitions>
                         <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center" HorizontalAlignment="Right">
                             <ui:Button x:Name="InlineLaterButton" Content="Later" Appearance="Secondary"
-                                       MinWidth="85" Height="32" Margin="0,0,8,0" Click="InlineDismissClick"/>
+                                       Style="{StaticResource Button.SecondaryAction}"
+                                        MinWidth="85" Height="32" Margin="0,0,8,0" Click="InlineDismissClick"/>
                             <ui:Button x:Name="InlineInstallButton" Content="Download &amp; Install" Appearance="Primary"
-                                       MinWidth="140" Height="32" IsDefault="True" Click="InlineInstallClick"/>
+                                       Style="{StaticResource Button.PrimaryAction}"
+                                        MinWidth="140" Height="32" IsDefault="True" Click="InlineInstallClick"/>
                         </StackPanel>
                     </Grid>
                 </Grid>

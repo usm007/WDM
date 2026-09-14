@@ -501,10 +501,47 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
                     });
                     return;
                 }
-                // No delta — don't fall back to Setup.exe (would show modal); just record check and exit
-                settings.LastUpdateCheckUtc = DateTime.UtcNow.ToString("O");
-                _viewModel.PersistSettings();
-                return;
+                // No delta — fall back to GitHub full installer so the About icon still offers Download & Install
+                try
+                {
+                    var fallback = await UpdateChecker.CheckLatestAsync();
+                    settings.LastUpdateCheckUtc = DateTime.UtcNow.ToString("O");
+                    _viewModel.PersistSettings();
+                    if (fallback?.Version is not null && fallback.Version.CompareTo(UpdateChecker.CurrentVersion) > 0)
+                    {
+                        // Delta-only release: attach Velopack info now so the About
+                        // dialog offers Download & Install (same as Settings).
+                        object? pendingVelo = null;
+                        if (string.IsNullOrWhiteSpace(fallback.InstallerUrl) && !string.IsNullOrWhiteSpace(fallback.UpdatePackageUrl))
+                        {
+                            try
+                            {
+                                var any = await VelopackUpdateService.CheckForUpdatesAsync()
+                                    ?? await VelopackUpdateService.CheckForUpdatesAnyAsync();
+                                if (any is not null) pendingVelo = any;
+                            }
+                            catch { }
+                        }
+                        var captured = pendingVelo;
+                        _ = _dispatcher.BeginInvoke(() =>
+                        {
+                            try
+                            {
+                                _viewModel.PendingRelease = fallback;
+                                _viewModel.PendingVelopack = captured;
+                                _viewModel.IsUpdateAvailable = true;
+                            }
+                            catch { }
+                        });
+                    }
+                    return;
+                }
+                catch
+                {
+                    settings.LastUpdateCheckUtc = DateTime.UtcNow.ToString("O");
+                    _viewModel.PersistSettings();
+                    return;
+                }
             }
             catch
             {

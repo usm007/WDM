@@ -67,21 +67,31 @@ public static class UpdateChecker
         if (!release.TryGetProperty("assets", out var assets) || assets.ValueKind != JsonValueKind.Array)
             return null;
 
+        string? fallback = null;
         foreach (var asset in assets.EnumerateArray())
         {
             if (!asset.TryGetProperty("name", out var n) || n.GetString() is not string name)
                 continue;
-            // Strict naming: only our own setup asset, not any random .exe.
-            if (!name.StartsWith("WDM_Setup_", StringComparison.OrdinalIgnoreCase) ||
-                !name.EndsWith(".exe", StringComparison.OrdinalIgnoreCase))
+            if (!name.EndsWith(".exe", StringComparison.OrdinalIgnoreCase))
+                continue;
+            // Only our own setup assets, not any random .exe.
+            // Matches both legacy (WDM_Setup_x.exe) and current (WDM-Full-Setup-x.exe) naming.
+            bool isSetup = name.StartsWith("WDM_Setup_", StringComparison.OrdinalIgnoreCase)
+                || name.StartsWith("WDM-Full-Setup", StringComparison.OrdinalIgnoreCase)
+                || (name.StartsWith("WDM", StringComparison.OrdinalIgnoreCase)
+                    && name.Contains("Setup", StringComparison.OrdinalIgnoreCase));
+            if (!isSetup)
                 continue;
             if (asset.TryGetProperty("browser_download_url", out var u) &&
                 u.GetString() is string dl && IsTrustedDownloadUrl(dl))
             {
-                return dl;
+                // Prefer the legacy exact name; otherwise keep first setup match as fallback.
+                if (name.StartsWith("WDM_Setup_", StringComparison.OrdinalIgnoreCase))
+                    return dl;
+                fallback ??= dl;
             }
         }
-        return null;
+        return fallback;
     }
 
     /// <summary>Picks the update package (.nupkg delta/full) for Velopack.</summary>

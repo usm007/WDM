@@ -65,11 +65,20 @@ public partial class AboutDialog : Window
                     ShowInlineUpdate(synthetic, vUpdate);
                     return;
                 }
-                // No delta found — don't offer Setup.exe (would show the modal in the screenshot); delta will appear shortly
+                // No delta found via fast path — fall back to GitHub release.
+                // Same as Settings > Updates: delta-only releases (no .exe yet) resolve
+                // the Velopack feed so the button downloads + installs instead of
+                // opening the release page.
                 var check = await UpdateChecker.CheckLatestAsync();
                 if (check?.Version is { } cv && cv.CompareTo(UpdateChecker.CurrentVersion) > 0)
                 {
-                    UpdateStatusText.Text = $"WDM {cv} is available — delta is being prepared, please try again shortly.";
+                    Velopack.UpdateInfo? any = null;
+                    if (string.IsNullOrWhiteSpace(check.InstallerUrl) && !string.IsNullOrWhiteSpace(check.UpdatePackageUrl))
+                    {
+                        try { any = await VelopackUpdateService.CheckForUpdatesAnyAsync(); } catch { }
+                    }
+                    UpdateStatusText.Text = "";
+                    ShowInlineUpdate(check, any);
                     return;
                 }
                 UpdateStatusText.Text = "You are running the latest version.";
@@ -141,13 +150,18 @@ public partial class AboutDialog : Window
         }
         else if (string.IsNullOrWhiteSpace(release.InstallerUrl) && !string.IsNullOrWhiteSpace(release.UpdatePackageUrl))
         {
-            InlineStatusText.Text = $"Update package ready{notesSuffix} — {warn}";
-            InlineInstallButton.Content = "Open Release Page";
+            // Delta-only release (no .exe yet): same as Settings > Updates —
+            // offer Download & Install, resolved to Velopack on click if needed.
+            // Never show "Open Release Page" on Velopack installs.
+            InlineStatusText.Text = $"Delta update ready{notesSuffix} — {warn}";
+            InlineProgressDetailText.Text = $"Delta update for {release.Version} — not the full installer.";
+            InlineProgressStatusText.Text = "Downloading update package…";
+            InlineInstallButton.Content = "Download & Install";
         }
         else
         {
             InlineStatusText.Text = string.IsNullOrWhiteSpace(notes) ? warn : $"{notes} — {warn}";
-            InlineProgressStatusText.Text = "Downloading full installer...";
+            InlineProgressStatusText.Text = "Downloading full installer…";
             InlineProgressDetailText.Text = "Downloading full installer package for this release.";
             InlineInstallButton.Content = "Download & Install";
         }
@@ -181,23 +195,54 @@ public partial class AboutDialog : Window
     {
         if (_inlineRelease is null) return;
 
-        // Delta-only but no installer -> open release page
+        // Delta-only release with no resolved Velopack info yet (e.g. opened via
+        // auto-check badge): resolve the feed now, same as Settings > Updates.
+        // Never sends the user to the browser on Velopack installs.
         if (_inlineVelopack is null && string.IsNullOrWhiteSpace(_inlineRelease.InstallerUrl) && !string.IsNullOrWhiteSpace(_inlineRelease.UpdatePackageUrl))
         {
-            UpdateChecker.OpenReleasesPage(_inlineRelease.Url);
-            InlineStatusText.Text = "Opened release page — portable build available there.";
-            return;
-        }
-
-        // If button was turned into "Open Release Page" after a failure, open it
-        if (InlineInstallButton.Content is string c && c == "Open Release Page")
-        {
-            UpdateChecker.OpenReleasesPage(_inlineRelease.Url);
-            return;
+            // Portable / non-Velopack builds can't apply deltas — the portable
+            // zip lives on the release page, so the browser is the only option.
+            if (!VelopackUpdateService.IsVelopackInstalled)
+            {
+                UpdateChecker.OpenReleasesPage(_inlineRelease.Url);
+                InlineStatusText.Text = "Opened release page — portable build available there.";
+                return;
+            }
+            InlineLaterButton.IsEnabled = false;
+            InlineInstallButton.IsEnabled = false;
+            InlineStatusText.Text = "Resolving delta update…";
+            try
+            {
+                var resolved = await VelopackUpdateService.CheckForUpdatesAsync()
+                    ?? await VelopackUpdateService.CheckForUpdatesAnyAsync();
+                if (resolved is not null)
+                {
+                    _inlineVelopack = resolved;
+                }
+                else
+                {
+                    InlineStatusText.Text = "Could not resolve delta update — check connection and try again.";
+                    InlineLaterButton.IsEnabled = true;
+                    InlineInstallButton.IsEnabled = true;
+                    InlineInstallButton.Content = "Download & Install";
+                    return;
+                }
+            }
+            catch (Exception ex)
+            {
+                InlineStatusText.Text = $"Could not resolve delta update: {ex.Message} — try again.";
+                InlineLaterButton.IsEnabled = true;
+                InlineInstallButton.IsEnabled = true;
+                InlineInstallButton.Content = "Download & Install";
+                return;
+            }
+            InlineLaterButton.IsEnabled = true;
+            InlineInstallButton.IsEnabled = true;
         }
 
         InlineLaterButton.IsEnabled = false;
         InlineInstallButton.IsEnabled = false;
+        InlineInstallButton.Content = "Download & Install";
         _isDownloading = true;
 
         // Velopack delta path
@@ -241,7 +286,7 @@ public partial class AboutDialog : Window
         // Full installer path
         InlineStatusText.Visibility = Visibility.Collapsed;
         InlineProgressPanel.Visibility = Visibility.Visible;
-        InlineProgressStatusText.Text = "Downloading full installer...";
+        InlineProgressStatusText.Text = "Downloading full installer…";
         InlineProgressDetailText.Text = "Downloading full installer package for this release.";
         InlineDownloadProgressBar.Value = 0;
         InlineProgressPctText.Text = "0%";
@@ -253,7 +298,7 @@ public partial class AboutDialog : Window
                     int pct = (int)Math.Round(progress * 100);
                     InlineDownloadProgressBar.Value = pct;
                     InlineProgressPctText.Text = $"{pct}%";
-                    InlineProgressStatusText.Text = "Downloading full installer...";
+                    InlineProgressStatusText.Text = "Downloading full installer…";
                 }));
             InlineProgressStatusText.Text = "Launching installer…";
             InlineDownloadProgressBar.Value = 100;
@@ -266,10 +311,10 @@ public partial class AboutDialog : Window
             _isDownloading = false;
             InlineProgressPanel.Visibility = Visibility.Collapsed;
             InlineStatusText.Visibility = Visibility.Visible;
-            InlineStatusText.Text = $"Download failed: {ex.Message} — try again or open the release page.";
+            InlineStatusText.Text = $"Download failed: {ex.Message} — try again.";
             InlineLaterButton.IsEnabled = true;
             InlineInstallButton.IsEnabled = true;
-            InlineInstallButton.Content = "Open Release Page";
+            InlineInstallButton.Content = "Download & Install";
         }
     }
 

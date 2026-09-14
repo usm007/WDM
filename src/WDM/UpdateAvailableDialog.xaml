@@ -35,16 +35,13 @@
 
             <!-- Main Body -->
             <StackPanel Grid.Row="0" Margin="20,18,20,16">
-                <!-- Header with Download Cloud Icon + Close Button -->
-                <DockPanel Margin="0,0,0,6" LastChildFill="True">
-                    <Button DockPanel.Dock="Right" Style="{StaticResource Button.DialogClose}" Click="LaterClick" VerticalAlignment="Center" Margin="6,-6,-6,0" />
-                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                        <ui:SymbolIcon Symbol="ArrowDownload24" FontSize="20"
-                                       Foreground="{DynamicResource Brush.Accent}" Margin="0,0,8,0" VerticalAlignment="Center" />
-                        <TextBlock Text="A New Version is Available" FontSize="20" FontWeight="SemiBold"
-                                   Foreground="{DynamicResource Brush.Text}" VerticalAlignment="Center" />
-                    </StackPanel>
-                </DockPanel>
+                <!-- Header with Download Cloud Icon (dismiss via Later / window close — no redundant inner X) -->
+                <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="0,0,0,6">
+                    <ui:SymbolIcon Symbol="ArrowDownload24" FontSize="20"
+                                    Foreground="{DynamicResource Brush.Accent}" Margin="0,0,8,0" VerticalAlignment="Center" />
+                    <TextBlock Text="A New Version is Available" FontSize="20" FontWeight="SemiBold"
+                                Foreground="{DynamicResource Brush.Text}" VerticalAlignment="Center" />
+                </StackPanel>
 
                 <!-- Version subtitle -->
                 <TextBlock x:Name="VersionLine" FontSize="13" FontFamily="{StaticResource Font.App}"
@@ -57,13 +54,17 @@
                 </ScrollViewer>
 
                 <!-- Update Progress (hidden until download starts) -->
-                <Border x:Name="ProgressPanel" Visibility="Collapsed" Background="{DynamicResource Brush.SurfaceAlt}" BorderBrush="{DynamicResource Brush.Border}" BorderThickness="1" CornerRadius="4" Padding="10,8" Margin="0,8,0,0">
+                <Border x:Name="ProgressPanel" Visibility="Collapsed" Background="{DynamicResource Brush.Surface}" BorderBrush="{DynamicResource Brush.Border}" BorderThickness="1" CornerRadius="6" Padding="12,10" Margin="0,8,0,0">
                     <StackPanel>
-                        <DockPanel Margin="0,0,0,4">
-                            <TextBlock x:Name="ProgressStatusText" Text="Downloading update packageâ€¦" FontSize="11.5" FontWeight="SemiBold" Foreground="{DynamicResource Brush.Text}" DockPanel.Dock="Left" />
-                            <TextBlock x:Name="ProgressPctText" Text="0%" FontSize="11.5" FontFamily="{StaticResource Font.App}" FontWeight="SemiBold" Foreground="{DynamicResource Brush.Accent}" DockPanel.Dock="Right" />
-                        </DockPanel>
-                        <ProgressBar x:Name="DownloadProgressBar" Style="{StaticResource ProgressBar.Thin}" Height="4" Minimum="0" Maximum="100" Value="0" Foreground="{DynamicResource Brush.Accent}" />
+                        <Grid Margin="0,0,0,2">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <TextBlock x:Name="ProgressStatusText" Grid.Column="0" Text="Downloading update package…" FontSize="11.5" FontWeight="SemiBold" Foreground="{DynamicResource Brush.Text}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
+                            <TextBlock x:Name="ProgressPctText" Grid.Column="1" Text="0%" FontSize="11.5" FontFamily="{StaticResource Font.App}" FontWeight="SemiBold" Foreground="{DynamicResource Brush.Accent}" VerticalAlignment="Center" TextAlignment="Right" MinWidth="44" Margin="8,0,0,0" />
+                        </Grid>
+                        <ProgressBar x:Name="DownloadProgressBar" Style="{StaticResource ProgressBar.Thin}" Height="6" Minimum="0" Maximum="100" Value="0" Margin="0,6,0,2" Foreground="{DynamicResource Brush.Accent}" />
                         <TextBlock x:Name="ProgressDetailText" Text="Only the update package (~2-15 MB) is being downloaded, not the full installer." FontSize="10.5" Foreground="{DynamicResource Brush.TextMuted}" Margin="0,4,0,0" TextWrapping="Wrap" />
                     </StackPanel>
                 </Border>

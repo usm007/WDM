@@ -547,13 +547,17 @@
                                 <TextBlock x:Name="UpdateStatusText" TextWrapping="Wrap" FontSize="11.5" Foreground="{DynamicResource Brush.TextDim}" Margin="0,0,0,12" />
 
                                 <!-- Update progress (hidden until download starts) -->
-                                <Border x:Name="UpdateProgressPanel" Visibility="Collapsed" Background="{DynamicResource Brush.SurfaceAlt}" BorderBrush="{DynamicResource Brush.Border}" BorderThickness="1" CornerRadius="6" Padding="12,10" Margin="0,0,0,12">
+                                <Border x:Name="UpdateProgressPanel" Visibility="Collapsed" Background="{DynamicResource Brush.Surface}" BorderBrush="{DynamicResource Brush.Border}" BorderThickness="1" CornerRadius="6" Padding="12,10" Margin="0,0,0,12">
                                     <StackPanel>
-                                        <DockPanel Margin="0,0,0,4">
-                                            <TextBlock x:Name="UpdateProgressStatusText" Text="Downloading update package…" FontSize="11.5" FontWeight="SemiBold" Foreground="{DynamicResource Brush.Text}" DockPanel.Dock="Left" />
-                                            <TextBlock x:Name="UpdateProgressPctText" Text="0%" FontSize="11.5" FontFamily="{StaticResource Font.App}" FontWeight="SemiBold" Foreground="{DynamicResource Brush.Accent}" DockPanel.Dock="Right" />
-                                        </DockPanel>
-                                        <ProgressBar x:Name="UpdateProgressBar" Style="{StaticResource ProgressBar.Thin}" Height="4" Minimum="0" Maximum="100" Value="0" Foreground="{DynamicResource Brush.Accent}" />
+                                        <Grid Margin="0,0,0,2">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*" />
+                                                <ColumnDefinition Width="Auto" />
+                                            </Grid.ColumnDefinitions>
+                                            <TextBlock x:Name="UpdateProgressStatusText" Grid.Column="0" Text="Downloading update package…" FontSize="11.5" FontWeight="SemiBold" Foreground="{DynamicResource Brush.Text}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
+                                            <TextBlock x:Name="UpdateProgressPctText" Grid.Column="1" Text="0%" FontSize="11.5" FontFamily="{StaticResource Font.App}" FontWeight="SemiBold" Foreground="{DynamicResource Brush.Accent}" VerticalAlignment="Center" TextAlignment="Right" MinWidth="44" Margin="8,0,0,0" />
+                                        </Grid>
+                                        <ProgressBar x:Name="UpdateProgressBar" Style="{StaticResource ProgressBar.Thin}" Height="6" Minimum="0" Maximum="100" Value="0" Margin="0,6,0,2" Foreground="{DynamicResource Brush.Accent}" />
                                         <TextBlock x:Name="UpdateProgressDetailText" Text="Only the update package is being downloaded (~15 KB delta), not the full installer." FontSize="10.5" Foreground="{DynamicResource Brush.TextMuted}" Margin="0,4,0,0" TextWrapping="Wrap" />
                                     </StackPanel>
                                 </Border>

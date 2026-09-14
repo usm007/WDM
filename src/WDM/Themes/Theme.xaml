@@ -411,11 +411,6 @@
 
     <!-- PRIMARY CTA — Vibrant gradient fill, white text -->
     <Style x:Key="Button.Accent" TargetType="Button">
-        <Style.Resources>
-            <Style TargetType="TextBlock">
-                <Setter Property="Foreground" Value="#FFFFFF" />
-            </Style>
-        </Style.Resources>
         <Setter Property="FocusVisualStyle" Value="{StaticResource FocusVisual.Empty}" />
         <Setter Property="Background"      Value="{DynamicResource Brush.CtaGradient}" />
         <Setter Property="BorderBrush"     Value="Transparent" />
@@ -461,9 +456,12 @@
                             </Setter>
                         </Trigger>
                         <Trigger Property="IsEnabled" Value="False">
-                            <Setter TargetName="bd" Property="Opacity" Value="0.45" />
+                            <Setter TargetName="bd" Property="Background" Value="{DynamicResource Brush.DisabledBg}" />
+                            <Setter TargetName="bd" Property="BorderBrush" Value="{DynamicResource Brush.Border}" />
+                            <Setter TargetName="bd" Property="BorderThickness" Value="1" />
                             <Setter TargetName="bd" Property="Effect" Value="{x:Null}" />
-                            <Setter Property="Foreground" Value="#FFFFFF" />
+                            <Setter TargetName="bd" Property="Opacity" Value="1" />
+                            <Setter Property="Foreground" Value="{DynamicResource Brush.TextMuted}" />
                         </Trigger>
                     </ControlTemplate.Triggers>
                 </ControlTemplate>
