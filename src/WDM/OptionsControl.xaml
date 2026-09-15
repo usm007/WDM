@@ -399,6 +399,20 @@
                             <ui:ToggleSwitch x:Name="ChecksumBox" />
                         </ui:CardControl>
 
+                        <ui:CardControl Margin="0,0,0,4">
+                            <ui:CardControl.Header>
+                                <StackPanel>
+                                    <TextBlock Text="HLS output container" FontWeight="Medium" FontSize="13" Foreground="{DynamicResource Brush.Text}" />
+                                    <TextBlock Text="After HLS segments are stitched, remux via bundled ffmpeg into MP4 (compatible), MKV (more tracks), or keep the .TS file." FontSize="11.5" Foreground="{DynamicResource Brush.TextMuted}" Margin="0,2,0,0" TextWrapping="Wrap" MaxWidth="260" />
+                                </StackPanel>
+                            </ui:CardControl.Header>
+                            <ComboBox x:Name="HlsContainerBox" Width="180" Height="32" SelectionChanged="HlsContainer_Changed">
+                                <ComboBoxItem Content="MP4 (recommended)" Tag="Mp4" />
+                                <ComboBoxItem Content="MKV" Tag="Mkv" />
+                                <ComboBoxItem Content="Keep .TS (no remux)" Tag="KeepTs" />
+                            </ComboBox>
+                        </ui:CardControl>
+
                         <ui:CardControl Margin="0,0,0,12">
                             <ui:CardControl.Header>
                                 <StackPanel>

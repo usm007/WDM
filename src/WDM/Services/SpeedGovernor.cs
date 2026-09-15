@@ -29,6 +29,10 @@ public sealed class SpeedGovernor
 
     public async Task ThrottleAsync(long kbps, long bytes, CancellationToken ct)
     {
+        // Single source of truth: an explicit per-call rate wins, otherwise fall
+        // back to the configured LimitKbps property (set via ApplySpeedLimit).
+        if (kbps <= 0)
+            kbps = LimitKbps;
         if (kbps <= 0 || bytes <= 0)
             return;
 
@@ -51,7 +55,7 @@ public sealed class SpeedGovernor
             // a caller passes an unexpectedly large byte count — the loop re-evaluates
             // afterwards, so throttling behavior is unchanged in normal operation.
             if (waitMs > 0.5)
-                await Task.Delay((int)Math.Min(waitMs, 2000), ct);
+                await Task.Delay((int)Math.Min(Math.Ceiling(waitMs), 2000), ct);
             else
                 await Task.Delay(1, ct); // never busy-spin the refill loop
             ct.ThrowIfCancellationRequested();

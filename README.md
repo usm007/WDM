@@ -101,8 +101,8 @@ Output: `output\WDM_Setup_<version>.exe`. Per-user install into `%LocalAppData%\
 Build Velopack release (self-contained .NET 8, requires `vpk` CLI: `dotnet tool install -g vpk`):
 ```
 dotnet publish src/WDM/WDM.csproj -c Release -r win-x64 --self-contained true -o publish
-vpk pack --packId WDM --packVersion 2.5.4 --packDir publish --mainExe WDM.exe --outputDir output
-# upload output/RELEASES + *.nupkg to GitHub Release alongside WDM_Setup_2.5.4.exe
+vpk pack --packId WDM --packVersion 2.7.2 --packDir publish --mainExe WDM.exe --outputDir output
+# upload output/RELEASES + *.nupkg to GitHub Release alongside WDM_Setup_2.7.2.exe
 # Or use: powershell -File build-velopack.ps1  (now defaults to self-contained, ~150MB, no .NET install needed)
 ```
 

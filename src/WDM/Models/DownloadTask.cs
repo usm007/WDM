@@ -36,9 +36,9 @@ public sealed class DownloadTask : INotifyPropertyChanged
 {
     private readonly Dispatcher _ui;
 
-    public DownloadTask(Dispatcher ui)
+    public DownloadTask(Dispatcher? ui = null)
     {
-        _ui = ui;
+        _ui = ui ?? Dispatcher.CurrentDispatcher;
     }
 
     public Guid Id { get; } = Guid.NewGuid();
@@ -243,8 +243,11 @@ public sealed class DownloadTask : INotifyPropertyChanged
                 return 100;
             if (TotalBytes > 0 && DownloadedBytes > 0)
             {
-                int calc = (int)Math.Clamp((double)DownloadedBytes * 100.0 / TotalBytes, 0, 100);
-                return Math.Max(_progress, calc);
+                // Computed live so upward TotalBytes revisions (refresh-link,
+                // re-probe) move the bar back down instead of pinning it at a
+                // stale high watermark. TotalBytes/DownloadedBytes setters keep
+                // _progress in sync for the unknown-size path below.
+                return (int)Math.Clamp((double)DownloadedBytes * 100.0 / TotalBytes, 0, 100);
             }
             return _progress;
         }

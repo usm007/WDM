@@ -57,10 +57,13 @@ public static class HlsDownloader
         if (initSegment is not null)
             addBytes(initSegment.Length);
 
+        try { CleanStaleTempDirs(Path.GetDirectoryName(outputFile) ?? Directory.GetCurrentDirectory(), null); } catch { }
         string tempDir = Path.Combine(
             Path.GetDirectoryName(outputFile) ?? Directory.GetCurrentDirectory(),
             $".wdmseg_{Path.GetFileNameWithoutExtension(outputFile)}_{Guid.NewGuid():N}");
         Directory.CreateDirectory(tempDir);
+        // Now that our own temp dir exists, sweep orphans but never ourselves.
+        try { CleanStaleTempDirs(Path.GetDirectoryName(outputFile) ?? Directory.GetCurrentDirectory(), tempDir); } catch { }
         try
         {
             // Use a linked CTS so that any segment failure cancels the remaining
@@ -138,8 +141,11 @@ public static class HlsDownloader
         }
     }
 
-    /// <summary>Deletes orphaned .wdmseg_* temporary directories left by crashed or terminated downloads.</summary>
-    public static void CleanStaleTempDirs(string folder)
+    /// <summary>Deletes orphaned .wdmseg_* temporary directories left by crashed or terminated downloads.
+    /// Never deletes <paramref name="activeDir"/> (the caller's live temp dir):
+    /// directory mtime does not reliably bump on child writes, so age alone
+    /// cannot prove a concurrent long VOD download is dead. UTC avoids DST skew.</summary>
+    public static void CleanStaleTempDirs(string folder, string? activeDir = null)
     {
         try
         {
@@ -149,8 +155,13 @@ public static class HlsDownloader
             {
                 try
                 {
+                    if (!string.IsNullOrEmpty(activeDir) &&
+                        string.Equals(Path.GetFullPath(dir.TrimEnd(Path.DirectorySeparatorChar)),
+                            Path.GetFullPath(activeDir.TrimEnd(Path.DirectorySeparatorChar)),
+                            StringComparison.OrdinalIgnoreCase))
+                        continue;
                     var info = new DirectoryInfo(dir);
-                    if (DateTime.Now - info.LastWriteTime > TimeSpan.FromMinutes(30))
+                    if (DateTime.UtcNow - info.LastWriteTimeUtc > TimeSpan.FromMinutes(30))
                         Directory.Delete(dir, true);
                 }
                 catch { }
@@ -202,10 +213,11 @@ public static class HlsDownloader
                 // Internal routing hints must never leave the client.
                 if (kv.Key.StartsWith("X-WDM-", StringComparison.OrdinalIgnoreCase)) continue;
                 // Session credentials belong to the page host — never forward
-                // them to a segment/key CDN on a different host.
+                // them to a segment/key CDN on an unrelated third-party host.
                 if ((kv.Key.Equals("Cookie", StringComparison.OrdinalIgnoreCase) ||
-                     kv.Key.Equals("Authorization", StringComparison.OrdinalIgnoreCase)) &&
-                    !string.IsNullOrEmpty(targetHost) && !IsSameHostName(referer, targetHost))
+                     kv.Key.Equals("Authorization", StringComparison.OrdinalIgnoreCase) ||
+                     kv.Key.Equals("Proxy-Authorization", StringComparison.OrdinalIgnoreCase)) &&
+                    !string.IsNullOrEmpty(targetHost) && !IsSameHostOrSubdomain(referer, targetHost))
                     continue;
                 req.Headers.TryAddWithoutValidation(kv.Key, kv.Value);
             }
@@ -215,20 +227,27 @@ public static class HlsDownloader
             req.Headers.TryAddWithoutValidation("Origin", ru.GetLeftPart(UriPartial.Authority));
     }
 
-    private static bool IsSameHostName(string? referer, string targetHost)
+    internal static bool IsSameHostOrSubdomain(string? referer, string targetHost)
     {
         try
         {
-            // No referer to compare against: only forward credentials when the
-            // target IS the referer host is unknown — be conservative and allow,
-            // since single-host HLS (no referer) is the common case.
+            // No referer: single-host HLS without a page context is the common
+            // case and the headers belong to this very host — allow.
             if (string.IsNullOrWhiteSpace(referer))
                 return true;
+            // Fail closed on unparseable referers so credentials are never
+            // forwarded on the basis of a string we could not understand.
             if (!Uri.TryCreate(referer, UriKind.Absolute, out var ru))
+                return false;
+            if (string.Equals(ru.Host, targetHost, StringComparison.OrdinalIgnoreCase))
                 return true;
-            return string.Equals(ru.Host, targetHost, StringComparison.OrdinalIgnoreCase);
+            // Allow subdomains of the same parent (e.g. cdn.site.com and site.com)
+            if (targetHost.EndsWith("." + ru.Host, StringComparison.OrdinalIgnoreCase) ||
+                ru.Host.EndsWith("." + targetHost, StringComparison.OrdinalIgnoreCase))
+                return true;
+            return false;
         }
-        catch { return true; }
+        catch { return false; }
     }
 
     private static async Task<long> ProbeSizeAsync(HttpClient http, string url, string? referer, Dictionary<string, string>? headers, CancellationToken ct)
@@ -320,18 +339,21 @@ public static class HlsDownloader
 
             long bandwidth = -1;
             int? height = null;
-            foreach (var attr in line.Substring("#EXT-X-STREAM-INF:".Length).Split(','))
+            // Quote-aware split: CODECS="avc1.640028,mp4a.40.2" contains a
+            // comma that a naive Split(',') would treat as an attribute
+            // boundary, corrupting every attribute after it (BUG-029).
+            foreach (var attr in SplitAttributes(line.Substring("#EXT-X-STREAM-INF:".Length)))
             {
                 int eq = attr.IndexOf('=');
                 if (eq < 0) continue;
                 string key = attr.Substring(0, eq).Trim();
-                string value = attr.Substring(eq + 1).Trim();
+                string value = attr.Substring(eq + 1).Trim().Trim('"');
                 if (key.Equals("BANDWIDTH", StringComparison.OrdinalIgnoreCase))
                     long.TryParse(value, out bandwidth);
                 else if (key.Equals("RESOLUTION", StringComparison.OrdinalIgnoreCase))
                 {
                     int x = value.IndexOf('x');
-                    if (x > 0 && int.TryParse(value.Substring(x + 1), out int resHeight))
+                    if (x > 0 && int.TryParse(value.Substring(x + 1).TrimEnd('"'), out int resHeight))
                         height = resHeight;
                 }
             }
@@ -364,6 +386,28 @@ public static class HlsDownloader
             }
         }
         return best;
+    }
+
+    /// <summary>Splits an EXT-X-STREAM-INF attribute list on commas that are
+    /// not inside double quotes.</summary>
+    internal static IEnumerable<string> SplitAttributes(string attrList)
+    {
+        if (string.IsNullOrEmpty(attrList))
+            yield break;
+        bool inQuotes = false;
+        int start = 0;
+        for (int i = 0; i < attrList.Length; i++)
+        {
+            char c = attrList[i];
+            if (c == '"')
+                inQuotes = !inQuotes;
+            else if (c == ',' && !inQuotes)
+            {
+                yield return attrList.Substring(start, i - start);
+                start = i + 1;
+            }
+        }
+        yield return attrList.Substring(start);
     }
 
     private static Playlist? ParsePlaylist(string text, string baseUrl)
@@ -556,6 +600,8 @@ public static class HlsDownloader
             catch (Exception ex) when (attempt < MaxRetries && !ct.IsCancellationRequested &&
                                        (ex is HttpRequestException || ex is IOException || ex is TaskCanceledException))
             {
+                if (DownloadEngine.IsFatalDiskError(ex))
+                    throw;
                 attempt++;
                 try { if (File.Exists(tempFile)) File.Delete(tempFile); } catch { }
                 await Task.Delay(Math.Min(4000, 500 * attempt), ct);
@@ -578,7 +624,9 @@ public static class HlsDownloader
         aes.Mode = CipherMode.CBC;
         aes.Padding = PaddingMode.PKCS7;
 
-        byte[] ivBlock = iv ?? new byte[16];
+        if (iv is null)
+            throw new InvalidOperationException("HLS segment is AES-128 encrypted but the playlist did not supply an IV.");
+        byte[] ivBlock = iv;
         using var decryptor = aes.CreateDecryptor(key, ivBlock);
         using var cryptoStream = new CryptoStream(input, decryptor, CryptoStreamMode.Read);
         var buffer = new byte[256 * 1024];

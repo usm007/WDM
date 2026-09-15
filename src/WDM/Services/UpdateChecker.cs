@@ -6,7 +6,7 @@ using System.Text.RegularExpressions;
 namespace WDM.Services;
 
 /// <summary>Details about the newest GitHub release.</summary>
-public sealed record ReleaseInfo(string TagName, Version? Version, string Name, string Url, string? Body, DateTime? PublishedAt, string? InstallerUrl, string? UpdatePackageUrl = null);
+public sealed record ReleaseInfo(string TagName, Version? Version, string Name, string Url, string? Body, DateTime? PublishedAt, string? InstallerUrl, string? UpdatePackageUrl = null, string? InstallerSha256 = null);
 
 /// <summary>Queries the GitHub releases API for WDM and compares against the running
 /// version. Used for the manual "Check now" button in Settings and the automatic
@@ -53,7 +53,14 @@ public static class UpdateChecker
             if (string.IsNullOrWhiteSpace(tag) || string.IsNullOrWhiteSpace(url))
                 return null;
 
-            return new ReleaseInfo(tag, ParseVersion(tag), name ?? tag, url, body, published, installerUrl, updatePackageUrl);
+            string? installerSha256 = null;
+            if (!string.IsNullOrWhiteSpace(installerUrl))
+            {
+                try { installerSha256 = await FindInstallerHashAsync(root, installerUrl, ct); }
+                catch { installerSha256 = null; }
+            }
+
+            return new ReleaseInfo(tag, ParseVersion(tag), name ?? tag, url, body, published, installerUrl, updatePackageUrl, installerSha256);
         }
         catch
         {
@@ -125,6 +132,120 @@ public static class UpdateChecker
         return deltaUrl ?? fullUrl;
     }
 
+    /// <summary>Looks for a published SHA-256 for the installer: an adjacent
+    /// <c>&lt;installer&gt;.sha256</c> asset first, then a <c>SHA256SUMS.txt</c> /
+    /// <c>checksums.txt</c> style asset containing a line for the installer file.
+    /// Returns null when the release publishes no usable hash (fail-open: the
+    /// PE check in <see cref="VerifyInstallerIntegrity"/> still applies).</summary>
+    private static async Task<string?> FindInstallerHashAsync(JsonElement release, string installerUrl, CancellationToken ct)
+    {
+        if (!release.TryGetProperty("assets", out var assets) || assets.ValueKind != JsonValueKind.Array)
+            return null;
+        string installerName;
+        try { installerName = Path.GetFileName(new Uri(installerUrl).LocalPath); }
+        catch { return null; }
+        if (string.IsNullOrWhiteSpace(installerName))
+            return null;
+
+        string? directUrl = null;
+        string? sumsUrl = null;
+        foreach (var asset in assets.EnumerateArray())
+        {
+            if (!asset.TryGetProperty("name", out var n) || n.GetString() is not string name)
+                continue;
+            if (!asset.TryGetProperty("browser_download_url", out var u) || u.GetString() is not string dl)
+                continue;
+            if (!IsTrustedDownloadUrl(dl))
+                continue;
+            if (name.Equals(installerName + ".sha256", StringComparison.OrdinalIgnoreCase) ||
+                name.Equals(installerName + ".sha256sum", StringComparison.OrdinalIgnoreCase))
+            {
+                directUrl = dl;
+                break;
+            }
+            if (sumsUrl is null && (name.Equals("SHA256SUMS.txt", StringComparison.OrdinalIgnoreCase) ||
+                name.Equals("checksums.txt", StringComparison.OrdinalIgnoreCase) ||
+                name.EndsWith(".sha256sums", StringComparison.OrdinalIgnoreCase)))
+            {
+                sumsUrl = dl;
+            }
+        }
+
+        // strict: in multi-file listings a token must EQUAL the installer name
+        // (substring Contains matched sibling versions); a lone hash is only
+        // accepted from the dedicated single-file sidecar (BUG-024).
+        static string? ExtractHash(string text, string fileName, bool singleFile)
+        {
+            foreach (string rawLine in text.Split('\n'))
+            {
+                string line = rawLine.Trim().Trim('*', ' ', '\r');
+                var m = Regex.Match(line, @"\b([0-9a-fA-F]{64})\b");
+                if (!m.Success)
+                    continue;
+                string[] tokens = line.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries);
+                if (tokens.Any(t => t.Trim('*').Equals(fileName, StringComparison.OrdinalIgnoreCase)))
+                    return m.Groups[1].Value.ToLowerInvariant();
+                if (singleFile && tokens.Length == 1)
+                    return m.Groups[1].Value.ToLowerInvariant();
+            }
+            return null;
+        }
+
+        // Hash sidecars must never stall the update check: dedicated short
+        // budget instead of the shared 8s API client timeout (BUG-024).
+        using var hashCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        hashCts.CancelAfter(TimeSpan.FromSeconds(5));
+        var hct = hashCts.Token;
+
+        async Task<string?> DownloadSmallAsync(string url)
+        {
+            using var response = await _http.GetAsync(url, HttpCompletionOption.ResponseHeadersRead, hct);
+            response.EnsureSuccessStatusCode();
+            if ((response.Content.Headers.ContentLength ?? 0) > 1024 * 1024)
+                return null;
+            using var stream = await response.Content.ReadAsStreamAsync(hct);
+            using var ms = new MemoryStream();
+            var tmp = new byte[32768];
+            int total = 0, n;
+            while ((n = await stream.ReadAsync(tmp.AsMemory(0, tmp.Length), hct)) > 0)
+            {
+                total += n;
+                if (total > 1024 * 1024)
+                    return null;
+                ms.Write(tmp, 0, n);
+            }
+            return Encoding.UTF8.GetString(ms.ToArray());
+        }
+
+        if (directUrl is not null)
+        {
+            try
+            {
+                string? text = await DownloadSmallAsync(directUrl);
+                if (text is not null)
+                {
+                    string? hash = ExtractHash(text, installerName, singleFile: true);
+                    if (hash is not null)
+                        return hash;
+                }
+            }
+            catch (OperationCanceledException) { }
+            catch { }
+        }
+        if (sumsUrl is not null)
+        {
+            try
+            {
+                string? text = await DownloadSmallAsync(sumsUrl);
+                if (text is not null)
+                    return ExtractHash(text, installerName, singleFile: false);
+            }
+            catch (OperationCanceledException) { }
+            catch { }
+        }
+        return null;
+    }
+
     /// <summary>Downloads the latest installer to the temp folder and returns its path.
     /// <paramref name="onProgress"/> reports 0..1 as bytes arrive.
     /// Verifies the downloaded file is a valid PE executable before returning.</summary>
@@ -135,6 +256,8 @@ public static class UpdateChecker
 
         string fileName = $"WDM_Setup_{release.Version}_{Guid.NewGuid():N}.exe";
         string target = Path.Combine(Path.GetTempPath(), fileName);
+        try
+        {
         using var http = new HttpClient { Timeout = TimeSpan.FromMinutes(10) };
         http.DefaultRequestHeaders.UserAgent.ParseAdd($"WDM/{CurrentVersion}");
 
@@ -164,9 +287,15 @@ public static class UpdateChecker
         await file.FlushAsync(ct);
         await file.DisposeAsync();
 
-        VerifyInstallerIntegrity(target);
+        VerifyInstallerIntegrity(target, release.InstallerSha256);
 
         return target;
+        }
+        catch
+        {
+            try { if (File.Exists(target)) File.Delete(target); } catch { }
+            throw;
+        }
     }
 
     private static bool IsTrustedDownloadUrl(string url)
@@ -184,9 +313,11 @@ public static class UpdateChecker
         catch { return false; }
     }
 
-    /// <summary>Verifies a downloaded installer is a valid PE executable and logs its SHA-256 hash.
-    /// Throws if the file is corrupt, too small, or not a valid Windows executable.</summary>
-    private static void VerifyInstallerIntegrity(string path)
+    /// <summary>Verifies a downloaded installer is a valid PE executable and, when the
+    /// release published a SHA-256 (<see cref="ReleaseInfo.InstallerSha256"/>), that the
+    /// bytes match it. Throws if the file is corrupt, too small, not a valid Windows
+    /// executable, or fails the published-hash comparison.</summary>
+    internal static void VerifyInstallerIntegrity(string path, string? expectedSha256 = null)
     {
         var info = new FileInfo(path);
         if (info.Length < 1024 * 1024)
@@ -206,16 +337,33 @@ public static class UpdateChecker
             throw new InvalidOperationException("Downloaded file is not a valid PE executable.");
         fs.Close();
 
-        // Compute SHA-256 for audit trail
-        using var sha = SHA256.Create();
-        using var stream = File.OpenRead(path);
-        var hash = sha.ComputeHash(stream);
-        var hashStr = Convert.ToHexString(hash);
+        // Compute SHA-256: audit trail when the release published no hash,
+        // hard verification when it did. Scoped blocks: every handle is
+        // closed before any delete below (Windows cannot delete open files).
+        string hashStr;
+        using (var sha = SHA256.Create())
+        using (var stream = File.OpenRead(path))
+        {
+            hashStr = Convert.ToHexString(sha.ComputeHash(stream));
+        }
         Debug.WriteLine($"[Update] Installer SHA-256: {hashStr} ({info.Length} bytes)");
+        if (!string.IsNullOrWhiteSpace(expectedSha256))
+        {
+            string want = expectedSha256.Trim().ToLowerInvariant();
+            if (!hashStr.Equals(want, StringComparison.OrdinalIgnoreCase))
+            {
+                try { File.Delete(path); } catch { }
+                throw new InvalidOperationException(
+                    "Downloaded installer failed SHA-256 verification — refusing to run it. " +
+                    "Delete %TEMP%\\WDM_Setup_*.exe and retry the update.");
+            }
+        }
     }
 
-    /// <summary>Runs the downloaded installer. Supports both Velopack (--silent) and Inno (/VERYSILENT) so the
-    /// "WDM is already installed" modal in the screenshot never appears during a silent auto-update.</summary>
+    /// <summary>Runs the downloaded installer. Every Setup.exe published on the releases
+    /// page is a Velopack bundle (clap-style parsing: only -s/--silent). Inno-style
+    /// /VERYSILENT tokens break its parsing and drop it back to the interactive
+    /// "WDM is already installed" dialog — so silent launches must pass --silent alone.</summary>
     public static Process? LaunchInstaller(string installerPath, bool silent = false)
     {
         if (string.IsNullOrWhiteSpace(installerPath) || !File.Exists(installerPath) ||
@@ -225,7 +373,17 @@ public static class UpdateChecker
         string temp = Path.GetFullPath(Path.GetTempPath());
         if (!full.StartsWith(temp, StringComparison.OrdinalIgnoreCase))
             throw new InvalidOperationException("Installer must be inside the temp folder.");
-        string args = silent ? "/VERYSILENT /SUPPRESSMSGBOXES --silent" : "";
+        if (silent)
+        {
+            // The installer replaces the running exe (taskkill on install):
+            // signal the main window to set _exiting first, or the
+            // MinimizeToTray guard cancels the shutdown and the app lingers
+            // hidden while its binaries are replaced underneath it. Same
+            // signal VelopackUpdateService.ApplyAndRestart sends (BUG-038:
+            // OptionsControl/About/UpdateAvailable paths all funnel here).
+            try { ViewModels.MainViewModel.Restarting?.Invoke(); } catch { }
+        }
+        string args = silent ? "--silent" : "";
         var psi = new ProcessStartInfo(full, args) { UseShellExecute = true };
         return Process.Start(psi);
     }

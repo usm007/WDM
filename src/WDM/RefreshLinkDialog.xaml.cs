@@ -45,16 +45,21 @@ public partial class RefreshLinkDialog : Window
         }
     }
 
-    private string GetTargetPageUrl()
+    public static string GetTargetPageUrl(DownloadTask task)
     {
-        if (!string.IsNullOrWhiteSpace(_task.Referer) && Uri.TryCreate(_task.Referer, UriKind.Absolute, out var refererUri) &&
+        if (!string.IsNullOrWhiteSpace(task.SourcePageUrl) && Uri.TryCreate(task.SourcePageUrl, UriKind.Absolute, out var sourceUri) &&
+            (sourceUri.Scheme == Uri.UriSchemeHttp || sourceUri.Scheme == Uri.UriSchemeHttps))
+            return task.SourcePageUrl;
+        if (!string.IsNullOrWhiteSpace(task.Referer) && Uri.TryCreate(task.Referer, UriKind.Absolute, out var refererUri) &&
             (refererUri.Scheme == Uri.UriSchemeHttp || refererUri.Scheme == Uri.UriSchemeHttps))
-            return _task.Referer;
-        if (!string.IsNullOrWhiteSpace(_task.Url) && Uri.TryCreate(_task.Url, UriKind.Absolute, out var urlUri) &&
+            return task.Referer;
+        if (!string.IsNullOrWhiteSpace(task.Url) && Uri.TryCreate(task.Url, UriKind.Absolute, out var urlUri) &&
             (urlUri.Scheme == Uri.UriSchemeHttp || urlUri.Scheme == Uri.UriSchemeHttps || urlUri.Scheme == Uri.UriSchemeFtp))
-            return _task.Url;
+            return task.Url;
         return "";
     }
+
+    private string GetTargetPageUrl() => GetTargetPageUrl(_task);
 
     private void AutoOpenBrowser()
     {

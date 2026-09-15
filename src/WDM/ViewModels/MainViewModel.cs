@@ -1,6 +1,7 @@
 using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Diagnostics;
+using System.Threading;
 using System.Windows;
 using System.Windows.Data;
 using System.Windows.Input;
@@ -10,10 +11,15 @@ using WDM.Services;
 
 namespace WDM.ViewModels;
 
-public sealed class MainViewModel : INotifyPropertyChanged
+public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
 {
     private readonly Dispatcher _dispatcher;
     private readonly DispatcherTimer _saveTimer;
+    private readonly Action _onEngineTaskChanged;
+    private readonly Action<DownloadTask> _onEngineTaskCompleted;
+    private readonly Action<DownloadTask> _onCloudflareBlocked;
+    private readonly Action<DownloadTask, string> _onEmbedInteractionRequired;
+    private bool _disposed;
     /// <summary>When true, persistence is disabled (screenshot generator /
     /// design-time VM must never overwrite the user's tasks.json).</summary>
     public bool PersistenceSuppressed { get; private set; }
@@ -41,6 +47,14 @@ public sealed class MainViewModel : INotifyPropertyChanged
     public event Action<DownloadTask>? TaskCompleted;
     public event Action<List<double>>? SpeedHistoryUpdated;
     public event Action? AboutRequested;
+    /// <summary>Called by any dialog right before ApplyAndRestart so the main
+    /// window can set _exiting and prevent the MinimizeToTray guard from
+    /// cancelling the restart (BUG-038).</summary>
+    public Action? PrepareForRestart;
+    /// <summary>Static variant so callers that don't have a ViewModel reference
+    /// (AboutDialog, OptionsControl, UpdateAvailableDialog) can still signal
+    /// the main window before restart.</summary>
+    public static Action? Restarting;
     public event Action<DownloadTask>? ShowProgressDialogRequested;
     public event Action<DownloadTask>? RefreshLinkRequested;
 
@@ -94,8 +108,8 @@ public sealed class MainViewModel : INotifyPropertyChanged
         Engine.MaxConcurrent = Settings.MaxConcurrentDownloads;
         Engine.GlobalSpeedLimitKbps = Settings.GlobalSpeedLimitKbps;
         Engine.MaxRetries = Settings.MaxRetries;
-        Engine.TaskChanged += () => Dispatch(OnTasksChanged);
-        Engine.TaskCompleted += task => Dispatch(() =>
+        _onEngineTaskChanged = () => Dispatch(OnTasksChanged);
+        _onEngineTaskCompleted = task => Dispatch(() =>
         {
             task.CompletedAt ??= DateTime.Now;
             TaskCompleted?.Invoke(task);
@@ -103,8 +117,12 @@ public sealed class MainViewModel : INotifyPropertyChanged
             MaybeShutdownOnQueueComplete();
             SaveTasksSoon();
         });
-        Engine.CloudflareBlocked += task => Dispatch(() => AutoSolveCloudflare(task));
-        Engine.EmbedInteractionRequired += (task, pageUrl) => Dispatch(() => SolveEmbedInteraction(task, pageUrl));
+        _onCloudflareBlocked = task => Dispatch(() => AutoSolveCloudflare(task));
+        _onEmbedInteractionRequired = (task, pageUrl) => Dispatch(() => SolveEmbedInteraction(task, pageUrl));
+        Engine.TaskChanged += _onEngineTaskChanged;
+        Engine.TaskCompleted += _onEngineTaskCompleted;
+        Engine.CloudflareBlocked += _onCloudflareBlocked;
+        Engine.EmbedInteractionRequired += _onEmbedInteractionRequired;
 
         OpenAddDialogCommand = new RelayCommand(_ => OpenAddDialog());
         PauseCommand = new RelayCommand(_ => PauseSelected(), _ => CanPause);
@@ -214,11 +232,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
         {
             Interval = TimeSpan.FromMilliseconds(1500),
         };
-        _saveTimer.Tick += (_, _) =>
-        {
-            _saveTimer.Stop();
-            SaveTasks();
-        };
+        _saveTimer.Tick += OnSaveTimerTick;
 
         LoadPersistedTasks();
         UpdateStatus();
@@ -738,6 +752,10 @@ public sealed class MainViewModel : INotifyPropertyChanged
         Tasks.Add(task);
         ApplyCategoryRouting(task);
         Engine.Start(task);
+        // BUG-034: A new download is active — cancel any pending shutdown that
+        // was scheduled for "queue empty" so the machine doesn't shut down
+        // mid-download.
+        CancelPendingShutdownIfAny();
         SelectedFilter = FilterKind.All;
         SaveTasksSoon();
         UpdateStatus();
@@ -765,11 +783,25 @@ public sealed class MainViewModel : INotifyPropertyChanged
         if (task.Status != TaskStatus.Paused)
         {
             Engine.Start(task);
+            CancelPendingShutdownIfAny();
             ShowProgressDialogRequested?.Invoke(task);
         }
         SelectedFilter = FilterKind.All;
         SaveTasksSoon();
         UpdateStatus();
+    }
+
+    /// <summary>Cancels a pending OS shutdown (shutdown /a) — but ONLY when WDM
+    /// itself scheduled it (tracked by _shutdownIssuedByWdm). Previously this
+    /// ran on every AddTask, aborting even user-scheduled shutdowns that had
+    /// nothing to do with WDM.</summary>
+    private bool _shutdownIssuedByWdm;
+    private void CancelPendingShutdownIfAny()
+    {
+        if (!_shutdownIssuedByWdm)
+            return;
+        _shutdownIssuedByWdm = false;
+        try { Process.Start("shutdown", "/a"); } catch { }
     }
 
     private void ApplyCategoryRouting(DownloadTask task)
@@ -936,11 +968,15 @@ public sealed class MainViewModel : INotifyPropertyChanged
 
     private async void HandlePostDownload(DownloadTask task)
     {
+        // BUG-035: Token caps the checksum computation so it cannot outlive
+        // the application shutdown / dispatcher teardown.
+        using var cts = new CancellationTokenSource(TimeSpan.FromMinutes(5));
         try
         {
             if (Settings.ComputeChecksum && File.Exists(task.FullPath))
             {
-                task.Checksum = await Task.Run(() => ComputeChecksum(task.FullPath));
+                string path = task.FullPath;
+                task.Checksum = await Task.Run(() => ComputeChecksum(path, cts.Token), cts.Token);
                 SaveTasksSoon();
             }
 
@@ -950,7 +986,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
                 string fullScript = Path.GetFullPath(script.Trim());
                 if (File.Exists(fullScript) && IsAllowedPostDownloadScript(fullScript))
                 {
-                    Process.Start(new ProcessStartInfo(fullScript)
+                    using var proc = Process.Start(new ProcessStartInfo(fullScript)
                     {
                         UseShellExecute = true,
                         Arguments = $"\"{task.FullPath}\"",
@@ -958,17 +994,32 @@ public sealed class MainViewModel : INotifyPropertyChanged
                 }
             }
         }
+        catch (OperationCanceledException)
+        {
+            // Checksum timed out — non-fatal.
+        }
         catch
         {
             // Best-effort script/checksum handling.
         }
     }
 
-    private static string ComputeChecksum(string path)
+    private static string ComputeChecksum(string path, CancellationToken ct = default)
     {
         using var stream = File.OpenRead(path);
         using var sha = System.Security.Cryptography.SHA256.Create();
-        return Convert.ToHexString(sha.ComputeHash(stream));
+        // Chunked so the 5-minute HandlePostDownload token can actually stop
+        // the hash mid-file instead of merely abandoning the await while the
+        // worker thread hashes a multi-GB file to completion.
+        var buf = new byte[81920];
+        int n;
+        while ((n = stream.Read(buf, 0, buf.Length)) > 0)
+        {
+            ct.ThrowIfCancellationRequested();
+            sha.TransformBlock(buf, 0, n, null, 0);
+        }
+        sha.TransformFinalBlock(Array.Empty<byte>(), 0, 0);
+        return Convert.ToHexString(sha.Hash!);
     }
 
     private static bool IsRiskyExecutable(string path)
@@ -1014,45 +1065,76 @@ public sealed class MainViewModel : INotifyPropertyChanged
         string? path = task.FullPath;
         if (!string.IsNullOrWhiteSpace(path))
         {
-            if (File.Exists(path))
+            // tasks.json is hand-editable: a quote in the persisted path would
+            // break out of the explorer argument string. Refuse, don't execute.
+            if (!IsSafeExplorerPath(path) || !IsSafeExplorerPath(task.SaveFolder))
+                return;
+            try
             {
-                Process.Start(new ProcessStartInfo("explorer.exe", $"/select,\"{path}\"") { UseShellExecute = true });
+                if (File.Exists(path))
+                {
+                    Process.Start(new ProcessStartInfo("explorer.exe", $"/select,\"{path}\"") { UseShellExecute = true });
+                }
+                else if (Directory.Exists(task.SaveFolder))
+                {
+                    Process.Start(new ProcessStartInfo("explorer.exe", $"\"{task.SaveFolder}\"") { UseShellExecute = true });
+                }
+                else
+                {
+                    Process.Start(new ProcessStartInfo("explorer.exe", $"/select,\"{path}\"") { UseShellExecute = true });
+                }
             }
-            else if (Directory.Exists(task.SaveFolder))
-            {
-                Process.Start(new ProcessStartInfo("explorer.exe", $"\"{task.SaveFolder}\"") { UseShellExecute = true });
-            }
-            else
-            {
-                Process.Start(new ProcessStartInfo("explorer.exe", $"/select,\"{path}\"") { UseShellExecute = true });
-            }
+            catch { }
         }
         else if (Directory.Exists(task.SaveFolder))
         {
-            Process.Start(new ProcessStartInfo("explorer.exe", $"\"{task.SaveFolder}\"") { UseShellExecute = true });
+            try
+            {
+                Process.Start(new ProcessStartInfo("explorer.exe", $"\"{task.SaveFolder}\"") { UseShellExecute = true });
+            }
+            catch { }
         }
     }
+
+    /// <summary>Explorer arguments are quoted with double quotes — a path
+    /// containing a quote (only possible via hand-edited tasks.json, since the
+    /// UI sanitizes names) must never be interpolated into the command line.</summary>
+    private static bool IsSafeExplorerPath(string? path) =>
+        !string.IsNullOrWhiteSpace(path) && !path.Contains('"');
 
     public void RevealSelected() => RevealTask(SelectedTask);
 
     public void OpenFile(DownloadTask? task = null)
     {
         task ??= SelectedTask;
-        if (task?.Status != TaskStatus.Completed)
+        if (task == null || task.Status != TaskStatus.Completed)
             return;
         if (File.Exists(task.FullPath))
         {
             if (IsRiskyExecutable(task.FullPath))
             {
                 var answer = MessageBox.Show(
-                    $"\"{task.FileName}\" is an executable downloaded from the internet.\n\nOnly open it if you trust the source.\n\nOpen it now?",
+                    $"\"{task.FileName}\" is an executable file (.exe / .bat / .cmd / .msi / .ps1).\n\n" +
+                    "Running downloaded executables can be dangerous if you do not trust the source.\n\n" +
+                    "Are you sure you want to run this file?",
                     "Security warning",
                     MessageBoxButton.YesNo,
                     MessageBoxImage.Warning);
                 if (answer != MessageBoxResult.Yes)
                     return;
             }
-            Process.Start(new ProcessStartInfo(task.FullPath) { UseShellExecute = true });
+            try
+            {
+                Process.Start(new ProcessStartInfo(task.FullPath) { UseShellExecute = true });
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show(
+                    $"Unable to open \"{task.FileName}\":\n{ex.Message}",
+                    "Open failed",
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Error);
+            }
         }
         else
         {
@@ -1073,31 +1155,84 @@ public sealed class MainViewModel : INotifyPropertyChanged
         if (targets.Count == 0) return;
 
         bool changedAny = false;
+        int skippedActive = 0, skippedCollision = 0;
         foreach (var task in targets)
         {
             string oldName = task.FileName;
             if (string.IsNullOrWhiteSpace(oldName)) continue;
+            // Never rename under a live download: the engine holds an open
+            // handle on the old path and the chunk bitmap is path-keyed.
+            if (task.Status == TaskStatus.Downloading || task.Status == TaskStatus.Queued)
+            {
+                skippedActive++;
+                continue;
+            }
+            // An empty/relative SaveFolder would make Path.Combine resolve
+            // against the process CWD — refuse instead of touching the
+            // wrong directory.
+            if (string.IsNullOrWhiteSpace(task.SaveFolder) || !Path.IsPathRooted(task.SaveFolder))
+                continue;
 
             string cleaned = FileNameHelper.CleanVideoFileName(oldName);
             if (string.Equals(oldName, cleaned, StringComparison.Ordinal)) continue;
 
             string oldPath = Path.Combine(task.SaveFolder, oldName);
             string newPath = Path.Combine(task.SaveFolder, cleaned);
+            string oldState = oldPath + ".wdmstate";
+            string newState = newPath + ".wdmstate";
 
             if (File.Exists(oldPath) && !File.Exists(newPath))
             {
                 try
                 {
                     File.Move(oldPath, newPath);
+                    if (File.Exists(oldState) && !File.Exists(newState))
+                    {
+                        try { File.Move(oldState, newState); } catch { }
+                    }
+                    // BUG-036: Only update FileName when the file was actually
+                    // moved — otherwise FullPath would point at a non-existent
+                    // file and Open/Reveal would break.
+                    task.FileName = cleaned;
+                    task.Category = DownloadTask.Categorize(cleaned);
+                    changedAny = true;
                 }
                 catch
                 {
-                    // File may be locked by another process or stream
+                    // File may be locked by another process or stream.
+                    // Leave FileName unchanged so it stays in sync with the
+                    // file actually present on disk.
                 }
             }
+            else if (!File.Exists(oldPath) && !File.Exists(newPath))
+            {
+                // File already gone (task deleted externally) — update the
+                // name anyway so the model stays consistent.
+                if (File.Exists(oldState) && !File.Exists(newState))
+                {
+                    try { File.Move(oldState, newState); } catch { }
+                }
+                task.FileName = cleaned;
+                task.Category = DownloadTask.Categorize(cleaned);
+                changedAny = true;
+            }
+            else
+            {
+                // Both exist: renaming would clobber the target. Count it so
+                // the user gets feedback instead of silent success.
+                skippedCollision++;
+            }
+        }
 
-            task.FileName = cleaned;
-            changedAny = true;
+        if (skippedActive > 0 || skippedCollision > 0)
+        {
+            MessageBox.Show(
+                $"Renamed {targets.Count - skippedActive - skippedCollision} of {targets.Count} file(s)." +
+                (skippedActive > 0 ? $"\n{skippedActive} skipped: download in progress." : "") +
+                (skippedCollision > 0 ? $"\n{skippedCollision} skipped: a file with the cleaned name already exists." : ""),
+                "Clean filenames",
+                MessageBoxButton.OK,
+                MessageBoxImage.Information);
         }
 
         if (changedAny)
@@ -1126,6 +1261,25 @@ public sealed class MainViewModel : INotifyPropertyChanged
             return;
         _saveTimer.Stop();
         SaveTasks();
+    }
+
+    private void OnSaveTimerTick(object? sender, EventArgs e)
+    {
+        _saveTimer.Stop();
+        SaveTasks();
+    }
+
+    public void Dispose()
+    {
+        if (_disposed)
+            return;
+        _disposed = true;
+        try { _saveTimer.Tick -= OnSaveTimerTick; } catch { }
+        try { _saveTimer.Stop(); } catch { }
+        try { Engine.TaskChanged -= _onEngineTaskChanged; } catch { }
+        try { Engine.TaskCompleted -= _onEngineTaskCompleted; } catch { }
+        try { Engine.CloudflareBlocked -= _onCloudflareBlocked; } catch { }
+        try { Engine.EmbedInteractionRequired -= _onEmbedInteractionRequired; } catch { }
     }
 
     private void SaveTasks()
@@ -1243,6 +1397,10 @@ public sealed class MainViewModel : INotifyPropertyChanged
             return;
         if (Tasks.Any(t => t.Status == TaskStatus.Downloading || t.Status == TaskStatus.Queued))
             return;
+        // Paused tasks are unfinished work — shutting down now would strand
+        // them mid-queue. Wait until they are resumed or removed.
+        if (Tasks.Any(t => t.Status == TaskStatus.Paused))
+            return;
         // Failed tasks still need attention (retry) — don't shut down over them.
         if (Tasks.Any(t => t.Status == TaskStatus.Failed))
             return;
@@ -1250,6 +1408,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
         // so a failed shutdown.exe keeps the request armed for the next check.
         if (!TriggerSystemShutdown())
             return;
+        _shutdownIssuedByWdm = true;
         _shutdownWhenQueueComplete = false;
         OnPropertyChanged(nameof(ShutdownWhenQueueComplete));
     }
@@ -1478,20 +1637,36 @@ public sealed class FilterItem : INotifyPropertyChanged
         _ => Kind.ToString(),
     };
 
-    public System.Windows.Media.Brush CategoryBrush =>
-        (System.Windows.Media.Brush)System.Windows.Application.Current.Resources[
-            Kind switch
+    public System.Windows.Media.Brush CategoryBrush
+    {
+        get
+        {
+            // Resources[] throws on a missing key (and Application.Current can
+            // be null in design/test hosts) — either would take down the whole
+            // sidebar render. Fall back to a plain gray like DownloadTask does.
+            try
             {
-                FilterKind.Video => "Brush.CatVideo",
-                FilterKind.Music => "Brush.CatMusic",
-                FilterKind.Document => "Brush.CatDocument",
-                FilterKind.Compressed => "Brush.CatCompressed",
-                FilterKind.Program => "Brush.CatProgram",
-                FilterKind.Finished => "Brush.StatusComplete",
-                FilterKind.Paused => "Brush.StatusPaused",
-                FilterKind.Failed => "Brush.StatusFailed",
-                _ => "Brush.TextDim",
-            }];
+                string key = Kind switch
+                {
+                    FilterKind.Video => "Brush.CatVideo",
+                    FilterKind.Music => "Brush.CatMusic",
+                    FilterKind.Document => "Brush.CatDocument",
+                    FilterKind.Compressed => "Brush.CatCompressed",
+                    FilterKind.Program => "Brush.CatProgram",
+                    FilterKind.Finished => "Brush.StatusComplete",
+                    FilterKind.Paused => "Brush.StatusPaused",
+                    FilterKind.Failed => "Brush.StatusFailed",
+                    _ => "Brush.TextDim",
+                };
+                var found = System.Windows.Application.Current?.TryFindResource(key)
+                    as System.Windows.Media.Brush;
+                if (found is not null)
+                    return found;
+            }
+            catch { }
+            return System.Windows.Media.Brushes.Gray;
+        }
+    }
 
     public int Count
     {

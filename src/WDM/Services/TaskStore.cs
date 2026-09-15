@@ -10,6 +10,16 @@ public enum AppTheme
     Default
 }
 
+/// <summary>Target container for HLS auto-remux after segment stitching.
+/// Mp4 preserves historic behavior; Mkv keeps more tracks/subtitles;
+/// KeepTs disables the ffmpeg remux and leaves the stitched .ts file.</summary>
+public enum HlsContainer
+{
+    Mp4,
+    Mkv,
+    KeepTs
+}
+
 public sealed class AppSettings
 {
     public string DownloadFolder { get; set; } = DownloadTask.DefaultSaveFolder;
@@ -36,6 +46,11 @@ public sealed class AppSettings
     // then page metadata) when the filename carries no title. Uses the capture's
     // own Cookie/UA session; re-requests an already-visited page.
     public bool EnableTitleSync { get; set; } = true;
+
+    // HLS post-processing: after HLS segments are stitched, optionally remux the
+    // .ts concat into .mp4 (default, best compatibility) or .mkv (more tracks)
+    // via the bundled ffmpeg. KeepTs leaves the stitched .ts file untouched.
+    public HlsContainer HlsContainer { get; set; } = HlsContainer.Mp4;
 
     // Updates
     public bool CheckForUpdates { get; set; } = true;
@@ -89,10 +104,16 @@ public sealed class LenientEnumConverter<T> : JsonConverter<T> where T : struct,
             string? s = reader.GetString();
             if (!string.IsNullOrWhiteSpace(s))
             {
-                if (Enum.TryParse(s, ignoreCase: true, out T named))
+                // NOTE: Enum.TryParse accepts plain numeric strings ("99" →
+                // (T)99) even when undefined, which would bypass the IsDefined
+                // guard below and persist an undefined value that round-trips
+                // forever. Route numeric strings through the IsDefined check.
+                if (int.TryParse(s, out int numeric))
+                    return Enum.IsDefined(typeof(T), numeric)
+                        ? (T)Enum.ToObject(typeof(T), numeric)
+                        : default;
+                if (Enum.TryParse(s, ignoreCase: true, out T named) && Enum.IsDefined(typeof(T), named))
                     return named;
-                if (int.TryParse(s, out int n) && Enum.IsDefined(typeof(T), n))
-                    return (T)Enum.ToObject(typeof(T), n);
             }
             return default;
         }
@@ -299,6 +320,23 @@ public sealed class TaskStore
         catch (Exception ex)
         {
             LogNonFatal(ex);
+            // Corrupt settings.json: try the backup before surrendering to
+            // defaults (mirrors the tasks.json recovery path). A failed load
+            // must never cement defaults over a recoverable file.
+            try
+            {
+                string bak = SettingsPath + ".bak";
+                if (File.Exists(bak))
+                {
+                    var loaded = JsonSerializer.Deserialize<AppSettings>(File.ReadAllText(bak), JsonOptions);
+                    if (loaded is not null)
+                    {
+                        LogNonFatal(new InvalidOperationException("settings.json was unreadable; restored from settings.json.bak."));
+                        return ValidateSettings(loaded);
+                    }
+                }
+            }
+            catch (Exception bakEx) { LogNonFatal(bakEx); }
         }
         return new AppSettings();
     }
@@ -344,6 +382,14 @@ public sealed class TaskStore
         try
         {
             Directory.CreateDirectory(AppDir);
+            // Keep a backup so a crash mid-write (or a corrupt-in-memory state)
+            // never destroys the last good settings. Best-effort by design.
+            try
+            {
+                if (File.Exists(SettingsPath))
+                    File.Copy(SettingsPath, SettingsPath + ".bak", overwrite: true);
+            }
+            catch { }
             AtomicFile.Write(SettingsPath, JsonSerializer.Serialize(settings, JsonOptions));
         }
         catch (Exception ex)
@@ -413,7 +459,17 @@ public sealed class TaskStore
             var parsed = JsonSerializer.Deserialize<List<TaskRecord>>(text, JsonOptions);
             if (parsed is null || parsed.Count == 0)
                 return false;
-            File.Copy(TasksBackupPath, TasksPath, overwrite: true);
+            string tmp = TasksPath + $".restore-{Guid.NewGuid():N}.tmp";
+            File.WriteAllText(tmp, text);
+            try
+            {
+                File.Move(tmp, TasksPath, overwrite: true);
+            }
+            catch
+            {
+                try { File.Delete(tmp); } catch { }
+                throw;
+            }
             TasksBackupRestored = true;
             LogNonFatal(new InvalidOperationException(
                 $"tasks.json was unreadable and has been restored from tasks.json.bak ({parsed.Count} records)."));
@@ -478,8 +534,16 @@ public sealed class TaskStore
                 _sessionBackupTaken = true;
                 try
                 {
+                    // Atomic-ish snapshot: copy to temp then move, so a crash
+                    // mid-copy can never leave a truncated .bak that poisons
+                    // the next startup's TryRestoreBackup.
                     if (File.Exists(TasksPath))
-                        File.Copy(TasksPath, TasksBackupPath, overwrite: true);
+                    {
+                        string tmp = TasksBackupPath + $".snap-{Guid.NewGuid():N}.tmp";
+                        File.Copy(TasksPath, tmp, overwrite: false);
+                        try { File.Move(tmp, TasksBackupPath, overwrite: true); }
+                        catch { try { File.Delete(tmp); } catch { } throw; }
+                    }
                 }
                 catch { }
             }

@@ -46,7 +46,10 @@ public static class TitleFetcher
 
     public static HttpClient CreateClient()
     {
-        var handler = new SocketsHttpHandler { AllowAutoRedirect = true, UseCookies = false };
+        // No auto-redirect: callers follow redirects manually so captured
+        // Cookie headers can never ride along cross-origin (BUG-031). The
+        // shared handler forwards custom headers on redirect otherwise.
+        var handler = new SocketsHttpHandler { AllowAutoRedirect = false, UseCookies = false };
         var http = new HttpClient(handler) { Timeout = TimeSpan.FromSeconds(10) };
         http.DefaultRequestHeaders.TryAddWithoutValidation("User-Agent", ChromeUa);
         return http;
@@ -97,19 +100,35 @@ public static class TitleFetcher
     {
         try
         {
-            using var req = new HttpRequestMessage(HttpMethod.Get, apiUrl);
-            req.Headers.TryAddWithoutValidation("Accept", "application/json");
-            using var resp = await http.SendAsync(req, HttpCompletionOption.ResponseHeadersRead, ct).ConfigureAwait(false);
-            if (!resp.IsSuccessStatusCode)
-                return null;
-            string body = await resp.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
-            using var doc = JsonDocument.Parse(body);
-            if (doc.RootElement.ValueKind == JsonValueKind.Object &&
-                doc.RootElement.TryGetProperty("title", out var title) &&
-                title.ValueKind == JsonValueKind.String)
+            // Provider endpoints carry no cookies, so following up to 2
+            // redirects here is safe (handler no longer auto-redirects).
+            string target = apiUrl;
+            for (int hop = 0; hop < 3; hop++)
             {
-                string? t = title.GetString();
-                return string.IsNullOrWhiteSpace(t) ? null : t;
+                using var req = new HttpRequestMessage(HttpMethod.Get, target);
+                req.Headers.TryAddWithoutValidation("Accept", "application/json");
+                using var resp = await http.SendAsync(req, HttpCompletionOption.ResponseHeadersRead, ct).ConfigureAwait(false);
+                if (IsRedirect(resp.StatusCode) && resp.Headers.Location is Uri loc)
+                {
+                    target = loc.IsAbsoluteUri ? loc.ToString() : new Uri(new Uri(target), loc).ToString();
+                    // Provider open-redirects must not become intranet probes:
+                    // stop following when the chain leaves public space.
+                    if (WDM.Services.CaptureServer.IsBlockedResolveTarget(target))
+                        return null;
+                    continue;
+                }
+                if (!resp.IsSuccessStatusCode)
+                    return null;
+                string body = await resp.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
+                using var doc = JsonDocument.Parse(body);
+                if (doc.RootElement.ValueKind == JsonValueKind.Object &&
+                    doc.RootElement.TryGetProperty("title", out var title) &&
+                    title.ValueKind == JsonValueKind.String)
+                {
+                    string? t = title.GetString();
+                    return string.IsNullOrWhiteSpace(t) ? null : t;
+                }
+                return null;
             }
             return null;
         }
@@ -125,24 +144,68 @@ public static class TitleFetcher
     {
         try
         {
-            using var req = new HttpRequestMessage(HttpMethod.Get, page);
-            req.Headers.TryAddWithoutValidation("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8");
-            req.Headers.TryAddWithoutValidation("Accept-Language", "en-US,en;q=0.9");
-            if (Uri.TryCreate(referer ?? page, UriKind.Absolute, out var r))
-                req.Headers.Referrer = r;
+            // Captured session cookies ride along only to the host they were
+            // captured for — never to a third-party page or a cross-host
+            // redirect target (BUG-031).
+            string? cookieHost = HostOf(page);
             if (headers != null && headers.TryGetValue("Cookie", out var cookie) && !string.IsNullOrWhiteSpace(cookie))
-                req.Headers.TryAddWithoutValidation("Cookie", cookie);
-            using var resp = await http.SendAsync(req, HttpCompletionOption.ResponseHeadersRead, ct).ConfigureAwait(false);
-            if (!resp.IsSuccessStatusCode)
+            {
+                string? refHost = HostOf(referer);
+                if (refHost is not null && !string.Equals(refHost, cookieHost, StringComparison.OrdinalIgnoreCase))
+                    cookieHost = refHost;
+            }
+            string target = page;
+            HttpResponseMessage? resp = null;
+            for (int hop = 0; hop < 4; hop++)
+            {
+                using var req = new HttpRequestMessage(HttpMethod.Get, target);
+                req.Headers.TryAddWithoutValidation("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8");
+                req.Headers.TryAddWithoutValidation("Accept-Language", "en-US,en;q=0.9");
+                if (Uri.TryCreate(referer ?? page, UriKind.Absolute, out var r))
+                    req.Headers.Referrer = r;
+                if (headers != null && headers.TryGetValue("Cookie", out var ck) && !string.IsNullOrWhiteSpace(ck) &&
+                    string.Equals(HostOf(target), cookieHost, StringComparison.OrdinalIgnoreCase))
+                    req.Headers.TryAddWithoutValidation("Cookie", ck);
+                // No auto-redirect: follow same-host redirects manually so the
+                // Cookie header above can never leak cross-origin (the shared
+                // handler forwards custom headers on redirect).
+                resp?.Dispose();
+                resp = await http.SendAsync(req, HttpCompletionOption.ResponseHeadersRead, ct).ConfigureAwait(false);
+                if (!IsRedirect(resp.StatusCode) || resp.Headers.Location is not Uri loc)
+                    break;
+                string next = loc.IsAbsoluteUri ? loc.ToString() : new Uri(new Uri(target), loc).ToString();
+                if (!string.Equals(HostOf(next), HostOf(target), StringComparison.OrdinalIgnoreCase))
+                    break; // cross-host redirect: stop with cookies withheld
+                target = next;
+            }
+            if (resp is null)
                 return null;
-            string html = await resp.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
-            if (string.IsNullOrWhiteSpace(html) || Embed.EmbedParsers.IsChallengePage(html))
-                return null;
-            // og:title / twitter:title / <title> first (highest signal), then JSON-LD.
-            string? title = Embed.EmbedParsers.ExtractTitle(html);
-            if (!string.IsNullOrWhiteSpace(title))
-                return title;
-            return Embed.EmbedParsers.ExtractJsonLdTitle(html);
+            using (resp)
+            {
+                if (!resp.IsSuccessStatusCode)
+                    return null;
+                const int maxHtmlBytes = 2 * 1024 * 1024;
+                using var stream = await resp.Content.ReadAsStreamAsync(ct).ConfigureAwait(false);
+                using var ms = new System.IO.MemoryStream();
+                var tmp = new byte[81920];
+                int n;
+                int total = 0;
+                while ((n = await stream.ReadAsync(tmp.AsMemory(0, tmp.Length), ct).ConfigureAwait(false)) > 0)
+                {
+                    total += n;
+                    if (total > maxHtmlBytes)
+                        return null;
+                    ms.Write(tmp, 0, n);
+                }
+                string html = System.Text.Encoding.UTF8.GetString(ms.ToArray());
+                if (string.IsNullOrWhiteSpace(html) || Embed.EmbedParsers.IsChallengePage(html))
+                    return null;
+                // og:title / twitter:title / <title> first (highest signal), then JSON-LD.
+                string? title = Embed.EmbedParsers.ExtractTitle(html);
+                if (!string.IsNullOrWhiteSpace(title))
+                    return title;
+                return Embed.EmbedParsers.ExtractJsonLdTitle(html);
+            }
         }
         catch
         {
@@ -161,4 +224,15 @@ public static class TitleFetcher
         !string.IsNullOrWhiteSpace(url)
         && Uri.TryCreate(url, UriKind.Absolute, out var uri)
         && (uri.Scheme == Uri.UriSchemeHttp || uri.Scheme == Uri.UriSchemeHttps);
+
+    private static string? HostOf(string? url) =>
+        string.IsNullOrWhiteSpace(url) ? null
+        : Uri.TryCreate(url, UriKind.Absolute, out var u) ? u.Host : null;
+
+    private static bool IsRedirect(System.Net.HttpStatusCode code) =>
+        code is System.Net.HttpStatusCode.MovedPermanently
+            or System.Net.HttpStatusCode.Found
+            or System.Net.HttpStatusCode.SeeOther
+            or System.Net.HttpStatusCode.TemporaryRedirect
+            or (System.Net.HttpStatusCode)308;
 }

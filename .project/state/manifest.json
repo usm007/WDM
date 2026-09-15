@@ -1,0 +1,546 @@
+﻿{
+    "generatedAt":  "2026-09-14T14:03:01.8142490Z",
+    "root":  "E:\\WDM-master",
+    "files":  [
+                  {
+                      "path":  "build-velopack.ps1",
+                      "sha256":  "4C4A720CB039248969E93E87B67AB8DF54646B0F28B30F3120AF5733D866398D",
+                      "bytes":  5777
+                  },
+                  {
+                      "path":  "build-xpi.ps1",
+                      "sha256":  "1C5E2FE62710E72522D13AAF31D6FA7F705885A0E4BE9CCF85FA905515AE916B",
+                      "bytes":  1602
+                  },
+                  {
+                      "path":  "RunWDM.bat",
+                      "sha256":  "19336A26D4CAECE6FF7EB2EF26F89210F17D8BC824951995FAEDAEF4D92B0989",
+                      "bytes":  254
+                  },
+                  {
+                      "path":  "src\\WDM.BrowserExtension\\background.js",
+                      "sha256":  "5550ADB013163D851C5F58D2ABF62E2AEFFB0137BAF759D02722F44E645FA524",
+                      "bytes":  18357
+                  },
+                  {
+                      "path":  "src\\WDM.BrowserExtension\\firefox\\background.js",
+                      "sha256":  "5550ADB013163D851C5F58D2ABF62E2AEFFB0137BAF759D02722F44E645FA524",
+                      "bytes":  18357
+                  },
+                  {
+                      "path":  "src\\WDM.BrowserExtension\\firefox\\manifest.json",
+                      "sha256":  "B4B746771B3949EBFF697237E8E4C4CDFA2372AE96EE6E527CFAA058EC0DABB9",
+                      "bytes":  1810
+                  },
+                  {
+                      "path":  "src\\WDM.BrowserExtension\\firefox\\media_sniffer.js",
+                      "sha256":  "C95B2A5814671AA5F0ECEE772DA125C246F57966BF9635DDDF81019F3C531DC8",
+                      "bytes":  34945
+                  },
+                  {
+                      "path":  "src\\WDM.BrowserExtension\\firefox\\popup.html",
+                      "sha256":  "6FD17F8B82CE74D5CF2EEAA757E5A6F60B21B6E664E156602BC490C9543E4EE6",
+                      "bytes":  672
+                  },
+                  {
+                      "path":  "src\\WDM.BrowserExtension\\firefox\\popup.js",
+                      "sha256":  "7A9933E0E651D67BFA608E9969F892B796F2BB53ADD9013F79C41F171415997F",
+                      "bytes":  1248
+                  },
+                  {
+                      "path":  "src\\WDM.BrowserExtension\\firefox\\wdm_hook.js",
+                      "sha256":  "BF1CA949897ADA1D535533ED25C167E1E24840E9984C3DBAFB81273862255040",
+                      "bytes":  2345
+                  },
+                  {
+                      "path":  "src\\WDM.BrowserExtension\\firefox\\youtube_menu.js",
+                      "sha256":  "FAA3574700F29F36E55426082242122AE6B1BD5F85BF15CF39FF596C6E3D7848",
+                      "bytes":  5102
+                  },
+                  {
+                      "path":  "src\\WDM.BrowserExtension\\manifest.json",
+                      "sha256":  "14FAA376213221DC005AEC636E0F17EF87D9651E54609D6BF506356EAC7F7E1D",
+                      "bytes":  1577
+                  },
+                  {
+                      "path":  "src\\WDM.BrowserExtension\\media_sniffer.js",
+                      "sha256":  "C95B2A5814671AA5F0ECEE772DA125C246F57966BF9635DDDF81019F3C531DC8",
+                      "bytes":  34945
+                  },
+                  {
+                      "path":  "src\\WDM.BrowserExtension\\popup.html",
+                      "sha256":  "6FD17F8B82CE74D5CF2EEAA757E5A6F60B21B6E664E156602BC490C9543E4EE6",
+                      "bytes":  672
+                  },
+                  {
+                      "path":  "src\\WDM.BrowserExtension\\popup.js",
+                      "sha256":  "B96B58DD1BEB1072049AACC48AE1C1DE6AF3956E1CD83233EF19A220E53A7859",
+                      "bytes":  1248
+                  },
+                  {
+                      "path":  "src\\WDM.BrowserExtension\\wdm_hook.js",
+                      "sha256":  "BF1CA949897ADA1D535533ED25C167E1E24840E9984C3DBAFB81273862255040",
+                      "bytes":  2345
+                  },
+                  {
+                      "path":  "src\\WDM.BrowserExtension\\youtube_menu.js",
+                      "sha256":  "FAA3574700F29F36E55426082242122AE6B1BD5F85BF15CF39FF596C6E3D7848",
+                      "bytes":  5102
+                  },
+                  {
+                      "path":  "src\\WDM.Setup\\installer.iss",
+                      "sha256":  "A1F03148D53D81AB40C0703557FA78BACB5A5D1A7C2EDE501D8677222887F05A",
+                      "bytes":  7592
+                  },
+                  {
+                      "path":  "src\\WDM\\AboutDialog.xaml",
+                      "sha256":  "BCEA5222C89219AB2A0A816E43F1C119DC46EFE5A43611C4221310DFB5B6F360",
+                      "bytes":  11751
+                  },
+                  {
+                      "path":  "src\\WDM\\AboutDialog.xaml.cs",
+                      "sha256":  "D95B8E6E88E042E3C3BB1F7E83C137940D9E61F0D2CEACD263BD14F22D08E72D",
+                      "bytes":  15764
+                  },
+                  {
+                      "path":  "src\\WDM\\AddDownloadDialog.xaml",
+                      "sha256":  "2FEE309B1FFD1203BAFBD82D009FADEBB8BD3EA7AE733F895DB95CB769ABCC37",
+                      "bytes":  19532
+                  },
+                  {
+                      "path":  "src\\WDM\\AddDownloadDialog.xaml.cs",
+                      "sha256":  "128721CED976D0C95884DE435DD84FE3E42ABCA58BA848A78E98EF48ABD82A38",
+                      "bytes":  33453
+                  },
+                  {
+                      "path":  "src\\WDM\\app.manifest",
+                      "sha256":  "09A9EBB203E8CBC6C757ED3602E0C0FC8F4D73F016DEC0054804FC8CA6FA53AD",
+                      "bytes":  1501
+                  },
+                  {
+                      "path":  "src\\WDM\\App.xaml",
+                      "sha256":  "C66156EACC7C0EC4A9B7E4314BE195421DFB735ED198B24EED404432047EB766",
+                      "bytes":  769
+                  },
+                  {
+                      "path":  "src\\WDM\\App.xaml.cs",
+                      "sha256":  "391899486DAAA36C10B16C9D48EECE4D7CCAD8E8DE8DDADAF33F9D19A9591E38",
+                      "bytes":  8251
+                  },
+                  {
+                      "path":  "src\\WDM\\AssemblyInfo.cs",
+                      "sha256":  "D41E48D2BCE7F9EDA84EEF27C4008920A5639DD3F56BAEFF39273D58381575FE",
+                      "bytes":  633
+                  },
+                  {
+                      "path":  "src\\WDM\\BrowserExtensionControl.xaml",
+                      "sha256":  "222C30379D5ACD70DE04121CA942AA2D96DE54E2B0B8984F28514515C5DA3DB4",
+                      "bytes":  5733
+                  },
+                  {
+                      "path":  "src\\WDM\\BrowserExtensionControl.xaml.cs",
+                      "sha256":  "9F47ADEEDC6BABED5C11A2BDF79897C5B2478AFD66D9BDC3EE545055A04DBDD6",
+                      "bytes":  1238
+                  },
+                  {
+                      "path":  "src\\WDM\\BrowserExtensionDialog.xaml",
+                      "sha256":  "D81404ABF54B7CA7CDAC19E90FD3963D7C27205871C2ACCF6E8A719085EC5B07",
+                      "bytes":  1329
+                  },
+                  {
+                      "path":  "src\\WDM\\BrowserExtensionDialog.xaml.cs",
+                      "sha256":  "9FCCBA335A468F6F0C99A59033368269A58EB8D11CD0B63376C44AF313B8449C",
+                      "bytes":  648
+                  },
+                  {
+                      "path":  "src\\WDM\\CloudflareChallengeWindow.xaml",
+                      "sha256":  "E676781B57DDF93382A3C03135891FB190B7DF7A219CD7D326D53CCD88FACB78",
+                      "bytes":  4044
+                  },
+                  {
+                      "path":  "src\\WDM\\CloudflareChallengeWindow.xaml.cs",
+                      "sha256":  "A36A64EF03D3D382F92CC72C2E97DFD7F3D39B515116E5374C9611B17F36C083",
+                      "bytes":  5868
+                  },
+                  {
+                      "path":  "src\\WDM\\Controls\\WdmWindow.cs",
+                      "sha256":  "E18D463C41A4CF55AF24D5DF146957A36F6E62CC0684BCB2C065EE8192D97739",
+                      "bytes":  1847
+                  },
+                  {
+                      "path":  "src\\WDM\\DeleteConfirmDialog.xaml",
+                      "sha256":  "2665D563C9B4E07F49CEA04866CC86732E9F5A5B3F820ACD00238B5A52BA67CF",
+                      "bytes":  3773
+                  },
+                  {
+                      "path":  "src\\WDM\\DeleteConfirmDialog.xaml.cs",
+                      "sha256":  "7B2E10967B5D2427D0B9786B6ECC48C3D81EF5C39CF4522BD081DC50F524F5E5",
+                      "bytes":  1034
+                  },
+                  {
+                      "path":  "src\\WDM\\Docs\\extension_guide.html",
+                      "sha256":  "7648EB47CD0CFD7CDFE5D981472B4DC52BF706D6614A92E47BB3FDD6A0799E75",
+                      "bytes":  46372
+                  },
+                  {
+                      "path":  "src\\WDM\\DownloadCompleteDialog.xaml",
+                      "sha256":  "B2001319BE0D79C02BAB8A4257BA229DF79D6AD0C4F797A6E52434774FE10C9D",
+                      "bytes":  6529
+                  },
+                  {
+                      "path":  "src\\WDM\\DownloadCompleteDialog.xaml.cs",
+                      "sha256":  "84D70740D85841E7F1964D83DCED6B6ABB138F21ABF99B5ACED1876CBFC86C99",
+                      "bytes":  3971
+                  },
+                  {
+                      "path":  "src\\WDM\\DownloadProgressDialog.xaml",
+                      "sha256":  "098B0B336D8DCA667B722D5B941F7781B6BB745E21C830CF91D30BD0E9126289",
+                      "bytes":  28100
+                  },
+                  {
+                      "path":  "src\\WDM\\DownloadProgressDialog.xaml.cs",
+                      "sha256":  "28A65856CB137DF04BF5BED92A5F54F9677104DDB4B704AEDF7C2029CCCFC858",
+                      "bytes":  18747
+                  },
+                  {
+                      "path":  "src\\WDM\\DuplicateDownloadDialog.xaml",
+                      "sha256":  "FB2BD3F12B07B3693240831BC745630A63E43D9364AD9C20B51BAA5812061AD8",
+                      "bytes":  6818
+                  },
+                  {
+                      "path":  "src\\WDM\\DuplicateDownloadDialog.xaml.cs",
+                      "sha256":  "17EB5F2791B29E2C63E09DA26B61F27245E65B6528DA7BA53F2E0B5B1DAE3A77",
+                      "bytes":  1821
+                  },
+                  {
+                      "path":  "src\\WDM\\EmbedInteractionWindow.xaml",
+                      "sha256":  "31A019B7363F0F9D05C1B5DA92E18D06A36396C3A782D4B64EC4F6C525361D7C",
+                      "bytes":  4690
+                  },
+                  {
+                      "path":  "src\\WDM\\EmbedInteractionWindow.xaml.cs",
+                      "sha256":  "D508CC87B03F86F00BAD534B17C9F720FA6EE03514E7E6E53493720F0E9BE694",
+                      "bytes":  4114
+                  },
+                  {
+                      "path":  "src\\WDM\\ExtensionReloadNoticeControl.xaml",
+                      "sha256":  "EB24449536F999D50006FBEE33E93F5CA56A77342138E1BD29F3BC9271626B25",
+                      "bytes":  4432
+                  },
+                  {
+                      "path":  "src\\WDM\\ExtensionReloadNoticeControl.xaml.cs",
+                      "sha256":  "B4BF88B2F1DFE58C77E6214C12DC5ABC5B4B39D2AAC1A01CA5E1BADE41308BF4",
+                      "bytes":  2205
+                  },
+                  {
+                      "path":  "src\\WDM\\ExtensionReloadNoticeDialog.xaml",
+                      "sha256":  "5FD5FD12C0AA44C312253C8081182287DA18C28C3AB0EC5EA31892BE552ABADF",
+                      "bytes":  1334
+                  },
+                  {
+                      "path":  "src\\WDM\\ExtensionReloadNoticeDialog.xaml.cs",
+                      "sha256":  "71C1E1C9C6B000447A974FC1D41F9D191D2C8A5A37AA344CCBA4136DFE488AB6",
+                      "bytes":  751
+                  },
+                  {
+                      "path":  "src\\WDM\\GlobalUsings.cs",
+                      "sha256":  "88552AF40FD8EC7518B0F8F52DA9437F830873A654960661438D3E23802C0F84",
+                      "bytes":  285
+                  },
+                  {
+                      "path":  "src\\WDM\\MainWindow.xaml",
+                      "sha256":  "E365B1F9D16E5BFC6674241041359AD34EECD5ED18F9E418B4B913F3772D5239",
+                      "bytes":  43732
+                  },
+                  {
+                      "path":  "src\\WDM\\MainWindow.xaml.cs",
+                      "sha256":  "8BE97B57249B0FA763DFFA9E975080E536EDED3675AC86145BE4ED548F04B32A",
+                      "bytes":  36058
+                  },
+                  {
+                      "path":  "src\\WDM\\Models\\DownloadTask.cs",
+                      "sha256":  "B63F523EC54608E61E267A4FF5EEDCA86BF502838427796D6FDCFC87333AA46C",
+                      "bytes":  21287
+                  },
+                  {
+                      "path":  "src\\WDM\\OptionsControl.xaml",
+                      "sha256":  "AEE916C1FB525A163A3A96F50B024AC63AD8BEDFECF2A70288B7673930849193",
+                      "bytes":  50969
+                  },
+                  {
+                      "path":  "src\\WDM\\OptionsControl.xaml.cs",
+                      "sha256":  "297745FF753092CC4FC75BEE47CCDBBB8D80121AADBAA7E7550DB2BB9C3737BE",
+                      "bytes":  25734
+                  },
+                  {
+                      "path":  "src\\WDM\\OptionsDialog.xaml",
+                      "sha256":  "959F16FF9D3543378CFD3A51C691D334ED68056F423726A442568D093E24F18B",
+                      "bytes":  1393
+                  },
+                  {
+                      "path":  "src\\WDM\\OptionsDialog.xaml.cs",
+                      "sha256":  "96582FA6FBF3A5B08E95E3093350104F5C87E47CAF2853A4117BD11155D2162C",
+                      "bytes":  842
+                  },
+                  {
+                      "path":  "src\\WDM\\Program.cs",
+                      "sha256":  "3EA9FBBA3F2805D07356B2B6C5FC83597E4FFA30E70EEBF39B25EC773BA50792",
+                      "bytes":  811
+                  },
+                  {
+                      "path":  "src\\WDM\\RefreshLinkDialog.xaml",
+                      "sha256":  "BCF1BFBACB762C40F5A8EC931BDE21D94DE6D3F5EDA9E691EAD2030EE3B1B81B",
+                      "bytes":  6931
+                  },
+                  {
+                      "path":  "src\\WDM\\RefreshLinkDialog.xaml.cs",
+                      "sha256":  "7C643DD463C44F2188A0C6BCFEE36C7157F0A5D6428F2842F6E9F1D058275FC2",
+                      "bytes":  4387
+                  },
+                  {
+                      "path":  "src\\WDM\\Services\\AppIcon.cs",
+                      "sha256":  "6A6D085F3885894A51A7D594A023CAA84C51C828F9838592FC18758F5DD36E3A",
+                      "bytes":  4438
+                  },
+                  {
+                      "path":  "src\\WDM\\Services\\AtomicFile.cs",
+                      "sha256":  "986D2E31E0F64FFE2BA97D5CB7C849E0F6D52F79B11C4A0333D6B61A35B6A752",
+                      "bytes":  1738
+                  },
+                  {
+                      "path":  "src\\WDM\\Services\\BrowserIntegration.cs",
+                      "sha256":  "F7A8414FB4E1A7AD88693BA0279F0B4A120FE2FD09B5F5DC40F3E26243BEC0A8",
+                      "bytes":  9918
+                  },
+                  {
+                      "path":  "src\\WDM\\Services\\CaptureServer.cs",
+                      "sha256":  "D9FF3E1DEFC5B427CBA6EA0640990D1DF8ECFEC36F85BE583E7651999DEC7BDD",
+                      "bytes":  25717
+                  },
+                  {
+                      "path":  "src\\WDM\\Services\\DownloadEngine.cs",
+                      "sha256":  "A71C62F2A456AE7D032EE197110673CF2BA00533E62C4D0CAA86A6759698938F",
+                      "bytes":  109280
+                  },
+                  {
+                      "path":  "src\\WDM\\Services\\Embed\\EmbedModels.cs",
+                      "sha256":  "DB1407BFC6BAA1C6FBEB52857173432E21CC7E6457E73410B2F45A0F164DB553",
+                      "bytes":  1723
+                  },
+                  {
+                      "path":  "src\\WDM\\Services\\Embed\\EmbedParsers.cs",
+                      "sha256":  "D3185626B8A255656F5A38AB22AE0B15206437C219395A16C81724457EF6C27E",
+                      "bytes":  25933
+                  },
+                  {
+                      "path":  "src\\WDM\\Services\\Embed\\EmbedResolver.cs",
+                      "sha256":  "F2CA6F073FBAA9058D27251C87D7AD316E9D3CC5582AC5BB9BCB302336568568",
+                      "bytes":  24219
+                  },
+                  {
+                      "path":  "src\\WDM\\Services\\EngineManager.cs",
+                      "sha256":  "5EADBA3562F75053C7EBD05F1E5499B33963AC0ADE51E95F6738BE84C470D228",
+                      "bytes":  13721
+                  },
+                  {
+                      "path":  "src\\WDM\\Services\\FileNameHelper.cs",
+                      "sha256":  "E89FE00CA426880A6F3A78E7963498E4A6A7FDBB052C1F329529E553434BBD90",
+                      "bytes":  21752
+                  },
+                  {
+                      "path":  "src\\WDM\\Services\\HlsDownloader.cs",
+                      "sha256":  "B33E23CACD488CE4E120743435A52313071C6C66D44179DF7B698FE5EB8F6028",
+                      "bytes":  28702
+                  },
+                  {
+                      "path":  "src\\WDM\\Services\\InstallState.cs",
+                      "sha256":  "54A2589247035E1A0952D17E3A2E7FE2D3E3B54441467843A5B5FA42502EF851",
+                      "bytes":  4464
+                  },
+                  {
+                      "path":  "src\\WDM\\Services\\MediaResolver.cs",
+                      "sha256":  "C7C3A98D5C8261FED9A1905841D8A6BDABDDF7C4A21C4E32A1965037EEB5EA3A",
+                      "bytes":  8825
+                  },
+                  {
+                      "path":  "src\\WDM\\Services\\ScreenshotGenerator.cs",
+                      "sha256":  "5F27295D8C23C46BA14092044669922EC9906014CC24155264C695450008DD49",
+                      "bytes":  20329
+                  },
+                  {
+                      "path":  "src\\WDM\\Services\\SpeedGovernor.cs",
+                      "sha256":  "9EDFD3AEBC9F423CEC9627FFF2BE924C70839A8B055A6D4EAA6978047730F83B",
+                      "bytes":  2168
+                  },
+                  {
+                      "path":  "src\\WDM\\Services\\TaskStore.cs",
+                      "sha256":  "B04055453A832BE68E6A70705292796F285DD1643873133DC4B4FB7B3BE057FD",
+                      "bytes":  21182
+                  },
+                  {
+                      "path":  "src\\WDM\\Services\\ThemeService.cs",
+                      "sha256":  "740EA8065CA20CCF1CE82877F69FB08EB1A0839B88285812F893EB28F850FA17",
+                      "bytes":  6303
+                  },
+                  {
+                      "path":  "src\\WDM\\Services\\TitleSync\\TitleFetcher.cs",
+                      "sha256":  "289E7818869C17D3B0FC476F262964048FE7C526F0809FE8178D66FE258876CD",
+                      "bytes":  7037
+                  },
+                  {
+                      "path":  "src\\WDM\\Services\\TrayIcon.cs",
+                      "sha256":  "20E688F7061364CA572EC493D0A214CA5EC5CAC17E33E69CD3B0F8C7CCE96EE5",
+                      "bytes":  5497
+                  },
+                  {
+                      "path":  "src\\WDM\\Services\\UpdateChecker.cs",
+                      "sha256":  "AC674F8EC852CAFD6BF7AE0683D55E36E45CC1E3D992A9C332188176262BC81E",
+                      "bytes":  15375
+                  },
+                  {
+                      "path":  "src\\WDM\\Services\\VelopackUpdateService.cs",
+                      "sha256":  "71A57E66E0866DAC739D63D463F63B69D92AA906E1156E4587B702F176692FB6",
+                      "bytes":  14441
+                  },
+                  {
+                      "path":  "src\\WDM\\Services\\YouTubeCookieExporter.cs",
+                      "sha256":  "91D2CE02E77753593C8F5239F9CDB77B5B7FC1E62A13C58F6218F9E3ECBB26DB",
+                      "bytes":  3725
+                  },
+                  {
+                      "path":  "src\\WDM\\Services\\YtDlpRunner.cs",
+                      "sha256":  "FD87AC056E4BC2D9D2D0A9DBC8D024DAC60A8C642DA56E2E6B3FE461E6B42C2F",
+                      "bytes":  4441
+                  },
+                  {
+                      "path":  "src\\WDM\\TaskPropertiesDialog.xaml",
+                      "sha256":  "68CDCCACEAD588C197542C12593DF36528710CFD0876F21C2F3F7E6267A1E180",
+                      "bytes":  11352
+                  },
+                  {
+                      "path":  "src\\WDM\\TaskPropertiesDialog.xaml.cs",
+                      "sha256":  "167B05E0C42EF8C4D076A76829601B107E861BA2F71B9F139E64AD5D1E64EA16",
+                      "bytes":  2908
+                  },
+                  {
+                      "path":  "src\\WDM\\Themes\\Palette.Dark.xaml",
+                      "sha256":  "857D734B743929EA64F3A34989A0F40468F1FFD3DB6803C0E47FF2FAA8E2155C",
+                      "bytes":  12351
+                  },
+                  {
+                      "path":  "src\\WDM\\Themes\\Palette.Light.xaml",
+                      "sha256":  "E38E001B453772A35156F30CFF8C731284E811F377B5BDE291E70D89267F533C",
+                      "bytes":  12225
+                  },
+                  {
+                      "path":  "src\\WDM\\Themes\\Theme.xaml",
+                      "sha256":  "5A4AF2433F1D528BAFB586EA5CA0DDE3B116C6329D7445B027F428D6A4397B48",
+                      "bytes":  109039
+                  },
+                  {
+                      "path":  "src\\WDM\\TrayProgressPanel.xaml",
+                      "sha256":  "34B2CBB0088E488393711F3D4E1F4BA68F7545DFF1A3658F5929E0AAFFA85D47",
+                      "bytes":  1785
+                  },
+                  {
+                      "path":  "src\\WDM\\TrayProgressPanel.xaml.cs",
+                      "sha256":  "1B84B8C662B7F2B22D2CA68915D22B95636A4A384B458055EA89E6E3405179B2",
+                      "bytes":  6307
+                  },
+                  {
+                      "path":  "src\\WDM\\UpdateAvailableDialog.xaml",
+                      "sha256":  "A01225C34F99C9B8A7779C8B7DDA7A68460C5BE93538E6C5248F7443BA2C0AF1",
+                      "bytes":  5523
+                  },
+                  {
+                      "path":  "src\\WDM\\UpdateAvailableDialog.xaml.cs",
+                      "sha256":  "4BD7E8FD0F455327EF323FBF05B8BCB6BCB04A071E164DB442E348A0AE51E0BF",
+                      "bytes":  9461
+                  },
+                  {
+                      "path":  "src\\WDM\\ViewModels\\EmptyDashConverter.cs",
+                      "sha256":  "F36CC5D32CEC63031A943FDE88D6E9C55164312566138C5683C3964F14B3F995",
+                      "bytes":  935
+                  },
+                  {
+                      "path":  "src\\WDM\\ViewModels\\InverseBooleanToVisibilityConverter.cs",
+                      "sha256":  "AE8361B8EB28640424BBF3676BF624C2EE011EAE6908B577E1020A3309D4624E",
+                      "bytes":  507
+                  },
+                  {
+                      "path":  "src\\WDM\\ViewModels\\MainViewModel.cs",
+                      "sha256":  "7F2DB983A37F74CF967DA496276F9E52E14CA577570746E9663931CCD32439E8",
+                      "bytes":  58902
+                  },
+                  {
+                      "path":  "src\\WDM\\ViewModels\\NullToVisibilityConverter.cs",
+                      "sha256":  "43A18780EBA974DADB3AEC2D2E610E0C5A0867B2F8E8E23B97A6C8ACCE8EA55F",
+                      "bytes":  1055
+                  },
+                  {
+                      "path":  "src\\WDM\\ViewModels\\RelayCommand.cs",
+                      "sha256":  "5E815C211C5696A91F531BF706167E5A028FFF4FCFA9E6C163007E68B0108535",
+                      "bytes":  705
+                  },
+                  {
+                      "path":  "src\\WDM\\ViewModels\\RetryVisibilityConverter.cs",
+                      "sha256":  "D72C4B868EAA28023B7F2EB1BEFA1B896D7A76F76952AE46AF711CC6E7ECB091",
+                      "bytes":  520
+                  },
+                  {
+                      "path":  "src\\WDM\\ViewModels\\StatusToBrushConverter.cs",
+                      "sha256":  "9068CA46518B35AC094479BB2CFC347046506A40B53EDA68E0C406E9C19A93CB",
+                      "bytes":  1710
+                  },
+                  {
+                      "path":  "src\\WDM\\ViewModels\\StatusToIconConverter.cs",
+                      "sha256":  "A761BA80C6DF9BB55B622196F93C6D395C55D17DB41E66BAFF9F9B2555279096",
+                      "bytes":  940
+                  },
+                  {
+                      "path":  "src\\WDM\\ViewModels\\TaskStatusToBrushConverter.cs",
+                      "sha256":  "37B7A85F416D3685BACC9B4C174D32E94303898E44F765E17623484941084C01",
+                      "bytes":  2018
+                  },
+                  {
+                      "path":  "src\\WDM\\ViewModels\\TaskStatusToColorConverter.cs",
+                      "sha256":  "2E087DF6551793D2A3FD1A77E70FB02F735192C1630A18C71FBC557EEC1901E4",
+                      "bytes":  1881
+                  },
+                  {
+                      "path":  "src\\WDM\\ViewModels\\TextToVisibilityConverter.cs",
+                      "sha256":  "1EB0C67EC1BA9BC71A7DFB123EEEB53FD1008DDE426F789F6A7820CAF0012A5D",
+                      "bytes":  519
+                  },
+                  {
+                      "path":  "src\\WDM\\WDM.csproj",
+                      "sha256":  "F4A2FC4FFB6192B60944C6B37D261B44F5FAB5E87B39F6629DC385225B260BAC",
+                      "bytes":  2019
+                  },
+                  {
+                      "path":  "src\\WDM\\WelcomeWindow.xaml",
+                      "sha256":  "6D7DBCF5521D471093497CE44CDF80D10846AAB13031975040A17D6B7C1F8938",
+                      "bytes":  8758
+                  },
+                  {
+                      "path":  "src\\WDM\\WelcomeWindow.xaml.cs",
+                      "sha256":  "344AD6D87437FFDA2C05602DA9F289F03544450FCE5684B2802CD8702B05162D",
+                      "bytes":  4668
+                  },
+                  {
+                      "path":  "src\\WDM\\YouTubeSignInWindow.xaml",
+                      "sha256":  "08B643E95D15E0A9105AA9CE58A488590EF1C976C7FE97DC14AB2FC3755A94BA",
+                      "bytes":  4657
+                  },
+                  {
+                      "path":  "src\\WDM\\YouTubeSignInWindow.xaml.cs",
+                      "sha256":  "B9B9C303DC6ED964AE345A73348E94F6DB56176443BA499C041ED40E7405D2B9",
+                      "bytes":  5423
+                  },
+                  {
+                      "path":  "WDM.sln",
+                      "sha256":  "F76EE089C484BC570017A5FD5C10AFB54D810B1D069C1CFD5B4AD24BA9484F38",
+                      "bytes":  966
+                  }
+              ]
+}

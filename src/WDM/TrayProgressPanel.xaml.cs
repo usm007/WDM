@@ -154,6 +154,10 @@ public partial class TrayProgressPanel : Window, INotifyPropertyChanged
 
     private void Engine_TaskChanged()
     {
+        // While hidden the timer is stopped and Refresh is a no-op — skip
+        // queueing a dispatcher op per engine tick to avoid hidden churn.
+        if (!IsVisible)
+            return;
         Dispatcher.BeginInvoke(Refresh);
     }
 

@@ -53,6 +53,21 @@ public static class BrowserIntegration
             Directory.CreateDirectory(dst);
         }
 
+        // Ship the loopback auth token alongside the unpacked extension so the
+        // background worker can authenticate capture calls (see CaptureAuth).
+        // Deliberately NOT web-accessible: only the extension itself may read it.
+        try
+        {
+            string tokenPath = Path.Combine(dst, CaptureAuth.ExtensionTokenFileName);
+            string tokenJson = $"{{\"token\":\"{CaptureAuth.GetOrCreateToken()}\"}}";
+            bool stale = true;
+            try { stale = !File.Exists(tokenPath) || !File.ReadAllText(tokenPath).Contains(CaptureAuth.GetOrCreateToken()); }
+            catch { stale = true; }
+            if (stale)
+                File.WriteAllText(tokenPath, tokenJson);
+        }
+        catch { /* token file is best-effort; the server still enforces SSRF/Origin checks */ }
+
         return dst;
     }
 

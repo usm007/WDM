@@ -2,6 +2,28 @@
 const webext = typeof browser !== "undefined" ? browser : chrome;
 const WDM_HOST = "http://127.0.0.1:17530";
 
+// Loopback auth token (BUG-016 fix): the desktop app writes wdm-token.json next
+// to the deployed extension files. Sent as X-WDM-Token on every capture call so
+// bare loopback clients cannot drive downloads. Absent during dev (repo copy) —
+// calls then rely on the server's extension-Origin migration grace.
+let WDM_TOKEN = null;
+try {
+  const tokenUrl = (typeof chrome !== "undefined" && chrome.runtime && chrome.runtime.getURL)
+    ? chrome.runtime.getURL("wdm-token.json")
+    : (typeof browser !== "undefined" && browser.runtime && browser.runtime.getURL
+      ? browser.runtime.getURL("wdm-token.json") : null);
+  if (tokenUrl) {
+    fetch(tokenUrl).then(r => r.ok ? r.json() : null).then(j => {
+      if (j && typeof j.token === "string" && j.token.length >= 32) WDM_TOKEN = j.token;
+    }).catch(() => {});
+  }
+} catch {}
+function wdmAuthHeaders(extra) {
+  const h = Object.assign({}, extra || {});
+  if (WDM_TOKEN) h["X-WDM-Token"] = WDM_TOKEN;
+  return h;
+}
+
 // Re-entrance guard for URLs handed off to WDM
 const loopGuard = new Map();
 // Media found per tab (url -> { url, label, type, time })
@@ -103,7 +125,7 @@ webext.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
 
   if (message.action === "resolve") {
-    fetch(`${WDM_HOST}/resolve?url=${encodeURIComponent(message.url)}`)
+    fetch(`${WDM_HOST}/resolve?url=${encodeURIComponent(message.url)}`, { headers: wdmAuthHeaders() })
       .then(r => r.ok ? r.json() : { error: `HTTP ${r.status}` })
       .then(data => sendResponse({ success: true, data }))
       .catch(err => sendResponse({ success: false, error: err.message }));
@@ -126,7 +148,7 @@ webext.runtime.onMessage.addListener((message, sender, sendResponse) => {
         if (!p.headers["User-Agent"] && !p.headers["user-agent"]) p.headers["User-Agent"] = navigator.userAgent;
         const r = await fetch(`${WDM_HOST}/download`, {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: wdmAuthHeaders({ "Content-Type": "application/json" }),
           body: JSON.stringify(p)
         });
         sendResponse({ success: r.ok });
@@ -347,14 +369,14 @@ try {
   }
 } catch {}
 
-// Gather all cookies for a URL's domain, referrer, and parent domains to build a complete "Cookie: ..." header string.
+// Gather cookies for the download URL's own domain (plus parent domains).
+// The referrer/page host is deliberately NOT merged: page-session cookies
+// must never ride along to a third-party CDN (cross-origin cookie replay).
 async function getCookieHeaderForUrl(url, referrer) {
+  void referrer; // kept for call-site compatibility; intentionally unused
   try {
     const cookieMap = new Map();
     const urls = [url];
-    if (referrer && /^https?:\/\//i.test(referrer)) {
-      urls.push(referrer);
-    }
     
     for (const u of urls) {
       try {
@@ -444,7 +466,7 @@ async function sendToWdm(url, filename, referrer, headers, pageTitle) {
   } catch {}
   const response = await fetch(`${WDM_HOST}/download`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: wdmAuthHeaders({ "Content-Type": "application/json" }),
     body: JSON.stringify({
       url,
       fileName: filename || null,

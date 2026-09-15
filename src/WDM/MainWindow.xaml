@@ -65,11 +65,6 @@
     <ui:FluentWindow.InputBindings>
         <KeyBinding Key="N" Modifiers="Control" Command="{Binding OpenAddDialogCommand}" />
         <KeyBinding Key="OemComma" Modifiers="Control" Command="{Binding OptionsCommand}" />
-        <KeyBinding Key="Delete" Command="{Binding BulkRemoveCommand}" />
-        <KeyBinding Key="Enter" Command="{Binding BulkResumeCommand}" />
-        <KeyBinding Key="Return" Command="{Binding BulkResumeCommand}" />
-        <KeyBinding Key="Space" Command="{Binding TogglePauseCommand}" />
-        <KeyBinding Key="F5" Command="{Binding RetryCommand}" />
     </ui:FluentWindow.InputBindings>
 
     <Grid AllowDrop="True" DragOver="Root_DragOver" Drop="Root_Drop" Background="{DynamicResource Brush.Bg}">
@@ -332,6 +327,11 @@
                               MouseDoubleClick="TaskGrid_MouseDoubleClick">
                         <DataGrid.InputBindings>
                             <KeyBinding Key="A" Modifiers="Control" Command="SelectAll" />
+                            <KeyBinding Key="Delete" Command="{Binding BulkRemoveCommand}" />
+                            <KeyBinding Key="Enter" Command="{Binding BulkResumeCommand}" />
+                            <KeyBinding Key="Return" Command="{Binding BulkResumeCommand}" />
+                            <KeyBinding Key="Space" Command="{Binding TogglePauseCommand}" />
+                            <KeyBinding Key="F5" Command="{Binding RetryCommand}" />
                         </DataGrid.InputBindings>
                         <DataGrid.ContextMenu>
                             <ContextMenu DataContext="{Binding PlacementTarget.DataContext, RelativeSource={RelativeSource Self}}">

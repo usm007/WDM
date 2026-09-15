@@ -88,12 +88,26 @@ public sealed class CaptureServer : IDisposable
         {
             try
             {
+                // Slow-loris guard: loopback only, but 20 wedged slots would
+                // still lock the extension out. Time out idle reads/writes.
+                try
+                {
+                    client.ReceiveTimeout = 15000;
+                    client.SendTimeout = 15000;
+                }
+                catch { }
                 using var stream = client.GetStream();
                 using var reader = new StreamReader(stream, Encoding.UTF8, leaveOpen: true);
 
                 string? line = await reader.ReadLineAsync();
                 if (line is null)
                     return;
+                // Uncapped request line: reject absurdly long targets before parsing.
+                if (line.Length > 8192)
+                {
+                    await WriteResponseAsync(stream, HttpStatusCode.RequestUriTooLong, "{\"error\":\"request line too long\"}", null);
+                    return;
+                }
                 var parts = line.Split(' ');
                 if (parts.Length < 2)
                     return;
@@ -113,8 +127,15 @@ public sealed class CaptureServer : IDisposable
                 long contentLength = 0;
                 bool expectContinue = false;
                 string? origin = null;
+                string? authToken = null;
+                int headerCount = 0;
                 while (!string.IsNullOrEmpty(line = await reader.ReadLineAsync()))
                 {
+                    if (++headerCount > 100)
+                    {
+                        await WriteResponseAsync(stream, HttpStatusCode.BadRequest, "{\"error\":\"too many headers\"}", origin);
+                        return;
+                    }
                     var colon = line.IndexOf(':');
                     if (colon <= 0)
                         continue;
@@ -132,6 +153,15 @@ public sealed class CaptureServer : IDisposable
                         expectContinue = value.Contains("100-continue", StringComparison.OrdinalIgnoreCase);
                     else if (name.Equals("Origin", StringComparison.OrdinalIgnoreCase))
                         origin = value;
+                    else if (name.Equals(CaptureAuth.HeaderName, StringComparison.OrdinalIgnoreCase) ||
+                             name.Equals("Authorization", StringComparison.OrdinalIgnoreCase))
+                    {
+                        // First non-empty wins: an empty header must not mask a
+                        // valid token sent under the other name (BUG-019).
+                        // A wrong token is never overridden — validated strictly.
+                        if (string.IsNullOrWhiteSpace(authToken) && !string.IsNullOrWhiteSpace(value))
+                            authToken = value;
+                    }
                 }
 
                 if (contentLength > 10 * 1024 * 1024)
@@ -170,7 +200,7 @@ public sealed class CaptureServer : IDisposable
                 if (method == "GET" && path == "/ping")
                 {
                     // Presence probe: do not trust it for security decisions.
-                    string ver = typeof(CaptureServer).Assembly.GetName().Version?.ToString(3) ?? "2.5.2";
+                    string ver = typeof(CaptureServer).Assembly.GetName().Version?.ToString(3) ?? "2.7.2";
                     await WriteResponseAsync(stream, HttpStatusCode.OK, $"{{\"status\":\"ok\",\"version\":\"{ver}\"}}", origin);
                     return;
                 }
@@ -185,16 +215,25 @@ public sealed class CaptureServer : IDisposable
                         await WriteResponseAsync(stream, HttpStatusCode.Forbidden, "{\"error\":\"forbidden origin\"}", origin);
                         return;
                     }
+                    if (!IsAuthorized(origin, authToken))
+                    {
+                        await WriteResponseAsync(stream, HttpStatusCode.Unauthorized, "{\"error\":\"unauthorized — update the WDM browser extension (Settings > Extension)\"}", origin);
+                        return;
+                    }
+                    // A valid install token proves the paired extension is driving
+                    // (user intent), so LAN/NAS/dev-server URLs stay legal there.
+                    // Token-less grace callers keep the private-target block (BUG-020).
+                    bool authed = CaptureAuth.Validate(authToken);
                     try
                     {
                         var payload = JsonSerializer.Deserialize<CapturePayload>(body, JsonOptions);
                         if (payload is null || string.IsNullOrWhiteSpace(payload.Url))
                             throw new InvalidOperationException("Empty url");
                         string url = payload.Url.Trim();
-                        if (url.Length > 2048 || !IsAllowedCaptureUrl(url))
+                        if (url.Length > 2048 || !IsAllowedCaptureUrl(url) || (!authed && IsBlockedResolveTarget(url)))
                             throw new InvalidOperationException("Bad url");
                         string? fileName = SanitizeCaptureFileName(payload.FileName);
-                        string? referer = SanitizeCaptureUrl(payload.Referer, 2048);
+                        string? referer = SanitizeCaptureUrl(payload.Referer, 2048, authed);
                         string? pageTitle = payload.PageTitle is null ? null :
                             payload.PageTitle.Trim().Length > 500 ? payload.PageTitle.Trim()[..500] : payload.PageTitle.Trim();
                         if (string.IsNullOrWhiteSpace(pageTitle))
@@ -226,8 +265,8 @@ public sealed class CaptureServer : IDisposable
                         }
                         // Keep explicit VideoUrl/AudioUrl hints (used by refresh flows)
                         // reachable downstream via headers when the payload URL is a page.
-                        string? videoHint = SanitizeCaptureUrl(payload.VideoUrl, 2048);
-                        string? audioHint = SanitizeCaptureUrl(payload.AudioUrl, 2048);
+                        string? videoHint = SanitizeCaptureUrl(payload.VideoUrl, 2048, authed);
+                        string? audioHint = SanitizeCaptureUrl(payload.AudioUrl, 2048, authed);
                         if (!string.IsNullOrWhiteSpace(videoHint) && !headers.ContainsKey("X-WDM-VideoUrl"))
                             headers["X-WDM-VideoUrl"] = videoHint;
                         if (!string.IsNullOrWhiteSpace(audioHint) && !headers.ContainsKey("X-WDM-AudioUrl"))
@@ -254,6 +293,11 @@ public sealed class CaptureServer : IDisposable
                     if (IsBrowserWebOrigin(origin))
                     {
                         await WriteResponseAsync(stream, HttpStatusCode.Forbidden, "{\"error\":\"forbidden origin\"}", origin);
+                        return;
+                    }
+                    if (!IsAuthorized(origin, authToken))
+                    {
+                        await WriteResponseAsync(stream, HttpStatusCode.Unauthorized, "{\"error\":\"unauthorized — update the WDM browser extension (Settings > Extension)\"}", origin);
                         return;
                     }
                     string? videoUrl = null;
@@ -380,13 +424,19 @@ public sealed class CaptureServer : IDisposable
     {
         byte[] bodyBytes = Encoding.UTF8.GetBytes(body);
         // Never blanket-trust the web: only echo extension origins.
-        string allowOrigin = IsAllowedExtensionOrigin(requestOrigin) ? requestOrigin! : "null";
+        // Strip control characters so a crafted Origin can never split the
+        // response (response-splitting hygiene; SanitizeCaptureHeaders already
+        // drops CR/LF in header *values*, this covers the echoed origin).
+        string? safeOrigin = requestOrigin?.Trim();
+        if (!string.IsNullOrEmpty(safeOrigin))
+            safeOrigin = new string(safeOrigin.Where(c => !char.IsControl(c)).ToArray());
+        string allowOrigin = IsAllowedExtensionOrigin(safeOrigin) ? safeOrigin! : "null";
         string headers =
             $"HTTP/1.1 {(int)status} {status}\r\n" +
             "Content-Type: application/json\r\n" +
             $"Access-Control-Allow-Origin: {allowOrigin}\r\n" +
             "Access-Control-Allow-Methods: POST, GET, OPTIONS\r\n" +
-            "Access-Control-Allow-Headers: Content-Type\r\n" +
+            $"Access-Control-Allow-Headers: Content-Type, {CaptureAuth.HeaderName}, Authorization\r\n" +
             "Vary: Origin\r\n" +
             $"Content-Length: {bodyBytes.Length}\r\n" +
             "Connection: close\r\n\r\n";
@@ -437,6 +487,18 @@ public sealed class CaptureServer : IDisposable
                origin.StartsWith("moz-extension://", StringComparison.OrdinalIgnoreCase);
     }
 
+    /// <summary>Loopback authorization for state-changing capture endpoints.
+    /// A valid install token always passes; a wrong token never does. A missing
+    /// token is accepted only from extension Origins (migration grace for
+    /// extension copies deployed before the token existed). Bare loopback
+    /// clients (curl, scripts — no token, no extension Origin) are rejected.</summary>
+    private static bool IsAuthorized(string? origin, string? authToken)
+    {
+        if (!string.IsNullOrWhiteSpace(authToken))
+            return CaptureAuth.Validate(authToken);
+        return IsAllowedExtensionOrigin(origin);
+    }
+
     private static bool IsAllowedCaptureUrl(string url)
     {
         if (!Uri.TryCreate(url, UriKind.Absolute, out var uri))
@@ -448,14 +510,14 @@ public sealed class CaptureServer : IDisposable
         return true;
     }
 
-    private static string? SanitizeCaptureUrl(string? url, int maxLen)
+    private static string? SanitizeCaptureUrl(string? url, int maxLen, bool allowPrivate = false)
     {
         if (string.IsNullOrWhiteSpace(url))
             return null;
         url = url.Trim();
         if (url.Length > maxLen)
             return null;
-        if (!IsAllowedCaptureUrl(url))
+        if (!IsAllowedCaptureUrl(url) || (!allowPrivate && IsBlockedResolveTarget(url)))
             return null;
         return url;
     }
@@ -512,7 +574,7 @@ public sealed class CaptureServer : IDisposable
         return output;
     }
 
-    private static bool IsBlockedResolveTarget(string url)
+    internal static bool IsBlockedResolveTarget(string url)
     {
         try
         {
@@ -524,6 +586,13 @@ public sealed class CaptureServer : IDisposable
                 return true;
             if (IPAddress.TryParse(host.Trim('[', ']'), out var ip))
             {
+                // IPv4-mapped IPv6 (::ffff:127.0.0.1) must be judged as the
+                // IPv4 it routes to — otherwise the v6 branch misses it.
+                if (ip.IsIPv4MappedToIPv6)
+                {
+                    try { ip = ip.MapToIPv4(); }
+                    catch { return true; }
+                }
                 if (IPAddress.IsLoopback(ip))
                     return true;
                 if (ip.AddressFamily == AddressFamily.InterNetwork)
@@ -535,8 +604,32 @@ public sealed class CaptureServer : IDisposable
                     if (b[0] == 169 && b[1] == 254) return true;
                     if (b[0] == 0 || b[0] >= 224) return true;
                 }
-                else if (ip.IsIPv6SiteLocal || ip.IsIPv6LinkLocal || ip.IsIPv6Multicast)
-                    return true;
+                else
+                {
+                    byte[] b = ip.GetAddressBytes();
+                    // Unspecified :: (all zeros) is not publicly routable — block.
+                    if (b.Length == 16 && b.All(x => x == 0)) return true;
+                    // Unique-local fc00::/7 (not covered by the obsolete
+                    // SiteLocal flag), link-local fe80::/10, multicast ff00::/8.
+                    if (b.Length == 16 && (b[0] & 0xFE) == 0xFC) return true;
+                    if (ip.IsIPv6SiteLocal || ip.IsIPv6LinkLocal || ip.IsIPv6Multicast)
+                        return true;
+                }
+            }
+            else if (LooksLikeNumericIp(host))
+            {
+                // Non-canonical IPv4 the parser rejects but stacks still route
+                // (0x7f.1, 2130706433, 0177.0.0.1): fail closed. Plain hostnames
+                // contain letters/hyphens and never match this shape.
+                return true;
+            }
+            else if (ResolvesToBlockedAddress(host))
+            {
+                // DNS-rebinding guard: a public hostname that resolves to
+                // loopback/LAN/link-local space is blocked even though the
+                // literal string looks innocent. DNS failures fail open here
+                // (the downstream fetch will fail on its own).
+                return true;
             }
             return false;
         }
@@ -544,6 +637,100 @@ public sealed class CaptureServer : IDisposable
         {
             return true;
         }
+    }
+
+    /// <summary>True when a hostname resolves to a blocked (non-public) address.
+    /// Best-effort, fails open on DNS errors. Results are cached 5 minutes so
+    /// per-redirect/per-hop checks don't pay a lookup each time.</summary>
+    private static readonly object _dnsCacheLock = new();
+    private static readonly Dictionary<string, (bool blocked, long tick)> _dnsCache = new(StringComparer.OrdinalIgnoreCase);
+    private static bool ResolvesToBlockedAddress(string host)
+    {
+        lock (_dnsCacheLock)
+        {
+            if (_dnsCache.TryGetValue(host, out var e) && Environment.TickCount64 - e.tick < 5 * 60 * 1000)
+                return e.blocked;
+        }
+        bool blocked = ResolvesToBlockedAddressSlow(host);
+        lock (_dnsCacheLock)
+        {
+            if (_dnsCache.Count > 512)
+                _dnsCache.Clear();
+            _dnsCache[host] = (blocked, Environment.TickCount64);
+        }
+        return blocked;
+    }
+
+    private static bool ResolvesToBlockedAddressSlow(string host)
+    {
+        try
+        {
+            var addrs = Dns.GetHostAddresses(host);
+            foreach (var a in addrs)
+            {
+                var ip = a;
+                if (ip.IsIPv4MappedToIPv6)
+                {
+                    try { ip = ip.MapToIPv4(); }
+                    catch { return true; }
+                }
+                if (IPAddress.IsLoopback(ip))
+                    return true;
+                if (ip.AddressFamily == AddressFamily.InterNetwork)
+                {
+                    byte[] b = ip.GetAddressBytes();
+                    if (b[0] == 10) return true;
+                    if (b[0] == 172 && b[1] >= 16 && b[1] <= 31) return true;
+                    if (b[0] == 192 && b[1] == 168) return true;
+                    if (b[0] == 169 && b[1] == 254) return true;
+                    if (b[0] == 0 || b[0] >= 224) return true;
+                }
+                else if (ip.AddressFamily == AddressFamily.InterNetworkV6)
+                {
+                    byte[] b = ip.GetAddressBytes();
+                    if (b.Length == 16 && b.All(x => x == 0)) return true;
+                    if (b.Length == 16 && (b[0] & 0xFE) == 0xFC) return true;
+                    if (ip.IsIPv6SiteLocal || ip.IsIPv6LinkLocal || ip.IsIPv6Multicast)
+                        return true;
+                }
+            }
+            return false;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    /// <summary>True for all-digit/dotted/hex IP spellings: dotted quads (incl.
+    /// leading-zero octal), short forms Windows still routes (127.1, 10.1),
+    /// bare decimal integers, and 0x-hex forms (incl. per-part 0x).</summary>
+    private static bool LooksLikeNumericIp(string host)
+    {
+        string h = host.Trim('[', ']').ToLowerInvariant();
+        if (string.IsNullOrEmpty(h))
+            return false;
+        if (h.StartsWith("0x", StringComparison.Ordinal))
+            return h.Skip(2).All(c => (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || c == '.' || c == ':' || c == 'x');
+        if (h.All(char.IsDigit))
+            return h.Length > 0;
+        string[] parts = h.Split('.');
+        // 1-4 dot-separated numeric-ish parts (decimal, leading-zero octal,
+        // or 0x-hex): stacks route "127.1" and "0xc0.0xa8.1.1" to addresses.
+        // Real hostnames contain letters (beyond a-f-only hex lookalikes with
+        // an explicit 0x prefix) or hyphens and never match this shape.
+        if (parts.Length >= 1 && parts.Length <= 4 && parts.All(IsNumericIpPart))
+            return true;
+        return false;
+    }
+
+    private static bool IsNumericIpPart(string p)
+    {
+        if (string.IsNullOrEmpty(p) || p.Length > 10)
+            return false;
+        if (p.StartsWith("0x", StringComparison.Ordinal))
+            return p.Length > 2 && p.Skip(2).All(c => (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f'));
+        return p.All(char.IsDigit);
     }
 
     private sealed class CapturePayload

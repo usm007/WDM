@@ -47,6 +47,7 @@ public partial class OptionsControl : UserControl
 
         ChecksumBox.IsChecked = s.ComputeChecksum;
         ScriptBox.Text = s.PostDownloadScript ?? "";
+        HlsContainerBox.SelectedIndex = HlsContainerIndex(s.HlsContainer);
 
         NotifyBox.IsChecked = s.NotifyOnCompletion;
         TrayProgressBox.IsChecked = s.ShowTrayProgress;
@@ -114,6 +115,12 @@ public partial class OptionsControl : UserControl
     }
 
     private void UpdateOption_Changed(object sender, RoutedEventArgs e)
+    {
+        if (_isInitializingAppearance || _viewModel == null) return;
+        SaveCurrentSettings();
+    }
+
+    private void HlsContainer_Changed(object sender, SelectionChangedEventArgs e)
     {
         if (_isInitializingAppearance || _viewModel == null) return;
         SaveCurrentSettings();
@@ -267,6 +274,9 @@ public partial class OptionsControl : UserControl
 
         if (ChecksumBox != null) s.ComputeChecksum = ChecksumBox.IsChecked == true;
         if (ScriptBox != null) s.PostDownloadScript = string.IsNullOrWhiteSpace(ScriptBox.Text) ? null : ScriptBox.Text.Trim();
+        if (HlsContainerBox?.SelectedItem is ComboBoxItem hls && hls.Tag is string hlsTag
+            && Enum.TryParse<HlsContainer>(hlsTag, out var container))
+            s.HlsContainer = container;
 
         if (NotifyBox != null) s.NotifyOnCompletion = NotifyBox.IsChecked == true;
         if (TrayProgressBox != null) s.ShowTrayProgress = TrayProgressBox.IsChecked == true;
@@ -517,6 +527,13 @@ public partial class OptionsControl : UserControl
         5 => 4,
         10 => 5,
         _ => 3,
+    };
+
+    private static int HlsContainerIndex(HlsContainer container) => container switch
+    {
+        HlsContainer.Mkv => 1,
+        HlsContainer.KeepTs => 2,
+        _ => 0,
     };
 
     private void BrowseClick(object sender, RoutedEventArgs e)

@@ -315,6 +315,7 @@ public partial class AboutDialog : Window
             InlineProgressPctText.Text = "100%";
             await UpdateChecker.LaunchInstallerAndWaitForStart(installer);
             Close();
+            Application.Current?.Shutdown();
         }
         catch (Exception ex)
         {

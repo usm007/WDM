@@ -15,7 +15,7 @@ if (-not $Version) {
     $csproj = Join-Path $PSScriptRoot "src\WDM\WDM.csproj"
     [xml]$xml = Get-Content $csproj
     $Version = $xml.Project.PropertyGroup.Version
-    if (-not $Version) { $Version = "2.5.3" }
+    if (-not $Version) { $Version = "2.7.3" }
     Write-Host "Version from WDM.csproj: $Version"
 }
 
@@ -42,7 +42,31 @@ if (-not $vpk) {
     if (-not $vpk) { throw "vpk still not found after install. Ensure dotnet tools are on PATH." }
 }
 
+# Clean existing packages of this version in $outFull so vpk pack can rebuild it
+Get-ChildItem $outFull -Filter "*$Version*" -File -ErrorAction SilentlyContinue | Remove-Item -Force
+$releasesJson = Join-Path $outFull "releases.win.json"
+if (Test-Path $releasesJson) {
+    try {
+        $json = Get-Content $releasesJson -Raw | ConvertFrom-Json
+        $filtered = $json.Assets | Where-Object { $_.Version -ne $Version }
+        $json.Assets = @($filtered)
+        $json | ConvertTo-Json -Depth 10 | Set-Content $releasesJson
+    } catch { }
+}
+$releasesLegacy = Join-Path $outFull "RELEASES"
+if (Test-Path $releasesLegacy) {
+    try {
+        $lines = Get-Content $releasesLegacy | Where-Object { $_ -notmatch "-$Version-" }
+        $lines | Set-Content $releasesLegacy
+    } catch { }
+}
+
+$iconPath = Join-Path $PSScriptRoot "src\WDM\Assets\WDM.ico"
+$logoPath = Join-Path $PSScriptRoot "src\WDM\Assets\logo.png"
+
 $packArgs = @("pack", "--packId", "WDM", "--packVersion", $Version, "--packDir", $publishFull, "--mainExe", "WDM.exe", "--outputDir", $outFull)
+if (Test-Path $iconPath) { $packArgs += @("--icon", $iconPath) }
+if (Test-Path $logoPath) { $packArgs += @("--splashImage", $logoPath, "--splashProgressColor", "#1865F2") }
 if ($Channel) { $packArgs += @("--channel", $Channel) }
 if (-not $SelfContained -and $Framework) { $packArgs += @("--framework", $Framework) }
 

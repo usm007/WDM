@@ -89,14 +89,14 @@ public sealed class DownloadEngine
 
     private static HttpClient CreateClient()
     {
-        var handler = new SocketsHttpHandler
+        var inner = new SocketsHttpHandler
         {
-            AllowAutoRedirect = true,
+            AllowAutoRedirect = false, // manual redirect to block HTTPS→HTTP (BUG-039)
             MaxConnectionsPerServer = 64,
             AutomaticDecompression = DecompressionMethods.All,
             UseCookies = false, // Must be false so custom Cookie headers are sent raw without .NET stripping them
         };
-        var client = new HttpClient(handler)
+        var client = new HttpClient(new SchemeDowngradeGuard(inner))
         {
             Timeout = TimeSpan.FromSeconds(60),
         };
@@ -105,6 +105,67 @@ public sealed class DownloadEngine
         client.DefaultRequestHeaders.Accept.ParseAdd("*/*");
         client.DefaultRequestHeaders.AcceptLanguage.ParseAdd("en-US,en;q=0.9");
         return client;
+    }
+
+    /// <summary>Delegating handler that follows HTTP redirects but refuses
+    /// HTTPS→HTTP scheme downgrades (BUG-039).  MITM attackers on public Wi-Fi
+    /// can forge redirects from https://cdn to http://cdn; this blocks the
+    /// download from silently continuing over plaintext.</summary>
+    private sealed class SchemeDowngradeGuard : DelegatingHandler
+    {
+        public SchemeDowngradeGuard(HttpMessageHandler inner) : base(inner) { }
+
+        protected override async Task<HttpResponseMessage> SendAsync(
+            HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            const int maxRedirects = 20;
+            bool originWasBlocked = IsPrivateRedirectTarget(request.RequestUri);
+            for (int i = 0; i <= maxRedirects; i++)
+            {
+                var response = await base.SendAsync(request, cancellationToken);
+                if ((int)response.StatusCode is < 300 or >= 400)
+                    return response;
+                if (response.Headers.Location is null)
+                    return response;
+
+                var next = response.Headers.Location;
+                if (!next.IsAbsoluteUri)
+                    next = new Uri(request.RequestUri!, next);
+
+                if (request.RequestUri!.Scheme == "https" && next.Scheme == "http")
+                {
+                    response.Dispose();
+                    throw new HttpRequestException(
+                        $"Blocked HTTPS→HTTP redirect downgrade from {request.RequestUri} to {next} (BUG-039).");
+                }
+
+                // A public URL redirecting into loopback/LAN/cloud-metadata space
+                // is a classic SSRF channel (302 to 169.254.169.254 etc.).
+                // User-initiated LAN downloads (origin already private) still pass.
+                if (!originWasBlocked && IsPrivateRedirectTarget(next))
+                {
+                    response.Dispose();
+                    throw new HttpRequestException(
+                        $"Blocked redirect from {request.RequestUri} to private target {next}.");
+                }
+
+                response.Dispose();
+                request.Dispose();
+                request = new HttpRequestMessage(HttpMethod.Get, next);
+            }
+            request.Dispose();
+            throw new HttpRequestException($"Too many redirects (>{maxRedirects}).");
+        }
+
+        /// <summary>True when a URI points at loopback/private-link space.
+        /// Delegates to the capture server's block list so both surfaces agree.</summary>
+        private static bool IsPrivateRedirectTarget(Uri? uri)
+        {
+            if (uri is null)
+                return false;
+            try { return CaptureServer.IsBlockedResolveTarget(uri.ToString()); }
+            catch { return false; }
+        }
     }
 
     public void Start(DownloadTask task)
@@ -322,6 +383,13 @@ public sealed class DownloadEngine
                 try { await running; }
                 catch { /* session state already reconciled by RunSessionAsync */ }
             }
+            lock (_lock)
+            {
+                if (_sessions.ContainsKey(task.Id))
+                    return;
+            }
+            if (task.Status == TaskStatus.Completed)
+                return;
             if (deleteFiles)
             {
                 TryDelete(task.FullPath);
@@ -470,6 +538,8 @@ public sealed class DownloadEngine
                 {
                     task.Error = ex.Message + " Open the page in the WDM browser to continue.";
                     task.Status = TaskStatus.Failed;
+                    task.IsPreparing = false;
+                    task.PhaseText = "";
                     EmbedInteractionRequired?.Invoke(task, pageForResolve);
                     TaskChanged?.Invoke();
                     return;
@@ -571,13 +641,18 @@ public sealed class DownloadEngine
             }
             else
             {
-                if (!meta.IsHls && linkRefreshed && IsResuming(session) &&
-                    previousTotalBytes > 0 && meta.TotalBytes > 0 && previousTotalBytes != meta.TotalBytes)
+                if (!meta.IsHls && linkRefreshed && IsResuming(session))
                 {
-                    if (File.Exists(session.StatePath))
-                        File.Delete(session.StatePath);
-                    if (File.Exists(task.FullPath))
-                        File.Delete(task.FullPath);
+                    // A refreshed link bypasses the ETag guard, so an equal-size
+                    // different file would resume onto a stale chunk bitmap and
+                    // assemble a corrupt hybrid (BUG-032). Drop the bitmap so
+                    // every range is re-fetched; delete the file itself only
+                    // when the size actually changed.
+                    try { if (File.Exists(session.StatePath)) File.Delete(session.StatePath); } catch { }
+                    if (previousTotalBytes > 0 && meta.TotalBytes > 0 && previousTotalBytes != meta.TotalBytes)
+                    {
+                        try { if (File.Exists(task.FullPath)) File.Delete(task.FullPath); } catch { }
+                    }
                 }
                 RecordIdentity(task, meta.Etag, meta.LastModified);
             }
@@ -646,6 +721,8 @@ public sealed class DownloadEngine
                 // a repeat block falls through to the normal failure path.
                 task.Status = TaskStatus.Failed;
                 task.Error = "Blocked by Cloudflare — opening built-in browser to solve…";
+                task.IsPreparing = false;
+                task.PhaseText = "";
                 CloudflareBlocked?.Invoke(task);
             }
             else
@@ -762,6 +839,8 @@ public sealed class DownloadEngine
         catch
         {
             // HEAD unsupported or rejected (e.g. Cloudflare blocks HEAD); fall through to ranged GET probe.
+            // A user cancel (Pause/Stop) must still abort immediately, not burn a full probe cycle.
+            ct.ThrowIfCancellationRequested();
         }
 
         // 2) Ranged GET probe (bytes=0-0) - authoritative for size via Content-Range
@@ -826,9 +905,12 @@ public sealed class DownloadEngine
                 }
             }
             catch (CloudflareBlockedException) { throw; }
+            catch (OperationCanceledException) { throw; }
             catch
             {
                 // Server doesn't accept ranged GET requests.
+                // User cancel must propagate so Pause during probe is instant.
+                ct.ThrowIfCancellationRequested();
             }
         }
 
@@ -904,7 +986,13 @@ public sealed class DownloadEngine
         {
             throw new FileChangedException("The file changed on the server (ETag mismatch). Paused to avoid a corrupt file.");
         }
-        if (string.IsNullOrWhiteSpace(task.Etag) && !string.IsNullOrWhiteSpace(task.LastModified) &&
+        // Last-Modified is checked whenever the ETags don't positively agree
+        // (BUG-032): the old code skipped it whenever the task had an ETag,
+        // missing ETag→Last-Modified rotations and servers that stop sending
+        // ETags. Matching ETags still short-circuit (same content re-touched).
+        bool etagAgrees = !string.IsNullOrWhiteSpace(task.Etag) && !string.IsNullOrWhiteSpace(etag) &&
+            string.Equals(task.Etag, etag, StringComparison.Ordinal);
+        if (!etagAgrees && !string.IsNullOrWhiteSpace(task.LastModified) &&
             !string.IsNullOrWhiteSpace(lastModified) &&
             !string.Equals(task.LastModified, lastModified, StringComparison.OrdinalIgnoreCase))
         {
@@ -996,8 +1084,10 @@ public sealed class DownloadEngine
             string head = System.Text.Encoding.UTF8.GetString(buf, 0, Math.Min(total, 512)).TrimStart('\uFEFF', ' ', '\t', '\r', '\n');
             return head.StartsWith("#EXTM3U", StringComparison.OrdinalIgnoreCase);
         }
+        catch (OperationCanceledException) { throw; }
         catch
         {
+            ct.ThrowIfCancellationRequested();
             return false;
         }
     }
@@ -1072,6 +1162,20 @@ public sealed class DownloadEngine
 
         await using (var prealloc = new FileStream(task.FullPath, FileMode.OpenOrCreate, FileAccess.Write, FileShare.ReadWrite))
         {
+            // Resume-corruption guard: if the partial file was truncated
+            // externally (AV cleaner, user edit, disk repair) after chunks were
+            // marked complete, the bitmap would skip re-fetching those ranges
+            // and assemble a file with zero-filled holes. Completed bytes can
+            // never exceed the bytes actually on disk — if they do, the bitmap
+            // is stale and the download restarts from scratch.
+            long onDisk = prealloc.Length;
+            if (onDisk < totalBytes && session.State.CompletedBytes > onDisk)
+            {
+                session.State = ChunkState.Fresh(session.StatePath, totalBytes, chunkSize, chunkCount);
+                session.NextChunk = 0;
+                Interlocked.Exchange(ref session.BytesDownloaded, 0);
+                Interlocked.Exchange(ref session.LastBytes, 0);
+            }
             if (prealloc.Length != totalBytes)
                 prealloc.SetLength(totalBytes);
         }
@@ -1141,6 +1245,8 @@ public sealed class DownloadEngine
             catch (Exception ex) when ((IsTransient(ex) || ex is HttpRequestException) &&
                                        !session.Token.IsCancellationRequested)
             {
+                if (IsFatalDiskError(ex))
+                    throw;
                 if (attempt < MaxRetries)
                 {
                     await BackoffAsync(attempt, session.Token);
@@ -1150,7 +1256,7 @@ public sealed class DownloadEngine
                 // Retries on the current URL are exhausted; fall over to the next
                 // mirror and give the chunk a fresh set of attempts — but only
                 // until every URL has been tried, otherwise this loops forever.
-                if (session.RotateUrl(task) && rotations < urlCount)
+                if (session.RotateUrl(task) && rotations + 1 < urlCount)
                 {
                     rotations++;
                     attempt = 0;
@@ -1267,23 +1373,51 @@ public sealed class DownloadEngine
 
         session.Token.ThrowIfCancellationRequested();
 
-        // Remux the TS concat into .mp4 (same basename) when ffmpeg is available
+        // Optional auto-remux of the TS concat into the container chosen in
+        // settings (MP4 default, MKV, or KeepTs = off) when ffmpeg is available
         // so the finished file is "My Film.mp4", not "My Film.ts".
         if (task.FileName.EndsWith(".ts", StringComparison.OrdinalIgnoreCase)
             && File.Exists(EngineManager.FfmpegPath)
             && File.Exists(task.FullPath))
         {
-            await RemuxTsToMp4Async(session, task);
+            await RemuxHlsAsync(session, task);
         }
     }
 
-    private async Task RemuxTsToMp4Async(Session session, DownloadTask task)
+    private async Task RemuxHlsAsync(Session session, DownloadTask task)
     {
+        HlsContainer container;
+        try
+        {
+            container = TaskStore.LoadSettings().HlsContainer;
+        }
+        catch
+        {
+            container = HlsContainer.Mp4;
+        }
+        if (container == HlsContainer.KeepTs)
+            return;
+        string targetExt = container == HlsContainer.Mkv ? ".mkv" : ".mp4";
+        if (task.FileName.EndsWith(targetExt, StringComparison.OrdinalIgnoreCase))
+            return;
         string tsPath = task.FullPath;
-        string mp4Path = Path.ChangeExtension(tsPath, ".mp4");
-        if (File.Exists(mp4Path))
-            mp4Path = Path.Combine(task.SaveFolder,
-                Path.GetFileNameWithoutExtension(task.FileName) + $"_{DateTime.Now:HHmmss}.mp4");
+        string outPath = Path.ChangeExtension(tsPath, targetExt);
+        if (File.Exists(outPath))
+        {
+            // Unique per completion: date + ms + counter loop so two remuxes
+            // in the same millisecond (or a pre-existing collision name)
+            // can never silently overwrite each other via ffmpeg -y.
+            string stem = Path.GetFileNameWithoutExtension(task.FileName);
+            int attempt = 0;
+            do
+            {
+                string suffix = attempt == 0
+                    ? $"_{DateTime.Now:yyyyMMdd_HHmmssfff}"
+                    : $"_{DateTime.Now:yyyyMMdd_HHmmssfff}_{attempt}";
+                outPath = Path.Combine(task.SaveFolder, stem + suffix + targetExt);
+                attempt++;
+            } while (File.Exists(outPath) && attempt < 1000);
+        }
         try
         {
             var psi = new ProcessStartInfo
@@ -1302,9 +1436,12 @@ public sealed class DownloadEngine
             psi.ArgumentList.Add(tsPath);
             psi.ArgumentList.Add("-c");
             psi.ArgumentList.Add("copy");
-            psi.ArgumentList.Add("-movflags");
-            psi.ArgumentList.Add("+faststart");
-            psi.ArgumentList.Add(mp4Path);
+            if (!targetExt.Equals(".mkv", StringComparison.OrdinalIgnoreCase))
+            {
+                psi.ArgumentList.Add("-movflags");
+                psi.ArgumentList.Add("+faststart");
+            }
+            psi.ArgumentList.Add(outPath);
 
             using var proc = Process.Start(psi);
             if (proc is null)
@@ -1315,18 +1452,18 @@ public sealed class DownloadEngine
             var stderrDrain = proc.StandardError.ReadToEndAsync();
             await proc.WaitForExitAsync(session.Token);
             try { await Task.WhenAll(stdoutDrain, stderrDrain); } catch { }
-            if (proc.ExitCode == 0 && File.Exists(mp4Path) && new FileInfo(mp4Path).Length > 0)
+            if (proc.ExitCode == 0 && File.Exists(outPath) && new FileInfo(outPath).Length > 0)
             {
                 try { File.Delete(tsPath); } catch { }
-                task.FileName = ReserveRenamedFile(task, Path.GetFileName(mp4Path));
-                task.TotalBytes = new FileInfo(mp4Path).Length;
+                task.FileName = ReserveRenamedFile(task, Path.GetFileName(outPath));
+                task.TotalBytes = new FileInfo(outPath).Length;
                 Interlocked.Exchange(ref session.BytesDownloaded, task.TotalBytes);
                 Interlocked.Exchange(ref session.LastBytes, task.TotalBytes);
                 TaskChanged?.Invoke();
             }
             else
             {
-                try { if (File.Exists(mp4Path)) File.Delete(mp4Path); } catch { }
+                try { if (File.Exists(outPath)) File.Delete(outPath); } catch { }
             }
         }
         catch
@@ -1450,12 +1587,14 @@ public sealed class DownloadEngine
             }
             catch (Exception ex) when (IsTransient(ex) && !session.Token.IsCancellationRequested)
             {
+                if (IsFatalDiskError(ex))
+                    throw;
                 if (attempt < MaxRetries)
                 {
                     await BackoffAsync(attempt, session.Token);
                     attempt++;
                 }
-                else if (session.RotateUrl(task) && rotations < urlCount)
+                else if (session.RotateUrl(task) && rotations + 1 < urlCount)
                 {
                     rotations++;
                     attempt = 0;
@@ -1672,8 +1811,16 @@ public sealed class DownloadEngine
             bool serverError = code == 408 || code == 429 || code >= 500;
             if (serverError && attempt < MaxRetries)
             {
+                TimeSpan? retryAfter = GetRetryAfter(response);
                 response.Dispose();
-                await BackoffAsync(attempt, ct);
+                if (retryAfter is not null)
+                {
+                    // Honor the server's Retry-After (429/503 flood protection),
+                    // capped so a malicious date can't park a worker forever.
+                    try { await Task.Delay(retryAfter.Value, ct); } catch (OperationCanceledException) { throw; }
+                }
+                else
+                    await BackoffAsync(attempt, ct);
                 attempt++;
                 continue;
             }
@@ -1684,9 +1831,49 @@ public sealed class DownloadEngine
     private static bool IsTransient(Exception ex) =>
         ex is HttpRequestException or IOException or TaskCanceledException;
 
+    /// <summary>Parses Retry-After (delta-seconds or HTTP-date), capped at 30s.</summary>
+    internal static TimeSpan? GetRetryAfter(HttpResponseMessage response)
+    {
+        try
+        {
+            if (response.Headers.RetryAfter is { } ra)
+            {
+                if (ra.Delta is TimeSpan d)
+                    return d < TimeSpan.Zero ? TimeSpan.Zero : (d > TimeSpan.FromSeconds(30) ? TimeSpan.FromSeconds(30) : d);
+                if (ra.Date is DateTimeOffset date)
+                {
+                    var wait = date - DateTimeOffset.UtcNow;
+                    if (wait < TimeSpan.Zero) return TimeSpan.Zero;
+                    return wait > TimeSpan.FromSeconds(30) ? TimeSpan.FromSeconds(30) : wait;
+                }
+            }
+        }
+        catch { }
+        return null;
+    }
+
+    /// <summary>Local disk failures that no retry or mirror rotation will ever
+    /// fix: full disk, ACL denial, over-long path (BUG-025).</summary>
+    internal static bool IsFatalDiskError(Exception ex)
+    {
+        if (ex is UnauthorizedAccessException or PathTooLongException)
+            return true;
+        if (ex is IOException io)
+        {
+            // 0x80070070 ERROR_DISK_FULL, 0x80070027 drive full (FAT), 0x80070070 variants.
+            int code = io.HResult & 0xFFFF;
+            if (code is 0x70 or 0x27)
+                return true;
+        }
+        return false;
+    }
+
     private static async Task BackoffAsync(int attempt, CancellationToken ct)
     {
-        int ms = (int)Math.Min(8000, 500 * Math.Pow(2, attempt));
+        // Full-jitter exponential backoff (BUG-026): deterministic 500*2^n
+        // herds every chunk worker/mirror into synchronized retry storms.
+        int cap = (int)Math.Min(8000, 500 * Math.Pow(2, attempt));
+        int ms = Random.Shared.Next(cap / 2, cap + 1);
         await Task.Delay(ms, ct);
     }
 
@@ -1738,12 +1925,15 @@ public sealed class DownloadEngine
     {
         try
         {
+            // Fail closed: an unparseable URL must never be treated as
+            // same-host, or session credentials (Cookie/Authorization)
+            // would be forwarded to an attacker-controlled mirror.
             if (!Uri.TryCreate(a, UriKind.Absolute, out var ua) ||
                 !Uri.TryCreate(b, UriKind.Absolute, out var ub))
-                return true;
+                return false;
             return string.Equals(ua.Host, ub.Host, StringComparison.OrdinalIgnoreCase);
         }
-        catch { return true; }
+        catch { return false; }
     }
 
     private static bool IsCloudflareChallenge(HttpResponseMessage response)
@@ -1932,6 +2122,32 @@ public sealed class DownloadEngine
         }
 
         return false;
+    }
+
+    /// <summary>True for files yt-dlp could plausibly have just produced:
+    /// media/subtitle/thumbnail outputs, never engine sidecars or temp files.</summary>
+    internal static bool IsYtDlpResultCandidate(string fileName)
+    {
+        if (string.IsNullOrWhiteSpace(fileName))
+            return false;
+        string lower = fileName.ToLowerInvariant();
+        if (lower.EndsWith(".wdmstate", StringComparison.Ordinal) ||
+            lower.EndsWith(".part", StringComparison.Ordinal) ||
+            lower.EndsWith(".tmp", StringComparison.Ordinal) ||
+            lower.EndsWith(".ytdl", StringComparison.Ordinal) ||
+            lower.StartsWith(".wdmseg_", StringComparison.Ordinal))
+            return false;
+        string ext = Path.GetExtension(lower);
+        // Compound extensions: "foo.info.json" → Path.GetExtension returns ".json",
+        // not ".info.json"; test the full trailing segment instead (BUG-027).
+        // Also accept bare "description" (no extension) — yt-dlp emits that as a
+        // sidecar text file alongside video downloads.
+        if (lower.EndsWith(".info.json", StringComparison.Ordinal) ||
+            lower.Equals("description", StringComparison.Ordinal))
+            return true;
+        return ext is ".mp4" or ".mkv" or ".webm" or ".avi" or ".mov" or ".flv" or ".m4v" or ".ts" or ".m3u8" or ".mpd"
+            or ".mp3" or ".m4a" or ".opus" or ".ogg" or ".wav" or ".flac" or ".aac" or ".wma"
+            or ".vtt" or ".srt" or ".ass" or ".lrc" or ".jpg" or ".jpeg" or ".png" or ".webp";
     }
 
     private static string FallbackName() =>
@@ -2220,6 +2436,15 @@ public sealed class DownloadEngine
             return fresh;
         }
 
+        /// <summary>Discard any persisted bitmap and start over (used when the
+        /// on-disk partial file no longer matches the recorded progress).</summary>
+        public static ChunkState Fresh(string path, long totalBytes, long chunkSize, int chunkCount)
+        {
+            var fresh = new ChunkState(totalBytes, chunkSize, chunkCount);
+            fresh.Save(path);
+            return fresh;
+        }
+
         public bool IsCompleted(int index)
         {
             lock (_lock)
@@ -2419,7 +2644,29 @@ public sealed class DownloadEngine
                             var dir = task.SaveFolder;
                             if (Directory.Exists(dir))
                             {
+                                // Only real media outputs: never .wdmstate/.part
+                                // sidecars or a sibling download's file (BUG-027).
+                                // Exclude files owned by other active sessions so
+                                // two concurrent template downloads to the same
+                                // folder can never claim each other's output.
+                                HashSet<string> owned;
+                                lock (_lock)
+                                {
+                                    owned = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                                    foreach (var kv in _sessions)
+                                    {
+                                        if (kv.Key == task.Id)
+                                            continue;
+                                        try
+                                        {
+                                            if (!string.IsNullOrWhiteSpace(kv.Value.Task.FullPath))
+                                                owned.Add(Path.GetFileName(kv.Value.Task.FullPath));
+                                        }
+                                        catch { }
+                                    }
+                                }
                                 var newest = new DirectoryInfo(dir).GetFiles()
+                                    .Where(f => IsYtDlpResultCandidate(f.Name) && !owned.Contains(f.Name) && f.Length > 0)
                                     .OrderByDescending(f => f.LastWriteTimeUtc)
                                     .FirstOrDefault();
                                 if (newest != null && (DateTime.UtcNow - newest.LastWriteTimeUtc).TotalMinutes < 5)

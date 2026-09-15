@@ -76,11 +76,19 @@ public partial class TaskPropertiesDialog : Wpf.Ui.Controls.FluentWindow
 
     private void FolderClick(object sender, RoutedEventArgs e)
     {
+        // tasks.json is hand-editable: never interpolate a quote-containing
+        // persisted path into a command line (argument breakout).
         string path = _task.FullPath;
-        if (File.Exists(path))
-            Process.Start(new ProcessStartInfo("explorer.exe", $"/select,\"{path}\"") { UseShellExecute = true });
-        else if (Directory.Exists(_task.SaveFolder))
-            Process.Start(new ProcessStartInfo(_task.SaveFolder) { UseShellExecute = true });
+        if (path.Contains('"') || (_task.SaveFolder?.Contains('"') ?? false))
+            return;
+        try
+        {
+            if (File.Exists(path))
+                Process.Start(new ProcessStartInfo("explorer.exe", $"/select,\"{path}\"") { UseShellExecute = true });
+            else if (Directory.Exists(_task.SaveFolder))
+                Process.Start(new ProcessStartInfo(_task.SaveFolder) { UseShellExecute = true });
+        }
+        catch { }
     }
 
     private void CloseClick(object sender, RoutedEventArgs e)

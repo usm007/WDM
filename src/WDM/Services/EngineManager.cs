@@ -20,7 +20,7 @@ public static class EngineManager
 
     static EngineManager()
     {
-        Http.DefaultRequestHeaders.UserAgent.ParseAdd("WDM/2.2 (+https://github.com/usm007/WDM)");
+        Http.DefaultRequestHeaders.UserAgent.ParseAdd($"WDM/{UpdateChecker.CurrentVersion} (+https://github.com/usm007/WDM)");
     }
 
     // Downloaded engines live with the rest of the user data (TaskStore.AppDir),
@@ -189,9 +189,18 @@ public static class EngineManager
     {
         const string url = "https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp.exe";
         var tmp = Path.Combine(BinDir, $"yt-dlp-{Guid.NewGuid():N}.tmp");
-        await DownloadToFileAsync(url, tmp, progress, "Downloading yt-dlp…", start, span, ct, maxBytes: 100 * 1024 * 1024);
-        VerifyDownloadedBinary(tmp, minBytes: 5 * 1024 * 1024);
-        File.Move(tmp, YtDlpPath, overwrite: true);
+        try
+        {
+            await DownloadToFileAsync(url, tmp, progress, "Downloading yt-dlp…", start, span, ct, maxBytes: 100 * 1024 * 1024);
+            VerifyDownloadedBinary(tmp, minBytes: 5 * 1024 * 1024);
+            File.Move(tmp, YtDlpPath, overwrite: true);
+        }
+        finally
+        {
+            // Failure paths (size-cap throw, verify failure, move conflict)
+            // must not orphan multi-MB tmp files in BinDir.
+            try { if (File.Exists(tmp)) File.Delete(tmp); } catch { }
+        }
     }
 
     private static async Task DownloadQuickJsAsync(
@@ -208,10 +217,17 @@ public static class EngineManager
         var tmp = Path.Combine(BinDir, $"qjs-{Guid.NewGuid():N}.tmp");
 
         progress?.Report(new EngineProgress("Downloading QuickJS (lightweight JS runtime)…", start));
-        await DownloadToFileAsync(url, tmp, progress, "Downloading QuickJS (JS runtime)…", start, start + span, ct, maxBytes: 50 * 1024 * 1024);
+        try
+        {
+            await DownloadToFileAsync(url, tmp, progress, "Downloading QuickJS (JS runtime)…", start, start + span, ct, maxBytes: 50 * 1024 * 1024);
 
-        VerifyDownloadedBinary(tmp, minBytes: 100 * 1024);
-        File.Move(tmp, QuickJsPath, overwrite: true);
+            VerifyDownloadedBinary(tmp, minBytes: 100 * 1024);
+            File.Move(tmp, QuickJsPath, overwrite: true);
+        }
+        finally
+        {
+            try { if (File.Exists(tmp)) File.Delete(tmp); } catch { }
+        }
         progress?.Report(new EngineProgress("QuickJS engine ready", start + span));
     }
 
@@ -233,6 +249,7 @@ public static class EngineManager
         }
         catch
         {
+            try { if (File.Exists(tmp)) File.Delete(tmp); } catch { }
             await DownloadToFileAsync(fallbackUrl, tmp, progress, "Downloading FFmpeg (fallback)…", start, start + span * 0.9, ct, maxBytes: 300 * 1024 * 1024);
         }
 
@@ -242,37 +259,46 @@ public static class EngineManager
 
         try
         {
-            await Task.Run(() => ExtractZipSafely(tmp, extractDir), ct);
+            try
+            {
+                await Task.Run(() => ExtractZipSafely(tmp, extractDir), ct);
+            }
+            catch
+            {
+                try { Directory.Delete(extractDir, true); } catch { }
+                throw;
+            }
+
+            var ffmpeg = Directory
+                .GetFiles(extractDir, "ffmpeg.exe", SearchOption.AllDirectories)
+                .FirstOrDefault();
+            var ffprobe = Directory
+                .GetFiles(extractDir, "ffprobe.exe", SearchOption.AllDirectories)
+                .FirstOrDefault();
+
+            if (ffmpeg is null || ffprobe is null)
+                throw new EngineMissingException("Could not find ffmpeg in the downloaded archive.");
+
+            VerifyDownloadedBinary(ffmpeg, minBytes: 5 * 1024 * 1024);
+            File.Move(ffmpeg, FfmpegPath, overwrite: true);
+            File.Move(ffprobe, Path.Combine(BinDir, "ffprobe.exe"), overwrite: true);
         }
-        catch
+        finally
         {
-            try { Directory.Delete(extractDir, true); } catch { }
-            throw;
+            // Every failure path (missing binaries, verify failure, move
+            // conflict) must clean the up-to-300MB zip and extract dir.
+            try { if (File.Exists(tmp)) File.Delete(tmp); } catch { }
+            try { if (Directory.Exists(extractDir)) Directory.Delete(extractDir, true); } catch { }
         }
-
-        var ffmpeg = Directory
-            .GetFiles(extractDir, "ffmpeg.exe", SearchOption.AllDirectories)
-            .FirstOrDefault();
-        var ffprobe = Directory
-            .GetFiles(extractDir, "ffprobe.exe", SearchOption.AllDirectories)
-            .FirstOrDefault();
-
-        if (ffmpeg is null || ffprobe is null)
-            throw new EngineMissingException("Could not find ffmpeg in the downloaded archive.");
-
-        VerifyDownloadedBinary(ffmpeg, minBytes: 5 * 1024 * 1024);
-        File.Move(ffmpeg, FfmpegPath, overwrite: true);
-        File.Move(ffprobe, Path.Combine(BinDir, "ffprobe.exe"), overwrite: true);
-
-        try { File.Delete(tmp); Directory.Delete(extractDir, true); } catch { }
         progress?.Report(new EngineProgress("Extracting ffmpeg…", start + span));
     }
 
-    private static void ExtractZipSafely(string zipPath, string extractDir)
+    internal static void ExtractZipSafely(string zipPath, string extractDir)
     {
         string fullBase = Path.GetFullPath(extractDir) + Path.DirectorySeparatorChar;
         using var archive = ZipFile.OpenRead(zipPath);
-        long totalUncompressed = 0;
+        long declaredUncompressed = 0;
+        var validated = new List<(ZipArchiveEntry Entry, string Dest)>();
         foreach (var entry in archive.Entries)
         {
             if (string.IsNullOrEmpty(entry.Name) && entry.FullName.EndsWith('/'))
@@ -280,11 +306,35 @@ public static class EngineManager
             string dest = Path.GetFullPath(Path.Combine(extractDir, entry.FullName));
             if (!dest.StartsWith(fullBase, StringComparison.OrdinalIgnoreCase))
                 throw new InvalidOperationException("Archive contains an unsafe path — refusing extraction.");
-            totalUncompressed += entry.Length;
-            if (totalUncompressed > 1024L * 1024 * 1024)
+            declaredUncompressed += entry.Length;
+            if (declaredUncompressed > 1024L * 1024 * 1024)
                 throw new InvalidOperationException("Archive too large — refusing extraction.");
+            validated.Add((entry, dest));
         }
-        ZipFile.ExtractToDirectory(zipPath, extractDir);
+        long actualExtracted = 0;
+        foreach (var (entry, dest) in validated)
+        {
+            string? dir = Path.GetDirectoryName(dest);
+            if (!string.IsNullOrEmpty(dir))
+                Directory.CreateDirectory(dir);
+            if (entry.Name.Length == 0)
+                continue;
+            using var src = entry.Open();
+            using var dst = new FileStream(dest, FileMode.CreateNew, FileAccess.Write, FileShare.None);
+            // Enforce the 1GB bound on ACTUAL bytes copied, not the declared
+            // central-directory size (which a malicious zip can understate).
+            var buf = new byte[81920];
+            long written = 0;
+            int n;
+            while ((n = src.Read(buf, 0, buf.Length)) > 0)
+            {
+                written += n;
+                actualExtracted += n;
+                if (actualExtracted > 1024L * 1024 * 1024)
+                    throw new InvalidOperationException("Archive too large — refusing extraction.");
+                dst.Write(buf, 0, n);
+            }
+        }
     }
 
     private static void VerifyDownloadedBinary(string path, long minBytes)
@@ -343,17 +393,26 @@ public static class EngineManager
         var buffer = new byte[81920];
         long read = 0;
         int n;
-        while ((n = await stream.ReadAsync(buffer, ct)) > 0)
+        try
         {
-            await file.WriteAsync(buffer.AsMemory(0, n), ct);
-            read += n;
-            if (read > maxBytes)
-                throw new InvalidOperationException("Engine download exceeded size limit.");
+            while ((n = await stream.ReadAsync(buffer, ct)) > 0)
+            {
+                await file.WriteAsync(buffer.AsMemory(0, n), ct);
+                read += n;
+                if (read > maxBytes)
+                    throw new InvalidOperationException("Engine download exceeded size limit.");
             if (total > 0)
             {
                 var pct = (double)read / total;
                 progress?.Report(new EngineProgress(stage, start + span * pct));
             }
+            }
+        }
+        catch
+        {
+            try { await file.DisposeAsync(); } catch { }
+            try { if (File.Exists(dest)) File.Delete(dest); } catch { }
+            throw;
         }
     }
 }

@@ -43,11 +43,21 @@ scratch_ytdlp/
 windows.txt
 RunWDM.bat
 banner.png
+# WPF designer temp projects (e.g. WDM_5x4gg3fd_wpftmp.csproj) — generated, never ship
+*_wpftmp.csproj
+*_wpftmp.*
 
-# IDE / agent skills
+# IDE / agent skills (project-knowledge skill + commands stay tracked, see bottom)
 .agents/
 .claude/
-.opencode/
+.opencode/*
+!.opencode/skills/
+!.opencode/commands/
+.opencode/skills/*
+!.opencode/skills/project-knowledge/
+.opencode/commands/*
+!.opencode/commands/project-knowledge-refresh.md
+!.opencode/commands/project-knowledge-status.md
 
 # Local debug / scratch files
 AutoFlow.ps1
@@ -77,4 +87,14 @@ motion-audits/
 README.md
 stream_catch.md
 preparing-states-preview.html
+
+# Project knowledge system - always tracked (exceptions to *.md / .opencode above)
+!AGENTS.md
+!.project/
+!.project/**
+# Ephemeral auto-detected staleness marks (plugin-written, never commit)
+.project/state/stale.json
+!.opencode/skills/project-knowledge/
+!.opencode/skills/project-knowledge/**
+!.opencode/commands/project-knowledge-*.md
 

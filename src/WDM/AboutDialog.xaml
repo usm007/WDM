@@ -52,7 +52,7 @@
                 <TextBlock Text="Windows Download Manager" FontSize="16" FontWeight="SemiBold"
                            Foreground="{DynamicResource Brush.Text}" HorizontalAlignment="Center" Margin="0,0,0,3" />
 
-                <TextBlock x:Name="VersionText" Text="Version 2.5" FontSize="12.5" FontFamily="{StaticResource Font.App}"
+                <TextBlock x:Name="VersionText" Text="Version 2.7.3" FontSize="12.5" FontFamily="{StaticResource Font.App}"
                            Foreground="{DynamicResource Brush.Accent}" HorizontalAlignment="Center" Margin="0,0,0,6" />
 
                 <TextBlock Text="Native Windows 11 high-throughput download manager."
@@ -89,7 +89,7 @@
                         <!-- Version line -->
                         <TextBlock x:Name="InlineVersionLine" Grid.Row="1" Margin="14,4,14,0"
                                     FontSize="12.5" FontFamily="{StaticResource Font.App}"
-                                    Foreground="{DynamicResource Brush.Accent}" Text="WDM 2.5.9 is available"/>
+                                    Foreground="{DynamicResource Brush.Accent}" Text="WDM 2.7.2 is available"/>
 
                         <!-- Status / details -->
                         <TextBlock x:Name="InlineStatusText" Grid.Row="2" Margin="14,6,14,12"

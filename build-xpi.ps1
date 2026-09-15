@@ -24,20 +24,7 @@ if (-not (Test-Path $src)) {
 }
 
 Add-Type -AssemblyName System.IO.Compression.FileSystem
-Add-Type -AssemblyName System.IO.Compression
-$mode = if (Test-Path $out) { [System.IO.Compression.ZipArchiveMode]::Update } else { [System.IO.Compression.ZipArchiveMode]::Create }
-$zip = [System.IO.Compression.ZipFile]::Open($out, $mode)
-try {
-    Get-ChildItem -LiteralPath $src -Recurse -File | ForEach-Object {
-        $rel = $_.FullName.Substring($src.Length + 1).Replace('\', '/')
-        $existing = $zip.GetEntry($rel)
-        if ($null -ne $existing) { $existing.Delete() }
-        [System.IO.Compression.ZipFileExtensions]::CreateEntryFromFile($zip, $_.FullName, $rel, [System.IO.Compression.CompressionLevel]::Optimal) | Out-Null
-    }
-}
-finally {
-    $zip.Dispose()
-}
+[System.IO.Compression.ZipFile]::CreateFromDirectory($src, $out)
 
 Write-Host "Built $out"
 Write-Host "WARNING: This XPI is UNSIGNED. Firefox release builds will not install it. Upload to AMO (free, self-distribution) and pass the signed file via -SignedXpi."

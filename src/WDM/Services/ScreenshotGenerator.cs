@@ -168,7 +168,7 @@ public static class ScreenshotGenerator
                 var defStrip = aboutWithUpdate.FindName("DefaultStrip") as System.Windows.Controls.Grid;
                 var updStrip = aboutWithUpdate.FindName("UpdateActionStrip") as System.Windows.Controls.Grid;
                 if (panel != null) panel.Visibility = System.Windows.Visibility.Visible;
-                if (verLine != null) verLine.Text = "WDM 2.6.0 is available";
+                if (verLine != null) verLine.Text = "WDM 2.7.2 is available";
                 if (status != null) status.Text = "Delta (~2-5 MB) • Silent auto-updates — no extra clicks after download";
                 if (defStrip != null) defStrip.Visibility = System.Windows.Visibility.Collapsed;
                 if (updStrip != null) updStrip.Visibility = System.Windows.Visibility.Visible;

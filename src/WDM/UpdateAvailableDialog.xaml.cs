@@ -186,6 +186,7 @@ public partial class UpdateAvailableDialog : Window
             await Task.Delay(500);
             DialogResult = true;
             Close();
+            Application.Current?.Shutdown();
         }
         catch (Exception ex)
         {

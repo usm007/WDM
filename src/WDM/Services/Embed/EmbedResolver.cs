@@ -62,20 +62,35 @@ public static class EmbedResolver
         if (headers != null && headers.TryGetValue("Cookie", out var ck) && !string.IsNullOrWhiteSpace(ck))
             incomingCookie = ck;
 
-        using var handler = new SocketsHttpHandler { AllowAutoRedirect = true, UseCookies = false };
+        // Manual redirect handling (AllowAutoRedirect=false): the shared
+        // handler must never follow a 302 into loopback/LAN/metadata space,
+        // and cookies are re-scoped per hop by the caller (BUG-030 follow-up).
+        using var handler = new SocketsHttpHandler { AllowAutoRedirect = false, UseCookies = false };
         using var http = new HttpClient(handler) { Timeout = TimeSpan.FromSeconds(15) };
 
         string currentUrl = pageUrl;
         string html = "";
+        string? cookieHost = HostOf(pageUrl);
         // Follow JS/iframe hops before resolving (voe mirrors, f75s frames).
         for (int hop = 0; hop < 4; hop++)
         {
-            html = await GetHtmlAsync(http, currentUrl, referer ?? pageUrl, incomingCookie, jar, token);
+            // Private hop targets are skipped, not followed: keep resolving
+            // from the last good page instead of aborting (BUG-030).
+            if (CaptureServer.IsBlockedResolveTarget(currentUrl))
+                break;
+            html = await GetHtmlAsync(http, currentUrl, referer ?? pageUrl, incomingCookie, jar, cookieHost, token);
             ThrowIfChallenge(html, currentUrl);
             string? redirect = EmbedParsers.ExtractJsRedirect(html);
             if (!string.IsNullOrWhiteSpace(redirect) && !SamePage(redirect, currentUrl))
             {
-                currentUrl = AbsoluteUrl(currentUrl, redirect);
+                string next = AbsoluteUrl(currentUrl, redirect);
+                if (CaptureServer.IsBlockedResolveTarget(next))
+                    break;
+                currentUrl = next;
+                // Cookies never cross hosts: a hop to another origin starts
+                // with a clean jar (BUG-030).
+                if (!SameHost(currentUrl, pageUrl))
+                    jar.Clear();
                 continue;
             }
             var frames = EmbedParsers.ExtractIframes(html, currentUrl);
@@ -84,7 +99,11 @@ public static class EmbedResolver
                 f.Contains("/embed/", StringComparison.OrdinalIgnoreCase));
             if (!string.IsNullOrWhiteSpace(player) && !SamePage(player, currentUrl) && hop < 3)
             {
+                if (CaptureServer.IsBlockedResolveTarget(player))
+                    break;
                 currentUrl = player;
+                if (!SameHost(currentUrl, pageUrl))
+                    jar.Clear();
                 continue;
             }
             break;
@@ -115,7 +134,7 @@ public static class EmbedResolver
         string? blob = EmbedParsers.ExtractTokenBlob(html);
         if (!string.IsNullOrWhiteSpace(blob) && !string.IsNullOrWhiteSpace(code))
         {
-            string? signed = await TryTokenResolveAsync(http, origin, code, blob, currentUrl, incomingCookie, jar, token);
+            string? signed = await TryTokenResolveAsync(http, origin, code, blob, currentUrl, incomingCookie, jar, cookieHost, token);
             if (!string.IsNullOrWhiteSpace(signed))
                 candidates.Add(new StreamCandidate { Url = signed, Kind = KindOf(signed), Score = 90 });
         }
@@ -140,7 +159,7 @@ public static class EmbedResolver
         // 7) filecode stream API (vidwara shape, generalized to common templates).
         if (!string.IsNullOrWhiteSpace(code))
         {
-            foreach (var u in await TryStreamApisAsync(http, origin, code, currentUrl, incomingCookie, jar, token))
+            foreach (var u in await TryStreamApisAsync(http, origin, code, currentUrl, incomingCookie, jar, cookieHost, token))
                 candidates.Add(new StreamCandidate { Url = u, Kind = KindOf(u), Score = 85 });
         }
 
@@ -162,10 +181,9 @@ public static class EmbedResolver
                     ["Referer"] = refererOut,
                     ["Origin"] = origin,
                 };
-                if (!string.IsNullOrWhiteSpace(incomingCookie))
-                    outHeaders["Cookie"] = incomingCookie;
-                else if (jar.Count > 0)
-                    outHeaders["Cookie"] = string.Join("; ", jar.Select(kv => kv.Key + "=" + kv.Value));
+                string mergedCookie = MergeCookies(incomingCookie, jar);
+                if (!string.IsNullOrWhiteSpace(mergedCookie))
+                    outHeaders["Cookie"] = mergedCookie;
                 return new ResolvedEmbed
                 {
                     DirectUrl = c.Url,
@@ -182,23 +200,68 @@ public static class EmbedResolver
     }
 
     // ── network steps ────────────────────────────────────────────────────
-    private static async Task<string> GetHtmlAsync(HttpClient http, string url, string referer,
-        string? incomingCookie, Dictionary<string, string> jar, CancellationToken ct)
+    /// <summary>Bounded body read: embed pages are attacker-controlled HTML.
+    /// An uncapped ReadAsStringAsync lets a malicious host OOM the process
+    /// with a ~100MB page (only the 30s CTS bounded it before).</summary>
+    internal const int MaxBodyBytes = 5 * 1024 * 1024;
+    internal static async Task<string> ReadCappedStringAsync(HttpContent content, CancellationToken ct)
     {
-        using var req = new HttpRequestMessage(HttpMethod.Get, url);
-        req.Headers.TryAddWithoutValidation("User-Agent", ChromeUa);
-        req.Headers.TryAddWithoutValidation("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8");
-        req.Headers.TryAddWithoutValidation("Accept-Language", "en-US,en;q=0.9");
-        if (Uri.TryCreate(referer, UriKind.Absolute, out var r)) req.Headers.Referrer = r;
-        AttachCookies(req, incomingCookie, jar);
-        using var resp = await http.SendAsync(req, HttpCompletionOption.ResponseHeadersRead, ct);
-        CollectCookies(resp, jar);
-        resp.EnsureSuccessStatusCode();
-        return await resp.Content.ReadAsStringAsync(ct);
+        await using var stream = await content.ReadAsStreamAsync(ct).ConfigureAwait(false);
+        using var ms = new MemoryStream();
+        var buf = new byte[81920];
+        int n;
+        while ((n = await stream.ReadAsync(buf.AsMemory(0, buf.Length), ct).ConfigureAwait(false)) > 0)
+        {
+            int room = MaxBodyBytes - (int)ms.Length;
+            if (room <= 0)
+                break;
+            ms.Write(buf, 0, Math.Min(n, room));
+            if (n > room)
+                break;
+        }
+        return Encoding.UTF8.GetString(ms.ToArray());
+    }
+
+    private static async Task<string> GetHtmlAsync(HttpClient http, string url, string referer,
+        string? incomingCookie, Dictionary<string, string> jar, string? cookieHost, CancellationToken ct)
+    {
+        string current = url;
+        // Redirects are followed manually (max 3) so every hop is SSRF-checked
+        // and cookies are re-scoped to the new host before resending.
+        for (int i = 0; i < 4; i++)
+        {
+            if (CaptureServer.IsBlockedResolveTarget(current))
+                return "";
+            using var req = new HttpRequestMessage(HttpMethod.Get, current);
+            req.Headers.TryAddWithoutValidation("User-Agent", ChromeUa);
+            req.Headers.TryAddWithoutValidation("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8");
+            req.Headers.TryAddWithoutValidation("Accept-Language", "en-US,en;q=0.9");
+            if (Uri.TryCreate(referer, UriKind.Absolute, out var r)) req.Headers.Referrer = r;
+            AttachCookies(req, incomingCookie, jar, HostOf(current), cookieHost);
+            using var resp = await http.SendAsync(req, HttpCompletionOption.ResponseHeadersRead, ct);
+            CollectCookies(resp, jar);
+            if (resp.StatusCode is HttpStatusCode.MovedPermanently or HttpStatusCode.Redirect
+                or HttpStatusCode.RedirectMethod or HttpStatusCode.TemporaryRedirect
+                or (HttpStatusCode)308)
+            {
+                var loc = resp.Headers.Location;
+                if (loc is null)
+                    return "";
+                string next = loc.IsAbsoluteUri ? loc.ToString()
+                    : new Uri(new Uri(current), loc).ToString();
+                if (CaptureServer.IsBlockedResolveTarget(next))
+                    return "";
+                current = next;
+                continue;
+            }
+            resp.EnsureSuccessStatusCode();
+            return await ReadCappedStringAsync(resp.Content, ct);
+        }
+        return "";
     }
 
     private static async Task<string?> TryTokenResolveAsync(HttpClient http, string origin, string code,
-        string blob, string referer, string? incomingCookie, Dictionary<string, string> jar, CancellationToken ct)
+        string blob, string referer, string? incomingCookie, Dictionary<string, string> jar, string? cookieHost, CancellationToken ct)
     {
         try
         {
@@ -208,12 +271,12 @@ public static class EmbedResolver
             req.Headers.TryAddWithoutValidation("Accept", "application/json");
             if (Uri.TryCreate(referer, UriKind.Absolute, out var r)) req.Headers.Referrer = r;
             req.Headers.TryAddWithoutValidation("Origin", origin);
-            AttachCookies(req, incomingCookie, jar);
+            AttachCookies(req, incomingCookie, jar, HostOf(api), cookieHost);
             req.Content = new StringContent("{\"blob\":" + JsonSerializer.Serialize(blob) + "}", Encoding.UTF8, "application/json");
             using var resp = await http.SendAsync(req, HttpCompletionOption.ResponseHeadersRead, ct);
             CollectCookies(resp, jar);
             if (!resp.IsSuccessStatusCode) return null;
-            string body = await resp.Content.ReadAsStringAsync(ct);
+            string body = await ReadCappedStringAsync(resp.Content, ct);
             return EmbedParsers.ExtractSignedUrlFromJson(body);
         }
         catch { return null; }
@@ -225,12 +288,14 @@ public static class EmbedResolver
         try
         {
             string url = passPath.StartsWith("http", StringComparison.OrdinalIgnoreCase) ? passPath : origin + passPath;
+            if (CaptureServer.IsBlockedResolveTarget(url))
+                return null;
             using var req = new HttpRequestMessage(HttpMethod.Get, url);
             req.Headers.TryAddWithoutValidation("User-Agent", ChromeUa);
             if (Uri.TryCreate(referer, UriKind.Absolute, out var r)) req.Headers.Referrer = r;
             using var resp = await http.SendAsync(req, HttpCompletionOption.ResponseHeadersRead, ct);
             if (!resp.IsSuccessStatusCode) return null;
-            string prefix = (await resp.Content.ReadAsStringAsync(ct)).Trim();
+            string prefix = (await ReadCappedStringAsync(resp.Content, ct)).Trim();
             if (string.IsNullOrWhiteSpace(prefix) || prefix.Contains("RELOAD", StringComparison.OrdinalIgnoreCase))
                 return null;
             if (!prefix.StartsWith("http", StringComparison.OrdinalIgnoreCase))
@@ -259,7 +324,7 @@ public static class EmbedResolver
             if (Uri.TryCreate(currentUrl, UriKind.Absolute, out var dr)) dReq.Headers.Referrer = dr;
             using var dResp = await http.SendAsync(dReq, HttpCompletionOption.ResponseHeadersRead, ct);
             if (!dResp.IsSuccessStatusCode) return null;
-            string dBody = await dResp.Content.ReadAsStringAsync(ct);
+            string dBody = await ReadCappedStringAsync(dResp.Content, ct);
             string? frame = EmbedParsers.ExtractEmbedFrameUrl(dBody);
             if (string.IsNullOrWhiteSpace(frame)) return null;
 
@@ -275,7 +340,7 @@ public static class EmbedResolver
             if (pResp.StatusCode == HttpStatusCode.Unauthorized || pResp.StatusCode == HttpStatusCode.Forbidden)
                 throw new EmbedInteractionRequiredException(pageUrl, "This host requires a browser check (device attestation) before the stream is released.");
             if (!pResp.IsSuccessStatusCode) return null;
-            string pBody = await pResp.Content.ReadAsStringAsync(ct);
+            string pBody = await ReadCappedStringAsync(pResp.Content, ct);
             if (pBody.Contains("attest", StringComparison.OrdinalIgnoreCase) && !pBody.Contains("payload", StringComparison.OrdinalIgnoreCase))
                 throw new EmbedInteractionRequiredException(pageUrl, "This host requires a browser check before the stream is released.");
             // Plain (unencrypted) variant.
@@ -301,7 +366,7 @@ public static class EmbedResolver
     }
 
     private static async Task<List<string>> TryStreamApisAsync(HttpClient http, string origin, string code,
-        string referer, string? incomingCookie, Dictionary<string, string> jar, CancellationToken ct)
+        string referer, string? incomingCookie, Dictionary<string, string> jar, string? cookieHost, CancellationToken ct)
     {
         var found = new List<string>();
         // Vidwara shape first, then common siblings — same-origin only.
@@ -320,14 +385,14 @@ public static class EmbedResolver
                 req.Headers.TryAddWithoutValidation("Accept", "application/json");
                 if (Uri.TryCreate(referer, UriKind.Absolute, out var r)) req.Headers.Referrer = r;
                 req.Headers.TryAddWithoutValidation("Origin", origin);
-                AttachCookies(req, incomingCookie, jar);
+                AttachCookies(req, incomingCookie, jar, HostOf(api), cookieHost);
                 req.Content = new StringContent(
                     "{\"filecode\":" + JsonSerializer.Serialize(code) + ",\"device\":\"web\"}",
                     Encoding.UTF8, "application/json");
                 using var resp = await http.SendAsync(req, HttpCompletionOption.ResponseHeadersRead, ct);
                 CollectCookies(resp, jar);
                 if (!resp.IsSuccessStatusCode) continue;
-                string body = await resp.Content.ReadAsStringAsync(ct);
+                string body = await ReadCappedStringAsync(resp.Content, ct);
                 string? direct = EmbedParsers.ExtractSignedUrlFromJson(body);
                 if (!string.IsNullOrWhiteSpace(direct)) { found.Add(direct); break; }
                 foreach (var u in EmbedParsers.ExtractDirectMediaUrls(body, origin))
@@ -362,7 +427,7 @@ public static class EmbedResolver
                 if (Uri.TryCreate(referer, UriKind.Absolute, out var r)) req.Headers.Referrer = r;
                 using var resp = await http.SendAsync(req, HttpCompletionOption.ResponseHeadersRead, ct);
                 if (!resp.IsSuccessStatusCode) continue;
-                string body = await resp.Content.ReadAsStringAsync(ct);
+                string body = await ReadCappedStringAsync(resp.Content, ct);
                 string? direct = EmbedParsers.ExtractSignedUrlFromJson(body);
                 if (!string.IsNullOrWhiteSpace(direct)) { found.Add(direct); break; }
                 var (hls, mp4) = EmbedParsers.ExtractSourcesBlock(body);
@@ -379,6 +444,10 @@ public static class EmbedResolver
 
     private static async Task<bool> VerifyCandidateAsync(HttpClient http, string url, string referer, CancellationToken ct)
     {
+        // The candidate host is attacker-influenced (page-embedded URL):
+        // never probe loopback/intranet/metadata targets (BUG-030).
+        if (CaptureServer.IsBlockedResolveTarget(url))
+            return false;
         try
         {
             using var head = new HttpRequestMessage(HttpMethod.Head, url);
@@ -409,18 +478,66 @@ public static class EmbedResolver
     }
 
     // ── small utilities ──────────────────────────────────────────────────
+    private static string? HostOf(string? url)
+    {
+        if (string.IsNullOrWhiteSpace(url))
+            return null;
+        return Uri.TryCreate(url, UriKind.Absolute, out var u) ? u.Host : null;
+    }
+
+    private static bool SameHost(string? a, string? b)
+    {
+        string? ha = HostOf(a);
+        string? hb = HostOf(b);
+        return ha is not null && string.Equals(ha, hb, StringComparison.OrdinalIgnoreCase);
+    }
+
     private static void ThrowIfChallenge(string html, string url)
     {
         if (EmbedParsers.IsChallengePage(html))
             throw new EmbedInteractionRequiredException(url, "This page shows a bot check (captcha/Cloudflare). Complete it once in the WDM browser window, then retry.");
     }
 
-    private static void AttachCookies(HttpRequestMessage req, string? incoming, Dictionary<string, string> jar)
+    internal static string MergeCookies(string? incoming, Dictionary<string, string> jar)
     {
+        var merged = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         if (!string.IsNullOrWhiteSpace(incoming))
-            req.Headers.TryAddWithoutValidation("Cookie", incoming);
-        else if (jar.Count > 0)
-            req.Headers.TryAddWithoutValidation("Cookie", string.Join("; ", jar.Select(kv => kv.Key + "=" + kv.Value)));
+        {
+            foreach (var part in incoming.Split(';'))
+            {
+                var trimmed = part.Trim();
+                int eq = trimmed.IndexOf('=');
+                if (eq > 0)
+                {
+                    merged[trimmed[..eq].Trim()] = trimmed[(eq + 1)..].Trim();
+                }
+                else if (trimmed.Length > 0)
+                {
+                    merged[trimmed] = "";
+                }
+            }
+        }
+        foreach (var kv in jar)
+        {
+            merged[kv.Key] = kv.Value;
+        }
+        return string.Join("; ", merged.Select(kv => string.IsNullOrEmpty(kv.Value) ? kv.Key : $"{kv.Key}={kv.Value}"));
+    }
+
+    /// <summary>Attaches cookies only when the request targets the host the
+    /// cookies belong to — captured session cookies must never ride along to
+    /// a third-party hop or API host (BUG-030).</summary>
+    private static void AttachCookies(HttpRequestMessage req, string? incoming, Dictionary<string, string> jar,
+        string? requestHost, string? cookieHost)
+    {
+        bool sameHost = !string.IsNullOrWhiteSpace(requestHost) &&
+            string.Equals(requestHost, cookieHost, StringComparison.OrdinalIgnoreCase);
+        if (sameHost)
+        {
+            string merged = MergeCookies(incoming, jar);
+            if (!string.IsNullOrWhiteSpace(merged))
+                req.Headers.TryAddWithoutValidation("Cookie", merged);
+        }
     }
 
     private static void CollectCookies(HttpResponseMessage resp, Dictionary<string, string> jar)

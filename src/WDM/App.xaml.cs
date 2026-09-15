@@ -18,6 +18,11 @@ public partial class App : Application
     private static bool _ownsMutex;
     private const string MutexId = @"Local\WDM.SingleInstance.4F3B2C0A-8D2E-4B7A-9C1E-6A5B4D3E2F10";
 
+    /// <summary>Set by <see cref="MainWindow"/> so a second instance can restore
+    /// this one (and forward URL arguments) over <see cref="Services.SingleInstancePipe"/>.</summary>
+    public static Action<string[]>? SecondInstanceHandler { get; set; }
+    private static CancellationTokenSource? _pipeCts;
+
     [DllImport("user32.dll")]
     private static extern bool SetForegroundWindow(IntPtr hWnd);
 
@@ -64,6 +69,11 @@ public partial class App : Application
             _ownsMutex = createdNew;
             if (!createdNew)
             {
+                // Forward our command line to the running instance (restores it
+                // even when it is hidden to the tray with no HWND to find),
+                // then exit. HWND focus-steal stays as a fallback.
+                try { SingleInstancePipe.TrySendArgs(SingleInstancePipe.PipeNameForCurrentSession(), e.Args, 800); }
+                catch { }
                 BringExistingInstanceToFront();
                 Shutdown();
                 return;
@@ -124,6 +134,9 @@ public partial class App : Application
         }
 
         Window mainWindow = new MainWindow();
+        _pipeCts = new CancellationTokenSource();
+        SingleInstancePipe.Start(SingleInstancePipe.PipeNameForCurrentSession(),
+            args => SecondInstanceHandler?.Invoke(args), _pipeCts.Token);
         if (!StartMinimized)
         {
             mainWindow.Show();
@@ -168,6 +181,9 @@ public partial class App : Application
 
     protected override void OnExit(ExitEventArgs e)
     {
+        try { _pipeCts?.Cancel(); } catch { }
+        _pipeCts?.Dispose();
+        _pipeCts = null;
         if (_ownsMutex && _singleInstanceMutex is not null)
         {
             try { _singleInstanceMutex.ReleaseMutex(); }

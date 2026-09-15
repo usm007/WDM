@@ -11,25 +11,51 @@ namespace WDM.Services;
 public static class AtomicFile
 {
     private static readonly object FileLock = new();
+    private const string MutexName = @"Local\WDM.AtomicFile";
 
     public static void Write(string path, string content)
     {
         lock (FileLock)
         {
-            string dir = Path.GetDirectoryName(path) ?? AppDomain.CurrentDomain.BaseDirectory;
-            Directory.CreateDirectory(dir);
-            SweepStaleTemps(dir, Path.GetFileName(path));
-            string tmp = Path.Combine(dir, $"{Path.GetFileName(path)}.{Guid.NewGuid():N}.tmp");
+            // Cross-process guard: a second WDM copy (or updater) writing the
+            // same JSON concurrently would otherwise interleave temp+rename.
+            // Fail-open to the in-process lock on timeout — same as old behavior.
+            bool ownsMutex = false;
+            Mutex? mutex = null;
             try
             {
-                File.WriteAllText(tmp, content);
-                File.Move(tmp, path, overwrite: true);
+                mutex = new Mutex(initiallyOwned: false, MutexName);
+                try { ownsMutex = mutex.WaitOne(TimeSpan.FromSeconds(10)); }
+                catch (AbandonedMutexException) { ownsMutex = true; }
+                catch { ownsMutex = false; }
+                WriteCore(path, content);
             }
-            catch
+            finally
             {
-                try { if (File.Exists(tmp)) File.Delete(tmp); } catch { }
-                throw;
+                if (ownsMutex)
+                {
+                    try { mutex?.ReleaseMutex(); } catch { }
+                }
+                mutex?.Dispose();
             }
+        }
+    }
+
+    private static void WriteCore(string path, string content)
+    {
+        string dir = Path.GetDirectoryName(path) ?? AppDomain.CurrentDomain.BaseDirectory;
+        Directory.CreateDirectory(dir);
+        SweepStaleTemps(dir, Path.GetFileName(path));
+        string tmp = Path.Combine(dir, $"{Path.GetFileName(path)}.{Guid.NewGuid():N}.tmp");
+        try
+        {
+            File.WriteAllText(tmp, content);
+            File.Move(tmp, path, overwrite: true);
+        }
+        catch
+        {
+            try { if (File.Exists(tmp)) File.Delete(tmp); } catch { }
+            throw;
         }
     }
 

@@ -19,6 +19,7 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
     private readonly MainViewModel _viewModel;
     private readonly CaptureServer _captureServer;
     private readonly TrayIcon _tray;
+    private readonly System.Windows.Threading.DispatcherTimer _trayTimer;
     private readonly Dictionary<Guid, Window> _openDialogs = new();
     private TrayProgressPanel? _progressPanel;
     private bool _exiting;
@@ -40,6 +41,10 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
         _viewModel.RefreshLinkRequested += task => ShowRefreshLink(task);
         _viewModel.DeletePromptRequested += ShowDeletePrompt;
         _viewModel.SpeedHistoryUpdated += history => _dispatcher.BeginInvoke(() => RenderSparkline(history));
+        // BUG-038: dialogs call ApplyAndRestart without access to _exiting;
+        // the delegate lets them signal the window to disable MinimizeToTray.
+        _viewModel.PrepareForRestart = OnRestarting;
+        MainViewModel.Restarting += OnRestarting;
 
         SettingsContent.CloseRequested += (_, _) => ShowDownloadsView();
         SettingsContent.OpenExtensionHelperRequested += (_, _) => ShowExtensionInstallerDialog(fromSettings: true);
@@ -82,11 +87,17 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
         _tray.ResumeAllRequested += () => _dispatcher.BeginInvoke(() => _viewModel.ResumeAll());
         _tray.ExitRequested += () => _dispatcher.BeginInvoke(ExitApp);
 
-        var trayTimer = new System.Windows.Threading.DispatcherTimer
+        App.SecondInstanceHandler = args => _dispatcher.BeginInvoke(() => HandleSecondInstance(args));
+
+        // List shortcut keys (Delete/Enter/Space/F5) fall back to the window
+        // when focused outside the DataGrid, without interfering with text controls.
+        KeyDown += OnWindowKeyDown;
+
+        _trayTimer = new System.Windows.Threading.DispatcherTimer
         {
             Interval = TimeSpan.FromSeconds(1),
         };
-        trayTimer.Tick += (_, _) =>
+        _trayTimer.Tick += (_, _) =>
         {
             int pausedCount = _viewModel.Tasks.Count(t => t.Status == Models.TaskStatus.Paused);
             int queuedCount = _viewModel.Engine.QueuedCount;
@@ -105,7 +116,7 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
                 UpdateProgressPanel(null);
             }
         };
-        trayTimer.Start();
+        _trayTimer.Start();
 
         Loaded += (_, _) =>
         {
@@ -384,8 +395,30 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
         {
             if (File.Exists(path))
             {
+                // Cap the read: a dropped multi-GB file must not be buffered
+                // into memory just to extract a URL.
+                const long maxDropBytes = 1 * 1024 * 1024;
+                if (new FileInfo(path).Length > maxDropBytes)
+                    return;
                 string content = File.ReadAllText(path);
-                string url = content.Trim().Trim('[', ']', '"', '\'', ';', ' ');
+                if (content.Length > maxDropBytes)
+                    content = content[..(int)maxDropBytes];
+                // .url shortcut files are INI ([InternetShortcut] URL=...),
+                // not raw URLs — parse the URL= line instead of failing silently.
+                string? shortcutUrl = null;
+                if (path.EndsWith(".url", StringComparison.OrdinalIgnoreCase))
+                {
+                    foreach (var line in content.Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries))
+                    {
+                        string t = line.Trim();
+                        if (t.StartsWith("URL=", StringComparison.OrdinalIgnoreCase))
+                        {
+                            shortcutUrl = t[4..].Trim();
+                            break;
+                        }
+                    }
+                }
+                string url = (shortcutUrl ?? content).Trim().Trim('[', ']', '"', '\'', ';', ' ');
                 TryAddUrl(url);
             }
         }
@@ -438,6 +471,23 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
         UpdateProgressPanel(null);
     }
 
+    /// <summary>Second-instance handoff (see <see cref="Services.SingleInstancePipe"/>):
+    /// restores a possibly tray-hidden window and opens any forwarded URL.</summary>
+    public void HandleSecondInstance(string[] args)
+    {
+        RestoreWindow();
+        try
+        {
+            string? url = args?.FirstOrDefault(a =>
+                !string.IsNullOrWhiteSpace(a) &&
+                (a.StartsWith("http://", StringComparison.OrdinalIgnoreCase) ||
+                 a.StartsWith("https://", StringComparison.OrdinalIgnoreCase)));
+            if (!string.IsNullOrWhiteSpace(url))
+                ShowAddDialog(prefillUrl: url.Trim());
+        }
+        catch { }
+    }
+
     /// <summary>Shows the always-on-top tray progress panel only while the main
     /// window is hidden to the tray, a download is running, and the option is on.</summary>
     private void UpdateProgressPanel(DownloadTask? active)
@@ -452,7 +502,22 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
             return;
         }
 
-        _progressPanel ??= new TrayProgressPanel(_viewModel);
+        // A user-closed (Alt+F4) panel can't be re-Shown — recreate it.
+        // The panel unsubscribes itself in OnClosed, so dropping the
+        // reference is leak-free.
+        if (_progressPanel is not null && !_progressPanel.IsLoaded)
+            _progressPanel = null;
+        if (_progressPanel is null)
+        {
+            var panel = new TrayProgressPanel(_viewModel);
+            panel.Closed += (_, _) =>
+            {
+                if (ReferenceEquals(_progressPanel, panel))
+                    _progressPanel = null;
+            };
+            _progressPanel = panel;
+        }
+        _progressPanel.ShowPanel(active!);
         _progressPanel.ShowPanel(active!);
     }
 
@@ -656,7 +721,11 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
         {
             string installer = await UpdateChecker.DownloadInstallerAsync(release, null);
 
-            // Silent install — uses /VERYSILENT + --silent so "already installed" prompt never appears
+            // Silent install — LaunchInstaller passes --silent alone (Velopack
+            // bundle uses clap-style parsing; /VERYSILENT would drop it back
+            // to the interactive "already installed" dialog) and signals
+            // _exiting via MainViewModel.Restarting so Close() isn't trapped
+            // by the MinimizeToTray guard.
             UpdateChecker.LaunchInstaller(installer, silent: true);
             await Task.Delay(500);
             _exiting = true;
@@ -844,7 +913,7 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
             {
                 var rel = await Services.UpdateChecker.CheckLatestAsync();
                 if (rel?.Body != null && rel.Version?.ToString() == newVersion)
-                    Dispatcher.Invoke(() => NoticeContent.Initialize(oldVersion, newVersion, rel.Body));
+                    _ = Dispatcher.BeginInvoke(() => NoticeContent.Initialize(oldVersion, newVersion, rel.Body));
             }
             catch { }
         });
@@ -912,12 +981,56 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
         base.OnClosing(e);
     }
 
+    private void OnRestarting() => _exiting = true;
+
+    /// <summary>Window-level fallback for list shortcut keys (Delete/Enter/Space/F5)
+    /// when the user clicked outside the DataGrid (e.g. sidebar, background).
+    /// Does nothing when the focused element is a text input control so Space/Delete/Enter
+    /// edit text normally (BUG-084).</summary>
+    private void OnWindowKeyDown(object sender, System.Windows.Input.KeyEventArgs e)
+    {
+        if (e.Handled)
+            return;
+        if (e.KeyboardDevice.Modifiers != System.Windows.Input.ModifierKeys.None)
+            return;
+        var focused = System.Windows.Input.Keyboard.FocusedElement as DependencyObject;
+        if (focused is System.Windows.Controls.Primitives.TextBoxBase
+            || focused is System.Windows.Controls.ComboBox cb && cb.IsEditable)
+        {
+            return; // let text controls process their own keystrokes freely
+        }
+
+        if (e.Key is System.Windows.Input.Key.Delete && _viewModel.BulkRemoveCommand.CanExecute(null))
+        {
+            _viewModel.BulkRemoveCommand.Execute(null);
+            e.Handled = true;
+        }
+        else if (e.Key is (System.Windows.Input.Key.Enter or System.Windows.Input.Key.Return) && _viewModel.BulkResumeCommand.CanExecute(null))
+        {
+            _viewModel.BulkResumeCommand.Execute(null);
+            e.Handled = true;
+        }
+        else if (e.Key is System.Windows.Input.Key.Space && _viewModel.TogglePauseCommand.CanExecute(null))
+        {
+            _viewModel.TogglePauseCommand.Execute(null);
+            e.Handled = true;
+        }
+        else if (e.Key is System.Windows.Input.Key.F5 && _viewModel.RetryCommand.CanExecute(null))
+        {
+            _viewModel.RetryCommand.Execute(null);
+            e.Handled = true;
+        }
+    }
+
     protected override void OnClosed(EventArgs e)
     {
+        try { _trayTimer.Stop(); } catch { }
+        try { MainViewModel.Restarting -= OnRestarting; } catch { }
         _progressPanel?.Close();
         _captureServer.Dispose();
         _tray.Dispose();
         _viewModel.SaveTasksNow();
+        _viewModel.Dispose();
         base.OnClosed(e);
     }
 }

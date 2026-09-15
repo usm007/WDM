@@ -8,11 +8,11 @@
 ; OUTSIDE {app}. Uninstall wipes {app} only and must never touch WDM-Data.
 ; Requires Inno Setup 6 (https://jrsoftware.org/isinfo.php)
 ; Compile: ISCC.exe installer.iss
-; Velopack pack (delta): dotnet publish -> vpk pack --packId WDM --packVersion 2.5.4 ...
+; Velopack pack (delta): dotnet publish -> vpk pack --packId WDM --packVersion 2.7.3 ...
 
 #define MyAppName "WDM"
 #define MyAppShortName "WDM"
-#define MyAppVersion "2.7.2.0"
+#define MyAppVersion "2.7.3.0"
 #define MyAppPublisher "WDM Team"
 #define MyAppExeName "WDM.exe"
 #define MyAppIcon "..\WDM\Assets\WDM.ico"

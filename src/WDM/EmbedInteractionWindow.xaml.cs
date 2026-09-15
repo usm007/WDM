@@ -26,6 +26,7 @@ public partial class EmbedInteractionWindow : Wpf.Ui.Controls.FluentWindow
         InitializeComponent();
         Title = $"Browser check — {task.DisplayFileName}";
         Loaded += OnLoaded;
+        Closed += OnClosed;
     }
 
     protected override void OnSourceInitialized(EventArgs e)
@@ -64,10 +65,8 @@ public partial class EmbedInteractionWindow : Wpf.Ui.Controls.FluentWindow
             {
                 core.Settings.AreDefaultContextMenusEnabled = false;
                 core.Settings.IsStatusBarEnabled = false;
-                core.ProcessFailed += (_, args) =>
-                    StatusText.Text = "Browser process failed (" + args.ProcessFailedKind + "). Click 'Reload page' to retry.";
-                core.DocumentTitleChanged += (_, _) =>
-                    Title = "WDM — " + (string.IsNullOrWhiteSpace(core.DocumentTitle) ? "Complete browser check" : core.DocumentTitle);
+                core.ProcessFailed += Core_ProcessFailed;
+                core.DocumentTitleChanged += Core_DocumentTitleChanged;
                 core.Navigate(_pageUrl);
                 StatusText.Text = "Loading " + _pageUrl;
             }
@@ -78,6 +77,41 @@ public partial class EmbedInteractionWindow : Wpf.Ui.Controls.FluentWindow
                 + (runtimeVersion is null ? "" : $" (found {runtimeVersion})") + ": " + ex.Message;
             StatusText.Foreground = (System.Windows.Media.Brush)(TryFindResource("Brush.Danger") ?? System.Windows.Media.Brushes.Red);
         }
+    }
+
+    private void Core_ProcessFailed(object? sender, CoreWebView2ProcessFailedEventArgs args)
+    {
+        try { StatusText.Text = "Browser process failed (" + args.ProcessFailedKind + "). Click 'Reload page' to retry."; }
+        catch { }
+    }
+
+    private void Core_DocumentTitleChanged(object? sender, object e)
+    {
+        try
+        {
+            var core = _webView?.CoreWebView2;
+            Title = "WDM — " + (string.IsNullOrWhiteSpace(core?.DocumentTitle) ? "Complete browser check" : core.DocumentTitle);
+        }
+        catch { }
+    }
+
+    private void OnClosed(object? sender, EventArgs e) => DetachWebView();
+
+    private void DetachWebView()
+    {
+        try
+        {
+            Loaded -= OnLoaded;
+            Closed -= OnClosed;
+            if (_webView?.CoreWebView2 is not null)
+            {
+                _webView.CoreWebView2.ProcessFailed -= Core_ProcessFailed;
+                _webView.CoreWebView2.DocumentTitleChanged -= Core_DocumentTitleChanged;
+            }
+        }
+        catch { }
+        try { _webView?.Dispose(); } catch { }
+        _webView = null;
     }
 
     private void Reload_Click(object sender, RoutedEventArgs e)

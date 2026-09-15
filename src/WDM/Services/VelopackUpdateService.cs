@@ -123,50 +123,84 @@ public static class VelopackUpdateService
     private sealed class SharedHttpDownloader : IFileDownloader
     {
         private static readonly HttpClient _http = new HttpClient { Timeout = TimeSpan.FromSeconds(30) };
+        // File payloads (full nupkg ~70MB) must not share the 30s metadata
+        // timeout: a slow link reliably exceeded it mid-download. No global
+        // timeout here — cancellation comes from the per-call token below.
+        private static readonly HttpClient _fileHttp = new HttpClient { Timeout = Timeout.InfiniteTimeSpan };
         static SharedHttpDownloader()
         {
             _http.DefaultRequestHeaders.UserAgent.ParseAdd($"WDM/{UpdateChecker.CurrentVersion}");
             _http.DefaultRequestHeaders.Accept.ParseAdd("application/octet-stream");
+            _fileHttp.DefaultRequestHeaders.UserAgent.ParseAdd($"WDM/{UpdateChecker.CurrentVersion}");
+            _fileHttp.DefaultRequestHeaders.Accept.ParseAdd("application/octet-stream");
         }
+        // Velopack feed packages are tens of MB; anything past this is a
+        // malicious/oversized feed — abort instead of filling the disk.
+        private const long MaxPackageBytes = 500L * 1024 * 1024;
         public async Task DownloadFile(string url, string targetFile, Action<int> progress, IDictionary<string, string>? headers, double timeout, CancellationToken cancelToken)
         {
+            // Honor Velopack's per-call timeout (seconds, 0 = none) with a
+            // 10-minute ceiling fallback so slow links can finish full nupkgs.
+            using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cancelToken);
+            timeoutCts.CancelAfter(TimeSpan.FromSeconds(timeout > 0 ? timeout : 600));
+            var ct = timeoutCts.Token;
             using var req = new HttpRequestMessage(HttpMethod.Get, url);
             if (headers != null) foreach(var kv in headers) req.Headers.TryAddWithoutValidation(kv.Key, kv.Value);
-            using var resp = await _http.SendAsync(req, HttpCompletionOption.ResponseHeadersRead, cancelToken).ConfigureAwait(false);
+            using var resp = await _fileHttp.SendAsync(req, HttpCompletionOption.ResponseHeadersRead, ct).ConfigureAwait(false);
             resp.EnsureSuccessStatusCode();
             long total = resp.Content.Headers.ContentLength ?? -1;
-            using var src = await resp.Content.ReadAsStreamAsync(cancelToken).ConfigureAwait(false);
+            if (total > MaxPackageBytes)
+                throw new InvalidOperationException($"Update package too large ({total} bytes) — refusing download.");
+            using var src = await resp.Content.ReadAsStreamAsync(ct).ConfigureAwait(false);
             Directory.CreateDirectory(Path.GetDirectoryName(targetFile)!);
             using var dst = System.IO.File.Create(targetFile);
             var buf = new byte[81920];
             long read = 0;
             while(true)
             {
-                int n = await src.ReadAsync(buf, cancelToken).ConfigureAwait(false);
+                int n = await src.ReadAsync(buf, ct).ConfigureAwait(false);
                 if (n <= 0) break;
-                await dst.WriteAsync(buf.AsMemory(0, n), cancelToken).ConfigureAwait(false);
                 read += n;
+                if (read > MaxPackageBytes)
+                    throw new InvalidOperationException("Update package exceeded size limit — refusing download.");
+                await dst.WriteAsync(buf.AsMemory(0, n), ct).ConfigureAwait(false);
                 if (total > 0) progress?.Invoke((int)(read * 100 / total));
             }
         }
+        private const int MaxFeedBytes = 10 * 1024 * 1024;
         public async Task<byte[]> DownloadBytes(string url, IDictionary<string, string>? headers, double timeout)
         {
+            using var timeoutCts = new CancellationTokenSource();
+            timeoutCts.CancelAfter(TimeSpan.FromSeconds(timeout > 0 ? timeout : 30));
             using var req = new HttpRequestMessage(HttpMethod.Get, url);
             if (headers != null) foreach(var kv in headers) req.Headers.TryAddWithoutValidation(kv.Key, kv.Value);
-            using var resp = await _http.SendAsync(req).ConfigureAwait(false);
+            using var resp = await _http.SendAsync(req, HttpCompletionOption.ResponseHeadersRead, timeoutCts.Token).ConfigureAwait(false);
             resp.EnsureSuccessStatusCode();
-            return await resp.Content.ReadAsByteArrayAsync().ConfigureAwait(false);
+            await using var src = await resp.Content.ReadAsStreamAsync(timeoutCts.Token).ConfigureAwait(false);
+            using var ms = new System.IO.MemoryStream();
+            var buf = new byte[81920];
+            int n;
+            while ((n = await src.ReadAsync(buf, timeoutCts.Token).ConfigureAwait(false)) > 0)
+            {
+                if (ms.Length + n > MaxFeedBytes)
+                    throw new InvalidOperationException("Update feed response too large — refusing download.");
+                ms.Write(buf, 0, n);
+            }
+            return ms.ToArray();
         }
         public async Task<string> DownloadString(string url, IDictionary<string, string>? headers, double timeout)
         {
-            using var req = new HttpRequestMessage(HttpMethod.Get, url);
-            if (headers != null) foreach(var kv in headers) req.Headers.TryAddWithoutValidation(kv.Key, kv.Value);
-            // GitHub API needs Accept header
-            if (!req.Headers.Contains("Accept")) req.Headers.TryAddWithoutValidation("Accept", "application/vnd.github+json");
-            req.Headers.UserAgent.ParseAdd($"WDM/{UpdateChecker.CurrentVersion}");
-            using var resp = await _http.SendAsync(req).ConfigureAwait(false);
-            resp.EnsureSuccessStatusCode();
-            return await resp.Content.ReadAsStringAsync().ConfigureAwait(false);
+            // GitHub API needs an explicit JSON Accept when the caller didn't set one.
+            IDictionary<string, string>? effective = headers;
+            if (headers is null || !headers.Keys.Any(k => k.Equals("Accept", StringComparison.OrdinalIgnoreCase)))
+            {
+                var merged = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+                if (headers != null) foreach (var kv in headers) merged[kv.Key] = kv.Value;
+                merged["Accept"] = "application/vnd.github+json";
+                effective = merged;
+            }
+            var bytes = await DownloadBytes(url, effective, timeout).ConfigureAwait(false);
+            return System.Text.Encoding.UTF8.GetString(bytes);
         }
     }
 
@@ -231,7 +265,11 @@ public static class VelopackUpdateService
             if (!mgr.IsInstalled)
                 return null;
 
-            var info = await mgr.CheckForUpdatesAsync().ConfigureAwait(false);
+            // Velopack's check has no CancellationToken overload — run it on
+            // the pool so the caller's token can at least abort the wait
+            // instead of hanging the UI shutdown path.
+            ct.ThrowIfCancellationRequested();
+            var info = await Task.Run(() => mgr.CheckForUpdatesAsync(), ct).ConfigureAwait(false);
             if (info is null)
                 return null;
             return info;
@@ -253,9 +291,11 @@ public static class VelopackUpdateService
         if (normal != null) return normal;
 
         // Fallback: use Test locator with current assembly version to query GitHub feed directly.
-        // Velopack versions are 3-part (2.7.1) while the assembly is 4-part (2.7.1.0) — normalize.
+        // Velopack versions are 3-part (2.7.2) while the assembly is 4-part (2.7.2.0) — normalize.
+        // Build can be -1 (undefined) for 2-part versions; Revision is dropped (feed is 3-part).
         var asm = UpdateChecker.CurrentVersion;
-        var currentVer = $"{asm.Major}.{asm.Minor}.{asm.Build}";
+        int build = asm.Build < 0 ? 0 : asm.Build;
+        var currentVer = $"{asm.Major}.{asm.Minor}.{build}";
         var tempDir = Path.Combine(Path.GetTempPath(), "WDM_Velopack_Check");
         try
         {
@@ -265,7 +305,8 @@ public static class VelopackUpdateService
             var source = new GithubSource(RepoUrl, null, false, downloader);
             var options = new UpdateOptions { MaximumDeltasBeforeFallback = 1 };
             var mgr = new UpdateManager(source, options, locator);
-            var info = await mgr.CheckForUpdatesAsync().ConfigureAwait(false);
+            ct.ThrowIfCancellationRequested();
+            var info = await Task.Run(() => mgr.CheckForUpdatesAsync(), ct).ConfigureAwait(false);
             return info;
         }
         catch
@@ -295,6 +336,9 @@ public static class VelopackUpdateService
     /// <summary>Applies the pending update and restarts WDM. Must be called after <see cref="DownloadUpdatesAsync"/>.</summary>
     public static void ApplyAndRestart(VelopackAsset asset, string[]? restartArgs = null)
     {
+        // BUG-038: signal the main window to set _exiting before the restart
+        // so the MinimizeToTray guard doesn't cancel the shutdown.
+        ViewModels.MainViewModel.Restarting?.Invoke();
         var mgr = CreateManager();
         mgr.ApplyUpdatesAndRestart(asset, restartArgs ?? Array.Empty<string>());
     }

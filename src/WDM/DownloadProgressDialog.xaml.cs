@@ -97,6 +97,18 @@ public partial class DownloadProgressDialog : Window, INotifyPropertyChanged
         UpdateState();
         SetupBlockVisuals();
         ApplyYouTubeMode();
+        // The task may already be Completed when the dialog opens (fast
+        // small files): no further PropertyChanged will fire, so evaluate
+        // completion options once on load or CloseOnComplete/OpenOnComplete
+        // silently never run.
+        Loaded += (_, _) =>
+        {
+            if (Task.Status == TaskStatus.Completed && !_completionHandled)
+            {
+                _completionHandled = true;
+                HandleCompletionOptions();
+            }
+        };
     }
 
     // ── YouTube-specific "different system" bindings ─────────────────────
