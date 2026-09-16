@@ -49,17 +49,11 @@ banner.png
 *_wpftmp.csproj
 *_wpftmp.*
 
-# IDE / agent skills (project-knowledge skill + commands stay tracked, see bottom)
+# IDE / agent local config - never tracked
 .agents/
 .claude/
-.opencode/*
-!.opencode/skills/
-!.opencode/commands/
-.opencode/skills/*
-!.opencode/skills/project-knowledge/
-.opencode/commands/*
-!.opencode/commands/project-knowledge-refresh.md
-!.opencode/commands/project-knowledge-status.md
+.opencode/
+.project/
 
 # Local debug / scratch files
 AutoFlow.ps1
@@ -90,13 +84,6 @@ README.md
 stream_catch.md
 preparing-states-preview.html
 
-# Project knowledge system - always tracked (exceptions to *.md / .opencode above)
+# AGENTS.md stays tracked (exception to *.md above)
 !AGENTS.md
-!.project/
-!.project/**
-# Ephemeral auto-detected staleness marks (plugin-written, never commit)
-.project/state/stale.json
-!.opencode/skills/project-knowledge/
-!.opencode/skills/project-knowledge/**
-!.opencode/commands/project-knowledge-*.md
 
