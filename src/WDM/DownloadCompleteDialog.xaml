@@ -95,10 +95,13 @@
             <!-- Bottom Action Strip -->
             <Border Grid.Row="1" Background="{DynamicResource Brush.SurfaceAlt}" BorderBrush="{DynamicResource Brush.Border}" BorderThickness="0,1,0,0" CornerRadius="0,0,7,7" Padding="16,10">
                 <DockPanel LastChildFill="False">
-                    <ui:Button Content="Open Folder" Style="{StaticResource Button.SecondaryAction}" Click="OpenFolder_Click" Height="32" Padding="12,0" DockPanel.Dock="Left" />
+                    <ui:Button Content="Open Folder" Style="{StaticResource Button.SecondaryAction}" Click="OpenFolder_Click" Height="32" Padding="12,0" DockPanel.Dock="Left"
+                               AutomationProperties.AutomationId="BtnCompleteOpenFolder" />
                     <StackPanel Orientation="Horizontal" DockPanel.Dock="Right">
-                        <ui:Button Content="Close" Style="{StaticResource Button.SecondaryAction}" Click="CloseClick" Height="32" MinWidth="85" Margin="0,0,8,0" IsCancel="True" />
-                        <ui:Button Content="Open File" Style="{StaticResource Button.PrimaryAction}" Click="OpenFile_Click" Height="32" MinWidth="95" IsDefault="True" />
+                        <ui:Button Content="Close" Style="{StaticResource Button.SecondaryAction}" Click="CloseClick" Height="32" MinWidth="85" Margin="0,0,8,0" IsCancel="True"
+                                   AutomationProperties.AutomationId="BtnCompleteClose" />
+                        <ui:Button Content="Open File" Style="{StaticResource Button.PrimaryAction}" Click="OpenFile_Click" Height="32" MinWidth="95" IsDefault="True"
+                                   AutomationProperties.AutomationId="BtnCompleteOpenFile" />
                     </StackPanel>
                 </DockPanel>
             </Border>

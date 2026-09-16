@@ -23,6 +23,8 @@ app_icon_1024*.png
 *.tmp
 
 # Development scratch / bug reports
+tests/
+progress.md
 allbugs.md
 bugs.md
 src/WDM/bugs.md

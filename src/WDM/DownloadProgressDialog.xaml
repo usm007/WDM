@@ -366,8 +366,10 @@
                     <ui:Button Content="Open Folder" Style="{StaticResource Button.SecondaryAction}" Click="RevealClick" Height="32" Padding="12,0" DockPanel.Dock="Left" />
                     <StackPanel Orientation="Horizontal" DockPanel.Dock="Right">
                         <ui:Button x:Name="BtnPause" Content="Pause" Style="{StaticResource Button.SecondaryAction}"
+                                   AutomationProperties.AutomationId="BtnProgressPause"
                                    Click="PauseClick" IsEnabled="{Binding CanPause}" MinWidth="80" Height="32" Margin="0,0,6,0" />
                         <ui:Button x:Name="BtnResume" Content="Resume" Style="{StaticResource Button.PrimaryAction}"
+                                   AutomationProperties.AutomationId="BtnProgressResume"
                                    Click="ResumeClick" IsEnabled="{Binding CanResume}" MinWidth="80" Height="32" />
                     </StackPanel>
                 </DockPanel>

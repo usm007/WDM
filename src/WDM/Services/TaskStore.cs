@@ -144,8 +144,9 @@ public sealed class TaskStore
     /// Plain static (not readonly) so tests/tools can redirect it; app code must
     /// treat it as read-only after startup.
     /// </summary>
-    public static string AppDir = Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "WDM-Data");
+    public static string AppDir = !string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("WDM_DATA_DIR"))
+        ? Path.GetFullPath(Environment.GetEnvironmentVariable("WDM_DATA_DIR")!)
+        : Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "WDM-Data");
 
     /// <summary>
     /// Legacy data location (inside the install root). Only read by the one-time

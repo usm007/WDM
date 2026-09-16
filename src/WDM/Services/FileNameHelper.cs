@@ -338,7 +338,7 @@ public static class FileNameHelper
         // H. Clean bracketed noise unless it contains a keep tag
         var keepRegex = new Regex(@"(1080p|720p|4k|2160p|480p|x264|h264|x265|hevc|10bit|hdr|aac|dts|5\.1|7\.1|bluray|web-dl|webrip|S\d{2}E\d{2})", RegexOptions.IgnoreCase);
         name = Regex.Replace(name, @"\[(.*?)\]", match => keepRegex.IsMatch(match.Value) ? match.Value.Trim('[', ']') : "");
-        name = Regex.Replace(name, @"\((.*?)\)", match => (keepRegex.IsMatch(match.Value) || Regex.IsMatch(match.Value, @"^\(?\d{4}\)?$")) ? match.Value : "");
+        name = Regex.Replace(name, @"\((.*?)\)", match => (keepRegex.IsMatch(match.Value) || Regex.IsMatch(match.Value, @"^\(?\d+\)?$")) ? match.Value : "");
 
         return FinalizeName(name, ext);
     }

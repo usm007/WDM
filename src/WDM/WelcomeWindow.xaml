@@ -7,7 +7,7 @@
         Width="640" Height="660"
         MinWidth="580" MinHeight="500"
         WindowStartupLocation="CenterScreen"
-        WindowBackdropType="Mica"
+        WindowBackdropType="None"
         ExtendsContentIntoTitleBar="True"
         Background="{DynamicResource Brush.Bg}"
         UseLayoutRounding="True"

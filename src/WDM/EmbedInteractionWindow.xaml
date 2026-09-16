@@ -8,7 +8,7 @@
         MinWidth="760" MinHeight="520"
         WindowStartupLocation="CenterOwner"
         ResizeMode="CanResizeWithGrip"
-        WindowBackdropType="Mica"
+        WindowBackdropType="None"
         ExtendsContentIntoTitleBar="True"
         UseLayoutRounding="True"
         SnapsToDevicePixels="True"

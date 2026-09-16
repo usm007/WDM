@@ -3,6 +3,7 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
         Title="Duplicate Download — WDM"
+        AutomationProperties.AutomationId="DuplicateDownloadDialogWindow"
         Icon="Assets/WDM.ico"
         Width="560"
         SizeToContent="Height"
@@ -87,17 +88,20 @@
                     </Grid.ColumnDefinitions>
                     <!-- Cancel (Left) -->
                     <ui:Button x:Name="CancelBtn" Grid.Column="0" Content="Cancel" Style="{StaticResource Button.SecondaryAction}"
+                               AutomationProperties.AutomationId="BtnDuplicateCancel"
                                Click="Cancel_Click" Height="32" MinWidth="85" IsCancel="True" />
 
                     <!-- Action Group (Right) -->
                     <StackPanel Grid.Column="2" Orientation="Horizontal">
                         <!-- Overwrite existing file -->
                         <ui:Button x:Name="OverwriteBtn" Content="Overwrite File" Style="{StaticResource Button.SecondaryAction}"
+                                   AutomationProperties.AutomationId="BtnDuplicateOverwrite"
                                    Click="Overwrite_Click" Height="32" MinWidth="120" Margin="0,0,8,0"
                                    ToolTip="Replace the existing file on disk with this new download" />
 
                         <!-- Rename and Download — text trims instead of clipping window edge -->
                         <ui:Button x:Name="RenameBtn" Style="{StaticResource Button.PrimaryAction}"
+                                   AutomationProperties.AutomationId="BtnDuplicateRename"
                                    Click="RenameAndDownload_Click" Height="32" MinWidth="170" MaxWidth="280" IsDefault="True"
                                    ToolTip="Download as a numbered copy so both files are kept">
                             <TextBlock x:Name="RenameBtnText" Text="Rename &amp; Download" TextTrimming="CharacterEllipsis" Foreground="White" />

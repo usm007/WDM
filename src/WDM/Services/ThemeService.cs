@@ -126,6 +126,11 @@ public static class ThemeService
         int round = DwmwcpRound;
         DwmSetWindowAttribute(hwnd, DwmwaWindowCornerPreference, ref round, sizeof(int));
 
+        // FluentWindow manages its own non-client frame metrics and WM_NCCALCSIZE hook.
+        // Calling SetWindowPos with SWP_FRAMECHANGED interferes with WPF-UI's native window procedure.
+        if (window is Wpf.Ui.Controls.FluentWindow)
+            return;
+
         // Force a non-client frame repaint so re-applied attributes (e.g. after a
         // theme toggle) take effect instead of leaving a stale caption behind.
         try

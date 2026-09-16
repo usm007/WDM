@@ -13,6 +13,7 @@ public partial class App : Application
     /// <summary>True when launched with /minimized (the Windows-startup shortcut from
     /// the installer): the window starts hidden in the system tray.</summary>
     public static bool StartMinimized { get; private set; }
+    public static bool IsTestMode { get; private set; }
 
     private static Mutex? _singleInstanceMutex;
     private static bool _ownsMutex;
@@ -61,13 +62,28 @@ public partial class App : Application
             Shutdown();
             return;
         }
+        // Test and data isolation support
+        for (int i = 0; i < e.Args.Length; i++)
+        {
+            if (string.Equals(e.Args[i], "--data-dir", StringComparison.OrdinalIgnoreCase) && i + 1 < e.Args.Length)
+            {
+                TaskStore.AppDir = Path.GetFullPath(e.Args[i + 1]);
+                break;
+            }
+        }
+        bool isTestMode = e.Args.Any(a => string.Equals(a, "--test-mode", StringComparison.OrdinalIgnoreCase) ||
+                                          string.Equals(a, "--no-single-instance", StringComparison.OrdinalIgnoreCase)) ||
+                          !string.IsNullOrEmpty(Environment.GetEnvironmentVariable("WDM_TEST_MODE"));
+        IsTestMode = isTestMode;
+
         // Single instance: if another WDM is already running, surface its window
-        // instead of starting a second copy.
+        // instead of starting a second copy (unless in test mode where isolated instances are required).
+        string effectiveMutexId = isTestMode ? $@"Local\WDM.TestInstance.{Environment.ProcessId}" : MutexId;
         try
         {
-            _singleInstanceMutex = new Mutex(initiallyOwned: true, MutexId, out bool createdNew);
+            _singleInstanceMutex = new Mutex(initiallyOwned: true, effectiveMutexId, out bool createdNew);
             _ownsMutex = createdNew;
-            if (!createdNew)
+            if (!createdNew && !isTestMode)
             {
                 // Forward our command line to the running instance (restores it
                 // even when it is hidden to the tray with no HWND to find),
@@ -104,19 +120,20 @@ public partial class App : Application
             string.Equals(a, "-minimized", StringComparison.OrdinalIgnoreCase) ||
             string.Equals(a, "-silent", StringComparison.OrdinalIgnoreCase) ||
             string.Equals(a, "-tray", StringComparison.OrdinalIgnoreCase));
-        BrowserIntegration.DeployExtension();
+        if (!isTestMode)
+            BrowserIntegration.DeployExtension();
         // Migrate user data out of the legacy install-root location first, so every
         // read below (settings, tasks, engines, WebView2 profile) hits the new home.
-        TaskStore.EnsureMigrated();
+        if (!isTestMode)
+            TaskStore.EnsureMigrated();
         var settings = TaskStore.LoadSettings();
         ThemeService.Apply(AppTheme.Default, settings.UseDarkTheme);
 
         // Never show welcome after an update — only on true first-ever run.
-        // InstallState looks beyond data files: an updater whose data was wiped
-        // still leaves install evidence (Velopack state, app bits, Inno key),
-        // so they get the reload notice instead of onboarding.
+        // In test mode, suppress modal welcome unless --welcome argument is passed.
         bool isFirstEverRun = InstallState.IsFirstEverRun(settings);
-        if (isFirstEverRun && !StartMinimized)
+        bool shouldShowWelcome = isFirstEverRun && !StartMinimized && (!isTestMode || e.Args.Contains("--welcome"));
+        if (shouldShowWelcome)
         {
             ShutdownMode = ShutdownMode.OnExplicitShutdown;
             var welcome = new WelcomeWindow(settings);
@@ -135,7 +152,10 @@ public partial class App : Application
 
         Window mainWindow = new MainWindow();
         _pipeCts = new CancellationTokenSource();
-        SingleInstancePipe.Start(SingleInstancePipe.PipeNameForCurrentSession(),
+        string pipeName = isTestMode
+            ? $"{SingleInstancePipe.PipeNameForCurrentSession()}.{Environment.ProcessId}"
+            : SingleInstancePipe.PipeNameForCurrentSession();
+        SingleInstancePipe.Start(pipeName,
             args => SecondInstanceHandler?.Invoke(args), _pipeCts.Token);
         if (!StartMinimized)
         {
@@ -145,6 +165,11 @@ public partial class App : Application
         {
             // When started on Windows startup, stay silently in the taskbar tray.
             mainWindow.Hide();
+        }
+
+        if (e.Args.Length > 0)
+        {
+            SecondInstanceHandler?.Invoke(e.Args);
         }
     }
 

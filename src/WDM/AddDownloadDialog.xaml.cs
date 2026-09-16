@@ -672,10 +672,11 @@ public partial class AddDownloadDialog : Window
         if (_viewModel.IsDuplicateFile(finalFileName, saveFolder))
         {
             string numberedFileName = _viewModel.GetNumberedFileName(finalFileName, saveFolder);
-            var dupDialog = new DuplicateDownloadDialog(url, finalFileName, numberedFileName)
+            var dupDialog = new DuplicateDownloadDialog(url, finalFileName, numberedFileName);
+            if (!App.IsTestMode)
             {
-                Owner = this
-            };
+                dupDialog.Owner = this;
+            }
 
             bool? dupResult = dupDialog.ShowDialog();
             if (dupResult == true)
@@ -778,7 +779,9 @@ public partial class AddDownloadDialog : Window
         };
 
         _viewModel.AddTask(task);
-        DialogResult = true;
+        // Modeless window (shown via Show(), not ShowDialog()): setting
+        // DialogResult here throws InvalidOperationException and crashes the
+        // app — just close. No caller reads a dialog result from this window.
         Close();
     }
 
@@ -820,7 +823,7 @@ public partial class AddDownloadDialog : Window
 
     private void CancelClick(object sender, RoutedEventArgs e)
     {
-        DialogResult = false;
+        // See note in CreateAndAddTask: modeless window, no DialogResult.
         Close();
     }
 }

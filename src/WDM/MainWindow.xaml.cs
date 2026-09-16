@@ -33,13 +33,13 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
         _viewModel = new MainViewModel();
         DataContext = _viewModel;
 
-        _viewModel.AddTaskRequested += _ => ShowAddDialog();
-        _viewModel.EditTaskRequested += task => ShowProperties(task);
-        _viewModel.OptionsRequested += ShowOptions;
-        _viewModel.AboutRequested += ShowAbout;
-        _viewModel.ShowProgressDialogRequested += task => ShowProgressDialog(task);
-        _viewModel.RefreshLinkRequested += task => ShowRefreshLink(task);
-        _viewModel.DeletePromptRequested += ShowDeletePrompt;
+        _viewModel.AddTaskRequested += _ => _dispatcher.BeginInvoke(() => ShowAddDialog());
+        _viewModel.EditTaskRequested += task => _dispatcher.BeginInvoke(() => ShowProperties(task));
+        _viewModel.OptionsRequested += () => _dispatcher.BeginInvoke(ShowOptions);
+        _viewModel.AboutRequested += () => _dispatcher.BeginInvoke(ShowAbout);
+        _viewModel.ShowProgressDialogRequested += task => _dispatcher.BeginInvoke(() => ShowProgressDialog(task));
+        _viewModel.RefreshLinkRequested += task => _dispatcher.BeginInvoke(() => ShowRefreshLink(task));
+        _viewModel.DeletePromptRequested += req => _dispatcher.BeginInvoke(() => ShowDeletePrompt(req));
         _viewModel.SpeedHistoryUpdated += history => _dispatcher.BeginInvoke(() => RenderSparkline(history));
         // BUG-038: dialogs call ApplyAndRestart without access to _exiting;
         // the delegate lets them signal the window to disable MinimizeToTray.
@@ -120,6 +120,10 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
 
         Loaded += (_, _) =>
         {
+            if (App.IsTestMode)
+            {
+                return;
+            }
             BrowserIntegration.DeployExtension();
             if (!_captureServer.IsConnected && !_viewModel.Settings.HasPromptedExtensionInstall && !App.StartMinimized)
             {
@@ -165,7 +169,6 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
     protected override void OnSourceInitialized(EventArgs e)
     {
         base.OnSourceInitialized(e);
-        RemoveNativeWindowShadow();
         ThemeService.ApplyTitleBar(this);
     }
 
@@ -202,39 +205,6 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
             TaskGrid.Focus();
             e.Handled = true;
         }
-    }
-
-    private const int GCL_STYLE = -20;
-    private const int CS_DROPSHADOW = 0x00020000;
-
-    [DllImport("user32.dll", CharSet = CharSet.Auto)]
-    private static extern int GetClassLong(IntPtr hWnd, int nIndex);
-
-    [DllImport("user32.dll", CharSet = CharSet.Auto)]
-    private static extern int SetClassLong(IntPtr hWnd, int nIndex, int dwNewLong);
-
-    /// <summary>Clears the CS_DROPSHADOW class style so the window has no native drop shadow.</summary>
-    private void RemoveNativeWindowShadow()
-    {
-        IntPtr hwnd = new WindowInteropHelper(this).Handle;
-        int style = GetClassLong(hwnd, GCL_STYLE);
-        if ((style & CS_DROPSHADOW) != 0)
-            SetClassLong(hwnd, GCL_STYLE, style & ~CS_DROPSHADOW);
-    }
-
-    private void ApplyRoundedClip(Border border)
-    {
-        border.SizeChanged += (_, _) =>
-        {
-            if (border.ActualWidth <= 0 || border.ActualHeight <= 0)
-                return;
-            border.Clip = new RectangleGeometry
-            {
-                Rect = new Rect(0, 0, border.ActualWidth, border.ActualHeight),
-                RadiusX = 8,
-                RadiusY = 8,
-            };
-        };
     }
 
     private System.Windows.Threading.Dispatcher _dispatcher =>
@@ -835,17 +805,18 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
 
     private void ShowAbout()
     {
-        if (_viewModel.IsUpdateAvailable && _viewModel.PendingRelease is not null)
+        _dispatcher.BeginInvoke(() =>
         {
-            var dialog = new AboutDialog();
-            dialog.Owner = this;
-            dialog.ShowAvailableUpdate(_viewModel.PendingRelease, _viewModel.PendingVelopack as Velopack.UpdateInfo);
-            dialog.ShowDialog();
-            return;
-        }
-        var about = new AboutDialog();
-        about.Owner = this;
-        about.ShowDialog();
+            if (_viewModel.IsUpdateAvailable && _viewModel.PendingRelease is not null)
+            {
+                var dialog = new AboutDialog();
+                dialog.ShowAvailableUpdate(_viewModel.PendingRelease, _viewModel.PendingVelopack as Velopack.UpdateInfo);
+                dialog.Show();
+                return;
+            }
+            var about = new AboutDialog();
+            about.Show();
+        });
     }
 
     private void ShowProgressDialog(DownloadTask? task)
