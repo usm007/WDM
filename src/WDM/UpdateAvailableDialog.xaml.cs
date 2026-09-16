@@ -122,7 +122,7 @@ public partial class UpdateAvailableDialog : Window
             try
             {
                 await VelopackUpdateService.DownloadUpdatesAsync(_velopackUpdate, pct =>
-                    Dispatcher.InvokeAsync(() =>
+                    Dispatcher.Invoke(() =>
                     {
                         DownloadProgressBar.Value = pct;
                         ProgressPctText.Text = $"{pct}%";
@@ -172,12 +172,23 @@ public partial class UpdateAvailableDialog : Window
         try
         {
             string installer = await UpdateChecker.DownloadInstallerAsync(_release, progress =>
-                Dispatcher.InvokeAsync(() =>
+                Dispatcher.Invoke(() =>
                 {
-                    int pct = (int)Math.Round(progress * 100);
-                    DownloadProgressBar.Value = pct;
-                    ProgressPctText.Text = $"{pct}%";
-                    ProgressStatusText.Text = "Downloading full installer…";
+                    if (progress < 0)
+                    {
+                        // Indeterminate: server did not send Content-Length
+                        DownloadProgressBar.IsIndeterminate = true;
+                        ProgressPctText.Text = "";
+                        ProgressStatusText.Text = "Downloading full installer…";
+                    }
+                    else
+                    {
+                        DownloadProgressBar.IsIndeterminate = false;
+                        int pct = (int)Math.Round(progress * 100);
+                        DownloadProgressBar.Value = pct;
+                        ProgressPctText.Text = $"{pct}%";
+                        ProgressStatusText.Text = "Downloading full installer…";
+                    }
                 }));
             ProgressStatusText.Text = "Launching installer…";
             DownloadProgressBar.Value = 100;

@@ -17,15 +17,20 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
     private readonly DispatcherTimer _saveTimer;
     private readonly Action _onEngineTaskChanged;
     private readonly Action<DownloadTask> _onEngineTaskCompleted;
-    private readonly Action<DownloadTask> _onCloudflareBlocked;
+    private readonly Action<DownloadTask, DownloadEngine.CloudflareBlockedException> _onCloudflareBlocked;
     private readonly Action<DownloadTask, string> _onEmbedInteractionRequired;
     private bool _disposed;
     /// <summary>When true, persistence is disabled (screenshot generator /
     /// design-time VM must never overwrite the user's tasks.json).</summary>
     public bool PersistenceSuppressed { get; private set; }
-    /// <summary>Tasks currently running the automatic Cloudflare challenge solver window;
-    /// prevents opening multiple concurrent solver windows for the same task.</summary>
+    /// <summary>Tasks currently running the silent background Cloudflare solve;
+    /// prevents overlapping solve attempts for the same task. No window is ever opened.</summary>
     private readonly HashSet<Guid> _cfSolving = new();
+    /// <summary>Tasks that already triggered the solver once. A repeat block
+    /// means the clearance didn't work (or it was a hard block that slipped
+    /// through) — never re-open the window, or the user gets an endless
+    /// popup loop and the download never starts.</summary>
+    private readonly HashSet<Guid> _cfAttempted = new();
     private DownloadTask? _selectedTask;
     private string _statusText = "WDM — ready";
     private string _statusRightText = "";
@@ -117,7 +122,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
             MaybeShutdownOnQueueComplete();
             SaveTasksSoon();
         });
-        _onCloudflareBlocked = task => Dispatch(() => AutoSolveCloudflare(task));
+        _onCloudflareBlocked = (task, cfEx) => Dispatch(() => AutoSolveCloudflare(task, cfEx));
         _onEmbedInteractionRequired = (task, pageUrl) => Dispatch(() => SolveEmbedInteraction(task, pageUrl));
         Engine.TaskChanged += _onEngineTaskChanged;
         Engine.TaskCompleted += _onEngineTaskCompleted;
@@ -635,43 +640,65 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
         return candidate;
     }
 
-    /// <summary>Automatic solver invoked when the engine reports a Cloudflare block.</summary>
-    private void AutoSolveCloudflare(DownloadTask task)
+    /// <summary>Automatic solver invoked when the engine reports a Cloudflare block.
+    /// Never opens any window: hard WAF blocks fail immediately with the engine's
+    /// actionable message, solvable challenges get one silent background attempt
+    /// (hidden WebView2, no popup), and repeat failures stay failed so the loop
+    /// "blocked window, download never starts" cannot happen.</summary>
+    private void AutoSolveCloudflare(DownloadTask task, DownloadEngine.CloudflareBlockedException cfEx)
     {
         if (task.Status != TaskStatus.Failed)
             return;
-        RunCloudflareSolver(task);
-    }
-
-    private void RunCloudflareSolver(DownloadTask task)
-    {
+        if (!cfEx.IsSolvable)
+        {
+            task.Error = cfEx.Message;
+            return;
+        }
+        if (!_cfAttempted.Add(task.Id))
+        {
+            task.Error = cfEx.Message + " (Background Cloudflare solve already tried once — get a fresh link, then use Refresh Link.)";
+            return;
+        }
         if (!_cfSolving.Add(task.Id))
             return;
+        _ = SolveInBackgroundAsync(task, cfEx.Message);
+    }
 
+    private async Task SolveInBackgroundAsync(DownloadTask task, string fallbackError)
+    {
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(50));
         try
         {
-            var window = new CloudflareChallengeWindow(task)
+            task.Error = "Solving Cloudflare protection in background…";
+            var solved = await Services.SilentCloudflareSolver.TrySolveAsync(
+                task.Url, TimeSpan.FromSeconds(45), cts.Token);
+            if (solved is null || string.IsNullOrWhiteSpace(solved.Cookies))
             {
-                Owner = Application.Current.MainWindow
-            };
-            if (window.ShowDialog() == true)
-            {
-                if (!string.IsNullOrWhiteSpace(window.ExtractedCookies))
-                {
-                    task.Headers["Cookie"] = window.ExtractedCookies;
-                }
-                if (!string.IsNullOrWhiteSpace(window.ExtractedUserAgent))
-                {
-                    task.Headers["User-Agent"] = window.ExtractedUserAgent;
-                }
-                if (!string.IsNullOrWhiteSpace(window.FinalRedirectUrl) && window.FinalRedirectUrl != task.Url)
-                {
-                    task.Url = window.FinalRedirectUrl;
-                }
-                task.Status = TaskStatus.Queued;
-                task.Error = null;
-                Engine.Start(task);
+                if (task.Status == TaskStatus.Failed)
+                    task.Error = fallbackError;
+                return;
             }
+            // User removed, retried, or refreshed the task while solving.
+            if (!Tasks.Contains(task) || task.Status != TaskStatus.Failed)
+                return;
+            MergeCookieHeader(task, solved.Cookies);
+            if (!string.IsNullOrWhiteSpace(solved.UserAgent))
+                task.Headers["User-Agent"] = solved.UserAgent;
+            if (!string.IsNullOrWhiteSpace(solved.FinalUrl)
+                && Uri.TryCreate(solved.FinalUrl, UriKind.Absolute, out var redirect)
+                && (redirect.Scheme == Uri.UriSchemeHttp || redirect.Scheme == Uri.UriSchemeHttps)
+                && !string.Equals(solved.FinalUrl, task.Url, StringComparison.OrdinalIgnoreCase))
+            {
+                task.Url = solved.FinalUrl;
+            }
+            task.Status = TaskStatus.Queued;
+            task.Error = null;
+            Engine.Start(task);
+        }
+        catch
+        {
+            if (task.Status == TaskStatus.Failed)
+                task.Error = fallbackError;
         }
         finally
         {
@@ -679,34 +706,42 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
         }
     }
 
-    /// <summary>Opens the embedded browser when an embed host demands human
-    /// interaction. Solved session cookies are replayed, then the task restarts
-    /// so the embed resolver runs fresh against the cleared session.</summary>
+    private static void MergeCookieHeader(DownloadTask task, string solved)
+    {
+        if (!task.Headers.TryGetValue("Cookie", out var existing) || string.IsNullOrWhiteSpace(existing))
+        {
+            task.Headers["Cookie"] = solved;
+            return;
+        }
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var part in existing.Split(';'))
+        {
+            string name = part.Split('=', 2)[0].Trim();
+            if (!string.IsNullOrEmpty(name))
+                seen.Add(name);
+        }
+        var merged = new System.Text.StringBuilder(existing.Trim().TrimEnd(';'));
+        foreach (var part in solved.Split(';'))
+        {
+            string trimmed = part.Trim();
+            if (string.IsNullOrEmpty(trimmed))
+                continue;
+            string name = trimmed.Split('=', 2)[0].Trim();
+            if (seen.Add(name))
+                merged.Append("; ").Append(trimmed);
+        }
+        task.Headers["Cookie"] = merged.ToString();
+    }
+
+    /// <summary>Embed hosts that demand human interaction (captcha, device
+    /// attestation, login) fail with an actionable message instead of popping a
+    /// browser window: no part of WDM auto-opens modal browsers. The user opens
+    /// the page in their own browser (or captures via the extension) and retries.</summary>
     private void SolveEmbedInteraction(DownloadTask task, string pageUrl)
     {
         if (task.Status != TaskStatus.Failed)
             return;
-        if (!_cfSolving.Add(task.Id))
-            return;
-        try
-        {
-            var window = new EmbedInteractionWindow(task, pageUrl)
-            {
-                Owner = Application.Current.MainWindow
-            };
-            if (window.ShowDialog() == true)
-            {
-                if (!string.IsNullOrWhiteSpace(window.ExtractedCookies))
-                    task.Headers["Cookie"] = window.ExtractedCookies;
-                task.Status = TaskStatus.Queued;
-                task.Error = null;
-                Engine.Start(task);
-            }
-        }
-        finally
-        {
-            _cfSolving.Remove(task.Id);
-        }
+        task.Error = $"This page needs a one-time browser check before releasing the stream. Open {pageUrl} in your browser, then Retry — or capture the stream via the WDM extension so session cookies are sent automatically.";
     }
 
     private void Dispatch(Action action)

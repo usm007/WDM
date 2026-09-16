@@ -43,32 +43,35 @@ public partial class WelcomeWindow : Wpf.Ui.Controls.FluentWindow
         }
     }
 
-    private void CopyPath_Click(object sender, RoutedEventArgs e)
+    private void SetupChrome_Click(object sender, RoutedEventArgs e)
     {
+        // Step 1: deploy extension to local dir and copy the path to clipboard.
+        string path;
         try
         {
-            string path = Services.BrowserIntegration.DeployExtension();
+            path = Services.BrowserIntegration.DeployExtension();
             Clipboard.SetText(path);
-            CopyPathButton.Content = "✓ Copied!";
-            CopyFeedbackText.Text = $"Copied: {path}";
         }
-        catch
+        catch (Exception ex)
         {
-            CopyFeedbackText.Text = "Clipboard access failed.";
+            CopyFeedbackText.Text = $"Could not prepare extension folder: {ex.Message}";
+            return;
         }
-    }
 
-    private void OpenExtensions_Click(object sender, RoutedEventArgs e)
-    {
+        // Step 2: open chrome://extensions (or edge://extensions) in the first
+        // detected Chromium browser.
         try
         {
             Services.BrowserIntegration.OpenExtensionsPage();
-            CopyFeedbackText.Text = "Opened browser! (Address 'chrome://extensions' copied to clipboard if tab is blank)";
         }
-        catch (System.Exception ex)
+        catch (Exception ex)
         {
-            MessageBox.Show($"Could not open the extensions page: {ex.Message}", "WDM", MessageBoxButton.OK, MessageBoxImage.Warning);
+            CopyFeedbackText.Text = $"Could not open the extensions page: {ex.Message}";
         }
+
+        // Reveal the compact 2-step instruction panel.
+        ChromeStepsPanel.Visibility = System.Windows.Visibility.Visible;
+        SetupChromeBtn.Content = "Open Extensions Page Again  →";
     }
 
     private void YouTubeBtn_Click(object sender, RoutedEventArgs e)

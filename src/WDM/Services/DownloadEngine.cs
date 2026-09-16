@@ -27,8 +27,12 @@ public sealed class DownloadEngine
 
     /// <summary>Raised when a download was blocked by a Cloudflare-style managed
     /// challenge. The UI layer may open its embedded-browser solver and requeue
-    /// the task; the engine itself takes no further action for that task.</summary>
-    public event Action<DownloadTask>? CloudflareBlocked;
+    /// the task; the engine itself takes no further action for that task.
+    /// The exception carries <see cref="CloudflareBlockedException.IsSolvable"/>:
+    /// hard WAF blocks ("You have been blocked", expired signed links) are NOT
+    /// solvable in an embedded browser and the UI must NOT auto-open the solver
+    /// for them — surface <see cref="Exception.Message"/> instead.</summary>
+    public event Action<DownloadTask, CloudflareBlockedException>? CloudflareBlocked;
 
     /// <summary>Raised when an embed page demands human interaction (captcha,
     /// device attestation, login) before releasing its stream. The UI layer should
@@ -714,16 +718,17 @@ public sealed class DownloadEngine
         {
             if (session.Removed)
                 return;
-            if (ex is CloudflareBlockedException)
+            if (ex is CloudflareBlockedException cfEx)
             {
-                // Hand the task to the UI layer's auto-solver instead of dead-ending
-                // as Failed. The solver requeues via Engine.Start when it succeeds;
-                // a repeat block falls through to the normal failure path.
+                // Preserve the classified message (solvable vs hard WAF block).
+                // The UI decides whether to auto-open the solver based on
+                // cfEx.IsSolvable and its own per-task attempt guard; a repeat
+                // block or hard block stays Failed with an actionable message.
                 task.Status = TaskStatus.Failed;
-                task.Error = "Blocked by Cloudflare — opening built-in browser to solve…";
+                task.Error = cfEx.Message;
                 task.IsPreparing = false;
                 task.PhaseText = "";
-                CloudflareBlocked?.Invoke(task);
+                CloudflareBlocked?.Invoke(task, cfEx);
             }
             else
             {
@@ -853,9 +858,9 @@ public sealed class DownloadEngine
                 var get = await SendWithRetryAsync(() => BuildRequest(HttpMethod.Get, task, new RangeHeaderValue(0, 0), url), ct);
                 if (IsCloudflareChallenge(get))
                 {
-                    string msg = CloudflareMessage(url);
+                    var cfEx = await BuildCloudflareExceptionAsync(get, url, ct);
                     get.Dispose();
-                    throw new CloudflareBlockedException(msg);
+                    throw cfEx;
                 }
                 if (get.StatusCode == HttpStatusCode.PartialContent)
                 {
@@ -1283,7 +1288,7 @@ public sealed class DownloadEngine
             using (response)
             {
                 if (IsCloudflareChallenge(response))
-                    throw new CloudflareBlockedException(CloudflareMessage(session.CurrentUrl(task)));
+                    throw BuildCloudflareExceptionForStream(response, session.CurrentUrl(task));
                 if (response.StatusCode != HttpStatusCode.PartialContent)
                     throw new InvalidOperationException("Server does not support range downloads.");
                 var cr = response.Content.Headers.ContentRange;
@@ -1654,7 +1659,7 @@ public sealed class DownloadEngine
         using (response)
         {
             if (IsCloudflareChallenge(response))
-                throw new CloudflareBlockedException(CloudflareMessage(session.CurrentUrl(task)));
+                throw BuildCloudflareExceptionForStream(response, session.CurrentUrl(task));
             // Resuming at EOF: server says the range is unsatisfiable because the file
             // is already fully downloaded. Treat that as success — but only when
             // the on-disk size exactly matches the server's length. Otherwise the
@@ -1940,19 +1945,80 @@ public sealed class DownloadEngine
     {
         if (response.StatusCode != HttpStatusCode.Forbidden)
             return false;
-        if (response.Headers.TryGetValues("cf-mitigated", out var vals) && vals.Any(v => v.IndexOf("challenge", StringComparison.OrdinalIgnoreCase) >= 0))
+        if (IsDefiniteChallenge(response))
             return true;
         bool hasCfRay = response.Headers.Contains("cf-ray") || response.Headers.Contains("CF-RAY");
         bool isCloudflare = response.Headers.Server.Any(s => string.Equals(s.Product?.Name, "cloudflare", StringComparison.OrdinalIgnoreCase));
         return hasCfRay && isCloudflare;
     }
 
+    /// <summary>True only for an explicit managed-challenge response
+    /// (<c>cf-mitigated: challenge</c>) — the one case an embedded browser can
+    /// actually solve. A plain Cloudflare 403 (WAF / expired signed link /
+    /// missing referer) is NOT solvable and must not open the solver.</summary>
+    private static bool IsDefiniteChallenge(HttpResponseMessage response) =>
+        response.Headers.TryGetValues("cf-mitigated", out var vals) &&
+        vals.Any(v => v.IndexOf("challenge", StringComparison.OrdinalIgnoreCase) >= 0);
+
+    /// <summary>Probe-path classifier: reads the small 403 HTML body to tell a
+    /// solvable JS/Turnstile challenge apart from a hard WAF block
+    /// ("You have been blocked"). Never called on streaming file bodies.</summary>
+    private static async Task<CloudflareBlockedException> BuildCloudflareExceptionAsync(
+        HttpResponseMessage response, string url, CancellationToken ct)
+    {
+        if (IsDefiniteChallenge(response))
+            return new CloudflareBlockedException(CloudflareMessage(url), isSolvable: true);
+        string body = "";
+        try
+        {
+            using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            cts.CancelAfter(TimeSpan.FromSeconds(5));
+            body = await response.Content.ReadAsStringAsync(cts.Token) ?? "";
+            if (body.Length > 131072)
+                body = body[..131072];
+        }
+        catch { body = ""; }
+        if (LooksLikeSolvableChallengeBody(body))
+            return new CloudflareBlockedException(CloudflareMessage(url), isSolvable: true);
+        return new CloudflareBlockedException(HardBlockMessage(url), isSolvable: false);
+    }
+
+    /// <summary>Stream-path classifier (chunk / single-stream): the body is file
+    /// bytes, so decide on headers only. Only <c>cf-mitigated: challenge</c>
+    /// counts as solvable; any other Cloudflare 403 is a hard block.</summary>
+    private static CloudflareBlockedException BuildCloudflareExceptionForStream(
+        HttpResponseMessage response, string url) =>
+        IsDefiniteChallenge(response)
+            ? new CloudflareBlockedException(CloudflareMessage(url), isSolvable: true)
+            : new CloudflareBlockedException(HardBlockMessage(url), isSolvable: false);
+
+    private static bool LooksLikeSolvableChallengeBody(string body)
+    {
+        if (string.IsNullOrEmpty(body))
+            return false;
+        return body.IndexOf("challenge-platform", StringComparison.OrdinalIgnoreCase) >= 0
+            || body.IndexOf("cf-challenge", StringComparison.OrdinalIgnoreCase) >= 0
+            || body.IndexOf("turnstile", StringComparison.OrdinalIgnoreCase) >= 0
+            || body.IndexOf("just a moment", StringComparison.OrdinalIgnoreCase) >= 0
+            || body.IndexOf("verify you are human", StringComparison.OrdinalIgnoreCase) >= 0
+            || body.IndexOf("cf_clearance", StringComparison.OrdinalIgnoreCase) >= 0;
+    }
+
     private static string CloudflareMessage(string url) =>
         $"Cloudflare blocked this download (403). The server flagged WDM as a bot. Try: 1) Open {url} in your browser and let it download once, then paste the final direct link (copy link address) into WDM, or 2) install the WDM browser extension (Options → Browser Integration) and capture the download from the page.";
 
+    private static string HardBlockMessage(string url) =>
+        $"The site rejected this link (Cloudflare 403 — \"You have been blocked\"). This is not a solvable check: the signed link likely expired or is missing browser context (cookies/Referer). Get a fresh link from the original page in your browser (or capture via the WDM extension so cookies + Referer are sent), then use Refresh Link. URL: {url}";
+
     public sealed class CloudflareBlockedException : Exception
     {
-        public CloudflareBlockedException(string message) : base(message) { }
+        /// <summary>False for hard WAF blocks (expired link / rule block) where
+        /// opening the embedded solver just re-shows "You have been blocked".</summary>
+        public bool IsSolvable { get; }
+        public CloudflareBlockedException(string message, bool isSolvable = true) : base(message)
+        {
+            IsSolvable = isSolvable;
+        }
     }
 
     internal static string FormatEta(double seconds)
@@ -2220,8 +2286,10 @@ public sealed class DownloadEngine
     {
         try
         {
-            if (File.Exists(path))
-                File.Delete(path);
+            if (!File.Exists(path))
+                return;
+            try { File.SetAttributes(path, FileAttributes.Normal); } catch { }
+            File.Delete(path);
         }
         catch
         {

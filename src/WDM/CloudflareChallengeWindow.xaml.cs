@@ -58,6 +58,10 @@ public partial class CloudflareChallengeWindow : Wpf.Ui.Controls.FluentWindow
                 MessageBox.Show(this, "This download has no valid page URL to solve.", "WebView Error", MessageBoxButton.OK, MessageBoxImage.Error);
                 return;
             }
+            if (LooksLikeDirectFile(target))
+            {
+                StatusText.Text = "This looks like a direct file link (not a page). If it shows \"You have been blocked\", the signed link expired or needs browser cookies/Referer — get a fresh link from the original page instead of solving here.";
+            }
             WebView.Source = target;
         }
         catch (Exception ex)
@@ -108,21 +112,36 @@ public partial class CloudflareChallengeWindow : Wpf.Ui.Controls.FluentWindow
 
         // Extract all cookies for target URL domain
         await CaptureCookiesAsync(currentUrl);
+        if (ClearanceCaptured)
+            return;
+        // No cf_clearance yet: check whether the page is a hard WAF block
+        // ("You have been blocked") rather than a solvable checkbox, so the
+        // user isn't left staring at a block with "solve" instructions.
+        await FlagHardBlockAsync();
     }
 
     private async void WebView_DownloadStarting(object? sender, CoreWebView2DownloadStartingEventArgs e)
     {
-        // If WebView2 triggers a browser download, cancel the browser download and capture the clearance!
+        // If WebView2 triggers a browser download, cancel the browser download.
+        // Only treat it as solved when a cf_clearance cookie was actually
+        // captured — otherwise a direct file hit just requeues the same blocked
+        // URL and the download never starts (solve loop).
         e.Cancel = true;
         // e.ResultFilePath is a suggested LOCAL file path, not a URL — swapping the
         // task's Url to it would corrupt the download. Use the download's remote URI
         // (the post-redirect direct link) instead.
         string? remoteUri = e.DownloadOperation.Uri;
-        FinalRedirectUrl = string.IsNullOrWhiteSpace(remoteUri) ? WebView.Source.ToString() : remoteUri;
+        string candidate = string.IsNullOrWhiteSpace(remoteUri) ? WebView.Source.ToString() : remoteUri;
 
         // Clearance cookies live on the original host, not the redirect target.
         await CaptureCookiesAsync(WebView.Source.ToString());
-        ClearanceCaptured = true;
+        if (!ClearanceCaptured)
+        {
+            StatusText.Text = "Browser started the file without Cloudflare clearance — if the download still fails, the link needs a refresh (fresh URL + cookies/Referer from the original page).";
+            FinalRedirectUrl = candidate;
+            return;
+        }
+        FinalRedirectUrl = candidate;
         TryComplete(true);
     }
 
@@ -155,6 +174,14 @@ public partial class CloudflareChallengeWindow : Wpf.Ui.Controls.FluentWindow
     private async void ApplyClearance_Click(object sender, RoutedEventArgs e)
     {
         await CaptureCookiesAsync(WebView.Source.ToString());
+        if (!ClearanceCaptured)
+        {
+            MessageBox.Show(this,
+                "No Cloudflare clearance cookie (cf_clearance) was found. The page is still blocked (\"You have been blocked\" cannot be solved here). Get a fresh link from the original page in your browser — or capture via the WDM extension so cookies + Referer are sent — then use Refresh Link.",
+                "Still blocked", MessageBoxButton.OK, MessageBoxImage.Warning);
+            await FlagHardBlockAsync();
+            return;
+        }
         TryComplete(true);
     }
 
@@ -162,5 +189,45 @@ public partial class CloudflareChallengeWindow : Wpf.Ui.Controls.FluentWindow
     {
         DialogResult = false;
         Close();
+    }
+
+    private static bool LooksLikeDirectFile(Uri target)
+    {
+        string path = target.AbsolutePath ?? "";
+        return path.EndsWith(".mkv", StringComparison.OrdinalIgnoreCase)
+            || path.EndsWith(".mp4", StringComparison.OrdinalIgnoreCase)
+            || path.EndsWith(".avi", StringComparison.OrdinalIgnoreCase)
+            || path.EndsWith(".mov", StringComparison.OrdinalIgnoreCase)
+            || path.EndsWith(".webm", StringComparison.OrdinalIgnoreCase)
+            || path.EndsWith(".mp3", StringComparison.OrdinalIgnoreCase)
+            || path.EndsWith(".zip", StringComparison.OrdinalIgnoreCase)
+            || path.EndsWith(".rar", StringComparison.OrdinalIgnoreCase)
+            || path.EndsWith(".7z", StringComparison.OrdinalIgnoreCase)
+            || path.EndsWith(".pdf", StringComparison.OrdinalIgnoreCase)
+            || path.EndsWith(".exe", StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>Inspects the rendered page text for a hard WAF block and, when
+    /// found, rewrites the header so the user knows solving here is futile.</summary>
+    private async Task FlagHardBlockAsync()
+    {
+        try
+        {
+            if (WebView.CoreWebView2 is null) return;
+            string json = await WebView.CoreWebView2.ExecuteScriptAsync(
+                "() => (document && document.body && document.body.innerText || '').slice(0, 4000)");
+            string text = System.Text.Json.JsonSerializer.Deserialize<string>(json) ?? "";
+            if (text.IndexOf("you have been blocked", StringComparison.OrdinalIgnoreCase) >= 0
+                || text.IndexOf("attention required", StringComparison.OrdinalIgnoreCase) >= 0
+                || (text.IndexOf("ray id", StringComparison.OrdinalIgnoreCase) >= 0
+                    && text.IndexOf("cloudflare", StringComparison.OrdinalIgnoreCase) >= 0))
+            {
+                StatusText.Text = "This page shows \"You have been blocked\" — a hard site block, not a solvable check. Close this window and get a fresh link from the original page (or capture via the WDM extension), then use Refresh Link.";
+            }
+        }
+        catch
+        {
+            // Best-effort hint only; the block page stays visible regardless.
+        }
     }
 }

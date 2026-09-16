@@ -15,23 +15,32 @@ public partial class BrowserExtensionControl : UserControl
         InitializeComponent();
     }
 
-    private void CopyPath_Click(object sender, RoutedEventArgs e)
+    private void SetupChrome_Click(object sender, RoutedEventArgs e)
     {
+        // Deploy to local dir and copy path in one shot.
+        string path;
         try
         {
-            string extDir = BrowserIntegration.DeployDir;
-            Clipboard.SetText(extDir);
-            FeedbackText.Text = "Folder path copied to clipboard!";
+            path = BrowserIntegration.DeployExtension();
+            Clipboard.SetText(path);
         }
         catch (Exception ex)
         {
-            FeedbackText.Text = "Could not copy: " + ex.Message;
+            FeedbackText.Text = $"Could not prepare extension folder: {ex.Message}";
+            return;
         }
-    }
 
-    private void OpenExtensions_Click(object sender, RoutedEventArgs e)
-    {
-        BrowserIntegration.OpenExtensionsPage();
+        try
+        {
+            BrowserIntegration.OpenExtensionsPage();
+        }
+        catch (Exception ex)
+        {
+            FeedbackText.Text = $"Could not open the extensions page: {ex.Message}";
+        }
+
+        ChromeStepsPanel.Visibility = System.Windows.Visibility.Visible;
+        SetupChromeBtn.Content = "Open Extensions Page Again  \u2192";
     }
 
     private void OpenFirefoxAddonPage_Click(object sender, RoutedEventArgs e)

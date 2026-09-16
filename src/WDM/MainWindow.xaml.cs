@@ -39,7 +39,11 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
         _viewModel.AboutRequested += () => _dispatcher.BeginInvoke(ShowAbout);
         _viewModel.ShowProgressDialogRequested += task => _dispatcher.BeginInvoke(() => ShowProgressDialog(task));
         _viewModel.RefreshLinkRequested += task => _dispatcher.BeginInvoke(() => ShowRefreshLink(task));
-        _viewModel.DeletePromptRequested += req => _dispatcher.BeginInvoke(() => ShowDeletePrompt(req));
+        // Delete confirmation is request/response: the command reads the result
+        // synchronously right after invoking. BeginInvoke (async) always left
+        // the result null, so every prompted delete silently aborted ("delete
+        // is not working"). Invoke blocks the caller until the dialog closes.
+        _viewModel.DeletePromptRequested += req => _dispatcher.Invoke(() => ShowDeletePrompt(req));
         _viewModel.SpeedHistoryUpdated += history => _dispatcher.BeginInvoke(() => RenderSparkline(history));
         // BUG-038: dialogs call ApplyAndRestart without access to _exiting;
         // the delegate lets them signal the window to disable MinimizeToTray.

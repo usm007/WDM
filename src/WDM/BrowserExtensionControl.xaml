@@ -26,35 +26,68 @@
                 </StackPanel>
             </ui:Button>
 
-            <!-- Header with Extension Icon -->
+            <!-- Header -->
             <StackPanel Orientation="Horizontal" Margin="0,0,0,6">
                 <ui:SymbolIcon Symbol="PuzzlePiece24" FontSize="22"
                            Foreground="{DynamicResource Brush.Accent}" Margin="0,0,10,0" VerticalAlignment="Center" />
-                <TextBlock Text="Install Browser Extension" FontSize="18" FontWeight="SemiBold"
+                <TextBlock Text="Browser Extension Setup" FontSize="18" FontWeight="SemiBold"
                            Foreground="{DynamicResource Brush.Text}" VerticalAlignment="Center" />
             </StackPanel>
 
             <TextBlock Text="Catch downloads automatically from Chrome, Edge, Brave, or Firefox."
-                       FontSize="12.5" Foreground="{DynamicResource Brush.TextMuted}" Margin="0,0,0,16" />
+                       FontSize="12.5" Foreground="{DynamicResource Brush.TextMuted}" Margin="0,0,0,20" />
 
             <!-- Section 1: Chrome / Edge / Chromium -->
-            <TextBlock Text="Chrome, Edge &amp; Chromium" FontSize="13.5" FontWeight="SemiBold" Foreground="{DynamicResource Brush.Text}" Margin="0,0,0,8" />
-            <StackPanel Orientation="Horizontal" Margin="0,0,0,10" VerticalAlignment="Center">
-                <ui:Button x:Name="CopyPathButton" Content="Copy Extension Path" Appearance="Secondary" Click="CopyPath_Click" Height="32" Padding="12,0" Margin="0,0,8,0" />
-                <ui:Button Content="Open Extensions Page" Appearance="Secondary" Click="OpenExtensions_Click" Height="32" Padding="12,0" Margin="0,0,10,0" />
-                <TextBlock x:Name="FeedbackText" Text="" FontSize="12" FontFamily="{StaticResource Font.App}" Foreground="{DynamicResource Brush.Accent}" VerticalAlignment="Center" />
+            <StackPanel Orientation="Horizontal" Margin="0,0,0,6" VerticalAlignment="Center">
+                <ui:SymbolIcon Symbol="Globe24" FontSize="15" Foreground="{DynamicResource Brush.Accent}" Margin="0,0,7,0" VerticalAlignment="Center" />
+                <TextBlock Text="Chrome, Edge &amp; Chromium" FontSize="13.5" FontWeight="SemiBold" Foreground="{DynamicResource Brush.Text}" VerticalAlignment="Center" />
             </StackPanel>
-            <TextBlock Text="1. Click 'Copy Extension Path', then click 'Open Extensions Page'." FontSize="12" Foreground="{DynamicResource Brush.TextDim}" Margin="0,0,0,3" />
-            <TextBlock Text="2. Turn on 'Developer mode' (top right), click 'Load unpacked', and paste the folder path." FontSize="12" Foreground="{DynamicResource Brush.TextDim}" Margin="0,0,0,16" />
+
+            <!-- Single-action button: copies path + opens extensions page -->
+            <ui:Button x:Name="SetupChromeBtn"
+                       Content="Open Extensions Page  →"
+                       Appearance="Secondary"
+                       Height="34" Padding="14,0"
+                       HorizontalAlignment="Left"
+                       Click="SetupChrome_Click"
+                       Margin="0,0,0,10"
+                       ToolTip="Copies the extension folder path to clipboard and opens chrome://extensions" />
+
+            <!-- Post-click 2-step panel (hidden until button clicked) -->
+            <Border x:Name="ChromeStepsPanel" Visibility="Collapsed"
+                    Background="{DynamicResource Brush.SurfaceAlt}"
+                    BorderBrush="{DynamicResource Brush.Border}"
+                    BorderThickness="1" CornerRadius="6" Padding="14,11"
+                    Margin="0,0,0,4">
+                <StackPanel>
+                    <TextBlock FontSize="12" Foreground="{DynamicResource Brush.Accent}" FontWeight="SemiBold"
+                               Text="✓ Extension folder path copied to clipboard" Margin="0,0,0,8" />
+                    <TextBlock FontSize="12.5" Foreground="{DynamicResource Brush.Text}" FontWeight="Medium"
+                               Text="Two quick steps in Chrome:" Margin="0,0,0,6" />
+                    <TextBlock FontSize="12.5" Foreground="{DynamicResource Brush.TextDim}"
+                               Text="1.  Turn on 'Developer mode' (toggle in the top-right corner)." Margin="0,0,0,3" />
+                    <TextBlock FontSize="12.5" Foreground="{DynamicResource Brush.TextDim}"
+                               Text="2.  Click 'Load unpacked', paste the path, and click OK." />
+                </StackPanel>
+            </Border>
+            <TextBlock x:Name="FeedbackText" Text="" FontSize="11.5"
+                       FontFamily="{StaticResource Font.App}" Foreground="{DynamicResource Brush.TextMuted}"
+                       TextWrapping="Wrap" Margin="0,0,0,20" />
 
             <!-- Section 2: Firefox -->
-            <TextBlock Text="Firefox" FontSize="13.5" FontWeight="SemiBold" Foreground="{DynamicResource Brush.Text}" Margin="0,0,0,8" />
-            <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
-                <ui:Button Content="Open Firefox Add-ons Page" Appearance="Secondary" Click="OpenFirefoxAddonPage_Click" Height="32" Padding="12,0" />
+            <StackPanel Orientation="Horizontal" Margin="0,0,0,6" VerticalAlignment="Center">
+                <ui:SymbolIcon Symbol="FireworkFilled24" FontSize="15" Foreground="{DynamicResource Brush.Accent}" Margin="0,0,7,0" VerticalAlignment="Center" />
+                <TextBlock Text="Firefox" FontSize="13.5" FontWeight="SemiBold" Foreground="{DynamicResource Brush.Text}" VerticalAlignment="Center" />
             </StackPanel>
-            <TextBlock Text="Install permanently from the Firefox Add-ons store with one click." FontSize="12" Foreground="{DynamicResource Brush.TextDim}" Margin="0,0,0,20" />
+            <ui:Button Content="Install Firefox Extension  →" Appearance="Secondary"
+                       HorizontalAlignment="Left" Height="34" Padding="14,0"
+                       Click="OpenFirefoxAddonPage_Click"
+                       Margin="0,0,0,4"
+                       ToolTip="Opens the official Mozilla Add-ons page — one click to install" />
+            <TextBlock Text="Install permanently from Firefox Add-ons with one click."
+                       FontSize="12" Foreground="{DynamicResource Brush.TextDim}" Margin="0,0,0,24" />
 
-            <!-- Section 3: More Help & Deep-Dive Guide -->
+            <!-- Section 3: More Help -->
             <Border Background="{DynamicResource Brush.SurfaceAlt}" BorderBrush="{DynamicResource Brush.Border}" BorderThickness="1" CornerRadius="8" Padding="14,12">
                 <DockPanel LastChildFill="True">
                     <ui:Button DockPanel.Dock="Right" Appearance="Secondary" Click="OpenMoreHelp_Click" Height="32" Padding="14,0" VerticalAlignment="Center">
@@ -65,7 +98,7 @@
                     </ui:Button>
                     <StackPanel VerticalAlignment="Center" Margin="0,0,12,0">
                         <TextBlock Text="Why is manual setup required?" FontWeight="SemiBold" FontSize="12.5" Foreground="{DynamicResource Brush.Text}" />
-                        <TextBlock Text="Explore our illustrated visual guide explaining browser security sandboxes and step-by-step setup." FontSize="11.5" Foreground="{DynamicResource Brush.TextMuted}" Margin="0,1,0,0" TextWrapping="Wrap" />
+                        <TextBlock Text="Illustrated guide: browser security sandboxes and step-by-step setup." FontSize="11.5" Foreground="{DynamicResource Brush.TextMuted}" Margin="0,1,0,0" TextWrapping="Wrap" />
                     </StackPanel>
                 </DockPanel>
             </Border>

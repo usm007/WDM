@@ -272,6 +272,7 @@ public static class UpdateChecker
 
         var buffer = new byte[81920];
         long read = 0;
+        int lastPct = -1;
         while (true)
         {
             int n = await source.ReadAsync(buffer, ct);
@@ -282,7 +283,19 @@ public static class UpdateChecker
             if (read > 500 * 1024 * 1024)
                 throw new InvalidOperationException("Installer exceeded size limit during download.");
             if (total > 0)
-                onProgress?.Invoke((double)read / total);
+            {
+                int pct = (int)(read * 100 / total);
+                if (pct != lastPct)
+                {
+                    lastPct = pct;
+                    onProgress?.Invoke((double)read / total);
+                }
+            }
+            else
+            {
+                // No Content-Length: report bytes downloaded so far (caller shows indeterminate).
+                onProgress?.Invoke(-1);
+            }
         }
         await file.FlushAsync(ct);
         await file.DisposeAsync();
