@@ -76,7 +76,7 @@
 
             <!-- Section 2: Firefox -->
             <StackPanel Orientation="Horizontal" Margin="0,0,0,6" VerticalAlignment="Center">
-                <ui:SymbolIcon Symbol="FireworkFilled24" FontSize="15" Foreground="{DynamicResource Brush.Accent}" Margin="0,0,7,0" VerticalAlignment="Center" />
+                <ui:SymbolIcon Symbol="PuzzlePiece24" FontSize="15" Foreground="{DynamicResource Brush.Accent}" Margin="0,0,7,0" VerticalAlignment="Center" />
                 <TextBlock Text="Firefox" FontSize="13.5" FontWeight="SemiBold" Foreground="{DynamicResource Brush.Text}" VerticalAlignment="Center" />
             </StackPanel>
             <ui:Button Content="Install Firefox Extension  →" Appearance="Secondary"
