@@ -39,6 +39,14 @@ public sealed class TrayIcon : IDisposable
             ContextMenuStrip = _menu,
         };
         _icon.DoubleClick += (_, _) => Activated?.Invoke();
+        // Single left-click restores WDM (right-click keeps opening the menu).
+        // DoubleClick stays wired: it fires two clicks + double-click, and
+        // restoring twice is harmless (idempotent).
+        _icon.MouseClick += (_, e) =>
+        {
+            if (e.Button == System.Windows.Forms.MouseButtons.Left)
+                Activated?.Invoke();
+        };
         _icon.BalloonTipClicked += (_, _) =>
         {
             _balloonClickAction?.Invoke();
