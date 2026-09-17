@@ -343,8 +343,25 @@
                             </Border>
                         </ui:CardControl>
 
-                        <TextBlock Text="Extension deployment" FontSize="12.5" FontWeight="SemiBold" Foreground="{DynamicResource Brush.TextDim}" Margin="0,4,0,6" />
+                        <ui:CardControl Margin="0,0,0,12">
+                            <ui:CardControl.Header>
+                                <StackPanel>
+                                    <TextBlock Text="Minimum auto-catch size" FontWeight="Medium" FontSize="13" Foreground="{DynamicResource Brush.Text}" />
+                                    <TextBlock Text="Only hand browser downloads at or above this size to WDM — smaller files stay in the browser. Unknown sizes always pass. 0 disables the gate." FontSize="11.5" Foreground="{DynamicResource Brush.TextMuted}" Margin="0,2,0,0" TextWrapping="Wrap" MaxWidth="260" />
+                                </StackPanel>
+                            </ui:CardControl.Header>
+                            <ComboBox x:Name="MinCatchBox" Width="180" Height="32" IsEditable="True">
+                                <ComboBoxItem Content="100 MB" Tag="104857600" />
+                                <ComboBoxItem Content="200 MB (recommended)" Tag="209715200" />
+                                <ComboBoxItem Content="300 MB" Tag="314572800" />
+                                <ComboBoxItem Content="400 MB" Tag="419430400" />
+                                <ComboBoxItem Content="500 MB" Tag="524288000" />
+                                <ComboBoxItem Content="750 MB" Tag="786432000" />
+                                <ComboBoxItem Content="1 GB" Tag="1073741824" />
+                            </ComboBox>
+                        </ui:CardControl>
 
+                        <TextBlock Text="Extension deployment" FontSize="12.5" FontWeight="SemiBold" Foreground="{DynamicResource Brush.TextDim}" Margin="0,4,0,6" />
                         <ui:CardControl Margin="0,0,0,12">
                             <ui:CardControl.Header>
                                 <StackPanel>

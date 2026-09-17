@@ -127,12 +127,22 @@ webext.storage.onChanged.addListener((changes, area) => {
 loadCaptureState();
 loadBlocked();
 
-// Periodic ping to verify WDM connection status
+// Periodic ping to verify WDM connection status. Also picks up the
+// auto-catch size gate (minCatchBytes, 0 = catch everything).
 let isWdmActive = false;
+let minCatchBytes = 0;
 async function checkWdm() {
   try {
     const res = await fetch(`${WDM_HOST}/ping`, { method: "GET" });
     isWdmActive = res.ok;
+    if (res.ok) {
+      try {
+        const j = await res.json();
+        if (j && typeof j.minCatchBytes === "number" && j.minCatchBytes >= 0) {
+          minCatchBytes = Math.floor(j.minCatchBytes);
+        }
+      } catch {}
+    }
   } catch {
     isWdmActive = false;
   }
@@ -578,6 +588,10 @@ webext.downloads.onCreated.addListener(async (item) => {
   const downloadUrl = item.finalUrl || item.url;
   if (!downloadUrl || !/^https?:\/\//i.test(downloadUrl)) return;
   if (isBlockedCapture(downloadUrl)) return; // user-blocked: browser handles it
+  // Minimum auto-catch size (Settings): files known-smaller stay in the browser.
+  // Unknown sizes (fileSize <= 0) always pass — they can't be judged yet.
+  if (minCatchBytes > 0 && typeof item.fileSize === "number" &&
+      item.fileSize > 0 && item.fileSize < minCatchBytes) return;
 
   if (loopGuard.get(downloadUrl) > Date.now()) {
     loopGuard.delete(downloadUrl);

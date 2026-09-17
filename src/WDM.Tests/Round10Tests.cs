@@ -194,17 +194,30 @@ public sealed class Round10Tests : IDisposable
         {
             var task = new DownloadTask { Url = server.BaseUrl + "big.bin", FileName = "big.bin", SaveFolder = dir };
             engine.Start(task);
-            // Pause mid-download (strictly between 5% and 95%).
-            await WaitForAsync(task, () => task.DownloadedBytes > server.Body.Length / 20, TimeSpan.FromSeconds(30));
-            Assert.InRange(task.DownloadedBytes, 0L, server.Body.Length - 1000L);
-            engine.Pause(task);
-            await WaitForAsync(task, () => task.Status == TaskStatus.Paused, TimeSpan.FromSeconds(15));
-            Assert.Equal(TaskStatus.Paused, task.Status);
-
+            // Pause only after whole chunks completed (BytesDownloaded counts
+            // partial reads; a snapshot with zero Done chunks would legitimately
+            // refetch everything and flake the assertion below).
+            var readySw = System.Diagnostics.Stopwatch.StartNew();
+            List<SegmentRecord>? live = null;
+            while (readySw.Elapsed < TimeSpan.FromSeconds(30))
+            {
+                live = engine.SnapshotSegments(task);
+                if (live is not null && live.Count(r => r.Done) >= 2 &&
+                    task.DownloadedBytes < server.Body.Length - 1000L)
+                    break;
+                live = null;
+                await Task.Delay(100);
+            }
+            Assert.NotNull(live);
+            // Snapshot while the session is live (like SaveTasks does on its tick:
+            // paused tasks have no session, so the mirror is always taken live).
             var snap = engine.SnapshotSegments(task);
             Assert.NotNull(snap);
             Assert.Contains(snap, r => r.Done);
             Assert.Contains(snap, r => !r.Done);
+            engine.Pause(task);
+            await WaitForAsync(task, () => task.Status == TaskStatus.Paused, TimeSpan.FromSeconds(15));
+            Assert.Equal(TaskStatus.Paused, task.Status);
             task.SegmentSnapshot = snap;
 
             // Simulate sidecar loss (cleaner tools, manual delete, crash).

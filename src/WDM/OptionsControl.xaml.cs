@@ -65,6 +65,7 @@ public partial class OptionsControl : UserControl
         if (NotifyErrorBox != null) NotifyErrorBox.IsChecked = s.NotifyOnError;
         if (NotifySoundBox != null) NotifySoundBox.IsChecked = s.NotificationSound;
         if (DetailedNotifyBox != null) DetailedNotifyBox.IsChecked = s.DetailedNotifications;
+        InitMinCatchBox(s.MinCatchSizeBytes);
         TrayProgressBox.IsChecked = s.ShowTrayProgress;
         MinimizeToTrayBox.IsChecked = s.MinimizeToTray;
         if (TitleSyncBox != null) TitleSyncBox.IsChecked = s.EnableTitleSync;
@@ -313,6 +314,7 @@ public partial class OptionsControl : UserControl
         if (NotifyErrorBox != null) s.NotifyOnError = NotifyErrorBox.IsChecked == true;
         if (NotifySoundBox != null) s.NotificationSound = NotifySoundBox.IsChecked == true;
         if (DetailedNotifyBox != null) s.DetailedNotifications = DetailedNotifyBox.IsChecked == true;
+        SaveMinCatchBox(s);
         if (TrayProgressBox != null) s.ShowTrayProgress = TrayProgressBox.IsChecked == true;
         if (MinimizeToTrayBox != null) s.MinimizeToTray = MinimizeToTrayBox.IsChecked == true;
         if (TitleSyncBox != null) s.EnableTitleSync = TitleSyncBox.IsChecked == true;
@@ -578,6 +580,83 @@ public partial class OptionsControl : UserControl
             FolderBox.Text = dialog.FolderName;
             SaveCurrentSettings();
         }
+    }
+
+    /// <summary>Minimum auto-catch size box: selects the matching preset or shows
+    /// the custom value as text (editable for manual entry).</summary>
+    private void InitMinCatchBox(long bytes)
+    {
+        if (MinCatchBox is null)
+            return;
+        MinCatchBox.SelectedIndex = -1;
+        foreach (var item in MinCatchBox.Items)
+        {
+            if (item is ComboBoxItem ci && ci.Tag is string tag &&
+                long.TryParse(tag, out long preset) && preset == bytes)
+            {
+                MinCatchBox.SelectedItem = item;
+                // Set the editable text explicitly too: SelectedItem→Text coercion
+                // doesn't always repaint in offscreen captures (and costs nothing live).
+                MinCatchBox.Text = ci.Content?.ToString() ?? "";
+                return;
+            }
+        }
+        MinCatchBox.Text = FormatCatchSize(bytes);
+    }
+
+    private void SaveMinCatchBox(AppSettings s)
+    {
+        if (MinCatchBox is null)
+            return;
+        if (MinCatchBox.SelectedItem is ComboBoxItem ci && ci.Tag is string tag &&
+            long.TryParse(tag, out long preset) && preset >= 0)
+        {
+            s.MinCatchSizeBytes = Math.Min(preset, 10L * 1024 * 1024 * 1024);
+            return;
+        }
+        // Manual entry (editable box): invalid text keeps the current value.
+        if (TryParseCatchSize(MinCatchBox.Text, out long custom))
+            s.MinCatchSizeBytes = custom;
+    }
+
+    /// <summary>Parses a manual size entry: bare number = MB; MB/GB (or M/G/KB/K)
+    /// suffixes scale it. Returns false when unparseable. Pure for testing.</summary>
+    internal static bool TryParseCatchSize(string? text, out long bytes)
+    {
+        bytes = 0;
+        if (string.IsNullOrWhiteSpace(text))
+            return false;
+        string t = text.Trim().ToLowerInvariant().Replace(" ", "");
+        // Round-trip of the formatted zero ("0 (catch all)").
+        if (t is "0(catchall)")
+        {
+            bytes = 0;
+            return true;
+        }
+        double mult = 1024.0 * 1024.0;
+        if (t.EndsWith("gb")) { mult = 1024.0 * 1024.0 * 1024.0; t = t[..^2]; }
+        else if (t.EndsWith("g")) { mult = 1024.0 * 1024.0 * 1024.0; t = t[..^1]; }
+        else if (t.EndsWith("mb")) { t = t[..^2]; }
+        else if (t.EndsWith("m")) { t = t[..^1]; }
+        else if (t.EndsWith("kb")) { mult = 1024.0; t = t[..^2]; }
+        else if (t.EndsWith("k")) { mult = 1024.0; t = t[..^1]; }
+        else if (t.EndsWith("b")) { mult = 1.0; t = t[..^1]; }
+        if (!double.TryParse(t, System.Globalization.NumberStyles.Float,
+                System.Globalization.CultureInfo.InvariantCulture, out double value) ||
+            double.IsNaN(value) || double.IsInfinity(value) || value < 0)
+            return false;
+        bytes = (long)Math.Min(value * mult, 10.0 * 1024 * 1024 * 1024);
+        return true;
+    }
+
+    internal static string FormatCatchSize(long bytes)
+    {
+        if (bytes <= 0)
+            return "0 (catch all)";
+        if (bytes % (1024L * 1024 * 1024) == 0)
+            return $"{bytes / (1024L * 1024 * 1024)} GB";
+        double mb = bytes / (1024.0 * 1024.0);
+        return mb == Math.Floor(mb) ? $"{mb:0} MB" : $"{mb:0.#} MB";
     }
 
     private void MoveFolderBrowseClick(object sender, RoutedEventArgs e)

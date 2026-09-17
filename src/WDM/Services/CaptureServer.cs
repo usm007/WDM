@@ -38,6 +38,10 @@ public sealed class CaptureServer : IDisposable
     /// a finished download. Null answers 503 (chunks are then refused).</summary>
     public Action<BlobResult>? OnBlobCaptured { get; set; }
 
+    /// <summary>Live settings provider (wired by the view): the minimum auto-catch
+    /// size advertised to the extension via <c>/ping</c>. Null = no gate.</summary>
+    public Func<long>? MinCatchBytesProvider { get; set; }
+
     // ── blob assembly (1DM blob: fetch→base64→write) ─────────────────────
     private readonly object _blobLock = new();
     private readonly Dictionary<string, BlobSession> _blobs = new(StringComparer.Ordinal);
@@ -276,8 +280,12 @@ public sealed class CaptureServer : IDisposable
                 if (method == "GET" && path == "/ping")
                 {
                     // Presence probe: do not trust it for security decisions.
+                    // Carries the auto-catch size gate so the extension (which polls
+                    // this every few seconds) stays in sync with Settings live.
                     string ver = typeof(CaptureServer).Assembly.GetName().Version?.ToString(3) ?? "2.7.2";
-                    await WriteResponseAsync(stream, HttpStatusCode.OK, $"{{\"status\":\"ok\",\"version\":\"{ver}\"}}", origin);
+                    long minCatch = 0;
+                    try { minCatch = Math.Max(0, MinCatchBytesProvider?.Invoke() ?? 0); } catch { }
+                    await WriteResponseAsync(stream, HttpStatusCode.OK, $"{{\"status\":\"ok\",\"version\":\"{ver}\",\"minCatchBytes\":{minCatch}}}", origin);
                     return;
                 }
 

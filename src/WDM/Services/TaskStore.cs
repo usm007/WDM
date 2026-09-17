@@ -62,7 +62,11 @@ public sealed class AppSettings
 
     // Automatic retry
     public int MaxRetries { get; set; } = 3;
-    /// <summary>1DM <c>always_retry_download</c> (default OFF), bounded by
+
+    /// <summary>Minimum auto-catch size (browser extension): files smaller than
+    /// this are left to the browser instead of being handed to WDM. 0 disables
+    /// the gate (catch everything). Unknown sizes always pass (can't be judged).</summary>
+    public long MinCatchSizeBytes { get; set; } = 200L * 1024 * 1024;    /// <summary>1DM <c>always_retry_download</c> (default OFF), bounded by
     /// <see cref="MaxRetries"/> per task: a timer re-queues Failed tasks until
     /// their per-task budget is spent. User Pause/Cancel/Remove always wins.</summary>
     public bool AutoResumeFailed { get; set; } = false;
@@ -409,6 +413,7 @@ public sealed class TaskStore
         s.GlobalSpeedLimitKbps = Math.Clamp(s.GlobalSpeedLimitKbps, 0, 1_000_000);
         s.SchedulerSpeedLimitKbps = Math.Clamp(s.SchedulerSpeedLimitKbps, 0, 1_000_000);
         s.DeleteFinishedLinksAfterDays = Math.Clamp(s.DeleteFinishedLinksAfterDays, 0, 365);
+        s.MinCatchSizeBytes = Math.Clamp(s.MinCatchSizeBytes, 0, 10L * 1024 * 1024 * 1024);
         if (s.SchedulerDays is null)
             s.SchedulerDays = new AppSettings().SchedulerDays;
         // An explicitly emptied list is preserved (window never applies); only a

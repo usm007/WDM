@@ -114,6 +114,7 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
         _captureServer.Start();
         _captureServer.OnBatchCapture = items => _dispatcher.BeginInvoke(() => ShowBatchAddDialog(items));
         _captureServer.OnBlobCaptured = result => _dispatcher.BeginInvoke(() => _viewModel.AddCompletedFile(result));
+        _captureServer.MinCatchBytesProvider = () => _viewModel.Settings.MinCatchSizeBytes;
         _viewModel.RunStartupMaintenance();
 
         _tray = new TrayIcon();
