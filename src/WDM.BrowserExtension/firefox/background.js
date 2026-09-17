@@ -45,6 +45,52 @@ setInterval(() => {
 const STORAGE_KEY = "captureEnabled";
 let captureEnabled = true;
 
+// Blocked domains/URLs (1DM PageResource block-domain/block-URL equivalent).
+// Applies to AUTOMATIC captures (sniffer, download catcher). Explicit per-item
+// "Download" clicks from the popup bypass it (user intent overrides).
+const BLOCK_KEY = "wdmBlocked";
+let blockedCache = { domains: [], urls: [] };
+function normalizeBlocked(b) {
+  const out = { domains: [], urls: [] };
+  try {
+    if (b && Array.isArray(b.domains)) out.domains = b.domains.map(d => String(d).toLowerCase().trim()).filter(Boolean);
+    if (b && Array.isArray(b.urls)) out.urls = b.urls.map(u => String(u).trim()).filter(Boolean);
+  } catch {}
+  return out;
+}
+async function loadBlocked() {
+  try {
+    const data = await webext.storage.local.get(BLOCK_KEY);
+    if (data && data[BLOCK_KEY]) blockedCache = normalizeBlocked(data[BLOCK_KEY]);
+  } catch {}
+}
+function blockedHostCheck(host, domains) {
+  try {
+    host = String(host || "").toLowerCase();
+    return (domains || []).some(d => host === d || host.endsWith("." + d));
+  } catch { return false; }
+}
+function blockedHost(host) {
+  return blockedHostCheck(host, blockedCache.domains);
+}
+function isBlockedCapture(url) {
+  try {
+    const u = new URL(url);
+    if (blockedCache.urls.includes(u.href)) return true;
+    return blockedHost(u.hostname);
+  } catch { return false; }
+}
+function purgeBlockedFromMaps(pred) {
+  try {
+    for (const [tabId, map] of tabMediaMap.entries()) {
+      for (const [url] of map.entries()) {
+        try { if (pred(url)) map.delete(url); } catch {}
+      }
+      try { updateBadge(tabId); } catch {}
+    }
+  } catch {}
+}
+
 async function loadCaptureState() {
   try {
     const data = await webext.storage.local.get(STORAGE_KEY);
@@ -74,8 +120,12 @@ webext.storage.onChanged.addListener((changes, area) => {
     captureEnabled = changes[STORAGE_KEY].newValue !== false;
     updateBadge();
   }
+  if (area === "local" && changes[BLOCK_KEY]) {
+    blockedCache = normalizeBlocked(changes[BLOCK_KEY].newValue);
+  }
 });
 loadCaptureState();
+loadBlocked();
 
 // Periodic ping to verify WDM connection status
 let isWdmActive = false;
@@ -100,6 +150,17 @@ webext.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
 
   if (message.action === "mediaDetected") {
+    // Content-script key observations ride along: attach to the tracked entry
+    // so the resource list / download payloads carry the hint (B6b).
+    try {
+      const s = message.stream;
+      if (s && s.url && s.keyUrl) {
+        for (const map of tabMediaMap.values()) {
+          const e = map.get(s.url);
+          if (e && !e.keyUrl) e.keyUrl = s.keyUrl;
+        }
+      }
+    } catch {}
     sendResponse({ success: true });
     return true;
   }
@@ -120,7 +181,104 @@ webext.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
 
   if (message.action === "getMediaList") {
-    sendResponse({ media: [], wdmActive: isWdmActive });
+    (async () => {
+      try {
+        const tabs = await webext.tabs.query({ active: true, currentWindow: true });
+        const tabId = tabs && tabs[0] ? tabs[0].id : null;
+        const map = tabId != null ? tabMediaMap.get(tabId) : null;
+        const media = map
+          ? Array.from(map.values()).map(i => ({ url: i.url, label: i.label, type: i.type, time: i.time, keyUrl: i.keyUrl || null }))
+          : [];
+        sendResponse({ media, wdmActive: isWdmActive });
+      } catch (err) {
+        sendResponse({ media: [], wdmActive: isWdmActive, error: err && err.message });
+      }
+    })();
+    return true;
+  }
+
+  // Block a domain or exact URL from automatic capture (1DM blockResourceDomain/Url).
+  if (message.action === "blockDomain" || message.action === "blockUrl") {
+    (async () => {
+      try {
+        const raw = String(message.value || "").trim();
+        if (!raw) { sendResponse({ success: false, error: "empty value" }); return; }
+        const data = await webext.storage.local.get(BLOCK_KEY);
+        const cur = normalizeBlocked(data && data[BLOCK_KEY]);
+        if (message.action === "blockDomain") {
+          let host = raw;
+          try { host = new URL(raw).hostname; } catch {}
+          host = host.toLowerCase();
+          if (host && !cur.domains.includes(host)) cur.domains.push(host);
+          purgeBlockedFromMaps(u => {
+            try { return blockedHostCheck(new URL(u).hostname, cur.domains); } catch { return false; }
+          });
+        } else {
+          let href = raw;
+          try { href = new URL(raw).href; } catch {}
+          if (href && !cur.urls.includes(href)) cur.urls.push(href);
+          purgeBlockedFromMaps(u => cur.urls.includes(u));
+        }
+        await webext.storage.local.set({ [BLOCK_KEY]: cur });
+        blockedCache = cur;
+        sendResponse({ success: true, blocked: cur });
+      } catch (err) {
+        sendResponse({ success: false, error: err && err.message });
+      }
+    })();
+    return true;
+  }
+
+  if (message.action === "getBlocked") {
+    sendResponse({ blocked: blockedCache });
+    return true;
+  }
+
+  if (message.action === "downloadBatch") {
+    (async () => {
+      try {
+        const result = await sendBatchToWdm(message.items || []);
+        sendResponse({ success: true, result });
+      } catch (err) {
+        sendResponse({ success: false, error: err && err.message });
+      }
+    })();
+    return true;
+  }
+
+  // Blob chunk relay: page bytes stream to the desktop assembler in order.
+  if (message.action === "blobChunk") {
+    (async () => {
+      try {
+        const r = await fetch(`${WDM_HOST}/download/blob-chunk`, {
+          method: "POST",
+          headers: wdmAuthHeaders({ "Content-Type": "application/json" }),
+          body: JSON.stringify(message.chunk || {})
+        });
+        let j = null;
+        try { j = await r.json(); } catch {}
+        sendResponse({ success: r.ok, status: r.status, result: j });
+      } catch (err) {
+        sendResponse({ success: false, error: err && err.message });
+      }
+    })();
+    return true;
+  }
+
+  // MEGA session id forwarding (desktop stores 24h, mega.nz hosts only).
+  if (message.action === "megaSid") {
+    (async () => {
+      try {
+        const r = await fetch(`${WDM_HOST}/download/mega-sid`, {
+          method: "POST",
+          headers: wdmAuthHeaders({ "Content-Type": "application/json" }),
+          body: JSON.stringify({ sid: message.sid, host: message.host || null })
+        });
+        sendResponse({ success: r.ok, status: r.status });
+      } catch (err) {
+        sendResponse({ success: false, error: err && err.message });
+      }
+    })();
     return true;
   }
 
@@ -169,8 +327,8 @@ const IDM_MIME_MAP = {
   "audio/mp4":"M4A|MP4|M4S","audio/mpeg":"MP3","audio/mp3":"MP3","audio/webm":"WEBM","audio/wav":"WAV","audio/x-wav":"WAV","audio/ogg":"OGG|OPUS",
   "application/dash+xml":"MPD","application/vnd.apple.mpegurl":"M3U8","application/x-mpegurl":"M3U8","application/x-mpegURL":"M3U8","audio/mpegurl":"M3U|M3U8","video/mp2t":"TS|M3U8","application/octet-stream-m3u8":"M3U8"
 };
-const IDM_HLS_RE = /(\.m3u8|\/hls\/|\/playlist|\/manifest|\/master\.|\/stream\b|[\?&](format|ext)=m3u8|mime=.*mpegurl)/i;
-const IDM_DASH_RE = /(\.mpd|\/dash\/|\/manifest|\/master\.|[\?&](format|ext)=mpd|mime=.*dash)/i;
+const IDM_HLS_RE = /(\.m3u8|\/hls\/|\/playlist(?=[\/?#]|$)|\/manifest(?=[\/?#]|$)|\/master(?=[\/?#]|$)|\/stream\b|[\?&](format|ext)=m3u8|mime=.*mpegurl)/i;
+const IDM_DASH_RE = /(\.mpd|\/dash\/|\/manifest(?=[\/?#]|$)|\/master(?=[\/?#]|$)|[\?&](format|ext)=mpd|mime=.*dash)/i;
 // Video-only: the floating button lists downloadable video, never audio.
 // (m4s/ts segments, beacons and inits are filtered separately below.)
 const IDM_VIDEO_RE = /\.(mp4|m4v|webm|mkv|avi|mov|flv)(\?|$)/i;
@@ -270,6 +428,7 @@ const API_BODY_RE = /(\/api\/stream|\/api\/videos?\b|\/api\/player|\/player-core
 
 function registerTabMedia(tabId, url, hint) {
   if (!url || !tabId || tabId < 0) return;
+  if (isBlockedCapture(url)) return; // user-blocked domain/URL: never listed
   if (isYouTubeUrl(url)) return;
   if (ARCHIVE_EXT_RE.test(url)) return;
   if (IDM_AUDIO_RE.test(url)) return;
@@ -418,6 +577,7 @@ webext.downloads.onCreated.addListener(async (item) => {
 
   const downloadUrl = item.finalUrl || item.url;
   if (!downloadUrl || !/^https?:\/\//i.test(downloadUrl)) return;
+  if (isBlockedCapture(downloadUrl)) return; // user-blocked: browser handles it
 
   if (loopGuard.get(downloadUrl) > Date.now()) {
     loopGuard.delete(downloadUrl);
@@ -478,4 +638,42 @@ async function sendToWdm(url, filename, referrer, headers, pageTitle) {
   if (!response.ok) {
     throw new Error(`WDM responded ${response.status}`);
   }
+}
+
+// Batch handoff for the page-resource list / "download all" (server cap: 50).
+async function sendBatchToWdm(items) {
+  const list = (items || []).slice(0, 50);
+  const enriched = [];
+  for (const it of list) {
+    if (!it || !it.url || !/^https?:\/\//i.test(it.url)) continue;
+    const headers = Object.assign({}, it.headers || {});
+    try {
+      const cookie = await getCookieHeaderForUrl(it.url, it.referer);
+      if (cookie && !headers["Cookie"] && !headers["cookie"]) headers["Cookie"] = cookie;
+    } catch {}
+    if (!headers["User-Agent"] && !headers["user-agent"]) headers["User-Agent"] = navigator.userAgent;
+    try {
+      if (!headers["Origin"] && !headers["origin"] && it.referer && /^https?:\/\//i.test(it.referer)) {
+        headers["Origin"] = new URL(it.referer).origin;
+      }
+    } catch {}
+    enriched.push({
+      url: it.url,
+      fileName: it.fileName || null,
+      referer: it.referer || null,
+      headers,
+      pageTitle: it.pageTitle || null,
+      keyUrl: it.keyUrl || null
+    });
+  }
+  if (enriched.length === 0) throw new Error("No valid URLs in batch");
+  const response = await fetch(`${WDM_HOST}/download/batch`, {
+    method: "POST",
+    headers: wdmAuthHeaders({ "Content-Type": "application/json" }),
+    body: JSON.stringify({ items: enriched }),
+  });
+  if (!response.ok) {
+    throw new Error(`WDM responded ${response.status}`);
+  }
+  return response.json();
 }

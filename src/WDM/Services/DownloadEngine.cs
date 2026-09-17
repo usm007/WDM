@@ -20,6 +20,9 @@ public sealed class DownloadEngine
     private int _maxConcurrent = 3;
     private int _maxRetries = 3;
     private long _baseLimitKbps;
+    /// <summary>Scheduler window cap (1DM time/speed schedule): when positive it
+    /// tightens the effective limit; 0 = no scheduler cap.</summary>
+    private long _schedulerLimitKbps;
 
     public event Action? TaskChanged;
     public event Action<DownloadTask>? TaskCompleted;
@@ -66,6 +69,16 @@ public sealed class DownloadEngine
         set
         {
             lock (_lock) _baseLimitKbps = Math.Max(0, value);
+            ApplySpeedLimit();
+        }
+    }
+
+    public long SchedulerSpeedLimitKbps
+    {
+        get { lock (_lock) return _schedulerLimitKbps; }
+        set
+        {
+            lock (_lock) _schedulerLimitKbps = Math.Max(0, value);
             ApplySpeedLimit();
         }
     }
@@ -177,6 +190,9 @@ public sealed class DownloadEngine
         bool startNow;
         lock (_lock)
         {
+            // A manual (re)start always clears the scheduler hold: user intent wins
+            // over the download window (see MainViewModel scheduler tick).
+            task.SchedulerPaused = false;
             if (_sessions.ContainsKey(task.Id))
             {
                 // Pause->Start race: old session still unwinding. Queue a restart
@@ -295,15 +311,16 @@ public sealed class DownloadEngine
             TaskChanged?.Invoke();
     }
 
+    /// <summary>Restarts queued work respecting <see cref="MaxConcurrent"/>.
+    /// The full paused-task set lives in the UI layer (<c>MainViewModel.ResumeAll</c>
+    /// re-starts every Paused task via <see cref="Start"/>); this only pumps whatever
+    /// is already queued so freed slots fill in priority order. Never starts sessions
+    /// directly: draining the queue with BeginSession would bypass the concurrency
+    /// limit and over-start everything at once (BUG: ResumeAll ignored MaxConcurrent,
+    /// and resumed nothing at all after PauseAll cleared the queue).</summary>
     public void ResumeAll()
     {
-        DownloadTask[] tasks;
-        lock (_lock) tasks = _queue.ToArray();
-        foreach (var task in tasks)
-        {
-            RemoveQueued(task);
-            Start(task);
-        }
+        PumpQueue();
     }
 
     public void Stop(DownloadTask task)
@@ -355,6 +372,36 @@ public sealed class DownloadEngine
             TryDelete(task.FullPath);
             session.Dispose();
         });
+    }
+
+    /// <summary>Mirrors a live session's chunk bitmap into per-chunk records for
+    /// tasks.json (1DM ThreadInfo equivalent, A6). Null when there is no live
+    /// session, no bitmap yet, or the bitmap is too large to persist (cap 4096
+    /// chunks — the sidecar stays the resume source for huge files).</summary>
+    internal List<SegmentRecord>? SnapshotSegments(DownloadTask task)
+    {
+        Session? session;
+        lock (_lock) _sessions.TryGetValue(task.Id, out session);
+        var state = session?.State;
+        if (state is null || state.ChunkCount <= 0 || state.ChunkCount > 4096)
+            return null;
+        long chunkSize = state.ChunkSizeBytes;
+        long total = state.TotalBytesValue;
+        if (chunkSize <= 0 || total <= 0)
+            return null;
+        var records = new List<SegmentRecord>(state.ChunkCount);
+        for (int i = 0; i < state.ChunkCount; i++)
+        {
+            long start = i * chunkSize;
+            records.Add(new SegmentRecord
+            {
+                Index = i,
+                Start = start,
+                End = Math.Min(start + chunkSize, total) - 1,
+                Done = state.IsCompleted(i),
+            });
+        }
+        return records;
     }
 
     public void Remove(DownloadTask task, bool deleteFiles = false)
@@ -588,13 +635,21 @@ public sealed class DownloadEngine
             long previousTotalBytes = task.TotalBytes;
             task.PhaseText = "Connecting to server…";
             var meta = await ProbeAsync(task, session.Token);
+            // 1DM-style probe triage (Range-probe bodies): an HTML page is not a file,
+            // and a torrent descriptor is not downloadable by this engine — fail fast
+            // with an actionable message instead of saving a corrupt .bin.
+            ThrowIfUnsupportedContent(task, meta);
+            ThrowIfMegaSessionMissing(task, meta);
             task.TotalBytes = meta.TotalBytes;
             session.CurrentUrlIndex = meta.UrlIndex;
             ApplyResumeCapability(task, meta);
             // Auto-upgrade filename if task has no name OR has a generic/un-probed placeholder name (e.g. .bin, download_*)
             if (string.IsNullOrWhiteSpace(task.FileName) || IsGenericOrPlaceholderName(task.FileName, task.Url))
             {
-                string? resolved = meta.SuggestedName;
+                // 1DM FetchUrlMimeType rule: a disposition filename without an extension
+                // gains one from the Content-Type — unless the type is text/plain or
+                // application/octet-stream (those stay extension-less).
+                string? resolved = ApplyMimeExtensionFallback(meta.SuggestedName, meta.ContentType);
                 if (string.IsNullOrWhiteSpace(resolved))
                 {
                     string ext = FileNameHelper.ExtensionFromMime(meta.ContentType);
@@ -923,8 +978,12 @@ public sealed class DownloadEngine
         //    query param, even when the response omits the header.
         suggestedName ??= FileNameHelper.FileNameFromS3Query(url);
 
-        bool isHls = IsHlsContentType(contentType) || LooksLikeHlsUrl(url) || StreamHintIs(task, "HLS");
-        bool isDash = !isHls && (IsDashContentType(contentType) || LooksLikeDashUrl(url) || StreamHintIs(task, "DASH"));
+        // URL cues alone never force HLS/DASH: they only trigger the content sniff
+        // below (BUG: codeload /master cue forced HLS on a ZIP → binary parsed as
+        // segments → 404s). Force-true requires a playlist content-type or an
+        // extension-verified stream hint; everything else is decided by bytes.
+        bool isHls = IsHlsContentType(contentType) || StreamHintIs(task, "HLS");
+        bool isDash = !isHls && (IsDashContentType(contentType) || StreamHintIs(task, "DASH"));
         if (!isHls && !isDash && (StreamHintIs(task, "Stream", "HLS") || LooksLikeHlsUrl(url) || LooksLikeDashUrl(url)))
         {
             // Ambiguous tokenized manifest: confirm via content signature instead of
@@ -1009,7 +1068,31 @@ public sealed class DownloadEngine
         }
     }
 
-    private static bool LooksLikeHlsUrl(string url)
+    /// <summary>Tokenized-manifest path cues. Boundary-guarded: a bare substring
+    /// match misfires on real filenames — <c>/master.zip</c>, <c>/master.mp4</c>,
+    /// <c>/playlists</c>, <c>/manifest.json</c> (BUG: codeload master.zip classified
+    /// as HLS, its binary parsed as segments, segment fetches 404). A cue must end
+    /// the path or be followed by /, ?, or # — never by a filename extension dot
+    /// (<c>/playlist.m3u8</c> is already caught by the extension checks above).
+    /// Under-classification is safe (the content sniff re-checks stream-ish URLs);
+    /// over-classification sticks, so this stays strict. Same rule as the extension.</summary>
+    private static bool HasManifestPathCue(string path, string cue)
+    {
+        int idx = 0;
+        while ((idx = path.IndexOf(cue, idx, StringComparison.OrdinalIgnoreCase)) >= 0)
+        {
+            int end = idx + cue.Length;
+            if (end >= path.Length)
+                return true;
+            char next = path[end];
+            if (next is '/' or '?' or '#')
+                return true;
+            idx = end;
+        }
+        return false;
+    }
+
+    internal static bool LooksLikeHlsUrl(string url)
     {
         if (!Uri.TryCreate(url, UriKind.Absolute, out var uri))
             return false;
@@ -1019,18 +1102,18 @@ public sealed class DownloadEngine
             || query.Contains(".m3u8", StringComparison.OrdinalIgnoreCase))
             return true;
         // Tokenized manifests often carry no .m3u8 literal (e.g. /playlist, /manifest,
-        // /hls/, /master, /stream). Match the same IDM-grade patterns as the extension.
+        // /hls/, /master.m3u8, /stream). Match the same IDM-grade patterns as the extension.
         if (path.Contains("/hls/", StringComparison.OrdinalIgnoreCase)
-            || path.Contains("/playlist", StringComparison.OrdinalIgnoreCase)
-            || path.Contains("/manifest", StringComparison.OrdinalIgnoreCase)
-            || path.Contains("/master", StringComparison.OrdinalIgnoreCase)
+            || HasManifestPathCue(path, "/playlist")
+            || HasManifestPathCue(path, "/manifest")
+            || HasManifestPathCue(path, "/master")
             || System.Text.RegularExpressions.Regex.IsMatch(path, @"/stream\b", System.Text.RegularExpressions.RegexOptions.IgnoreCase))
             return true;
         return query.Contains("format=m3u8", StringComparison.OrdinalIgnoreCase)
             || query.Contains("ext=m3u8", StringComparison.OrdinalIgnoreCase);
     }
 
-    private static bool LooksLikeDashUrl(string url)
+    internal static bool LooksLikeDashUrl(string url)
     {
         if (!Uri.TryCreate(url, UriKind.Absolute, out var uri))
             return false;
@@ -1040,8 +1123,8 @@ public sealed class DownloadEngine
             || query.Contains(".mpd", StringComparison.OrdinalIgnoreCase))
             return true;
         if (path.Contains("/dash/", StringComparison.OrdinalIgnoreCase)
-            || path.Contains("/manifest", StringComparison.OrdinalIgnoreCase)
-            || path.Contains("/master", StringComparison.OrdinalIgnoreCase))
+            || HasManifestPathCue(path, "/manifest")
+            || HasManifestPathCue(path, "/master"))
             return true;
         return query.Contains("format=mpd", StringComparison.OrdinalIgnoreCase)
             || query.Contains("ext=mpd", StringComparison.OrdinalIgnoreCase);
@@ -1122,8 +1205,16 @@ public sealed class DownloadEngine
             if (!string.IsNullOrWhiteSpace(parsed))
                 name = parsed;
         }
-        if (string.IsNullOrWhiteSpace(name) || !LooksLikeFileName(name))
+        if (string.IsNullOrWhiteSpace(name))
             return null;
+        if (!LooksLikeFileName(name))
+        {
+            // Extension-less disposition filename (e.g. filename="clip"): accept it —
+            // the MIME extension fallback (1DM FetchUrlMimeType rule) completes it
+            // downstream. Anything else malformed stays rejected.
+            if (name.Length > 120 || name.IndexOfAny(['/', '\\']) >= 0 || Path.HasExtension(name))
+                return null;
+        }
         name = SanitizeFileName(name);
         return IsMediaFile(name) ? CleanReleaseName(name) : name;
     }
@@ -1160,6 +1251,14 @@ public sealed class DownloadEngine
         int chunkCount = (int)chunkCountLong;
 
         session.State = ChunkState.Load(session.StatePath, totalBytes, chunkSize, chunkCount);
+        // A6: sidecar lost (cleaner tools, manual delete) but tasks.json carries a
+        // snapshot with identical geometry — restore it instead of re-fetching.
+        // A present sidecar always wins; a mismatch is ignored (fresh bitmap).
+        if (!session.State.WasLoadedFromDisk && task.SegmentSnapshot is { Count: > 0 } &&
+            session.State.TryImportRecords(task.SegmentSnapshot, chunkCount))
+        {
+            session.State.Save(session.StatePath);
+        }
         session.ChunkSize = chunkSize;
         session.NextChunk = session.State.GetNextIncomplete(0);
         Interlocked.Exchange(ref session.BytesDownloaded, session.State.CompletedBytes);
@@ -1361,20 +1460,36 @@ public sealed class DownloadEngine
             }
         }
 
-        await HlsDownloader.DownloadAsync(
-            _http,
-            task.Url,
-            task.Referer,
-            task.FullPath,
-            session.Token,
-            bytes => Interlocked.Add(ref session.BytesDownloaded, bytes),
-            total => task.TotalBytes = total,
-            async (bytes, ct) =>
+        try
+        {
+            await HlsDownloader.DownloadAsync(
+                _http,
+                task.Url,
+                task.Referer,
+                task.FullPath,
+                session.Token,
+                bytes => Interlocked.Add(ref session.BytesDownloaded, bytes),
+                total => task.TotalBytes = total,
+                async (bytes, ct) =>
+                {
+                    await _governor.ThrottleAsync(EffectiveLimitKbps(), bytes, ct);
+                    await session.Governor.ThrottleAsync(task.SpeedLimitKbps, bytes, ct);
+                },
+                task.Headers);
+        }
+        catch (HlsDownloader.HlsPackagedStreamException packEx)
+        {
+            // Packaged sample encryption (SAMPLE-AES): segments are useless to the
+            // segment downloader, but ffmpeg decrypts during mux — same path as DASH.
+            session.Token.ThrowIfCancellationRequested();
+            if (!task.FileName.EndsWith(".mp4", StringComparison.OrdinalIgnoreCase))
             {
-                await _governor.ThrottleAsync(EffectiveLimitKbps(), bytes, ct);
-                await session.Governor.ThrottleAsync(task.SpeedLimitKbps, bytes, ct);
-            },
-            task.Headers);
+                task.FileName = Path.ChangeExtension(task.FileName, ".mp4");
+                task.FileName = ReserveRenamedFile(task, task.FileName);
+            }
+            task.Error = null;
+            await RunFfmpegManifestAsync(session, $"HLS packaged streams ({packEx.Method})");
+        }
 
         session.Token.ThrowIfCancellationRequested();
 
@@ -1453,10 +1568,24 @@ public sealed class DownloadEngine
                 return;
             using var reg = session.Token.Register(() => { try { proc.Kill(); } catch {} });
             // Drain both redirected streams to avoid pipe-full deadlock on large remuxes.
+            var remuxSw = System.Diagnostics.Stopwatch.StartNew();
             var stdoutDrain = proc.StandardOutput.ReadToEndAsync();
             var stderrDrain = proc.StandardError.ReadToEndAsync();
             await proc.WaitForExitAsync(session.Token);
-            try { await Task.WhenAll(stdoutDrain, stderrDrain); } catch { }
+            string stderrText = "";
+            try { await Task.WhenAll(stdoutDrain, stderrDrain); stderrText = await stderrDrain; } catch { }
+            remuxSw.Stop();
+            try
+            {
+                LastRemux = new RemuxInfo
+                {
+                    ExitCode = proc.ExitCode,
+                    StderrTail = stderrText.Length > 2048 ? stderrText[^2048..] : stderrText,
+                    Elapsed = remuxSw.Elapsed,
+                    At = DateTime.Now,
+                };
+            }
+            catch { }
             if (proc.ExitCode == 0 && File.Exists(outPath) && new FileInfo(outPath).Length > 0)
             {
                 try { File.Delete(tsPath); } catch { }
@@ -1488,6 +1617,19 @@ public sealed class DownloadEngine
             task.FileName = Path.ChangeExtension(task.FileName, extension);
             task.FileName = ReserveRenamedFile(task, task.FileName);
         }
+
+        await RunFfmpegManifestAsync(session, "DASH streams (.mpd)");
+
+        session.Token.ThrowIfCancellationRequested();
+    }
+
+    /// <summary>Streams a manifest URL straight through ffmpeg (-c copy): the DASH
+    /// path, and the HLS fallback for packaged sample encryption (SAMPLE-AES) the
+    /// segment downloader cannot decrypt. Throws when ffmpeg is missing or exits
+    /// non-zero (surfaced as Failed with an actionable message).</summary>
+    private async Task RunFfmpegManifestAsync(Session session, string streamKind)
+    {
+        var task = session.Task;
 
         // If ffmpeg is available, we stream and mux via ffmpeg directly
         if (File.Exists(EngineManager.FfmpegPath))
@@ -1542,14 +1684,12 @@ public sealed class DownloadEngine
             await proc.WaitForExitAsync(session.Token);
             try { await stdoutDrain; } catch { }
             if (proc.ExitCode != 0)
-                throw new InvalidOperationException($"ffmpeg exited with code {proc.ExitCode} while capturing DASH stream.");
+                throw new InvalidOperationException($"ffmpeg exited with code {proc.ExitCode} while capturing {streamKind}.");
         }
         else
         {
-            throw new InvalidOperationException("ffmpeg is required to capture DASH streams (.mpd). Please install ffmpeg.");
+            throw new InvalidOperationException($"ffmpeg is required to capture {streamKind}. Please install ffmpeg.");
         }
-
-        session.Token.ThrowIfCancellationRequested();
     }
 
     private async Task RunSingleStreamAsync(Session session, HttpResponseMessage? probeBody)
@@ -1781,7 +1921,9 @@ public sealed class DownloadEngine
     {
         lock (_lock)
         {
-            return _baseLimitKbps;
+            if (_baseLimitKbps > 0 && _schedulerLimitKbps > 0)
+                return Math.Min(_baseLimitKbps, _schedulerLimitKbps);
+            return Math.Max(_baseLimitKbps, _schedulerLimitKbps);
         }
     }
 
@@ -1892,6 +2034,7 @@ public sealed class DownloadEngine
             request.Headers.Referrer = referer;
         bool sameHost = IsSameHost(targetUrl, task.Url);
         // Apply per-task custom headers (e.g. Cookie, Authorization, Referer).
+        bool cookieApplied = false;
         foreach (var kv in task.Headers)
         {
             if (string.IsNullOrWhiteSpace(kv.Key) || string.IsNullOrWhiteSpace(kv.Value))
@@ -1902,10 +2045,20 @@ public sealed class DownloadEngine
             // Session credentials belong to the original host — never forward
             // them to a mirror CDN on a different host.
             if (!sameHost && (kv.Key.Equals("Cookie", StringComparison.OrdinalIgnoreCase) ||
-                              kv.Key.Equals("Authorization", StringComparison.OrdinalIgnoreCase) ||
-                              kv.Key.Equals("Proxy-Authorization", StringComparison.OrdinalIgnoreCase)))
+                               kv.Key.Equals("Authorization", StringComparison.OrdinalIgnoreCase) ||
+                               kv.Key.Equals("Proxy-Authorization", StringComparison.OrdinalIgnoreCase)))
                 continue;
             request.Headers.TryAddWithoutValidation(kv.Key, kv.Value);
+            if (sameHost && kv.Key.Equals("Cookie", StringComparison.OrdinalIgnoreCase))
+                cookieApplied = true;
+        }
+        // MEGA session handoff (1DM ACTION_SET_MEGA_SID): the browser-captured
+        // sid rides as the session cookie on mega.nz hosts only, while fresh, and
+        // only when the task carries no Cookie of its own. Never logged.
+        if (!cookieApplied && CaptureServer.IsMegaHost(targetUrl) &&
+            CaptureServer.TryGetMegaSid(out string? megaSid) && !string.IsNullOrWhiteSpace(megaSid))
+        {
+            request.Headers.TryAddWithoutValidation("Cookie", $"sid={megaSid}");
         }
         // Standard Chrome browser headers reduce Cloudflare/bot-filter false positives (testfile.org etc.)
         request.Headers.TryAddWithoutValidation("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8");
@@ -2297,11 +2450,102 @@ public sealed class DownloadEngine
         }
     }
 
+    /// <summary>Diagnostics of the last HLS remux ffmpeg run (C4 evidence:
+    /// argv is -c copy [+faststart]; exit code + stderr tail included).</summary>
+    public sealed class RemuxInfo
+    {
+        public int ExitCode;
+        public string? StderrTail;
+        public TimeSpan Elapsed;
+        public DateTime At;
+    }
+
+    public static RemuxInfo? LastRemux { get; private set; }
+
     /// <summary>Raised when the file's identity (ETag/Last-Modified/size) changed on the
     /// server between download runs, so resuming would produce a corrupt file.</summary>
     public sealed class FileChangedException : Exception
     {
         public FileChangedException(string message) : base(message) { }
+    }
+
+    /// <summary>Raised when the probe shows the URL serves a web page, not a file
+    /// (1DM Range-probe triage: HTML body branch). Surfaces as Failed with an
+    /// actionable message instead of downloading the page as a corrupt .bin.</summary>
+    public sealed class HtmlPageException : Exception
+    {
+        public HtmlPageException(string message) : base(message) { }
+    }
+
+    /// <summary>Raised when the probe shows a torrent descriptor
+    /// (<c>application/x-bittorrent</c>, 1DM <c>IDLConnect</c> triage). Torrent
+    /// sessions are deferred, so this fails fast with a clear message.</summary>
+    public sealed class TorrentNotSupportedException : Exception
+    {
+        public TorrentNotSupportedException(string message) : base(message) { }
+    }
+
+    /// <summary>1DM-style probe triage on the collected headers (runs after mirrors,
+    /// outside the retry loops so a page/torrent verdict never burns retries).</summary>
+    private static void ThrowIfUnsupportedContent(DownloadTask task, ProbeMeta meta)
+    {
+        string mediaType = (meta.ContentType?.Split(';')[0] ?? "").Trim();
+        if (IsTorrentContentType(mediaType))
+        {
+            meta.ProbeBody?.Dispose();
+            throw new TorrentNotSupportedException(
+                "This link serves a torrent file (.torrent), and torrent downloads aren't supported in WDM yet. " +
+                "Copy the magnet link or wait for torrent support — the descriptor was not saved.");
+        }
+        if (!meta.IsHls && !meta.IsDash && IsHtmlContentType(mediaType) &&
+            !StreamHintIs(task, "HLS", "DASH", "Video", "Stream"))
+        {
+            meta.ProbeBody?.Dispose();
+            throw new HtmlPageException(
+                "This link points to a web page, not a file — the server returned HTML. " +
+                "Open the page in a browser and capture the direct video/file link (WDM extension overlay " +
+                "or \"Resolve in WDM\"), then download that instead.");
+        }
+    }
+
+    internal static bool IsHtmlContentType(string mediaType) =>
+        mediaType.Equals("text/html", StringComparison.OrdinalIgnoreCase) ||
+        mediaType.Equals("application/xhtml+xml", StringComparison.OrdinalIgnoreCase);
+
+    internal static bool IsTorrentContentType(string mediaType) =>
+        mediaType.Contains("x-bittorrent", StringComparison.OrdinalIgnoreCase) ||
+        mediaType.Contains("x-magnet", StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>MEGA session guard: a mega.nz URL that probes empty with no fresh
+    /// captured sid fails fast with a re-capture hint instead of burning retries
+    /// on 401s (1DM sid lifetime).</summary>
+    private static void ThrowIfMegaSessionMissing(DownloadTask task, ProbeMeta meta)
+    {
+        if (!CaptureServer.IsMegaHost(task.Url))
+            return;
+        if (meta.TotalBytes > 0 || !string.IsNullOrWhiteSpace(meta.SuggestedName))
+            return;
+        if (CaptureServer.TryGetMegaSid(out _))
+            return;
+        meta.ProbeBody?.Dispose();
+        throw new InvalidOperationException(
+            "MEGA needs a browser session first: open mega.nz in your browser (logged in), " +
+            "then retry — the extension forwards the session automatically.");
+    }
+
+    /// <summary>1DM <c>FetchUrlMimeType</c> rule: a suggested filename without an
+    /// extension gains one mapped from the Content-Type — unless the type is
+    /// text/plain or application/octet-stream (kept extension-less).</summary>
+    internal static string? ApplyMimeExtensionFallback(string? suggestedName, string? contentType)
+    {
+        if (string.IsNullOrWhiteSpace(suggestedName) || Path.HasExtension(suggestedName))
+            return suggestedName;
+        string mediaType = (contentType?.Split(';')[0] ?? "").Trim();
+        if (mediaType.Equals("text/plain", StringComparison.OrdinalIgnoreCase) ||
+            mediaType.Equals("application/octet-stream", StringComparison.OrdinalIgnoreCase))
+            return suggestedName;
+        string? ext = FileNameHelper.ExtensionFromMime(contentType);
+        return string.IsNullOrEmpty(ext) ? suggestedName : suggestedName + ext;
     }
 
     private sealed record ProbeMeta(
@@ -2418,6 +2662,11 @@ public sealed class DownloadEngine
         }
 
         public int ChunkCount => _chunkCount;
+        public long TotalBytesValue { get { lock (_lock) return _totalBytes; } }
+        public long ChunkSizeBytes { get { lock (_lock) return _chunkSize; } }
+        /// <summary>True when the bitmap came from the sidecar (authoritative);
+        /// false when freshly initialized (a tasks.json snapshot may fill it).</summary>
+        public bool WasLoadedFromDisk { get; private set; }
         public long CompletedBytes
         {
             get
@@ -2490,6 +2739,7 @@ public sealed class DownloadEngine
                         if (loaded._bits.Length == (chunkCount + 7) / 8)
                         {
                             loaded.CountCompleted(ref loaded._completed);
+                            loaded.WasLoadedFromDisk = true;
                             return loaded;
                         }
                     }
@@ -2511,6 +2761,32 @@ public sealed class DownloadEngine
             var fresh = new ChunkState(totalBytes, chunkSize, chunkCount);
             fresh.Save(path);
             return fresh;
+        }
+
+        /// <summary>Restores completion flags from a tasks.json snapshot (A6):
+        /// only when the record count matches this geometry and every index is
+        /// in range; otherwise false and the bitmap is untouched.</summary>
+        public bool TryImportRecords(List<SegmentRecord> records, int chunkCount)
+        {
+            if (records is null || records.Count != chunkCount || chunkCount != _chunkCount)
+                return false;
+            lock (_lock)
+            {
+                foreach (var r in records)
+                {
+                    if (r is null || r.Index < 0 || r.Index >= _chunkCount)
+                        return false;
+                }
+                foreach (var r in records)
+                {
+                    if (r.Done && (_bits[r.Index >> 3] & (1 << (r.Index & 7))) == 0)
+                    {
+                        _bits[r.Index >> 3] |= (byte)(1 << (r.Index & 7));
+                        Interlocked.Increment(ref _completed);
+                    }
+                }
+                return true;
+            }
         }
 
         public bool IsCompleted(int index)

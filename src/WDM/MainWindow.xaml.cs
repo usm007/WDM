@@ -57,8 +57,16 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
 
         _viewModel.TaskCompleted += task =>
         {
-            if (_viewModel.Settings.NotifyOnCompletion)
-                _tray?.ShowBalloon("Done", $"{task.FileName} is ready.");
+            var s = _viewModel.Settings;
+            if (s.NotifyOnCompletion)
+            {
+                if (s.DetailedNotifications)
+                    _tray?.ShowBalloon(task.FileName, "Download complete.");
+                else
+                    _tray?.ShowBalloon("Done", $"{task.FileName} is ready.");
+            }
+            if (s.NotificationSound)
+                MainViewModel.PlayNotificationSound(isError: false);
 
             // Show completion dialog, queueing subsequent completions if one is already open.
             _dispatcher.BeginInvoke(() =>
@@ -70,6 +78,27 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
                 }
                 ShowNextCompleteDialog(task);
             });
+        };
+        _viewModel.NotificationRequested += (task, kind) =>
+        {
+            var s = _viewModel.Settings;
+            switch (kind)
+            {
+                case ViewModels.NotifyKind.Added:
+                    _tray?.ShowBalloon("Added", $"{task.FileName} queued for download.");
+                    break;
+                case ViewModels.NotifyKind.Started:
+                    _tray?.ShowBalloon("Started", $"{task.FileName} started downloading.");
+                    break;
+                case ViewModels.NotifyKind.Failed:
+                    if (s.DetailedNotifications)
+                        _tray?.ShowBalloon(task.FileName, $"Failed: {task.Error ?? "unknown error"}");
+                    else
+                        _tray?.ShowBalloon("Failed", $"{task.FileName}: {task.Error ?? "unknown error"}");
+                    if (s.NotificationSound)
+                        MainViewModel.PlayNotificationSound(isError: true);
+                    break;
+            }
         };
 
         _captureServer = new CaptureServer((url, name, referer, headers, pageTitle) =>
@@ -83,6 +112,9 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
                 ShowAddDialog(url, name, referer, headers, fromCapture: true, pageTitle: pageTitle);
             }));
         _captureServer.Start();
+        _captureServer.OnBatchCapture = items => _dispatcher.BeginInvoke(() => ShowBatchAddDialog(items));
+        _captureServer.OnBlobCaptured = result => _dispatcher.BeginInvoke(() => _viewModel.AddCompletedFile(result));
+        _viewModel.RunStartupMaintenance();
 
         _tray = new TrayIcon();
         _tray.Activated += () => _dispatcher.BeginInvoke(RestoreWindow);
@@ -288,6 +320,21 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
         dialog.Show();
     }
 
+    /// <summary>Batch capture checklist (1DM multi-post dialog equivalent):
+    /// checked links become downloads via a single batched add.</summary>
+    private void ShowBatchAddDialog(List<Services.CaptureServer.BatchCaptureItem> items)
+    {
+        if (items is null || items.Count == 0)
+            return;
+        var dialog = new BatchAddDialog(items) { Owner = this };
+        if (dialog.ShowDialog() == true)
+        {
+            var selected = dialog.GetSelected();
+            if (selected.Count > 0)
+                _viewModel.AddTasks(selected);
+        }
+    }
+
     private void ShowNextCompleteDialog(DownloadTask task)
     {
         var dialog = new DownloadCompleteDialog(task);
@@ -437,9 +484,17 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
         }
     }
 
+    /// <summary>Tray relaunch / second-instance restore: the main (downloads)
+    /// window always appears, no matter which view was open when the window
+    /// was closed to the tray. An already-visible window is only focused —
+    /// its current view is left alone.</summary>
     private void RestoreWindow()
     {
-        Show();
+        if (Visibility != Visibility.Visible)
+        {
+            Show();
+            ShowDownloadsView();
+        }
         WindowState = WindowState.Normal;
         Activate();
         UpdateProgressPanel(null);

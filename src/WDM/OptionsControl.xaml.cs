@@ -37,6 +37,12 @@ public partial class OptionsControl : UserControl
         MaxConcurrentBox.SelectedIndex = Math.Clamp(s.MaxConcurrentDownloads - 1, 0, Math.Max(0, MaxConcurrentBox.Items.Count - 1));
         RetriesBox.SelectedIndex = Math.Clamp(RetryIndex(s.MaxRetries), 0, Math.Max(0, RetriesBox.Items.Count - 1));
         SpeedBox.Text = s.GlobalSpeedLimitKbps.ToString();
+        if (AutoResumeBox != null) AutoResumeBox.IsChecked = s.AutoResumeFailed;
+        if (SchedulerBox != null) SchedulerBox.IsChecked = s.SchedulerEnabled;
+        if (SchedulerStartBox != null) SchedulerStartBox.Text = s.SchedulerStart.ToString(@"hh\:mm");
+        if (SchedulerStopBox != null) SchedulerStopBox.Text = s.SchedulerStop.ToString(@"hh\:mm");
+        if (SchedulerSpeedBox != null) SchedulerSpeedBox.Text = s.SchedulerSpeedLimitKbps.ToString();
+        SetSchedulerDays(s.SchedulerDays);
 
         RouteBox.IsChecked = s.RouteByCategory;
         VideoFolderBox.Text = s.CategoryFolders.GetValueOrDefault(DownloadCategory.Video.ToString()) ?? "";
@@ -47,9 +53,18 @@ public partial class OptionsControl : UserControl
 
         ChecksumBox.IsChecked = s.ComputeChecksum;
         ScriptBox.Text = s.PostDownloadScript ?? "";
+        if (MoveOnFinishBox != null) MoveOnFinishBox.IsChecked = s.MoveOnFinish;
+        if (MoveFolderBox != null) MoveFolderBox.Text = s.MoveOnFinishFolder ?? "";
+        if (RemoveLinkBox != null) RemoveLinkBox.IsChecked = s.RemoveLinkAfterFinish;
+        if (DeleteAfterDaysBox != null) DeleteAfterDaysBox.Text = s.DeleteFinishedLinksAfterDays.ToString();
         HlsContainerBox.SelectedIndex = HlsContainerIndex(s.HlsContainer);
 
         NotifyBox.IsChecked = s.NotifyOnCompletion;
+        if (NotifyAddedBox != null) NotifyAddedBox.IsChecked = s.NotifyOnAdded;
+        if (NotifyStartedBox != null) NotifyStartedBox.IsChecked = s.NotifyOnStarted;
+        if (NotifyErrorBox != null) NotifyErrorBox.IsChecked = s.NotifyOnError;
+        if (NotifySoundBox != null) NotifySoundBox.IsChecked = s.NotificationSound;
+        if (DetailedNotifyBox != null) DetailedNotifyBox.IsChecked = s.DetailedNotifications;
         TrayProgressBox.IsChecked = s.ShowTrayProgress;
         MinimizeToTrayBox.IsChecked = s.MinimizeToTray;
         if (TitleSyncBox != null) TitleSyncBox.IsChecked = s.EnableTitleSync;
@@ -257,6 +272,15 @@ public partial class OptionsControl : UserControl
         s.DefaultChunkCount = ChunksBox?.SelectedItem is ComboBoxItem chunks && chunks.Tag is string tag && int.TryParse(tag, out int c) ? c : 0;
         s.MaxConcurrentDownloads = MaxConcurrentBox?.SelectedItem is ComboBoxItem mc && int.TryParse(mc.Content?.ToString(), out int m) ? m : 3;
         s.MaxRetries = RetriesBox?.SelectedItem is ComboBoxItem r && int.TryParse(ExtractFirstDigit(r.Content?.ToString()!), out int retries) ? retries : 3;
+        if (AutoResumeBox != null) s.AutoResumeFailed = AutoResumeBox.IsChecked == true;
+        if (SchedulerBox != null) s.SchedulerEnabled = SchedulerBox.IsChecked == true;
+        if (SchedulerStartBox != null && TimeSpan.TryParse(SchedulerStartBox.Text?.Trim(), out var sstart))
+            s.SchedulerStart = new TimeSpan(sstart.Hours, sstart.Minutes, 0);
+        if (SchedulerStopBox != null && TimeSpan.TryParse(SchedulerStopBox.Text?.Trim(), out var sstop))
+            s.SchedulerStop = new TimeSpan(sstop.Hours, sstop.Minutes, 0);
+        if (SchedulerSpeedBox != null && long.TryParse(SchedulerSpeedBox.Text?.Trim(), out long sspeed) && sspeed >= 0)
+            s.SchedulerSpeedLimitKbps = Math.Min(sspeed, 1_000_000);
+        s.SchedulerDays = GetSchedulerDays();
         s.GlobalSpeedLimitKbps = long.TryParse(SpeedBox?.Text?.Trim(), out long speed) && speed >= 0 ? speed : 0;
 
         s.RouteByCategory = RouteBox?.IsChecked == true;
@@ -274,11 +298,21 @@ public partial class OptionsControl : UserControl
 
         if (ChecksumBox != null) s.ComputeChecksum = ChecksumBox.IsChecked == true;
         if (ScriptBox != null) s.PostDownloadScript = string.IsNullOrWhiteSpace(ScriptBox.Text) ? null : ScriptBox.Text.Trim();
+        if (MoveOnFinishBox != null) s.MoveOnFinish = MoveOnFinishBox.IsChecked == true;
+        if (MoveFolderBox != null) s.MoveOnFinishFolder = string.IsNullOrWhiteSpace(MoveFolderBox.Text) ? null : MoveFolderBox.Text.Trim();
+        if (RemoveLinkBox != null) s.RemoveLinkAfterFinish = RemoveLinkBox.IsChecked == true;
+        if (DeleteAfterDaysBox != null && int.TryParse(DeleteAfterDaysBox.Text?.Trim(), out int dad) && dad >= 0)
+            s.DeleteFinishedLinksAfterDays = Math.Min(dad, 365);
         if (HlsContainerBox?.SelectedItem is ComboBoxItem hls && hls.Tag is string hlsTag
             && Enum.TryParse<HlsContainer>(hlsTag, out var container))
             s.HlsContainer = container;
 
         if (NotifyBox != null) s.NotifyOnCompletion = NotifyBox.IsChecked == true;
+        if (NotifyAddedBox != null) s.NotifyOnAdded = NotifyAddedBox.IsChecked == true;
+        if (NotifyStartedBox != null) s.NotifyOnStarted = NotifyStartedBox.IsChecked == true;
+        if (NotifyErrorBox != null) s.NotifyOnError = NotifyErrorBox.IsChecked == true;
+        if (NotifySoundBox != null) s.NotificationSound = NotifySoundBox.IsChecked == true;
+        if (DetailedNotifyBox != null) s.DetailedNotifications = DetailedNotifyBox.IsChecked == true;
         if (TrayProgressBox != null) s.ShowTrayProgress = TrayProgressBox.IsChecked == true;
         if (MinimizeToTrayBox != null) s.MinimizeToTray = MinimizeToTrayBox.IsChecked == true;
         if (TitleSyncBox != null) s.EnableTitleSync = TitleSyncBox.IsChecked == true;
@@ -544,6 +578,42 @@ public partial class OptionsControl : UserControl
             FolderBox.Text = dialog.FolderName;
             SaveCurrentSettings();
         }
+    }
+
+    private void MoveFolderBrowseClick(object sender, RoutedEventArgs e)
+    {
+        var dialog = new OpenFolderDialog { InitialDirectory = MoveFolderBox.Text };
+        if (dialog.ShowDialog() == true)
+        {
+            MoveFolderBox.Text = dialog.FolderName;
+            SaveCurrentSettings();
+        }
+    }
+
+    private void SetSchedulerDays(List<DayOfWeek> days)
+    {
+        var set = days is null ? new HashSet<DayOfWeek>() : new HashSet<DayOfWeek>(days);
+        if (SchedulerDayMonday != null) SchedulerDayMonday.IsChecked = set.Contains(DayOfWeek.Monday);
+        if (SchedulerDayTuesday != null) SchedulerDayTuesday.IsChecked = set.Contains(DayOfWeek.Tuesday);
+        if (SchedulerDayWednesday != null) SchedulerDayWednesday.IsChecked = set.Contains(DayOfWeek.Wednesday);
+        if (SchedulerDayThursday != null) SchedulerDayThursday.IsChecked = set.Contains(DayOfWeek.Thursday);
+        if (SchedulerDayFriday != null) SchedulerDayFriday.IsChecked = set.Contains(DayOfWeek.Friday);
+        if (SchedulerDaySaturday != null) SchedulerDaySaturday.IsChecked = set.Contains(DayOfWeek.Saturday);
+        if (SchedulerDaySunday != null) SchedulerDaySunday.IsChecked = set.Contains(DayOfWeek.Sunday);
+    }
+
+    private List<DayOfWeek> GetSchedulerDays()
+    {
+        var days = new List<DayOfWeek>();
+        if (SchedulerDayMonday?.IsChecked == true) days.Add(DayOfWeek.Monday);
+        if (SchedulerDayTuesday?.IsChecked == true) days.Add(DayOfWeek.Tuesday);
+        if (SchedulerDayWednesday?.IsChecked == true) days.Add(DayOfWeek.Wednesday);
+        if (SchedulerDayThursday?.IsChecked == true) days.Add(DayOfWeek.Thursday);
+        if (SchedulerDayFriday?.IsChecked == true) days.Add(DayOfWeek.Friday);
+        if (SchedulerDaySaturday?.IsChecked == true) days.Add(DayOfWeek.Saturday);
+        if (SchedulerDaySunday?.IsChecked == true) days.Add(DayOfWeek.Sunday);
+        // No day checked = window never applies; keep the empty list as-is (explicit).
+        return days;
     }
 
     private void ScriptBrowseClick(object sender, RoutedEventArgs e)

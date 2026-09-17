@@ -12,9 +12,9 @@
   // Video-only allowlist: the floating button lists downloadable video, never audio.
   const VIDEO_FILE_RE = /\.(mp4|m4v|webm|mkv|avi|mov|flv)(\?|$)/i;
   const AUDIO_RE = /\.(mp3|m4a|aac|ogg|opus|flac|wav|wma)(\?|$)/i;
-  const HLS_RE = /(\.m3u8|\/hls\/|\/playlist|\/manifest|\/master\.|\/stream\b|[\?&](format|ext)=m3u8|mime=.*mpegurl)/i;
-  const DASH_RE = /(\.mpd|\/dash\/|\/manifest|\/master\.|[\?&](format|ext)=mpd|mime=.*dash)/i;
-  const STREAM_URL_RE = /(\.m3u8|\.mpd|\.mp4|\.webm|\/manifest|\/playlist|\/master\.|\/stream\b)/i;
+  const HLS_RE = /(\.m3u8|\/hls\/|\/playlist(?=[\/?#]|$)|\/manifest(?=[\/?#]|$)|\/master(?=[\/?#]|$)|\/stream\b|[\?&](format|ext)=m3u8|mime=.*mpegurl)/i;
+  const DASH_RE = /(\.mpd|\/dash\/|\/manifest(?=[\/?#]|$)|\/master(?=[\/?#]|$)|[\?&](format|ext)=mpd|mime=.*dash)/i;
+  const STREAM_URL_RE = /(\.m3u8|\.mpd|\.mp4|\.webm|\/manifest(?=[\/?#]|$)|\/playlist(?=[\/?#]|$)|\/master(?=[\/?#]|$)|\/stream\b)/i;
   const SEGMENT_RE = /\.(ts|m4s|m2ts)(\?|$)/i;
   // Basenames that carry no title (master.m3u8, index-v1-a1.m3u8, ...): labeled
   // from the page title instead so WDM never saves "master.ts".
@@ -53,6 +53,20 @@
       if (d.hint === "HLS" || d.hint === "DASH" || d.hint === "Video") registerMediaStream(d.url, d.hint);
       else sendVerifyMedia(d.url);
     }
+    // MAIN-hook blob observation: page-local URL, verified same-origin below.
+    // Registered for the overlay list — the bytes only move on user click.
+    if (d.type === "WDM_BLOB_MEDIA" && typeof d.url === "string" && d.url.startsWith("blob:")) {
+      try { if (new URL(d.url).origin !== location.origin) return; } catch { return; }
+      registerMediaStream(d.url, "Video");
+    }
+    // MAIN-hook MEGA session id (page localStorage is invisible to this world).
+    if (d.type === "WDM_MEGA_SID" && typeof d.sid === "string") {
+      try {
+        if (webext && webext.runtime && webext.runtime.sendMessage) {
+          webext.runtime.sendMessage({ action: "megaSid", sid: d.sid, host: location.hostname });
+        }
+      } catch {}
+    }
   });
   // Background webRequest hint (for worker/CSP streams not visible to content).
   // Background only forwards verified video kinds, so register directly.
@@ -67,6 +81,29 @@
   injectMainHook();
 
   const detectedStreams = new Map(); // url -> { url, label, type, size, quality, resolution }
+  // Playlist URL -> observed EXT-X-KEY URI (1DM onPotentialM3u8AesKey equivalent).
+  // Filled when a playlist response body is scanned; attached to the download
+  // payload at click time. The desktop engine verifies by fetching — hint only.
+  const playlistKeyHints = new Map();
+  const KEY_URI_RE = /#EXT-X-KEY:[^\r\n]*URI="([^"]+)"/i;
+
+  function scanPlaylistForKey(playlistUrl, text) {
+    try {
+      if (!playlistUrl || typeof text !== "string") return;
+      if (text.length > 65536) text = text.slice(0, 65536);
+      if (text.indexOf("#EXTM3U") < 0 || text.indexOf("#EXT-X-KEY:") < 0) return;
+      const m = KEY_URI_RE.exec(text);
+      if (!m || !m[1]) return;
+      const keyUrl = new URL(m[1], playlistUrl).href;
+      if (/^https?:\/\//i.test(keyUrl)) playlistKeyHints.set(playlistUrl, keyUrl);
+    } catch {}
+  }
+
+  function isPlaylistUrl(url) {
+    try {
+      return /\.m3u8(\?|$)/i.test(url) || /\/(playlist|chunklist)[^?]*(\?|$)/i.test(url);
+    } catch { return false; }
+  }
   const playerOverlays = new Map();  // videoElement -> overlayElement
   let wdmActive = false;
 
@@ -100,6 +137,12 @@
 
   // 2. Dispatch download to WDM
   function sendToWdm(url, label, streamType) {
+    // Page-local blob: fetch here (only this context can read it) and stream
+    // base64 chunks to the desktop app, which imports the bytes as a file.
+    if (typeof url === "string" && url.startsWith("blob:")) {
+      sendBlobToWdm(url, label).catch((e) => console.warn("[WDM] Blob handoff failed:", e));
+      return;
+    }
     const payload = {
       url: url,
       fileName: label || null,
@@ -109,7 +152,8 @@
         "Origin": location.origin
       },
       pageTitle: document.title || null,
-      streamType: streamType || "auto"
+      streamType: streamType || "auto",
+      keyUrl: playlistKeyHints.get(url) || null
     };
 
     try {
@@ -120,6 +164,46 @@
       }
     } catch (e) {
       console.warn("[WDM] Error sending download:", e);
+    }
+  }
+
+  // Blob pipeline (1DM SaveBlobTask equivalent): the page owns its blob: URLs,
+  // so the bytes are read here and posted as ordered base64 chunks. The blob:
+  // URL itself never leaves the page — only bytes + page context travel.
+  const blobInFlight = new Set();
+  function u8ToB64(u8) {
+    let s = "";
+    const CH = 0x8000;
+    for (let i = 0; i < u8.length; i += CH) {
+      s += String.fromCharCode.apply(null, u8.subarray(i, i + CH));
+    }
+    return btoa(s);
+  }
+  async function sendBlobToWdm(blobUrl, label) {
+    if (!blobUrl || blobInFlight.has(blobUrl)) return;
+    blobInFlight.add(blobUrl);
+    try {
+      const resp = await fetch(blobUrl);
+      const blob = await resp.blob();
+      const mime = ((blob && blob.type) || "application/octet-stream").split(";")[0].trim() || "application/octet-stream";
+      const buf = new Uint8Array(await blob.arrayBuffer());
+      if (buf.length === 0) throw new Error("empty blob");
+      const id = "b" + Date.now().toString(36) + Math.floor(Math.random() * 0xffffff).toString(36);
+      const CHUNK = 1024 * 1024;
+      const total = Math.ceil(buf.length / CHUNK);
+      for (let i = 0; i < total; i++) {
+        const slice = buf.subarray(i * CHUNK, Math.min(buf.length, (i + 1) * CHUNK));
+        const res = await webext.runtime.sendMessage({ action: "blobChunk", chunk: {
+          id, seq: i, last: i === total - 1, mime,
+          data: u8ToB64(slice),
+          fileName: label || null, referer: location.href, pageTitle: document.title || null
+        }});
+        if (!res || res.success === false) {
+          throw new Error((res && (res.error || ("status " + res.status))) || "chunk refused");
+        }
+      }
+    } finally {
+      blobInFlight.delete(blobUrl);
     }
   }
 
@@ -563,6 +647,8 @@
     if (!type) return;
 
     let label = customLabel;
+    // Blob URLs carry opaque UUID paths: use the page title, not the UUID.
+    if (!label && url.startsWith("blob:")) label = cleanTitleText(document.title) || "Video";
     if (!label) {
       try {
         const u = new URL(url);
@@ -602,7 +688,13 @@
   // Element srcs with no recognizable video pattern are sent for background
   // verification instead of being listed blindly.
   function checkElementSrc(src) {
-    if (!src || src.startsWith("blob:") || src.startsWith("data:")) return;
+    if (!src || src.startsWith("data:")) return;
+    // Same-origin blob: register for the overlay list; bytes move on click.
+    if (src.startsWith("blob:")) {
+      try { if (new URL(src).origin !== location.origin) return; } catch { return; }
+      registerMediaStream(src, "Video", null);
+      return;
+    }
     if (HLS_RE.test(src) || DASH_RE.test(src) || VIDEO_FILE_RE.test(src)) registerMediaStream(src, null, null);
     else if (!AUDIO_RE.test(src)) sendVerifyMedia(src);
   }
@@ -785,11 +877,18 @@
         } catch {}
         const promise = origFetch.apply(this, args);
         // Clone API/player responses and scan bodies for embedded stream URLs.
+        // Playlist responses are additionally scanned for EXT-X-KEY so the
+        // observed key URL rides along as a verified-fetch hint (B6b).
         try {
-          if (reqUrl && API_BODY_RE.test(reqUrl)) {
+          if (reqUrl && (API_BODY_RE.test(reqUrl) || isPlaylistUrl(reqUrl))) {
             promise.then((resp) => {
               try {
-                resp.clone().text().then(scanBodyForStreams).catch(() => {});
+                resp.clone().text().then((text) => {
+                  try {
+                    if (isPlaylistUrl(reqUrl)) scanPlaylistForKey(reqUrl, text);
+                    if (API_BODY_RE.test(reqUrl)) scanBodyForStreams(text);
+                  } catch {}
+                }).catch(() => {});
               } catch {}
               return resp;
             }).catch(() => {});
@@ -808,12 +907,16 @@
           else if (DASH_RE.test(url)) registerMediaStream(url, "DASH");
           else if (VIDEO_FILE_RE.test(url)) registerMediaStream(url, "Video");
           // Scan API/player response bodies on load.
-          if (API_BODY_RE.test(url)) {
+          if (API_BODY_RE.test(url) || isPlaylistUrl(url)) {
             try {
               this.addEventListener("load", function () {
                 try {
-                  if (typeof this.responseText === "string") scanBodyForStreams(this.responseText);
-                  else if (typeof this.response === "string") scanBodyForStreams(this.response);
+                  const bodyText = typeof this.responseText === "string" ? this.responseText
+                    : (typeof this.response === "string" ? this.response : null);
+                  if (typeof bodyText === "string") {
+                    if (isPlaylistUrl(url)) scanPlaylistForKey(url, bodyText);
+                    if (API_BODY_RE.test(url)) scanBodyForStreams(bodyText);
+                  }
                 } catch {}
               });
             } catch {}

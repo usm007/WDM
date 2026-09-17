@@ -144,6 +144,15 @@ public static class ScreenshotGenerator
             var deleteDialog = new DeleteConfirmDialog("Are you sure you want to delete 2 selected downloads from the list?", true);
             SaveWindowScreenshot(deleteDialog, Path.Combine(targetDir, "10_DeleteConfirmDialog.png"));
 
+            // 10b. BatchAddDialog (batch capture checklist)
+            var batchItems = new List<CaptureServer.BatchCaptureItem>
+            {
+                new() { Url = "https://cdn.example.com/ep1.mp4", FileName = "ep1.mp4" },
+                new() { Url = "https://cdn.example.com/ep2.mp4", FileName = "ep2.mp4" },
+            };
+            var batchDialog = new BatchAddDialog(batchItems);
+            SaveWindowScreenshot(batchDialog, Path.Combine(targetDir, "10b_BatchAddDialog.png"));
+
             // 11. BrowserExtensionDialog
             var extensionDialog = new BrowserExtensionDialog();
             SaveWindowScreenshot(extensionDialog, Path.Combine(targetDir, "11_BrowserExtensionDialog.png"));

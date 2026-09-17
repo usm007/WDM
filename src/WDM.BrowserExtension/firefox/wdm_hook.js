@@ -8,13 +8,38 @@
 
   var VIDEO_FILE_RE = /\.(mp4|m4v|webm|mkv|avi|mov|flv)(\?|$)/i;
   var AUDIO_RE = /\.(mp3|m4a|aac|ogg|opus|flac|wav|wma)(\?|$)/i;
-  var HLS_RE = /(\.m3u8|\/hls\/|\/playlist|\/manifest|\/master\.|\/stream\b|[\?&](format|ext)=m3u8|mime=.*mpegurl)/i;
-  var DASH_RE = /(\.mpd|\/dash\/|\/manifest|\/master\.|[\?&](format|ext)=mpd|mime=.*dash)/i;
+  var HLS_RE = /(\.m3u8|\/hls\/|\/playlist(?=[\/?#]|$)|\/manifest(?=[\/?#]|$)|\/master(?=[\/?#]|$)|\/stream\b|[\?&](format|ext)=m3u8|mime=.*mpegurl)/i;
+  var DASH_RE = /(\.mpd|\/dash\/|\/manifest(?=[\/?#]|$)|\/master(?=[\/?#]|$)|[\?&](format|ext)=mpd|mime=.*dash)/i;
 
   function notify(url, hint) {
     try {
       var target = (window.location.origin && window.location.origin !== "null") ? window.location.origin : "*";
       window.postMessage({ type: "WDM_HOOK_MEDIA", url: url, hint: hint }, target);
+    } catch {}
+  }
+
+  function notifyBlob(url) {
+    try {
+      var target = (window.location.origin && window.location.origin !== "null") ? window.location.origin : "*";
+      window.postMessage({ type: "WDM_BLOB_MEDIA", url: url }, target);
+    } catch {}
+  }
+
+  // MEGA session id (1DM sid-via-JS equivalent): page localStorage is only
+  // readable here in the MAIN world. Re-sent periodically — login may happen
+  // after page load, and the desktop store overwrites idempotently.
+  function reportMegaSid() {
+    try {
+      var h = window.location.hostname || "";
+      if (!/(^|\.)mega\.(nz|co\.nz)$/i.test(h)) return;
+      var sid = null;
+      try {
+        sid = window.localStorage.getItem("sid") || window.localStorage.getItem("u_sid") || window.localStorage.getItem("m_sid");
+      } catch (e) {}
+      if (sid && typeof sid === "string" && sid.length >= 8) {
+        var target = (window.location.origin && window.location.origin !== "null") ? window.location.origin : "*";
+        window.postMessage({ type: "WDM_MEGA_SID", sid: sid }, target);
+      }
     } catch {}
   }
 
@@ -29,13 +54,16 @@
     if (HLS_RE.test(url)) return "HLS";
     if (DASH_RE.test(url)) return "DASH";
     if (VIDEO_FILE_RE.test(url)) return "Video";
-    if (/(\/manifest|\/playlist|\/master\.|\/stream\b)/i.test(url)) return "Stream";
+    if (/(\/manifest|\/playlist|\/master)(?=[\/?#]|$)|\/stream\b/i.test(url)) return "Stream";
     return null;
   }
 
   function checkUrl(url) {
     if (!url || typeof url !== "string") return;
-    if (url.startsWith("data:") || url.startsWith("blob:")) return;
+    if (url.startsWith("data:")) return;
+    // Page-local blob: only the page context can read it — hand to the
+    // content script for click-to-download (bytes never auto-exfiltrate).
+    if (url.startsWith("blob:")) { notifyBlob(url); return; }
     var hint = classify(url);
     if (hint) notify(url, hint);
   }
@@ -61,4 +89,10 @@
     } catch {}
     return origOpen.apply(this, arguments);
   };
+
+  // MEGA sid: once shortly after install (late login) + every 2 minutes.
+  try {
+    setTimeout(reportMegaSid, 3000);
+    setInterval(reportMegaSid, 120000);
+  } catch {}
 })();

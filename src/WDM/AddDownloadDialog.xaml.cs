@@ -21,6 +21,7 @@ public partial class AddDownloadDialog : Window
     private readonly string? _prefillReferer;
     private readonly Dictionary<string, string>? _prefillHeaders;
     private string _lastDerivedName = "";
+    private long _probeTotalBytes = -1;
     private CancellationTokenSource? _probeCts;
     private ResolvedQuery? _lastResolved;
     private List<QualityOption> _ytQualityOptions = new();
@@ -171,7 +172,10 @@ public partial class AddDownloadDialog : Window
         OkButton.IsEnabled = isValid;
         if (DownloadLaterButton != null) DownloadLaterButton.IsEnabled = isValid;
         StartHint.Visibility = isValid ? Visibility.Collapsed : Visibility.Visible;
-        DuplicateWarning.Visibility = _viewModel.ExistingUrl(url) ? Visibility.Visible : Visibility.Collapsed;
+        // Drop the previous URL's probed size: the verdict below is keystroke-time
+        // (size unknown → generic text) and the probe refines it when it lands.
+        _probeTotalBytes = -1;
+        UpdateDuplicateWarning(url);
 
         if (!isValid)
         {
@@ -199,6 +203,33 @@ public partial class AddDownloadDialog : Window
         {
             if (YouTubePanel != null) YouTubePanel.Visibility = Visibility.Collapsed;
             ProbeUrlAsync(url);
+        }
+    }
+
+    /// <summary>Size-aware duplicate warning (1DM <c>i.sh6</c> fingerprint).
+    /// Same URL + same known size: true duplicate. Same URL + different known
+    /// sizes: the link was probably refreshed — still warn, but say so so the user
+    /// doesn't dismiss a fresh link as a dup. Unknown sizes: legacy generic text.</summary>
+    private void UpdateDuplicateWarning(string url)
+    {
+        var existing = _viewModel.FindByUrl(url);
+        if (existing is null)
+        {
+            DuplicateWarning.Visibility = Visibility.Collapsed;
+            return;
+        }
+        DuplicateWarning.Visibility = Visibility.Visible;
+        if (_probeTotalBytes > 0 && existing.TotalBytes > 0 && existing.TotalBytes != _probeTotalBytes)
+        {
+            DuplicateWarning.Text = $"Same link, but the file size changed (was {DownloadTask.FormatBytes(existing.TotalBytes)}, now {DownloadTask.FormatBytes(_probeTotalBytes)}) — the link may have been refreshed.";
+        }
+        else if (_probeTotalBytes > 0 && existing.TotalBytes > 0)
+        {
+            DuplicateWarning.Text = $"This URL is already in your download list (size {DownloadTask.FormatBytes(existing.TotalBytes)} matches).";
+        }
+        else
+        {
+            DuplicateWarning.Text = "This URL is already in your download list.";
         }
     }
 
@@ -416,6 +447,7 @@ public partial class AddDownloadDialog : Window
         ProbeBadge.Visibility = Visibility.Visible;
         ProbeIcon.Symbol = SymbolRegular.ArrowSync24;
         ProbeText.Text = "Inspecting URL capabilities...";
+        _probeTotalBytes = -1;
 
         // Note: embed/player pages are caught via the browser extension (overlay
         // "Resolve in WDM" or auto-captured streams), not by pasting. The engine
@@ -488,6 +520,12 @@ public partial class AddDownloadDialog : Window
 
             if (ct.IsCancellationRequested || !IsLoaded)
                 return;
+
+            _probeTotalBytes = totalBytes;
+            // The probe learned the size after the keystroke handler ran — refresh the
+            // duplicate verdict for the URL that was actually probed.
+            if (string.Equals(UrlBox.Text.Trim(), url, StringComparison.Ordinal))
+                UpdateDuplicateWarning(url);
 
             string sizeStr = totalBytes > 0 ? DownloadTask.FormatBytes(totalBytes) : "Unknown size";
             bool isHls = resp.Content.Headers.ContentType?.MediaType is string mt

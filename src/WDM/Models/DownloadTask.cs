@@ -41,7 +41,7 @@ public sealed class DownloadTask : INotifyPropertyChanged
         _ui = ui ?? Dispatcher.CurrentDispatcher;
     }
 
-    public Guid Id { get; } = Guid.NewGuid();
+    public Guid Id { get; internal set; } = Guid.NewGuid();
     public DateTime AddedAt { get; init; } = DateTime.Now;
 
     public string Url { get; set; } = "";
@@ -70,6 +70,22 @@ public sealed class DownloadTask : INotifyPropertyChanged
     /// different headers) and resumes from the existing progress; it only restarts
     /// from zero if the new file has a different size. Not persisted.</summary>
     public bool LinkRefreshed { get; set; }
+
+    /// <summary>Auto-resume attempts spent by the Failed auto-resume timer (1DM
+    /// always_retry_download, bounded by settings MaxRetries). Transient by design:
+    /// reset on manual retry/success/remove, never mapped into TaskRecord.</summary>
+    public int AutoResumeAttempts { get; set; }
+
+    /// <summary>Set when the scheduler held this task outside its download window.
+    /// Distinguishes scheduler holds from user pauses so window re-entry resumes
+    /// only what the scheduler paused. Cleared by any manual Start. Transient.</summary>
+    public bool SchedulerPaused { get; set; }
+
+    /// <summary>Per-chunk completion snapshot mirrored from the engine's chunk
+    /// bitmap at save time (1DM db/ThreadInfo equivalent, coarse). Restores
+    /// resume progress when the .wdmstate sidecar is lost; the sidecar stays
+    /// authoritative when present. Transient: mapped via TaskRecord only.</summary>
+    public List<Services.SegmentRecord>? SegmentSnapshot { get; set; }
 
     private int _chunkCount = 0;
     public int ChunkCount

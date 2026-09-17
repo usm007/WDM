@@ -173,6 +173,70 @@
                             </ComboBox>
                         </ui:CardControl>
 
+                        <ui:CardControl Margin="0,0,0,4">
+                            <ui:CardControl.Header>
+                                <StackPanel>
+                                    <TextBlock Text="Auto-resume failed downloads" FontWeight="Medium" FontSize="13" Foreground="{DynamicResource Brush.Text}" />
+                                    <TextBlock Text="Re-queue failed downloads about once a minute, up to the retry budget above. Manual pause/cancel always wins." FontSize="11.5" Foreground="{DynamicResource Brush.TextMuted}" Margin="0,2,0,0" TextWrapping="Wrap" MaxWidth="260" />
+                                </StackPanel>
+                            </ui:CardControl.Header>
+                            <ui:ToggleSwitch x:Name="AutoResumeBox" />
+                        </ui:CardControl>
+
+                        <TextBlock Text="Download schedule" FontSize="12.5" FontWeight="SemiBold" Foreground="{DynamicResource Brush.TextDim}" Margin="0,4,0,6" />
+
+                        <ui:CardControl Margin="0,0,0,4">
+                            <ui:CardControl.Header>
+                                <StackPanel>
+                                    <TextBlock Text="Download only in time window" FontWeight="Medium" FontSize="13" Foreground="{DynamicResource Brush.Text}" />
+                                    <TextBlock Text="Hold the queue outside the window; resume on re-entry. Manual start always wins." FontSize="11.5" Foreground="{DynamicResource Brush.TextMuted}" Margin="0,2,0,0" TextWrapping="Wrap" MaxWidth="260" />
+                                </StackPanel>
+                            </ui:CardControl.Header>
+                            <ui:ToggleSwitch x:Name="SchedulerBox" />
+                        </ui:CardControl>
+
+                        <ui:CardControl Margin="0,0,0,4">
+                            <ui:CardControl.Header>
+                                <StackPanel>
+                                    <TextBlock Text="Window start / stop (HH:mm)" FontWeight="Medium" FontSize="13" Foreground="{DynamicResource Brush.Text}" />
+                                    <TextBlock Text="Overnight windows wrap midnight (22:00–07:00). Equal times = all day." FontSize="11.5" Foreground="{DynamicResource Brush.TextMuted}" Margin="0,2,0,0" TextWrapping="Wrap" MaxWidth="260" />
+                                </StackPanel>
+                            </ui:CardControl.Header>
+                            <StackPanel Orientation="Horizontal">
+                                <ui:TextBox x:Name="SchedulerStartBox" Width="80" Height="32" VerticalContentAlignment="Center" FontSize="12" PlaceholderText="22:00" />
+                                <TextBlock Text="–" VerticalAlignment="Center" Margin="6,0" Foreground="{DynamicResource Brush.TextMuted}" />
+                                <ui:TextBox x:Name="SchedulerStopBox" Width="80" Height="32" VerticalContentAlignment="Center" FontSize="12" PlaceholderText="07:00" />
+                            </StackPanel>
+                        </ui:CardControl>
+
+                        <ui:CardControl Margin="0,0,0,4">
+                            <ui:CardControl.Header>
+                                <StackPanel>
+                                    <TextBlock Text="Active days" FontWeight="Medium" FontSize="13" Foreground="{DynamicResource Brush.Text}" />
+                                    <TextBlock Text="The window applies only on checked days." FontSize="11.5" Foreground="{DynamicResource Brush.TextMuted}" Margin="0,2,0,0" />
+                                </StackPanel>
+                            </ui:CardControl.Header>
+                            <WrapPanel Orientation="Horizontal" MaxWidth="200">
+                                <CheckBox x:Name="SchedulerDayMonday" Content="Mo" Margin="0,0,6,4" />
+                                <CheckBox x:Name="SchedulerDayTuesday" Content="Tu" Margin="0,0,6,4" />
+                                <CheckBox x:Name="SchedulerDayWednesday" Content="We" Margin="0,0,6,4" />
+                                <CheckBox x:Name="SchedulerDayThursday" Content="Th" Margin="0,0,6,4" />
+                                <CheckBox x:Name="SchedulerDayFriday" Content="Fr" Margin="0,0,6,4" />
+                                <CheckBox x:Name="SchedulerDaySaturday" Content="Sa" Margin="0,0,6,4" />
+                                <CheckBox x:Name="SchedulerDaySunday" Content="Su" Margin="0,0,6,4" />
+                            </WrapPanel>
+                        </ui:CardControl>
+
+                        <ui:CardControl Margin="0,0,0,12">
+                            <ui:CardControl.Header>
+                                <StackPanel>
+                                    <TextBlock Text="Window speed limit (KB/s)" FontWeight="Medium" FontSize="13" Foreground="{DynamicResource Brush.Text}" />
+                                    <TextBlock Text="Extra bandwidth ceiling inside the window (0 = scheduled full speed)." FontSize="11.5" Foreground="{DynamicResource Brush.TextMuted}" Margin="0,2,0,0" TextWrapping="Wrap" MaxWidth="260" />
+                                </StackPanel>
+                            </ui:CardControl.Header>
+                            <ui:TextBox x:Name="SchedulerSpeedBox" Width="180" Height="32" VerticalContentAlignment="Center" FontSize="12" ToolTip="0 = no extra limit" PlaceholderText="0" />
+                        </ui:CardControl>
+
                         <ui:CardControl Margin="0,0,0,12">
                             <ui:CardControl.Header>
                                 <StackPanel>
@@ -426,6 +490,44 @@
                             </StackPanel>
                         </ui:CardControl>
 
+                        <TextBlock Text="Finish automation" FontSize="12.5" FontWeight="SemiBold" Foreground="{DynamicResource Brush.TextDim}" Margin="0,4,0,6" />
+
+                        <ui:CardControl Margin="0,0,0,4">
+                            <ui:CardControl.Header>
+                                <StackPanel>
+                                    <TextBlock Text="Move files when finished" FontWeight="Medium" FontSize="13" Foreground="{DynamicResource Brush.Text}" />
+                                    <TextBlock Text="Relocate completed files into this folder (collisions get numbered names)." FontSize="11.5" Foreground="{DynamicResource Brush.TextMuted}" Margin="0,2,0,0" TextWrapping="Wrap" MaxWidth="260" />
+                                </StackPanel>
+                            </ui:CardControl.Header>
+                            <StackPanel>
+                                <ui:ToggleSwitch x:Name="MoveOnFinishBox" Margin="0,0,0,6" />
+                                <StackPanel Orientation="Horizontal">
+                                    <ui:TextBox x:Name="MoveFolderBox" Width="180" Height="32" VerticalContentAlignment="Center" FontSize="12" PlaceholderText="Destination folder…" />
+                                    <ui:Button Content="Browse…" Appearance="Secondary" Click="MoveFolderBrowseClick" Margin="8,0,0,0" Height="32" Padding="14,0" />
+                                </StackPanel>
+                            </StackPanel>
+                        </ui:CardControl>
+
+                        <ui:CardControl Margin="0,0,0,4">
+                            <ui:CardControl.Header>
+                                <StackPanel>
+                                    <TextBlock Text="Remove link after finish" FontWeight="Medium" FontSize="13" Foreground="{DynamicResource Brush.Text}" />
+                                    <TextBlock Text="Drop the list entry when a download completes (the file stays on disk)." FontSize="11.5" Foreground="{DynamicResource Brush.TextMuted}" Margin="0,2,0,0" TextWrapping="Wrap" MaxWidth="260" />
+                                </StackPanel>
+                            </ui:CardControl.Header>
+                            <ui:ToggleSwitch x:Name="RemoveLinkBox" />
+                        </ui:CardControl>
+
+                        <ui:CardControl Margin="0,0,0,12">
+                            <ui:CardControl.Header>
+                                <StackPanel>
+                                    <TextBlock Text="Delete finished links after N days" FontWeight="Medium" FontSize="13" Foreground="{DynamicResource Brush.Text}" />
+                                    <TextBlock Text="Auto-remove finished entries older than this (0 = keep). Files stay on disk." FontSize="11.5" Foreground="{DynamicResource Brush.TextMuted}" Margin="0,2,0,0" TextWrapping="Wrap" MaxWidth="260" />
+                                </StackPanel>
+                            </ui:CardControl.Header>
+                            <ui:TextBox x:Name="DeleteAfterDaysBox" Width="180" Height="32" VerticalContentAlignment="Center" FontSize="12" ToolTip="0 = keep finished links" PlaceholderText="0" />
+                        </ui:CardControl>
+
                         <TextBlock Text="System integration &amp; tray" FontSize="12.5" FontWeight="SemiBold" Foreground="{DynamicResource Brush.TextDim}" Margin="0,4,0,6" />
 
                         <ui:CardControl Margin="0,0,0,4">
@@ -436,6 +538,56 @@
                                 </StackPanel>
                             </ui:CardControl.Header>
                             <ui:ToggleSwitch x:Name="NotifyBox" />
+                        </ui:CardControl>
+
+                        <ui:CardControl Margin="0,0,0,4">
+                            <ui:CardControl.Header>
+                                <StackPanel>
+                                    <TextBlock Text="Notify when downloads are added" FontWeight="Medium" FontSize="13" Foreground="{DynamicResource Brush.Text}" />
+                                    <TextBlock Text="Toast when a new download is queued." FontSize="11.5" Foreground="{DynamicResource Brush.TextMuted}" Margin="0,2,0,0" />
+                                </StackPanel>
+                            </ui:CardControl.Header>
+                            <ui:ToggleSwitch x:Name="NotifyAddedBox" />
+                        </ui:CardControl>
+
+                        <ui:CardControl Margin="0,0,0,4">
+                            <ui:CardControl.Header>
+                                <StackPanel>
+                                    <TextBlock Text="Notify when downloads start" FontWeight="Medium" FontSize="13" Foreground="{DynamicResource Brush.Text}" />
+                                    <TextBlock Text="Toast when a queued download begins transferring." FontSize="11.5" Foreground="{DynamicResource Brush.TextMuted}" Margin="0,2,0,0" />
+                                </StackPanel>
+                            </ui:CardControl.Header>
+                            <ui:ToggleSwitch x:Name="NotifyStartedBox" />
+                        </ui:CardControl>
+
+                        <ui:CardControl Margin="0,0,0,4">
+                            <ui:CardControl.Header>
+                                <StackPanel>
+                                    <TextBlock Text="Notify on errors" FontWeight="Medium" FontSize="13" Foreground="{DynamicResource Brush.Text}" />
+                                    <TextBlock Text="Toast with the failure reason when a download fails." FontSize="11.5" Foreground="{DynamicResource Brush.TextMuted}" Margin="0,2,0,0" />
+                                </StackPanel>
+                            </ui:CardControl.Header>
+                            <ui:ToggleSwitch x:Name="NotifyErrorBox" />
+                        </ui:CardControl>
+
+                        <ui:CardControl Margin="0,0,0,4">
+                            <ui:CardControl.Header>
+                                <StackPanel>
+                                    <TextBlock Text="Notification sound" FontWeight="Medium" FontSize="13" Foreground="{DynamicResource Brush.Text}" />
+                                    <TextBlock Text="Play a system sound when a download finishes or fails." FontSize="11.5" Foreground="{DynamicResource Brush.TextMuted}" Margin="0,2,0,0" />
+                                </StackPanel>
+                            </ui:CardControl.Header>
+                            <ui:ToggleSwitch x:Name="NotifySoundBox" />
+                        </ui:CardControl>
+
+                        <ui:CardControl Margin="0,0,0,4">
+                            <ui:CardControl.Header>
+                                <StackPanel>
+                                    <TextBlock Text="Detailed notifications" FontWeight="Medium" FontSize="13" Foreground="{DynamicResource Brush.Text}" />
+                                    <TextBlock Text="Put the file name in the notification title." FontSize="11.5" Foreground="{DynamicResource Brush.TextMuted}" Margin="0,2,0,0" />
+                                </StackPanel>
+                            </ui:CardControl.Header>
+                            <ui:ToggleSwitch x:Name="DetailedNotifyBox" />
                         </ui:CardControl>
 
                         <ui:CardControl Margin="0,0,0,4">

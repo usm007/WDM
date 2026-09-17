@@ -71,43 +71,69 @@ public static class EmbedResolver
         string currentUrl = pageUrl;
         string html = "";
         string? cookieHost = HostOf(pageUrl);
-        // Follow JS/iframe hops before resolving (voe mirrors, f75s frames).
-        for (int hop = 0; hop < 4; hop++)
+        // Bounded frame-tree walk (1DM GrabberTask equivalent): the player often
+        // sits 2-3 frames deep (page → generic frame → /e|/embed player), and
+        // siblings matter. BFS over pages: JS redirects stay at the same depth,
+        // frames go one deeper (max depth 3), total page fetches capped at 10,
+        // everything under the 30s token. SSRF/cookie rules apply per fetch.
+        var visited = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var pageQueue = new Queue<(string Url, int Depth)>();
+        pageQueue.Enqueue((pageUrl, 0));
+        var fetchedPages = new List<(string Url, string Html)>();
+        int fetches = 0;
+        while (pageQueue.Count > 0 && fetches < 10)
         {
+            var (nextUrl, depth) = pageQueue.Dequeue();
+            if (!visited.Add(NormalizePageKey(nextUrl)))
+                continue;
             // Private hop targets are skipped, not followed: keep resolving
-            // from the last good page instead of aborting (BUG-030).
-            if (CaptureServer.IsBlockedResolveTarget(currentUrl))
-                break;
-            html = await GetHtmlAsync(http, currentUrl, referer ?? pageUrl, incomingCookie, jar, cookieHost, token);
-            ThrowIfChallenge(html, currentUrl);
-            string? redirect = EmbedParsers.ExtractJsRedirect(html);
-            if (!string.IsNullOrWhiteSpace(redirect) && !SamePage(redirect, currentUrl))
+            // from the other pages instead of aborting (BUG-030).
+            if (CaptureServer.IsBlockedResolveTarget(nextUrl))
+                continue;
+            string pageHtml;
+            try
             {
-                string next = AbsoluteUrl(currentUrl, redirect);
-                if (CaptureServer.IsBlockedResolveTarget(next))
-                    break;
-                currentUrl = next;
-                // Cookies never cross hosts: a hop to another origin starts
-                // with a clean jar (BUG-030).
-                if (!SameHost(currentUrl, pageUrl))
-                    jar.Clear();
+                pageHtml = await GetHtmlAsync(http, nextUrl, referer ?? pageUrl, incomingCookie, jar, cookieHost, token);
+            }
+            catch (OperationCanceledException) { throw; }
+            catch (EmbedInteractionRequiredException) { throw; }
+            catch
+            {
+                // Dead frame/page: skip it like 1DM's empty-document stub.
                 continue;
             }
-            var frames = EmbedParsers.ExtractIframes(html, currentUrl);
-            string? player = frames.FirstOrDefault(f =>
-                f.Contains("/e/", StringComparison.OrdinalIgnoreCase) ||
-                f.Contains("/embed/", StringComparison.OrdinalIgnoreCase));
-            if (!string.IsNullOrWhiteSpace(player) && !SamePage(player, currentUrl) && hop < 3)
+            fetches++;
+            try { ThrowIfChallenge(pageHtml, nextUrl); } catch (EmbedInteractionRequiredException) { throw; }
+            // Cookies never cross hosts: a hop to another origin starts
+            // with a clean jar (BUG-030).
+            if (!SameHost(nextUrl, pageUrl))
+                jar.Clear();
+            fetchedPages.Add((nextUrl, pageHtml));
+            if (string.IsNullOrWhiteSpace(pageHtml))
+                continue;
+            string? redirect = EmbedParsers.ExtractJsRedirect(pageHtml);
+            if (!string.IsNullOrWhiteSpace(redirect) && !SamePage(redirect, nextUrl))
             {
-                if (CaptureServer.IsBlockedResolveTarget(player))
-                    break;
-                currentUrl = player;
-                if (!SameHost(currentUrl, pageUrl))
-                    jar.Clear();
+                string target = AbsoluteUrl(nextUrl, redirect);
+                if (!CaptureServer.IsBlockedResolveTarget(target))
+                    pageQueue.Enqueue((target, depth));
                 continue;
             }
-            break;
+            if (depth < 3)
+            {
+                foreach (var frame in SelectFrameCandidates(EmbedParsers.ExtractIframes(pageHtml, nextUrl), nextUrl))
+                    pageQueue.Enqueue((frame, depth + 1));
+            }
         }
+
+        if (fetchedPages.Count == 0)
+            return null;
+        // Prefer the most player-like page actually fetched; fall back to the
+        // deepest/last page (closest to the stream), then the entry page.
+        var best = fetchedPages.FirstOrDefault(p => LooksLikePlayerPage(p.Html, p.Url));
+        var chosen = best.Url is null ? fetchedPages[^1] : best;
+        currentUrl = chosen.Url;
+        html = chosen.Html;
 
         string origin = OriginOf(currentUrl);
         string? code = EmbedParsers.ExtractFilecodeFromPath(currentUrl)
@@ -478,6 +504,67 @@ public static class EmbedResolver
     }
 
     // ── small utilities ──────────────────────────────────────────────────
+    /// <summary>Orders frame URLs for the tree walk: /e|/embed player frames first
+    /// (highest hit rate), then remaining same-document frames in order, capped
+    /// at 5 per page. Self-links are skipped. Pure for testing.</summary>
+    internal static List<string> SelectFrameCandidates(List<string> frames, string currentUrl)
+    {
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var ordered = new List<string>();
+        foreach (var f in frames)
+        {
+            if (string.IsNullOrWhiteSpace(f) || !seen.Add(f) || SamePage(f, currentUrl))
+                continue;
+            bool player = f.Contains("/e/", StringComparison.OrdinalIgnoreCase) ||
+                          f.Contains("/embed/", StringComparison.OrdinalIgnoreCase);
+            if (player)
+                ordered.Insert(CountLeadingPlayers(ordered), f);
+            else
+                ordered.Add(f);
+            if (ordered.Count >= 5)
+                break;
+        }
+        return ordered;
+    }
+
+    private static int CountLeadingPlayers(List<string> ordered)
+    {
+        int n = 0;
+        foreach (var f in ordered)
+        {
+            if (f.Contains("/e/", StringComparison.OrdinalIgnoreCase) ||
+                f.Contains("/embed/", StringComparison.OrdinalIgnoreCase))
+                n++;
+            else
+                break;
+        }
+        return n;
+    }
+
+    /// <summary>Heuristic: does this fetched page look like the player (worth
+    /// extracting from)? Generic shape cues only — direct media, sources blocks,
+    /// token blobs, pass handshakes — never host names. Pure for testing.</summary>
+    internal static bool LooksLikePlayerPage(string html, string url)
+    {
+        if (string.IsNullOrWhiteSpace(html))
+            return false;
+        if (url.Contains("/e/", StringComparison.OrdinalIgnoreCase) ||
+            url.Contains("/embed/", StringComparison.OrdinalIgnoreCase))
+            return true;
+        if (EmbedParsers.ExtractDirectMediaUrls(html, url).Count > 0)
+            return true;
+        var (hls, mp4) = EmbedParsers.ExtractSourcesBlock(html);
+        if (!string.IsNullOrWhiteSpace(hls) || !string.IsNullOrWhiteSpace(mp4))
+            return true;
+        if (!string.IsNullOrWhiteSpace(EmbedParsers.ExtractTokenBlob(html)))
+            return true;
+        var (passPath, passToken) = EmbedParsers.ExtractPassMd5(html);
+        if (!string.IsNullOrWhiteSpace(passPath) && !string.IsNullOrWhiteSpace(passToken))
+            return true;
+        return false;
+    }
+
+    private static string NormalizePageKey(string url) => url.Trim().TrimEnd('/');
     private static string? HostOf(string? url)
     {
         if (string.IsNullOrWhiteSpace(url))

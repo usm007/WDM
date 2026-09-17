@@ -62,6 +62,17 @@ public sealed class AppSettings
 
     // Automatic retry
     public int MaxRetries { get; set; } = 3;
+    /// <summary>1DM <c>always_retry_download</c> (default OFF), bounded by
+    /// <see cref="MaxRetries"/> per task: a timer re-queues Failed tasks until
+    /// their per-task budget is spent. User Pause/Cancel/Remove always wins.</summary>
+    public bool AutoResumeFailed { get; set; } = false;
+
+    // Notifications (1DM pref_notification.xml, desktop subset: no vibration/lockscreen)
+    public bool NotifyOnAdded { get; set; } = false;
+    public bool NotifyOnStarted { get; set; } = false;
+    public bool NotifyOnError { get; set; } = true;
+    public bool NotificationSound { get; set; } = true;
+    public bool DetailedNotifications { get; set; } = false;
 
     // Category auto-routing
     public bool RouteByCategory { get; set; } = true;
@@ -75,9 +86,26 @@ public sealed class AppSettings
         { "Other",      Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "Downloads") },
     };
 
+    // Scheduler (1DM util/Scheduler, desktop subset: time window + days + speed cap)
+    public bool SchedulerEnabled { get; set; } = false;
+    public TimeSpan SchedulerStart { get; set; } = new TimeSpan(22, 0, 0);
+    public TimeSpan SchedulerStop { get; set; } = new TimeSpan(7, 0, 0);
+    public long SchedulerSpeedLimitKbps { get; set; } = 0;
+    public List<DayOfWeek> SchedulerDays { get; set; } = new()
+    {
+        DayOfWeek.Monday, DayOfWeek.Tuesday, DayOfWeek.Wednesday, DayOfWeek.Thursday,
+        DayOfWeek.Friday, DayOfWeek.Saturday, DayOfWeek.Sunday,
+    };
+
     // Post-download
     public bool ComputeChecksum { get; set; }
     public string? PostDownloadScript { get; set; }
+
+    // Post-download automation (1DM pref_automation.xml, minus wifi-off: no mobile radio)
+    public bool MoveOnFinish { get; set; } = false;
+    public string? MoveOnFinishFolder { get; set; }
+    public bool RemoveLinkAfterFinish { get; set; } = false;
+    public int DeleteFinishedLinksAfterDays { get; set; } = 0;
 }
 
 /// <summary>
@@ -341,6 +369,34 @@ public sealed class TaskStore
         }
         return new AppSettings();
     }
+    /// <summary>Normalizes a hand-editable folder setting. .NET's
+    /// <see cref="Path.GetInvalidPathChars"/> omits Windows filename bans
+    /// (&lt;&gt;:"|?*), so each non-separator char is checked against
+    /// <see cref="Path.GetInvalidFileNameChars"/> too — a path with those can
+    /// never be created on Windows. Returns false when unusable.</summary>
+    private static bool TryNormalizeFolder(string? path, out string full)
+    {
+        full = "";
+        if (string.IsNullOrWhiteSpace(path))
+            return false;
+        try
+        {
+            full = Path.GetFullPath(path.Trim());
+        }
+        catch { return false; }
+        if (full.IndexOfAny(Path.GetInvalidPathChars()) >= 0)
+            return false;
+        foreach (char c in full)
+        {
+            if (c == Path.DirectorySeparatorChar || c == Path.AltDirectorySeparatorChar)
+                continue;
+            if (c == Path.VolumeSeparatorChar)
+                continue;
+            if (Array.IndexOf(Path.GetInvalidFileNameChars(), c) >= 0)
+                return false;
+        }
+        return true;
+    }
 
     /// <summary>Clamps hand-edited or out-of-range settings to safe values so a
     /// corrupt settings.json can never cause thread explosions, unbounded
@@ -351,19 +407,25 @@ public sealed class TaskStore
         s.MaxRetries = Math.Clamp(s.MaxRetries, 0, 20);
         s.DefaultChunkCount = Math.Clamp(s.DefaultChunkCount, 0, 32);
         s.GlobalSpeedLimitKbps = Math.Clamp(s.GlobalSpeedLimitKbps, 0, 1_000_000);
+        s.SchedulerSpeedLimitKbps = Math.Clamp(s.SchedulerSpeedLimitKbps, 0, 1_000_000);
+        s.DeleteFinishedLinksAfterDays = Math.Clamp(s.DeleteFinishedLinksAfterDays, 0, 365);
+        if (s.SchedulerDays is null)
+            s.SchedulerDays = new AppSettings().SchedulerDays;
+        // An explicitly emptied list is preserved (window never applies); only a
+        // missing list gets the all-days default.
+        if (!string.IsNullOrWhiteSpace(s.MoveOnFinishFolder))
+        {
+            string full;
+            s.MoveOnFinishFolder = TryNormalizeFolder(s.MoveOnFinishFolder, out full) ? full : null;
+        }
         if (string.IsNullOrWhiteSpace(s.DownloadFolder))
             s.DownloadFolder = DownloadTask.DefaultSaveFolder;
         else
         {
-            try
-            {
-                string full = Path.GetFullPath(s.DownloadFolder);
-                if (full.IndexOfAny(Path.GetInvalidPathChars()) >= 0)
-                    s.DownloadFolder = DownloadTask.DefaultSaveFolder;
-                else
-                    s.DownloadFolder = full;
-            }
-            catch { s.DownloadFolder = DownloadTask.DefaultSaveFolder; }
+            string full;
+            s.DownloadFolder = TryNormalizeFolder(s.DownloadFolder, out full)
+                ? full
+                : DownloadTask.DefaultSaveFolder;
         }
         if (s.CategoryFolders is null)
             s.CategoryFolders = new AppSettings().CategoryFolders;
@@ -516,7 +578,7 @@ public sealed class TaskStore
         return salvaged;
     }
 
-    public static void SaveTasks(IEnumerable<DownloadTask> tasks)
+    public static void SaveTasks(IEnumerable<DownloadTask> tasks, Func<DownloadTask, List<SegmentRecord>?>? segmentProvider = null)
     {
         try
         {
@@ -550,6 +612,7 @@ public sealed class TaskStore
             }
             var records = tasks.Select(t => new TaskRecord
             {
+                Id = t.Id,
                 Url = t.Url,
                 SourcePageUrl = t.SourcePageUrl,
                 Referer = t.Referer,
@@ -576,6 +639,7 @@ public sealed class TaskStore
                 YouTubeExtraArgs = t.YouTubeExtraArgs,
                 YouTubeVideoId = t.YouTubeVideoId,
                 ThumbnailUrl = t.ThumbnailUrl,
+                Segments = segmentProvider?.Invoke(t),
             }).ToList();
             AtomicFile.Write(TasksPath, JsonSerializer.Serialize(records, JsonOptions));
         }
@@ -588,6 +652,7 @@ public sealed class TaskStore
 
 public sealed class TaskRecord
 {
+    public Guid Id { get; set; } = Guid.Empty;
     public string Url { get; set; } = "";
     public string? SourcePageUrl { get; set; }
     public string? Referer { get; set; }
@@ -614,4 +679,16 @@ public sealed class TaskRecord
     public string? YouTubeExtraArgs { get; set; }
     public string? YouTubeVideoId { get; set; }
     public string? ThumbnailUrl { get; set; }
+    /// <summary>Per-chunk completion snapshot (1DM ThreadInfo equivalent). Missing
+    /// in old files — tolerated (sidecar remains the resume source).</summary>
+    public List<SegmentRecord>? Segments { get; set; }
+}
+
+/// <summary>One chunk's resume state: byte range plus completion flag.</summary>
+public sealed class SegmentRecord
+{
+    public int Index { get; set; }
+    public long Start { get; set; }
+    public long End { get; set; }
+    public bool Done { get; set; }
 }

@@ -1,0 +1,78 @@
+<Window x:Class="WDM.BatchAddDialog"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
+        Title="Add Multiple Downloads — WDM"
+        Icon="Assets/WDM.ico"
+        Width="560"
+        Height="460"
+        UseLayoutRounding="True"
+        SnapsToDevicePixels="True"
+        WindowStartupLocation="CenterOwner"
+        ResizeMode="CanResize"
+        ShowInTaskbar="False"
+        WindowStyle="None"
+        AllowsTransparency="True"
+        Background="Transparent"
+        MouseLeftButtonDown="Window_MouseLeftButtonDown"
+        TextOptions.TextFormattingMode="Ideal"
+        TextOptions.TextRenderingMode="Auto"
+        RenderOptions.ClearTypeHint="Enabled">
+    <Border Background="{DynamicResource Brush.Surface}"
+            BorderBrush="{DynamicResource Brush.DialogBorder}"
+            BorderThickness="1"
+            CornerRadius="8" Margin="10"
+            SnapsToDevicePixels="True">
+        <Border.Effect>
+            <DropShadowEffect BlurRadius="16" ShadowDepth="1" Direction="270" Color="#000000" Opacity="0.16" RenderingBias="Quality"/>
+        </Border.Effect>
+        <Grid>
+            <Grid.RowDefinitions>
+                <RowDefinition Height="*" />
+                <RowDefinition Height="Auto" />
+            </Grid.RowDefinitions>
+
+            <StackPanel Grid.Row="0" Margin="16,14,16,12">
+                <DockPanel Margin="0,0,0,6" LastChildFill="True">
+                    <Button DockPanel.Dock="Right" Style="{StaticResource Button.DialogClose}" Click="CancelClick" VerticalAlignment="Center" Margin="6,-6,-6,0" />
+                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                        <ui:SymbolIcon Symbol="ArrowDownload24" FontSize="18"
+                                       Foreground="{DynamicResource Brush.Accent}" Margin="0,0,7,0" VerticalAlignment="Center" />
+                        <TextBlock x:Name="TitleText" Text="Add downloads" FontSize="15" FontWeight="SemiBold"
+                                   Foreground="{DynamicResource Brush.Text}" VerticalAlignment="Center" />
+                    </StackPanel>
+                </DockPanel>
+
+                <TextBlock Text="Checked links will be queued for download." FontSize="11.5" Foreground="{DynamicResource Brush.TextDim}" Margin="0,0,0,8" TextWrapping="Wrap" />
+
+                <StackPanel Orientation="Horizontal" Margin="0,0,0,6">
+                    <ui:Button Content="Select all" Appearance="Secondary" Height="28" Padding="12,0" Margin="0,0,8,0" Click="SelectAllClick" />
+                    <ui:Button Content="Select none" Appearance="Secondary" Height="28" Padding="12,0" Click="SelectNoneClick" />
+                </StackPanel>
+
+                <ListBox x:Name="ItemsList" Height="250" SelectionMode="Single"
+                         Background="{DynamicResource Brush.SurfaceAlt}"
+                         BorderBrush="{DynamicResource Brush.Border}" BorderThickness="1">
+                    <ListBox.ItemTemplate>
+                        <DataTemplate>
+                            <CheckBox IsChecked="{Binding IsChecked, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                      Checked="ItemToggled" Unchecked="ItemToggled" Margin="4,3">
+                                <StackPanel>
+                                    <TextBlock Text="{Binding DisplayName}" FontSize="12.5" Foreground="{DynamicResource Brush.Text}" TextTrimming="CharacterEllipsis" MaxWidth="460" />
+                                    <TextBlock Text="{Binding Url}" FontSize="11" Foreground="{DynamicResource Brush.TextMuted}" TextTrimming="CharacterEllipsis" MaxWidth="460" />
+                                </StackPanel>
+                            </CheckBox>
+                        </DataTemplate>
+                    </ListBox.ItemTemplate>
+                </ListBox>
+            </StackPanel>
+
+            <Border Grid.Row="1" Background="{DynamicResource Brush.SurfaceAlt}" BorderBrush="{DynamicResource Brush.Border}" BorderThickness="0,1,0,0" CornerRadius="0,0,7,7" Padding="16,10">
+                <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                    <ui:Button Content="Cancel" Style="{StaticResource Button.SecondaryAction}" MinWidth="85" Height="32" IsCancel="True" Margin="0,0,8,0" Click="CancelClick" />
+                    <ui:Button x:Name="AddButton" Content="Add selected" Style="{StaticResource Button.PrimaryAction}" MinWidth="110" Height="32" IsDefault="True" Click="AddClick" />
+                </StackPanel>
+            </Border>
+        </Grid>
+    </Border>
+</Window>

@@ -11,6 +11,7 @@ namespace WDM.Services;
 public sealed class CaptureServer : IDisposable
 {
     public const int Port = 17530;
+    public int BoundPort { get; }
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
         PropertyNameCaseInsensitive = true,
@@ -26,13 +27,88 @@ public sealed class CaptureServer : IDisposable
     private readonly SemaphoreSlim _throttle = new(20, 20);
     private bool _running;
 
+    /// <summary>Batch capture sink (1DM <c>action_download_list</c>): invoked by
+    /// <c>POST /download/batch</c> with the validated items. Null means the UI
+    /// hasn't registered a batch handler — the endpoint answers 503 so the
+    /// extension can fall back to single posts.</summary>
+    public Action<List<BatchCaptureItem>>? OnBatchCapture { get; set; }
+
+    /// <summary>Assembled-blob sink (1DM SaveBlobTask equivalent): invoked when
+    /// the final <c>blob-chunk</c> completes. The app imports the staged file as
+    /// a finished download. Null answers 503 (chunks are then refused).</summary>
+    public Action<BlobResult>? OnBlobCaptured { get; set; }
+
+    // ── blob assembly (1DM blob: fetch→base64→write) ─────────────────────
+    private readonly object _blobLock = new();
+    private readonly Dictionary<string, BlobSession> _blobs = new(StringComparer.Ordinal);
+    private const int MaxConcurrentBlobs = 4;
+    private const int MaxChunkChars = 4 * 1024 * 1024; // fits the 10MB body cap
+    private const long MaxBlobBytes = 1024L * 1024 * 1024;
+    private static readonly TimeSpan BlobIdleTimeout = TimeSpan.FromMinutes(5);
+
+    private sealed class BlobSession
+    {
+        public List<byte[]> Parts = new();
+        public long TotalBytes;
+        public int ExpectedSeq;
+        public DateTime LastSeen = DateTime.UtcNow;
+        public string Mime = "application/octet-stream";
+        public string? FileName;
+        public string? Referer;
+        public string? PageTitle;
+    }
+
+    /// <summary>MEGA session id captured from the browser (1DM ACTION_SET_MEGA_SID):
+    /// proves the user is logged in at mega.nz so API downloads reuse the session.
+    /// 24h lifetime; re-captured by revisiting mega.nz in the browser.</summary>
+    private static readonly object _megaLock = new();
+    private static string? _megaSid;
+    private static DateTime _megaSidAt;
+    private static readonly TimeSpan MegaSidLifetime = TimeSpan.FromHours(24);
+
+    public static bool TryGetMegaSid(out string? sid)
+    {
+        lock (_megaLock)
+        {
+            if (!string.IsNullOrWhiteSpace(_megaSid) && DateTime.UtcNow - _megaSidAt < MegaSidLifetime)
+            {
+                sid = _megaSid;
+                return true;
+            }
+            sid = null;
+            return false;
+        }
+    }
+
+    internal static void SetMegaSid(string sid)
+    {
+        lock (_megaLock)
+        {
+            _megaSid = sid;
+            _megaSidAt = DateTime.UtcNow;
+        }
+    }
+
+    internal static bool IsMegaHost(string? url)
+    {
+        if (string.IsNullOrWhiteSpace(url) || !Uri.TryCreate(url, UriKind.Absolute, out var uri))
+            return false;
+        string host = uri.Host.ToLowerInvariant();
+        return host == "mega.nz" || host.EndsWith(".mega.nz", StringComparison.Ordinal) ||
+               host == "mega.co.nz" || host.EndsWith(".mega.co.nz", StringComparison.Ordinal);
+    }
+
     public bool IsConnected { get; private set; }
     public event Action? ExtensionConnected;
 
-    public CaptureServer(Action<string, string?, string?, Dictionary<string, string>, string?> onCapture)
+    /// <summary>True while the loopback listener is bound (test hook).</summary>
+    internal bool IsRunning => _running;
+
+    public CaptureServer(Action<string, string?, string?, Dictionary<string, string>, string?> onCapture, int port = Port)
     {
         _onCapture = onCapture;
-        _listener = new TcpListener(IPAddress.Loopback, Port);
+        BoundPort = port;
+        _listener = new TcpListener(IPAddress.Loopback, port);
     }
 
     public void Start()
@@ -227,56 +303,11 @@ public sealed class CaptureServer : IDisposable
                     try
                     {
                         var payload = JsonSerializer.Deserialize<CapturePayload>(body, JsonOptions);
-                        if (payload is null || string.IsNullOrWhiteSpace(payload.Url))
-                            throw new InvalidOperationException("Empty url");
-                        string url = payload.Url.Trim();
-                        if (url.Length > 2048 || !IsAllowedCaptureUrl(url) || (!authed && IsBlockedResolveTarget(url)))
+                        if (payload is null || !TryBuildCaptureItem(payload, authed, out var item) || item is null)
                             throw new InvalidOperationException("Bad url");
-                        string? fileName = SanitizeCaptureFileName(payload.FileName);
-                        string? referer = SanitizeCaptureUrl(payload.Referer, 2048, authed);
-                        string? pageTitle = payload.PageTitle is null ? null :
-                            payload.PageTitle.Trim().Length > 500 ? payload.PageTitle.Trim()[..500] : payload.PageTitle.Trim();
-                        if (string.IsNullOrWhiteSpace(pageTitle))
-                            pageTitle = null;
                         IsConnected = true;
                         ExtensionConnected?.Invoke();
-                        var headers = SanitizeCaptureHeaders(payload.Headers);
-                        // Preserve the extension's stream classification so the engine can
-                        // force HLS/DASH routing even for tokenized manifests without a
-                        // literal .m3u8/.mpd in the URL. "page" means the URL is a player
-                        // page that still needs embed resolution, not a direct download.
-                        if (!string.IsNullOrWhiteSpace(payload.StreamType) &&
-                            (payload.StreamType.Equals("HLS", StringComparison.OrdinalIgnoreCase) ||
-                             payload.StreamType.Equals("DASH", StringComparison.OrdinalIgnoreCase) ||
-                             payload.StreamType.Equals("Stream", StringComparison.OrdinalIgnoreCase) ||
-                             payload.StreamType.Equals("page", StringComparison.OrdinalIgnoreCase)) &&
-                            !headers.ContainsKey("X-WDM-StreamType"))
-                        {
-                            headers["X-WDM-StreamType"] = payload.StreamType;
-                        }
-                        // Player CDNs often gate on Origin; derive it from the Referer
-                        // when the content script didn't supply one.
-                        if (!headers.ContainsKey("Origin") &&
-                            !string.IsNullOrWhiteSpace(referer) &&
-                            Uri.TryCreate(referer, UriKind.Absolute, out var refererUri) &&
-                            (refererUri.Scheme == Uri.UriSchemeHttp || refererUri.Scheme == Uri.UriSchemeHttps))
-                        {
-                            headers["Origin"] = refererUri.GetLeftPart(UriPartial.Authority);
-                        }
-                        // Keep explicit VideoUrl/AudioUrl hints (used by refresh flows)
-                        // reachable downstream via headers when the payload URL is a page.
-                        string? videoHint = SanitizeCaptureUrl(payload.VideoUrl, 2048, authed);
-                        string? audioHint = SanitizeCaptureUrl(payload.AudioUrl, 2048, authed);
-                        if (!string.IsNullOrWhiteSpace(videoHint) && !headers.ContainsKey("X-WDM-VideoUrl"))
-                            headers["X-WDM-VideoUrl"] = videoHint;
-                        if (!string.IsNullOrWhiteSpace(audioHint) && !headers.ContainsKey("X-WDM-AudioUrl"))
-                            headers["X-WDM-AudioUrl"] = audioHint;
-                        // Carry the page title for filename recovery: manifest URLs
-                        // ("master.m3u8") carry no title, so the engine falls back to
-                        // this when the prefill name is still generic.
-                        if (!string.IsNullOrWhiteSpace(pageTitle) && !headers.ContainsKey("X-WDM-PageTitle"))
-                            headers["X-WDM-PageTitle"] = pageTitle;
-                        _onCapture(url, fileName, referer, headers, pageTitle);
+                        _onCapture(item.Url, item.FileName, item.Referer, item.Headers, item.PageTitle);
                         await WriteResponseAsync(stream, HttpStatusCode.OK, "{\"accepted\":true}", origin);
                     }
                     catch
@@ -286,6 +317,138 @@ public sealed class CaptureServer : IDisposable
                     return;
                 }
 
+                // POST /download/batch — 1DM action_download_list equivalent: up to
+                // 50 URLs in one call (social multi-post, page resources, "download
+                // all"). Same origin/auth gates and per-item validation as /download;
+                // per-item failures are reported, valid items still delivered.
+                if (method == "POST" && path == "/download/batch")
+                {
+                    if (IsBrowserWebOrigin(origin))
+                    {
+                        await WriteResponseAsync(stream, HttpStatusCode.Forbidden, "{\"error\":\"forbidden origin\"}", origin);
+                        return;
+                    }
+                    if (!IsAuthorized(origin, authToken))
+                    {
+                        await WriteResponseAsync(stream, HttpStatusCode.Unauthorized, "{\"error\":\"unauthorized — update the WDM browser extension (Settings > Extension)\"}", origin);
+                        return;
+                    }
+                    if (OnBatchCapture is null)
+                    {
+                        await WriteResponseAsync(stream, HttpStatusCode.ServiceUnavailable, "{\"error\":\"batch not supported\"}", origin);
+                        return;
+                    }
+                    bool authed = CaptureAuth.Validate(authToken);
+                    try
+                    {
+                        var batch = JsonSerializer.Deserialize<BatchPayload>(body, JsonOptions);
+                        var items = batch?.Items;
+                        if (items is null || items.Count == 0 || items.Count > 50)
+                            throw new InvalidOperationException("Bad batch");
+                        var accepted = new List<BatchCaptureItem>(items.Count);
+                        var errors = new List<string>();
+                        for (int i = 0; i < items.Count; i++)
+                        {
+                            if (items[i] is null || !TryBuildCaptureItem(items[i], authed, out var item) || item is null)
+                                errors.Add($"item {i}: bad url");
+                            else
+                                accepted.Add(item);
+                        }
+                        if (accepted.Count == 0)
+                            throw new InvalidOperationException("No valid urls");
+                        IsConnected = true;
+                        ExtensionConnected?.Invoke();
+                        OnBatchCapture(accepted);
+                        string resp = JsonSerializer.Serialize(new
+                        {
+                            accepted = accepted.Count,
+                            errors,
+                        }, JsonWriteOptions);
+                        await WriteResponseAsync(stream, HttpStatusCode.OK, resp, origin);
+                    }
+                    catch
+                    {
+                        await WriteResponseAsync(stream, HttpStatusCode.BadRequest, "{\"error\":\"invalid request\"}", origin);
+                    }
+                    return;
+                }
+
+                // POST /download/blob-chunk — 1DM SaveBlobTask equivalent.
+                // The page (only it can read its blob: URLs) fetches → base64s →
+                // posts ordered chunks. Strict sequence order, per-chunk and total
+                // caps, idle expiry; the blob: URL itself never leaves the page.
+                if (method == "POST" && path == "/download/blob-chunk")
+                {
+                    if (IsBrowserWebOrigin(origin))
+                    {
+                        await WriteResponseAsync(stream, HttpStatusCode.Forbidden, "{\"error\":\"forbidden origin\"}", origin);
+                        return;
+                    }
+                    if (!IsAuthorized(origin, authToken))
+                    {
+                        await WriteResponseAsync(stream, HttpStatusCode.Unauthorized, "{\"error\":\"unauthorized — update the WDM browser extension (Settings > Extension)\"}", origin);
+                        return;
+                    }
+                    if (OnBlobCaptured is null)
+                    {
+                        await WriteResponseAsync(stream, HttpStatusCode.ServiceUnavailable, "{\"error\":\"blob not supported\"}", origin);
+                        return;
+                    }
+                    try
+                    {
+                        var chunk = JsonSerializer.Deserialize<BlobChunk>(body, JsonOptions);
+                        var result = await HandleBlobChunkAsync(chunk);
+                        string resp = JsonSerializer.Serialize(result, JsonWriteOptions);
+                        await WriteResponseAsync(stream, HttpStatusCode.OK, resp, origin);
+                    }
+                    catch (InvalidOperationException ex) when (ex.Message.StartsWith("blob-too-large", StringComparison.Ordinal))
+                    {
+                        await WriteResponseAsync(stream, HttpStatusCode.RequestEntityTooLarge, "{\"error\":\"blob too large\"}", origin);
+                    }
+                    catch (InvalidOperationException ex) when (ex.Message.StartsWith("blob-busy", StringComparison.Ordinal))
+                    {
+                        await WriteResponseAsync(stream, (HttpStatusCode)429, "{\"error\":\"too many blobs\"}", origin);
+                    }
+                    catch
+                    {
+                        await WriteResponseAsync(stream, HttpStatusCode.BadRequest, "{\"error\":\"invalid request\"}", origin);
+                    }
+                    return;
+                }
+
+                // POST /download/mega-sid — 1DM ACTION_SET_MEGA_SID equivalent.
+                // Browser-captured MEGA session id (page localStorage, forwarded by
+                // the extension). Stored 24h, attached as the session cookie on
+                // mega.nz hosts only, never logged.
+                if (method == "POST" && path == "/download/mega-sid")
+                {
+                    if (IsBrowserWebOrigin(origin))
+                    {
+                        await WriteResponseAsync(stream, HttpStatusCode.Forbidden, "{\"error\":\"forbidden origin\"}", origin);
+                        return;
+                    }
+                    if (!IsAuthorized(origin, authToken))
+                    {
+                        await WriteResponseAsync(stream, HttpStatusCode.Unauthorized, "{\"error\":\"unauthorized — update the WDM browser extension (Settings > Extension)\"}", origin);
+                        return;
+                    }
+                    try
+                    {
+                        var sid = JsonSerializer.Deserialize<MegaSidPayload>(body, JsonOptions);
+                        if (sid is null || string.IsNullOrWhiteSpace(sid.Sid) ||
+                            sid.Sid.Length is < 8 or > 256 ||
+                            !sid.Sid.All(c => char.IsLetterOrDigit(c) || c is '_' or '-' or '.') ||
+                            !IsMegaHost(sid.Host))
+                            throw new InvalidOperationException("Bad sid");
+                        SetMegaSid(sid.Sid.Trim());
+                        await WriteResponseAsync(stream, HttpStatusCode.OK, "{\"accepted\":true}", origin);
+                    }
+                    catch
+                    {
+                        await WriteResponseAsync(stream, HttpStatusCode.BadRequest, "{\"error\":\"invalid request\"}", origin);
+                    }
+                    return;
+                }
                 // GET /resolve?url=<encoded-url>
                 // Returns available quality tiers for a YouTube (or any yt-dlp-supported) URL.
                 if (method == "GET" && path == "/resolve")
@@ -522,6 +685,188 @@ public sealed class CaptureServer : IDisposable
         return url;
     }
 
+    /// <summary>Validates + sanitizes one capture payload into a <see cref="BatchCaptureItem"/>    /// (URL gates, filename/path stripping, header allow-list, stream hints, Origin
+    /// derivation, page-title carry). Shared by <c>/download</c> and
+    /// <c>/download/batch</c> so both endpoints enforce identical policy.</summary>
+    private static bool TryBuildCaptureItem(CapturePayload payload, bool authed, out BatchCaptureItem? item)
+    {
+        item = null;
+        if (payload is null || string.IsNullOrWhiteSpace(payload.Url))
+            return false;
+        string url = payload.Url.Trim();
+        if (url.Length > 2048 || !IsAllowedCaptureUrl(url) || (!authed && IsBlockedResolveTarget(url)))
+            return false;
+        string? fileName = SanitizeCaptureFileName(payload.FileName);
+        string? referer = SanitizeCaptureUrl(payload.Referer, 2048, authed);
+        string? pageTitle = payload.PageTitle is null ? null :
+            payload.PageTitle.Trim().Length > 500 ? payload.PageTitle.Trim()[..500] : payload.PageTitle.Trim();
+        if (string.IsNullOrWhiteSpace(pageTitle))
+            pageTitle = null;
+        var headers = SanitizeCaptureHeaders(payload.Headers);
+        // Preserve the extension's stream classification so the engine can
+        // force HLS/DASH routing even for tokenized manifests without a
+        // literal .m3u8/.mpd in the URL. "page" means the URL is a player
+        // page that still needs embed resolution, not a direct download.
+        if (!string.IsNullOrWhiteSpace(payload.StreamType) &&
+            (payload.StreamType.Equals("HLS", StringComparison.OrdinalIgnoreCase) ||
+             payload.StreamType.Equals("DASH", StringComparison.OrdinalIgnoreCase) ||
+             payload.StreamType.Equals("Stream", StringComparison.OrdinalIgnoreCase) ||
+             payload.StreamType.Equals("page", StringComparison.OrdinalIgnoreCase)) &&
+            !headers.ContainsKey("X-WDM-StreamType"))
+        {
+            headers["X-WDM-StreamType"] = payload.StreamType;
+        }
+        // Player CDNs often gate on Origin; derive it from the Referer
+        // when the content script didn't supply one.
+        if (!headers.ContainsKey("Origin") &&
+            !string.IsNullOrWhiteSpace(referer) &&
+            Uri.TryCreate(referer, UriKind.Absolute, out var refererUri) &&
+            (refererUri.Scheme == Uri.UriSchemeHttp || refererUri.Scheme == Uri.UriSchemeHttps))
+        {
+            headers["Origin"] = refererUri.GetLeftPart(UriPartial.Authority);
+        }
+        // Keep explicit VideoUrl/AudioUrl hints (used by refresh flows)
+        // reachable downstream via headers when the payload URL is a page.
+        string? videoHint = SanitizeCaptureUrl(payload.VideoUrl, 2048, authed);
+        string? audioHint = SanitizeCaptureUrl(payload.AudioUrl, 2048, authed);
+        if (!string.IsNullOrWhiteSpace(videoHint) && !headers.ContainsKey("X-WDM-VideoUrl"))
+            headers["X-WDM-VideoUrl"] = videoHint;
+        if (!string.IsNullOrWhiteSpace(audioHint) && !headers.ContainsKey("X-WDM-AudioUrl"))
+            headers["X-WDM-AudioUrl"] = audioHint;
+        // Carry the page title for filename recovery: manifest URLs
+        // ("master.m3u8") carry no title, so the engine falls back to
+        // this when the prefill name is still generic.
+        if (!string.IsNullOrWhiteSpace(pageTitle) && !headers.ContainsKey("X-WDM-PageTitle"))
+            headers["X-WDM-PageTitle"] = pageTitle;
+        // Extension-observed HLS key URL (1DM onPotentialM3u8AesKey): a hint the
+        // engine verifies by fetching with scoped credentials — never trusted blindly.
+        string? keyHint = SanitizeCaptureUrl(payload.KeyUrl, 2048, authed);
+        if (!string.IsNullOrWhiteSpace(keyHint) && !headers.ContainsKey("X-WDM-KeyUrl"))
+            headers["X-WDM-KeyUrl"] = keyHint;
+        item = new BatchCaptureItem
+        {
+            Url = url,
+            FileName = fileName,
+            Referer = referer,
+            Headers = headers,
+            PageTitle = pageTitle,
+        };
+        return true;
+    }
+
+    /// <summary>Accepts one ordered base64 blob chunk; on the final chunk assembles
+    /// the bytes into staging and fires <see cref="OnBlobCaptured"/>. Strict order
+    /// (a wrong seq is a 400, session kept for retry), idle sessions expire.</summary>
+    private async Task<BlobChunkResponse> HandleBlobChunkAsync(BlobChunk? chunk)
+    {
+        if (chunk is null || string.IsNullOrWhiteSpace(chunk.Id) || chunk.Id.Length > 64 ||
+            !chunk.Id.All(c => char.IsLetterOrDigit(c) || c is '_' or '-') ||
+            chunk.Seq < 0 || string.IsNullOrEmpty(chunk.Data) || chunk.Data.Length > MaxChunkChars)
+            throw new InvalidOperationException("Bad chunk");
+        string mime = (chunk.Mime ?? "").Split(';')[0].Trim().ToLowerInvariant();
+        if (mime is not ("video/mp4" or "video/webm" or "video/quicktime" or "video/x-matroska" or
+                "video/mp2t" or "audio/mpeg" or "audio/mp4" or "audio/webm" or "image/png" or
+                "image/jpeg" or "image/webp" or "application/octet-stream" or "video/mpeg"))
+            throw new InvalidOperationException("Bad chunk");
+
+        byte[] bytes;
+        try { bytes = Convert.FromBase64String(chunk.Data); }
+        catch { throw new InvalidOperationException("Bad chunk"); }
+        if (bytes.Length == 0)
+            throw new InvalidOperationException("Bad chunk");
+
+        BlobSession session;
+        lock (_blobLock)
+        {
+            SweepIdleBlobsLocked();
+            if (!_blobs.TryGetValue(chunk.Id, out session!))
+            {
+                if (_blobs.Count >= MaxConcurrentBlobs)
+                    throw new InvalidOperationException("blob-busy");
+                session = new BlobSession
+                {
+                    Mime = mime,
+                    FileName = SanitizeCaptureFileName(chunk.FileName),
+                    Referer = SanitizeCaptureUrl(chunk.Referer, 2048, allowPrivate: false),
+                    PageTitle = chunk.PageTitle is null ? null :
+                        chunk.PageTitle.Trim().Length > 500 ? chunk.PageTitle.Trim()[..500] : chunk.PageTitle.Trim(),
+                };
+                _blobs[chunk.Id] = session;
+            }
+            if (chunk.Seq != session.ExpectedSeq)
+                throw new InvalidOperationException("Bad chunk");
+            if (session.TotalBytes + bytes.Length > MaxBlobBytes)
+            {
+                _blobs.Remove(chunk.Id);
+                throw new InvalidOperationException("blob-too-large");
+            }
+            session.Parts.Add(bytes);
+            session.TotalBytes += bytes.Length;
+            session.ExpectedSeq++;
+            session.LastSeen = DateTime.UtcNow;
+        }
+
+        if (!chunk.Last)
+            return new BlobChunkResponse { Received = session.TotalBytes, Staged = false };
+
+        List<byte[]> parts;
+        lock (_blobLock)
+        {
+            _blobs.Remove(chunk.Id);
+            parts = session.Parts;
+        }
+        string staged = await StageBlobAsync(chunk.Id, parts, mime);
+        var result = new BlobResult
+        {
+            StagedPath = staged,
+            FileName = session.FileName,
+            Mime = mime,
+            Referer = session.Referer,
+            PageTitle = string.IsNullOrWhiteSpace(session.PageTitle) ? null : session.PageTitle,
+            TotalBytes = session.TotalBytes,
+        };
+        try { OnBlobCaptured?.Invoke(result); }
+        catch { try { File.Delete(staged); } catch { } throw; }
+        return new BlobChunkResponse { Received = session.TotalBytes, Staged = true, Bytes = session.TotalBytes };
+    }
+
+    private void SweepIdleBlobsLocked()
+    {
+        var now = DateTime.UtcNow;
+        foreach (var id in _blobs.Where(kv => now - kv.Value.LastSeen > BlobIdleTimeout).Select(kv => kv.Key).ToList())
+            _blobs.Remove(id);
+    }
+
+    private static async Task<string> StageBlobAsync(string id, List<byte[]> parts, string mime)
+    {
+        string dir = Path.Combine(TaskStore.AppDir, "blob-staging");
+        Directory.CreateDirectory(dir);
+        string ext = mime switch
+        {
+            "video/mp4" or "video/mpeg" => ".mp4",
+            "video/webm" => ".webm",
+            "video/quicktime" => ".mov",
+            "video/x-matroska" => ".mkv",
+            "video/mp2t" => ".ts",
+            "audio/mpeg" => ".mp3",
+            "audio/mp4" => ".m4a",
+            "audio/webm" => ".webm",
+            "image/png" => ".png",
+            "image/jpeg" => ".jpg",
+            "image/webp" => ".webp",
+            _ => ".bin",
+        };
+        string tmp = Path.Combine(dir, $"blob-{id}.tmp");
+        string staged = Path.Combine(dir, $"blob-{id}{ext}");
+        await using (var fs = new FileStream(tmp, FileMode.Create, FileAccess.Write, FileShare.None))
+        {
+            foreach (var part in parts)
+                await fs.WriteAsync(part);
+        }
+        File.Move(tmp, staged, overwrite: true);
+        return staged;
+    }
+
     private static string? SanitizeCaptureFileName(string? name)
     {
         if (string.IsNullOrWhiteSpace(name))
@@ -551,7 +896,7 @@ public sealed class CaptureServer : IDisposable
         var allowed = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
         {
             "User-Agent", "Referer", "Origin", "Cookie",
-            "X-WDM-StreamType", "X-WDM-VideoUrl", "X-WDM-AudioUrl", "X-WDM-PageTitle",
+            "X-WDM-StreamType", "X-WDM-VideoUrl", "X-WDM-AudioUrl", "X-WDM-PageTitle", "X-WDM-KeyUrl",
         };
         int count = 0;
         foreach (var kv in input)
@@ -746,6 +1091,58 @@ public sealed class CaptureServer : IDisposable
         public string? VideoUrl { get; set; }
         public string? AudioUrl { get; set; }
         public string? PageUrl { get; set; }
+        public string? KeyUrl { get; set; }
+    }
+
+    private sealed class BatchPayload
+    {
+        public List<CapturePayload>? Items { get; set; }
+    }
+
+    /// <summary>One validated batch capture item (1DM download-list entry).</summary>
+    public sealed class BatchCaptureItem
+    {
+        public required string Url { get; set; }
+        public string? FileName { get; set; }
+        public string? Referer { get; set; }
+        public Dictionary<string, string> Headers { get; set; } = new(StringComparer.OrdinalIgnoreCase);
+        public string? PageTitle { get; set; }
+    }
+
+    private sealed class BlobChunk
+    {
+        public string? Id { get; set; }
+        public int Seq { get; set; }
+        public bool Last { get; set; }
+        public string? Mime { get; set; }
+        public string? Data { get; set; }
+        public string? FileName { get; set; }
+        public string? Referer { get; set; }
+        public string? PageTitle { get; set; }
+    }
+
+    private sealed class BlobChunkResponse
+    {
+        public long Received { get; set; }
+        public bool Staged { get; set; }
+        public long Bytes { get; set; }
+    }
+
+    /// <summary>An assembled blob download ready for import as a finished file.</summary>
+    public sealed class BlobResult
+    {
+        public required string StagedPath { get; set; }
+        public string? FileName { get; set; }
+        public string Mime { get; set; } = "application/octet-stream";
+        public string? Referer { get; set; }
+        public string? PageTitle { get; set; }
+        public long TotalBytes { get; set; }
+    }
+
+    private sealed class MegaSidPayload
+    {
+        public string? Sid { get; set; }
+        public string? Host { get; set; }
     }
 
     private sealed class ResolveResponse

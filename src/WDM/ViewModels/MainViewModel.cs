@@ -15,6 +15,16 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
 {
     private readonly Dispatcher _dispatcher;
     private readonly DispatcherTimer _saveTimer;
+    /// <summary>1DM <c>always_retry_download</c>: re-queues Failed tasks until their
+    /// per-task budget (<see cref="DownloadTask.AutoResumeAttempts"/> vs MaxRetries)
+    /// is spent. 60s tick, user Pause/Cancel/Remove always wins.</summary>
+    private readonly DispatcherTimer _autoResumeTimer;
+    /// <summary>Last status per task used to detect Added/Started/Failed transitions
+    /// for notifications (1DM pref_notification toasts). Pruned when tasks leave.</summary>
+    private readonly Dictionary<Guid, TaskStatus> _lastNotifiedStatus = new();
+    /// <summary>1DM Scheduler: holds the queue outside the download window and
+    /// applies the window speed cap. 30s tick; user Start always clears the hold.</summary>
+    private readonly DispatcherTimer _schedulerTimer;
     private readonly Action _onEngineTaskChanged;
     private readonly Action<DownloadTask> _onEngineTaskCompleted;
     private readonly Action<DownloadTask, DownloadEngine.CloudflareBlockedException> _onCloudflareBlocked;
@@ -50,6 +60,10 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
     public event Action<DownloadTask?>? AddTaskRequested;
     public event Action<DownloadTask?>? EditTaskRequested;
     public event Action<DownloadTask>? TaskCompleted;
+    /// <summary>1DM-style event toasts (added/started/error). Completion keeps its
+    /// dedicated <see cref="TaskCompleted"/> path (balloon + dialog). The view plays
+    /// the sound for error kinds when <c>NotificationSound</c> is on.</summary>
+    public event Action<DownloadTask, NotifyKind>? NotificationRequested;
     public event Action<List<double>>? SpeedHistoryUpdated;
     public event Action? AboutRequested;
     /// <summary>Called by any dialog right before ApplyAndRestart so the main
@@ -194,6 +208,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
             var failedTasks = Tasks.Where(t => t.Status == TaskStatus.Failed).ToList();
             foreach (var task in failedTasks)
             {
+                task.AutoResumeAttempts = 0;
                 task.Error = null;
                 task.Eta = "";
                 Engine.Start(task);
@@ -238,6 +253,20 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
             Interval = TimeSpan.FromMilliseconds(1500),
         };
         _saveTimer.Tick += OnSaveTimerTick;
+
+        _autoResumeTimer = new DispatcherTimer
+        {
+            Interval = TimeSpan.FromSeconds(60),
+        };
+        _autoResumeTimer.Tick += (_, _) => OnAutoResumeTick();
+        _autoResumeTimer.Start();
+
+        _schedulerTimer = new DispatcherTimer
+        {
+            Interval = TimeSpan.FromSeconds(30),
+        };
+        _schedulerTimer.Tick += (_, _) => OnSchedulerTick(DateTime.Now);
+        _schedulerTimer.Start();
 
         LoadPersistedTasks();
         UpdateStatus();
@@ -575,6 +604,12 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
                 YouTubeVideoId = record.YouTubeVideoId,
                 ThumbnailUrl = record.ThumbnailUrl,
             };
+            // Stable identity across restarts (A6): old files carry Guid.Empty.
+            if (record.Id != Guid.Empty)
+                task.Id = record.Id;
+            // Segment snapshot: resume fuel when the .wdmstate sidecar is lost.
+            // Validated against live geometry at resume time; sidecar wins ties.
+            task.SegmentSnapshot = (record.Segments is { Count: > 0 } segs) ? segs : null;
             // Embed-resolved tasks persist the player page alongside the (expiring)
             // direct CDN URL; always restart from the page so the engine resolves a
             // fresh signed link instead of reusing a stale one.
@@ -592,10 +627,47 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
         }
     }
 
-    public bool ExistingUrl(string url)
+    public bool ExistingUrl(string url) => FindByUrl(url) is not null;
+
+    /// <summary>Finds the first task for the same normalized URL key
+    /// (1DM <c>i.sh6</c> fingerprint key <c>f3164</c>: same link identity ignoring
+    /// fragment case noise). Returns null when no task references the URL.</summary>
+    public DownloadTask? FindByUrl(string url)
     {
-        string needle = url.Trim();
-        return Tasks.Any(t => string.Equals(t.Url, needle, StringComparison.OrdinalIgnoreCase));
+        string needle = NormalizeUrlKey(url);
+        if (string.IsNullOrEmpty(needle))
+            return null;
+        return Tasks.FirstOrDefault(t => NormalizeUrlKey(t.Url) == needle);
+    }
+
+    /// <summary>Size-aware duplicate check (1DM <c>i.sh6 m3786</c>: same key +
+    /// same expected length <c>f3165</c> = duplicate). Returns the existing task
+    /// when the URL matches but its known size differs from <paramref name="probedBytes"/>
+    /// (both known and unequal) — i.e. the link was probably refreshed and should be
+    /// allowed, not blocked. Returns null when sizes agree/unknown (true duplicate)
+    /// or no URL match at all.</summary>
+    public DownloadTask? FindRefreshedLink(string url, long probedBytes)
+    {
+        var existing = FindByUrl(url);
+        if (existing is null || probedBytes <= 0 || existing.TotalBytes <= 0)
+            return null;
+        return existing.TotalBytes == probedBytes ? null : existing;
+    }
+
+    /// <summary>Normalizes a URL for duplicate identity: trims, drops the fragment,
+    /// case-folds host (and scheme). Falls back to the trimmed string when unparseable.</summary>
+    public static string NormalizeUrlKey(string? url)
+    {
+        string trimmed = (url ?? "").Trim();
+        if (string.IsNullOrEmpty(trimmed))
+            return "";
+        if (Uri.TryCreate(trimmed, UriKind.Absolute, out var uri))
+        {
+            string host = uri.Host.ToLowerInvariant();
+            string port = uri.IsDefaultPort ? "" : ":" + uri.Port;
+            return $"{uri.Scheme.ToLowerInvariant()}://{host}{port}{uri.PathAndQuery}";
+        }
+        return trimmed;
     }
 
     public bool IsDuplicateFile(string fileName, string folderPath)
@@ -814,6 +886,9 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
         }
         task.Category = DownloadTask.Categorize(task.FileName);
         Tasks.Add(task);
+        _lastNotifiedStatus[task.Id] = task.Status;
+        if (Settings.NotifyOnAdded)
+            NotificationRequested?.Invoke(task, NotifyKind.Added);
         ApplyCategoryRouting(task);
         if (task.Status != TaskStatus.Paused)
         {
@@ -851,6 +926,271 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
     }
 
     public void OpenAddDialog() => AddTaskRequested?.Invoke(null);
+
+    /// <summary>Imports an assembled blob (1DM SaveBlobTask write → flow 4.1):
+    /// moves the staged bytes into the download folder and records a finished
+    /// row, then runs the normal completion path (dialog, sound, checksum,
+    /// script, move-on-finish). The blob: URL itself never left the page.</summary>
+    public void AddCompletedFile(CaptureServer.BlobResult blob)
+    {
+        if (!_dispatcher.CheckAccess())
+        {
+            Dispatch(() => AddCompletedFile(blob));
+            return;
+        }
+        try
+        {
+            if (string.IsNullOrWhiteSpace(blob.StagedPath) || !File.Exists(blob.StagedPath))
+                return;
+            string destFolder = Settings.DownloadFolder;
+            try { Directory.CreateDirectory(destFolder); } catch { return; }
+            var carrier = new DownloadTask
+            {
+                Url = "",
+                FileName = Path.GetFileName(blob.StagedPath),
+                Referer = blob.Referer,
+                SaveFolder = Path.GetDirectoryName(blob.StagedPath) ?? destFolder,
+            };
+            if (!PostDownloadActions.TryMoveFinishedFile(carrier, destFolder))
+                return;
+            if (!string.IsNullOrWhiteSpace(blob.FileName))
+            {
+                string named = DownloadEngine.SanitizeFileName(blob.FileName, referer: blob.Referer);
+                if (!string.IsNullOrWhiteSpace(named) && !string.Equals(named, carrier.FileName, StringComparison.OrdinalIgnoreCase))
+                {
+                    string target = Path.Combine(destFolder, PostDownloadActions.UniqueFileName(destFolder, named));
+                    try
+                    {
+                        File.Move(carrier.FullPath, target);
+                        carrier.FileName = Path.GetFileName(target);
+                    }
+                    catch { }
+                }
+            }
+            if (!string.IsNullOrWhiteSpace(blob.PageTitle))
+                carrier.Headers["X-WDM-PageTitle"] = blob.PageTitle;
+            carrier.Category = DownloadTask.Categorize(carrier.FileName);
+            carrier.TotalBytes = blob.TotalBytes;
+            carrier.DownloadedBytes = blob.TotalBytes;
+            carrier.Progress = 100;
+            carrier.Status = TaskStatus.Completed;
+            carrier.CompletedAt = DateTime.Now;
+            Tasks.Add(carrier);
+            _lastNotifiedStatus[carrier.Id] = carrier.Status;
+            SelectedFilter = FilterKind.All;
+            SaveTasksSoon();
+            UpdateStatus();
+            TaskCompleted?.Invoke(carrier);
+            HandlePostDownload(carrier);
+        }
+        catch { }
+        finally
+        {
+            try { if (File.Exists(blob.StagedPath)) File.Delete(blob.StagedPath); } catch { }
+        }
+    }
+
+    /// <summary>Adds a batch of validated capture items (1DM download-list): one
+    /// task per item, started immediately, single save/update, no per-task
+    /// progress dialogs (the batch checklist dialog is the confirmation).</summary>
+    public void AddTasks(IEnumerable<CaptureServer.BatchCaptureItem> items)
+    {
+        if (!_dispatcher.CheckAccess())
+        {
+            Dispatch(() => AddTasks(items));
+            return;
+        }
+        bool any = false;
+        foreach (var item in items)
+        {
+            if (item is null || string.IsNullOrWhiteSpace(item.Url))
+                continue;
+            var task = new DownloadTask
+            {
+                Url = item.Url.Trim(),
+                FileName = item.FileName ?? "",
+                Referer = item.Referer,
+                SaveFolder = Settings.DownloadFolder,
+            };
+            foreach (var kv in item.Headers)
+                task.Headers[kv.Key] = kv.Value;
+            if (!string.IsNullOrWhiteSpace(item.PageTitle))
+                task.Headers["X-WDM-PageTitle"] = item.PageTitle;
+            if (string.IsNullOrWhiteSpace(task.FileName))
+                task.FileName = DownloadEngine.DeriveName(task.Url);
+            else
+                task.FileName = DownloadEngine.SanitizeFileName(task.FileName, referer: task.Referer);
+            task.Category = DownloadTask.Categorize(task.FileName);
+            Tasks.Add(task);
+            _lastNotifiedStatus[task.Id] = task.Status;
+            ApplyCategoryRouting(task);
+            Engine.Start(task);
+            any = true;
+        }
+        if (!any)
+            return;
+        CancelPendingShutdownIfAny();
+        SelectedFilter = FilterKind.All;
+        SaveTasksSoon();
+        UpdateStatus();
+    }
+
+    /// <summary>Collects Failed tasks eligible for auto-resume (1DM always_retry):
+    /// toggle on, per-task attempts below MaxRetries, and a positive retry budget
+    /// (MaxRetries 0 = no automatic retries at all). Pure query — the tick applies it.</summary>
+    internal List<DownloadTask> CollectAutoResumeCandidates()
+    {
+        if (!Settings.AutoResumeFailed || Settings.MaxRetries <= 0)
+            return new();
+        return Tasks.Where(t => t.Status == TaskStatus.Failed && t.AutoResumeAttempts < Settings.MaxRetries).ToList();
+    }
+
+    internal void OnAutoResumeTick()
+    {
+        if (_disposed)
+            return;
+        var candidates = CollectAutoResumeCandidates();
+        if (candidates.Count == 0)
+            return;
+        foreach (var task in candidates)
+        {
+            // Skip tasks the user touched since the failure: only timer-eligible
+            // Failed rows (still Failed, untouched error) are re-queued.
+            if (task.Status != TaskStatus.Failed)
+                continue;
+            task.AutoResumeAttempts++;
+            task.Error = null;
+            task.Eta = "";
+            Engine.Start(task);
+        }
+        SaveTasksSoon();
+        UpdateStatus();
+    }
+
+    /// <summary>Scheduler + prune tick core (testable): applies the window speed
+    /// cap, holds the queue outside the window (marked, resumable on re-entry),
+    /// and prunes finished links past their retention.</summary>
+    internal void OnSchedulerTick(DateTime now)
+    {
+        if (_disposed)
+            return;
+        bool inWindow = Settings.SchedulerEnabled &&
+            SchedulerPolicy.IsInWindow(now, Settings.SchedulerStart, Settings.SchedulerStop, Settings.SchedulerDays);
+        Engine.SchedulerSpeedLimitKbps = inWindow ? Settings.SchedulerSpeedLimitKbps : 0;
+        if (Settings.SchedulerEnabled)
+        {
+            if (!inWindow)
+            {
+                foreach (var task in Tasks.Where(t => t.Status is TaskStatus.Downloading or TaskStatus.Queued).ToList())
+                {
+                    task.SchedulerPaused = true;
+                    Engine.Pause(task);
+                }
+            }
+            else
+            {
+                bool any = false;
+                foreach (var task in Tasks.Where(t => t.SchedulerPaused && t.Status == TaskStatus.Paused).ToList())
+                {
+                    task.SchedulerPaused = false;
+                    task.Error = null;
+                    task.Eta = "";
+                    Engine.Start(task);
+                    any = true;
+                }
+                if (any)
+                {
+                    SaveTasksSoon();
+                    UpdateStatus();
+                }
+            }
+        }
+        PruneFinishedLinks(now);
+    }
+
+    /// <summary>Removes finished links older than the retention (1DM
+    /// delete-links-after-N-days, finished-only): rows only, files stay on disk.
+    /// Returns the removed count.</summary>
+    internal int PruneFinishedLinks(DateTime now)
+    {
+        int days = Settings.DeleteFinishedLinksAfterDays;
+        if (days <= 0)
+            return 0;
+        DateTime cutoff = now.AddDays(-days);
+        var stale = Tasks.Where(t => t.Status == TaskStatus.Completed &&
+                                     t.CompletedAt is DateTime done && done < cutoff).ToList();
+        foreach (var task in stale)
+        {
+            Engine.Remove(task, deleteFiles: false);
+            Tasks.Remove(task);
+        }
+        if (stale.Count > 0)
+        {
+            SaveTasksSoon();
+            UpdateStatus();
+        }
+        return stale.Count;
+    }
+
+    /// <summary>Startup maintenance (called once by the view, never from the
+    /// ctor so tests/designers don't touch user folders): finished-link prune
+    /// plus orphaned sidecar/temp reconciliation on a background thread.</summary>
+    public void RunStartupMaintenance()
+    {
+        if (PersistenceSuppressed)
+            return;
+        try
+        {
+            PruneFinishedLinks(DateTime.Now);
+            var live = Tasks.Select(t => t.FullPath).ToList();
+            var folders = Tasks.Select(t => t.SaveFolder)
+                .Append(Settings.DownloadFolder)
+                .Append(Settings.MoveOnFinishFolder ?? "")
+                .ToList();
+            _ = Task.Run(() => PostDownloadActions.CleanupOrphanedState(live, folders));
+        }
+        catch { }
+    }
+
+    /// <summary>Detects Added/Started/Failed transitions since the last check and
+    /// raises <see cref="NotificationRequested"/> per enabled kind. Called from
+    /// <see cref="OnTasksChanged"/>; unknown tasks register silently (no history).</summary>
+    internal void CheckNotificationTransitions()
+    {
+        var alive = new HashSet<Guid>();
+        foreach (var task in Tasks)
+        {
+            alive.Add(task.Id);
+            if (!_lastNotifiedStatus.TryGetValue(task.Id, out TaskStatus prev))
+            {
+                _lastNotifiedStatus[task.Id] = task.Status;
+                continue;
+            }
+            if (prev == task.Status)
+                continue;
+            _lastNotifiedStatus[task.Id] = task.Status;
+            NotifyKind kind = NotificationCenter.Decide(prev, task.Status, Settings);
+            if (kind != NotifyKind.None)
+                NotificationRequested?.Invoke(task, kind);
+        }
+        // Prune entries for removed tasks so the map can't grow unboundedly.
+        foreach (var id in _lastNotifiedStatus.Keys.Where(k => !alive.Contains(k)).ToList())
+            _lastNotifiedStatus.Remove(id);
+    }
+
+    /// <summary>Plays the desktop notification sound (completion/error only; added/
+    /// started stay silent). MessageBeep via user32: zero-dependency, no audio
+    /// APIs, safe headless (no-op without a sound device).</summary>
+    internal static void PlayNotificationSound(bool isError)
+    {
+        try { MessageBeep(isError ? MB_ICONHAND : MB_ICONASTERISK); } catch { }
+    }
+
+    private const uint MB_ICONASTERISK = 0x40;
+    private const uint MB_ICONHAND = 0x10;
+
+    [System.Runtime.InteropServices.DllImport("user32.dll")]
+    private static extern bool MessageBeep(uint uType);
 
     public void ResumeAll()
     {
@@ -917,6 +1257,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
     {
         if (SelectedTask is not { Status: TaskStatus.Failed } task)
             return;
+        task.AutoResumeAttempts = 0;
         task.Error = null;
         task.Eta = "";
         Engine.Start(task);
@@ -929,6 +1270,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
     public void ApplyLinkRefresh(DownloadTask task, string newUrl)
     {
         Engine.UpdateLink(task, newUrl);
+        task.AutoResumeAttempts = 0;
         task.Error = null;
         task.Eta = "";
         Engine.Start(task);
@@ -1027,6 +1369,22 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
                         Arguments = $"\"{task.FullPath}\"",
                     });
                 }
+            }
+
+            // 1DM pref_automation: move-on-finish, then shell visibility (desktop
+            // MediaScanner), then optional link removal (row only, file stays).
+            if (Settings.MoveOnFinish && !string.IsNullOrWhiteSpace(Settings.MoveOnFinishFolder))
+            {
+                if (PostDownloadActions.TryMoveFinishedFile(task, Settings.MoveOnFinishFolder))
+                    SaveTasksSoon();
+            }
+            PostDownloadActions.NotifyFileCreated(task.FullPath);
+            if (Settings.RemoveLinkAfterFinish)
+            {
+                Engine.Remove(task, deleteFiles: false);
+                Tasks.Remove(task);
+                SaveTasksSoon();
+                UpdateStatus();
             }
         }
         catch (OperationCanceledException)
@@ -1272,7 +1630,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
 
         if (changedAny)
         {
-            TaskStore.SaveTasks(Tasks);
+            TaskStore.SaveTasks(Tasks, Engine.SnapshotSegments);
         }
     }
 
@@ -1311,6 +1669,8 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
         _disposed = true;
         try { _saveTimer.Tick -= OnSaveTimerTick; } catch { }
         try { _saveTimer.Stop(); } catch { }
+        try { _autoResumeTimer.Stop(); } catch { }
+        try { _schedulerTimer.Stop(); } catch { }
         try { Engine.TaskChanged -= _onEngineTaskChanged; } catch { }
         try { Engine.TaskCompleted -= _onEngineTaskCompleted; } catch { }
         try { Engine.CloudflareBlocked -= _onCloudflareBlocked; } catch { }
@@ -1328,7 +1688,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
             _dispatcher.BeginInvoke(SaveTasks);
             return;
         }
-        TaskStore.SaveTasks(Tasks);
+        TaskStore.SaveTasks(Tasks, Engine.SnapshotSegments);
         UpdateStatus();
     }
 
@@ -1375,6 +1735,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
         RefreshFilterCounts();
         CommandManager.InvalidateRequerySuggested();
         OnPropertyChanged(nameof(HasNoTasks));
+        CheckNotificationTransitions();
         UpdateStatus();
         SaveTasksSoon();
     }
@@ -1737,11 +2098,67 @@ public sealed class FilterItem : INotifyPropertyChanged
 }
 
 /// <summary>Carries a pending destructive delete to the view for confirmation.
-/// The view sets <see cref="DeleteFromDisk"/> to the user's choice; null means cancelled.</summary>
+/// The view sets <see cref="DeletePromptRequest.DeleteFromDisk"/> to the user's choice; null means cancelled.</summary>
 public sealed class DeletePromptRequest
 {
     public required string Message { get; init; }
     public required bool DiskChecked { get; init; }
     public bool? DeleteFromDisk { get; set; }
+}
+
+/// <summary>Notification event kinds (1DM pref_notification toasts, desktop subset).
+/// Completion keeps its dedicated TaskCompleted path.</summary>
+public enum NotifyKind
+{
+    None,
+    Added,
+    Started,
+    Failed,
+}
+
+/// <summary>Pure transition policy for event toasts: maps a status change plus
+/// settings to a <see cref="NotifyKind"/>. Kept side-effect free for testing;
+/// the view layer renders the balloon and plays the sound.</summary>
+public static class NotificationCenter
+{
+    public static NotifyKind Decide(TaskStatus previous, TaskStatus current, AppSettings settings)
+    {
+        if (previous == current)
+            return NotifyKind.None;
+        if (current == TaskStatus.Downloading && settings.NotifyOnStarted)
+            return NotifyKind.Started;
+        if (current == TaskStatus.Failed && settings.NotifyOnError)
+            return NotifyKind.Failed;
+        return NotifyKind.None;
+    }
+}
+
+/// <summary>Pure scheduler-window policy (1DM util/Scheduler time part): is
+/// <paramref name="now"/> inside the download window on an enabled day?
+/// Overnight windows (start &gt; stop) wrap midnight; start == stop = all day.
+/// Side-effect free for testing; the tick applies it.</summary>
+public static class SchedulerPolicy
+{
+    public static bool IsInWindow(DateTime now, TimeSpan start, TimeSpan stop, List<DayOfWeek>? days)
+    {
+        if (days is null)
+        {
+            // Legacy/unknown: no day restriction.
+        }
+        else if (days.Count == 0)
+        {
+            return false; // explicitly unchecked every day: window never applies.
+        }
+        else if (!days.Contains(now.DayOfWeek))
+        {
+            return false;
+        }
+        TimeSpan t = now.TimeOfDay;
+        if (start == stop)
+            return true;
+        if (start < stop)
+            return t >= start && t < stop;
+        return t >= start || t < stop;
+    }
 }
 

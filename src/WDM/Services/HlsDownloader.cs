@@ -10,7 +10,20 @@ namespace WDM.Services;
 /// </summary>
 public static class HlsDownloader
 {
-    private sealed class Segment
+    /// <summary>Raised when the playlist uses packaged sample encryption
+    /// (SAMPLE-AES etc.): segment CBC decrypt can't handle it, the engine must
+    /// retry via ffmpeg-direct which decrypts during mux.</summary>
+    public sealed class HlsPackagedStreamException : Exception
+    {
+        public string Method { get; }
+        public HlsPackagedStreamException(string method)
+            : base($"This stream uses {method} sample encryption, which segment download can't decrypt. Retrying via the ffmpeg path.")
+        {
+            Method = method;
+        }
+    }
+
+    internal sealed class Segment
     {
         public string Uri = "";
         public string? KeyUri;
@@ -20,15 +33,31 @@ public static class HlsDownloader
         public long Length;
     }
 
-    private sealed class Playlist
+    internal sealed class Playlist
     {
         public List<Segment> Segments = new();
         public string? InitUri;
         public long TotalBytes;
+        /// <summary>An EXT-X-KEY METHOD other than AES-128/NONE was seen
+        /// (e.g. SAMPLE-AES): segments are packaged-encrypted and need ffmpeg.</summary>
+        public bool HasUnsupportedEncryption;
+        public string? UnsupportedMethod;
     }
 
     private const int MaxConcurrentSegments = 8;
     private const int MaxRetries = 4;
+
+    /// <summary>Diagnostics of the last TS concat (C4 merge-path evidence:
+    /// segment order/count are playlist order by construction).</summary>
+    public sealed class MergeInfo
+    {
+        public int Segments;
+        public long Bytes;
+        public TimeSpan Elapsed;
+        public DateTime At;
+    }
+
+    public static MergeInfo? LastMerge { get; private set; }
 
     public static async Task DownloadAsync(
         HttpClient http,
@@ -42,6 +71,11 @@ public static class HlsDownloader
         Dictionary<string, string>? headers = null)
     {
         var playlist = await ResolvePlaylistAsync(http, manifestUrl, referer, headers, ct);
+
+        // Packaged encryption (SAMPLE-AES et al.): segment-level CBC decrypt
+        // cannot handle it. The engine catches this and retries via ffmpeg-direct.
+        if (playlist.HasUnsupportedEncryption)
+            throw new HlsPackagedStreamException(playlist.UnsupportedMethod ?? "unknown");
 
         // Pre-download the fMP4 init segment (EXT-X-MAP) and any encryption keys.
         byte[]? initSegment = null;
@@ -112,6 +146,7 @@ public static class HlsDownloader
 
             // Concatenate in playlist order.
             bool concatenationComplete = false;
+            var concatSw = System.Diagnostics.Stopwatch.StartNew();
             try
             {
                 await using var output = new FileStream(outputFile, FileMode.Create, FileAccess.Write, FileShare.Read);
@@ -129,11 +164,23 @@ public static class HlsDownloader
             }
             finally
             {
+                concatSw.Stop();
                 if (!concatenationComplete)
                 {
                     try { File.Delete(outputFile); } catch { }
                 }
             }
+            try
+            {
+                LastMerge = new MergeInfo
+                {
+                    Segments = playlist.Segments.Count,
+                    Bytes = File.Exists(outputFile) ? new FileInfo(outputFile).Length : 0,
+                    Elapsed = concatSw.Elapsed,
+                    At = DateTime.Now,
+                };
+            }
+            catch { }
         }
         finally
         {
@@ -410,11 +457,10 @@ public static class HlsDownloader
         yield return attrList.Substring(start);
     }
 
-    private static Playlist? ParsePlaylist(string text, string baseUrl)
+    internal static Playlist? ParsePlaylist(string text, string baseUrl)
     {
         const int maxSegments = 10000;
-        var result = new Playlist();
-        string? keyUri = null;
+        var result = new Playlist();        string? keyUri = null;
         string? keyIv = null;
         long mediaSequence = 0;
         bool haveMediaSequence = false;
@@ -422,9 +468,23 @@ public static class HlsDownloader
 
         string[] lines = text.Split('\n');
         int segmentOrdinal = 0;
+        bool sawExtM3U = false;
         for (int i = 0; i < lines.Length; i++)
         {
             string line = lines[i].Trim();
+            if (!sawExtM3U)
+            {
+                // The playlist magic must come first: without it this is not a
+                // playlist (BUG: a ZIP misclassified as HLS had its binary split
+                // into garbage "segment" lines → segment fetches 404). BOM and
+                // leading blanks are tolerated; anything else aborts the parse.
+                if (line.Length == 0)
+                    continue;
+                if (!line.TrimStart('\uFEFF').StartsWith("#EXTM3U", StringComparison.OrdinalIgnoreCase))
+                    return null;
+                sawExtM3U = true;
+                continue;
+            }
             if (line.StartsWith("#EXT-X-KEY:", StringComparison.OrdinalIgnoreCase))
             {
                 string method = GetAttribute(line, "METHOD") ?? "NONE";
@@ -437,6 +497,14 @@ public static class HlsDownloader
                 {
                     keyUri = null;
                     keyIv = null;
+                    // SAMPLE-AES and friends encrypt packaged samples, not whole
+                    // segments: CBC segment decrypt can't handle them. Flag for
+                    // the ffmpeg-direct fallback instead of silently clearing.
+                    if (!method.Equals("NONE", StringComparison.OrdinalIgnoreCase))
+                    {
+                        result.HasUnsupportedEncryption = true;
+                        result.UnsupportedMethod ??= method;
+                    }
                 }
                 continue;
             }
@@ -539,19 +607,66 @@ public static class HlsDownloader
     private static async Task PrepareKeysAsync(
         HttpClient http, string manifestUrl, string? referer, Dictionary<string, string>? headers, Playlist playlist, CancellationToken ct)
     {
+        // Extension-forwarded key URL (1DM onPotentialM3u8AesKey equivalent):
+        // a hint, not trust — the playlist URI wins, the hint is only fetched
+        // (with the same scoped credentials) when the playlist key fails.
+        string? keyHint = null;
+        if (headers is not null && headers.TryGetValue("X-WDM-KeyUrl", out var hint) && !string.IsNullOrWhiteSpace(hint))
+            keyHint = hint.Trim();
         var keyCache = new Dictionary<string, byte[]>(StringComparer.Ordinal);
         foreach (var seg in playlist.Segments)
         {
-            if (!string.IsNullOrEmpty(seg.KeyUri))
+            // Only playlist-declared keys: a hint must never encrypt a segment
+            // the playlist marks clear (e.g. after a METHOD=NONE rotation).
+            if (string.IsNullOrEmpty(seg.KeyUri))
+                continue;
+            string? primary = SelectKeyUrl(seg.KeyUri, null, manifestUrl);
+            string? fallback = SelectKeyUrl(null, keyHint, manifestUrl);
+            // Playlist without a usable URI but with a hint: hint becomes primary.
+            primary ??= fallback;
+            if (string.IsNullOrEmpty(primary))
+                continue;
+            string cacheKey = primary;
+            if (!keyCache.TryGetValue(cacheKey, out var key))
             {
-                if (!keyCache.TryGetValue(seg.KeyUri, out var key))
-                {
-                    key = await DownloadBytesAsync(http, ResolveUrl(manifestUrl, seg.KeyUri), referer, headers, ct);
-                    keyCache[seg.KeyUri] = key;
-                }
-                seg.Key = key;
+                key = await DownloadKeyWithFallbackAsync(http, primary, fallback, referer, headers, ct);
+                keyCache[cacheKey] = key;
             }
+            seg.Key = key;
         }
+    }
+
+    private static async Task<byte[]> DownloadKeyWithFallbackAsync(
+        HttpClient http, string primary, string? fallback, string? referer,
+        Dictionary<string, string>? headers, CancellationToken ct)
+    {
+        try
+        {
+            return await DownloadBytesAsync(http, primary, referer, headers, ct);
+        }
+        catch (Exception ex) when (fallback is not null && !fallback.Equals(primary, StringComparison.Ordinal) &&
+                                   (ex is HttpRequestException || ex is IOException || ex is TaskCanceledException))
+        {
+            // Playlist key dead (rotated/geo-blocked): one retry with the
+            // extension-observed URL before giving up.
+            return await DownloadBytesAsync(http, fallback, referer, headers, ct);
+        }
+    }
+
+    /// <summary>Selects the key URL to fetch: the playlist URI resolved against
+    /// the manifest wins; otherwise an absolute http(s) hint. Pure for testing.</summary>
+    internal static string? SelectKeyUrl(string? playlistKeyUri, string? hintKeyUrl, string manifestUrl)
+    {
+        if (!string.IsNullOrWhiteSpace(playlistKeyUri))
+        {
+            try { return ResolveUrl(manifestUrl, playlistKeyUri.Trim()); }
+            catch { }
+        }
+        if (!string.IsNullOrWhiteSpace(hintKeyUrl) &&
+            Uri.TryCreate(hintKeyUrl.Trim(), UriKind.Absolute, out var hint) &&
+            (hint.Scheme == Uri.UriSchemeHttp || hint.Scheme == Uri.UriSchemeHttps))
+            return hint.ToString();
+        return null;
     }
 
     private static async Task<long> DownloadSegmentAsync(
