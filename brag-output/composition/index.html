@@ -1,0 +1,360 @@
+<!doctype html>
+<html lang="en" data-resolution="landscape">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=1920, height=1080" />
+<script src="https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js"></script>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{margin:0;width:1920px;height:1080px;overflow:hidden;background:#202020}
+#root{width:100%;height:100%;position:relative;overflow:hidden;background:#202020;
+font-family:"Segoe UI",Inter,system-ui,-apple-system,sans-serif;color:#F2F2F2}
+.scene{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;flex-direction:column;padding:40px}
+.eyebrow{font-size:30px;letter-spacing:12px;color:#A8A8A8;font-weight:600}
+.h-hook{font-size:88px;font-weight:600;letter-spacing:-1px;color:#F2F2F2;margin-top:26px;text-align:center}
+.bar-track{width:640px;height:12px;border-radius:999px;background:#383838;margin-top:54px;overflow:hidden}
+.bar-fill{width:100%;height:100%;border-radius:999px;background:linear-gradient(90deg,#1A6AFE,#0B52D9);transform:scaleX(0);transform-origin:left center}
+.hero-glow{position:absolute;width:1100px;height:1100px;border-radius:50%;left:410px;top:-120px;
+background:radial-gradient(circle,rgba(24,101,242,.20) 0%,rgba(24,101,242,0) 62%);pointer-events:none}
+.hook-logo{width:120px;height:120px;margin-bottom:28px}
+.cap{font-size:60px;font-weight:600;color:#F2F2F2;text-align:center}
+.sub{font-size:29px;color:#A8A8A8;margin-top:12px;text-align:center}
+/* ---- recreated MainWindow ---- */
+.window{width:1500px;background:#202020;border:1px solid #3E3E3E;border-radius:14px;overflow:hidden;margin-top:30px;
+box-shadow:0 24px 80px rgba(0,0,0,.55)}
+.w-titlebar{display:flex;align-items:center;gap:12px;padding:0 18px;height:54px;border-bottom:1px solid #333333}
+.w-titlebar img{width:26px;height:26px}
+.w-titlebar .t{font-size:25px;font-weight:600;color:#F2F2F2}
+.w-titlebar .sp{flex:1}
+.wm{font-size:22px;color:#A8A8A8;width:52px;text-align:center}
+.w-toolbar{display:flex;align-items:center;gap:10px;padding:0 18px;height:74px;border-bottom:1px solid #333333}
+.btn-add{display:flex;align-items:center;gap:10px;background:#1865F2;color:#fff;font-size:26px;font-weight:600;
+border:none;border-radius:9px;padding:12px 26px}
+.tbtn{width:52px;height:52px;border-radius:9px;display:flex;align-items:center;justify-content:center;
+font-size:24px;color:#CCCCCC;background:transparent;border:none}
+.w-search{margin-left:auto;display:flex;align-items:center;gap:10px;background:#2B2B2B;border:1px solid #3E3E3E;
+border-radius:8px;padding:10px 16px;width:420px}
+.w-search .ph{font-size:23px;color:#A8A8A8}
+.w-search .ct{font-size:20px;color:#9E9E9E;margin-left:auto;border:1px solid #3E3E3E;border-radius:6px;padding:3px 12px}
+.w-body{display:flex;height:480px}
+.w-side{width:250px;flex:none;background:#1C1C1C;padding:12px 10px}
+.sitem{display:flex;align-items:center;gap:14px;font-size:24px;color:#CCCCCC;border-radius:8px;
+padding:0 16px;height:42px}
+.sitem.sel{background:#3D3D3D;color:#fff;font-weight:600}
+.sitem .ic{width:26px;text-align:center}
+.sdiv{height:1px;background:#333333;margin:8px 12px}
+.w-main{flex:1;display:flex;flex-direction:column;min-width:0}
+.w-head{display:flex;align-items:center;padding:0 22px;height:38px;flex:none;
+font-size:21px;font-weight:600;color:#A8A8A8;border-bottom:1px solid #333333}
+.wrow{display:flex;align-items:center;gap:18px;padding:0 22px;height:110px;flex:none;border-bottom:1px solid #2B2B2B}
+.ficon{width:52px;height:52px;border-radius:11px;display:flex;align-items:center;justify-content:center;
+font-size:21px;font-weight:700;color:#fff;flex:none}
+.fmeta{width:430px;flex:none;min-width:0}
+.fname{font-size:26px;font-weight:600;color:#F2F2F2;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.fsub{font-size:21px;color:#A8A8A8;margin-top:3px}
+.fsub.err{color:#F05252}
+.fpct{width:130px;flex:none;font-size:26px;font-weight:700;text-align:right}
+.fsize{width:280px;flex:none;font-size:24px;color:#CCCCCC;text-align:right}
+.fopen{width:52px;flex:none;font-size:24px;color:#A8A8A8;text-align:center}
+.pill{display:inline-block;font-size:20px;font-weight:600;padding:6px 18px;border-radius:999px;margin-top:6px}
+.pill.active{background:#1B293E;color:#7FB3FF}
+.pill.complete{background:#18382A;color:#34D399}
+.pill.paused{background:#382C18;color:#FBBF24}
+.pill.failed{background:#381A1D;color:#F05252}
+.fbar{position:absolute;left:0;bottom:0;height:5px;border-radius:999px;
+background:linear-gradient(90deg,#1A6AFE,#0B52D9);transform:scaleX(0);transform-origin:left center}
+.fbar.done{background:#10B981}
+.rowwrap{position:relative}
+.w-status{display:flex;align-items:center;padding:0 22px;height:38px;flex:none;border-top:1px solid #333333;
+font-size:21px}
+.w-status .l{color:#A8A8A8}
+.w-status .l b{color:#10B981;font-weight:600}
+.w-status .r{margin-left:auto;color:#4583F5;font-weight:600}
+/* ---- chunk scene ---- */
+.chunks{display:flex;gap:12px;margin-top:44px}
+.chunk{width:96px;height:84px;border-radius:12px;background:#333333;border:1px solid #3E3E3E;
+display:flex;align-items:center;justify-content:center;font-size:24px;font-weight:700;color:#A8A8A8}
+.chunk.fill{background:#1C2D4A;border-color:#1865F2;color:#fff}
+.speed{font-family:Consolas,"JetBrains Mono",monospace;font-size:76px;font-weight:600;color:#F2F2F2;margin-top:40px}
+.threads{display:inline-block;font-size:26px;color:#A8A8A8;border:1px solid #3E3E3E;border-radius:999px;
+padding:10px 30px;margin-top:16px}
+.threads b{color:#34D399}
+/* ---- browser scene ---- */
+.toast{width:860px;background:#F1F3F4;border-radius:14px;padding:28px 34px;margin-top:40px;color:#202124;
+box-shadow:0 24px 80px rgba(0,0,0,.55);position:relative}
+.toast .row1{display:flex;align-items:center;gap:16px}
+.toast .fic{width:56px;height:56px;border-radius:12px;background:#1865F2;color:#fff;font-size:26px;font-weight:700;
+display:flex;align-items:center;justify-content:center;flex:none}
+.toast .tn{font-size:29px;font-weight:600}
+.toast .ts{font-size:25px;color:#5F6368;margin-top:4px}
+.stamp{position:absolute;right:36px;top:50%;margin-top:-34px;border:4px solid #EF4444;color:#EF4444;
+font-size:30px;font-weight:800;letter-spacing:2px;border-radius:10px;padding:10px 22px;
+transform:rotate(-8deg) scale(2);opacity:0}
+.catch{width:860px;margin-top:22px;background:#2B2B2B;border:1px solid #3E3E3E;border-radius:14px;
+padding:24px 34px;display:flex;align-items:center;gap:18px}
+.catch .dot{width:18px;height:18px;border-radius:50%;background:#34D399;flex:none}
+.catch .ct{font-size:28px;font-weight:600;color:#F2F2F2}
+.catch .cs{font-size:25px;color:#A8A8A8;margin-top:4px}
+.catch .cs b{color:#7FB3FF}
+/* ---- resume scene ---- */
+.pcard{width:820px;background:#2B2B2B;border:1px solid #3E3E3E;border-radius:14px;padding:34px 40px;margin-top:40px;
+box-shadow:0 24px 80px rgba(0,0,0,.55)}
+.pcard .pn{font-size:30px;font-weight:600;color:#F2F2F2}
+.pcard .ps{font-size:26px;color:#A8A8A8;margin-top:8px}
+.pcard .big{font-size:64px;font-weight:700;color:#F2F2F2;margin-top:18px}
+.pbar{height:16px;border-radius:999px;background:#383838;margin-top:16px;overflow:hidden}
+.pbar>div{width:100%;height:100%;border-radius:999px;background:linear-gradient(90deg,#1A6AFE,#0B52D9);
+transform:scaleX(.5);transform-origin:left center}
+.pbar>div.ok{background:#10B981}
+.ptrip{display:flex;margin-top:22px}
+.ptrip div{flex:1}
+.ptrip .k{font-size:22px;color:#9E9E9E}
+.ptrip .v{font-size:30px;font-weight:600;color:#F2F2F2;margin-top:4px}
+.pstatus{font-size:26px;font-weight:600;margin-top:22px;color:#A8A8A8}
+.pstatus.bad{color:#EF4444}
+.pstatus.good{color:#34D399}
+/* ---- media scene ---- */
+.tiers{width:980px;margin-top:36px;border:1px solid #3E3E3E;border-radius:14px;overflow:hidden}
+.tier{display:flex;align-items:center;gap:20px;padding:22px 34px;background:#2B2B2B;border-bottom:1px solid #333333}
+.tier:last-child{border-bottom:none}
+.tier .q{font-size:30px;font-weight:700;color:#F2F2F2;width:280px}
+.tier .d{font-size:26px;color:#A8A8A8}
+.tier.hot{background:#1C2D4A}
+.badge{margin-left:auto;font-size:22px;font-weight:700;color:#fff;background:#1865F2;border-radius:999px;padding:7px 20px}
+/* ---- outro ---- */
+.logo-big{width:184px;height:184px}
+.brand{font-size:104px;font-weight:700;color:#F2F2F2;margin-top:22px;letter-spacing:2px}
+.freeline{font-size:30px;color:#F2F2F2;margin-top:10px}
+.urlpill{font-size:29px;color:#fff;background:#333333;border:1px solid #555555;border-radius:999px;
+padding:13px 42px;margin-top:28px}
+</style>
+</head>
+<body>
+<div id="root" data-composition-id="main" data-start="0" data-duration="30" data-width="1920" data-height="1080">
+<div class="hero-glow" id="glow"></div>
+
+<!-- SCENE 1 hook 0-3 -->
+<section id="sc1" class="clip scene" data-start="0" data-duration="3" data-track-index="0">
+<img class="hook-logo" id="s1-logo" src="assets/img/wdm-logo-256.png" alt="WDM logo" />
+<div class="eyebrow" id="s1-eyebrow">WDM &mdash; WINDOWS DOWNLOAD MANAGER</div>
+<div class="h-hook" id="s1-head">Downloads without the bottleneck.</div>
+<div class="bar-track"><div class="bar-fill" id="s1-bar"></div></div>
+</section>
+
+<!-- SCENE 2 queue 3-9 -->
+<section id="sc2" class="clip scene" data-start="3" data-duration="6" data-track-index="1">
+<div class="cap" id="s2-cap">Central Download Queue</div>
+<div class="sub" id="s2-sub">32-stream throughput, live status filtering &amp; categorization.</div>
+<div class="window" id="s2-win">
+<div class="w-titlebar"><img src="assets/img/wdm-logo-256.png" alt="" /><span class="t">Windows Download Manager</span><span class="sp"></span><span class="wm">&#8211;</span><span class="wm">&#9744;</span><span class="wm">&#10005;</span></div>
+<div class="w-toolbar">
+<span class="btn-add" id="s2-add">+ Add Download</span>
+<span class="tbtn">&#9654;</span><span class="tbtn">&#10074;&#10074;</span><span class="tbtn">&#9632;</span><span class="tbtn">&#128465;</span><span class="tbtn">&#10005;</span>
+<span class="w-search"><span class="ph">Search downloads&hellip;</span><span class="ct">Ctrl+F</span></span>
+<span class="tbtn">&#9881;</span><span class="tbtn">&#9728;</span><span class="tbtn">&#9432;</span>
+</div>
+<div class="w-body">
+<div class="w-side">
+<div class="sitem sel"><span class="ic">&#9638;</span>All</div>
+<div class="sitem"><span class="ic">&#8595;</span>Queue</div>
+<div class="sitem"><span class="ic">&#10003;</span>Finished</div>
+<div class="sitem"><span class="ic">&#10074;&#10074;</span>Paused</div>
+<div class="sitem"><span class="ic">&#10005;</span>Failed</div>
+<div class="sdiv"></div>
+<div class="sitem"><span class="ic">&#9654;</span>Video</div>
+<div class="sitem"><span class="ic">&#9835;</span>Music</div>
+<div class="sitem"><span class="ic">&#9776;</span>Documents</div>
+<div class="sitem"><span class="ic">&#128452;</span>Compressed</div>
+<div class="sitem"><span class="ic">&#9873;</span>Programs</div>
+</div>
+<div class="w-main">
+<div class="w-head"><span style="width:500px">File Name</span><span style="width:150px;text-align:right">Progress</span><span style="margin-left:auto">Size</span><span style="width:52px"></span></div>
+<div class="rowwrap" id="s2-r1"><div class="wrow">
+<div class="ficon" style="background:#4A85F2">ISO</div>
+<div class="fmeta"><div class="fname">ubuntu-24.04-desktop-amd64.iso</div><div class="fsub">5.7 GB &middot; 32 streams</div><span class="pill active">Active</span></div>
+<div class="fpct" style="color:#7FB3FF">66%</div>
+<div class="fsize">3.8 GB / 5.7 GB</div><div class="fopen">&#128193;</div>
+</div><div class="fbar" id="s2-b1"></div></div>
+<div class="rowwrap" id="s2-r2"><div class="wrow">
+<div class="ficon" style="background:#0B6B4A">EXE</div>
+<div class="fmeta"><div class="fname">VisualStudioSetup.exe</div><div class="fsub">3.6 MB &middot; SHA-256 ok</div><span class="pill complete">Complete</span></div>
+<div class="fpct" style="color:#34D399">100%</div>
+<div class="fsize">3.6 MB / 3.6 MB</div><div class="fopen">&#128193;</div>
+</div><div class="fbar done" id="s2-b2"></div></div>
+<div class="rowwrap" id="s2-r3"><div class="wrow">
+<div class="ficon" style="background:#9333EA">4K</div>
+<div class="fmeta"><div class="fname">BigBuckBunny_4K_HDR.mp4</div><div class="fsub">1001.4 MB &middot; YouTube</div><span class="pill paused">Paused</span></div>
+<div class="fpct" style="color:#FBBF24">50%</div>
+<div class="fsize">500.7 MB / 1001.4 MB</div><div class="fopen">&#128193;</div>
+</div><div class="fbar" id="s2-b3"></div></div>
+<div class="rowwrap" id="s2-r4"><div class="wrow">
+<div class="ficon" style="background:#0B6B4A">MP3</div>
+<div class="fmeta"><div class="fname">synthwave_sunset_master.flac</div><div class="fsub err">Connection timeout &mdash; retrying</div><span class="pill failed">Failed</span></div>
+<div class="fpct" style="color:#EF4444">24%</div>
+<div class="fsize">11.4 MB / 46.3 MB</div><div class="fopen">&#128193;</div>
+</div><div class="fbar" id="s2-b4"></div></div>
+</div>
+</div>
+<div class="w-status"><span class="l">4 downloads &middot; <b>1 completed</b></span><span class="r">&#8595; Total: 48.6 MB/s</span></div>
+</div>
+</section>
+
+<!-- SCENE 3 streams 9-14 -->
+<section id="sc3" class="clip scene" data-start="9" data-duration="5" data-track-index="2">
+<div class="cap" id="s3-cap">32 Parallel Connections</div>
+<div class="sub" id="s3-sub">Dynamic byte-range chunks. Full pipe saturation.</div>
+<div class="chunks" id="s3-chunks">
+<div class="chunk" id="k1">1</div><div class="chunk" id="k2">2</div><div class="chunk" id="k3">3</div><div class="chunk" id="k4">4</div><div class="chunk" id="k5">5</div><div class="chunk" id="k6">6</div><div class="chunk" id="k7">7</div><div class="chunk" id="k8">8</div><div class="chunk" id="k9">9</div><div class="chunk" id="k10">10</div><div class="chunk" id="k11">11</div><div class="chunk" id="k12">12</div><div class="chunk" id="k13">13</div><div class="chunk" id="k14">14</div><div class="chunk" id="k15">15</div><div class="chunk" id="k16">16</div>
+</div>
+<div class="speed" id="s3-speed">0.0 MB/s</div>
+<div class="threads" id="s3-threads">Up to <b>32 worker threads</b></div>
+</section>
+
+<!-- SCENE 4 browser hook 14-19 -->
+<section id="sc4" class="clip scene" data-start="14" data-duration="5" data-track-index="3">
+<div class="cap" id="s4-cap">Native Browser Hook</div>
+<div class="sub" id="s4-sub">Chrome, Edge, Brave, Firefox. Zero registry edits.</div>
+<div class="toast" id="s4-toast">
+<div class="row1"><span class="fic">ISO</span><span><span class="tn">ubuntu-24.04-desktop-amd64.iso</span><br /><span class="ts" id="s4-tsub">5.7 GB &middot; downloading in Chrome&hellip;</span></span></div>
+<div class="stamp" id="s4-stamp">INTERCEPTED</div>
+</div>
+<div class="catch" id="s4-catch">
+<span class="dot"></span>
+<span><span class="ct">Sent to WDM &middot; download queued</span><br /><span class="cs">via the catcher extension &middot; <b>127.0.0.1:17530</b></span></span>
+</div>
+</section>
+
+<!-- SCENE 5 crash resume 19-24 -->
+<section id="sc5" class="clip scene" data-start="19" data-duration="5" data-track-index="4">
+<div class="cap" id="s5-cap">Reliable Crash Resume</div>
+<div class="sub" id="s5-sub">Resumes from the exact verified byte. Never from zero.</div>
+<div class="pcard" id="s5-card">
+<div class="pn">BigBuckBunny_4K_HDR.mp4</div>
+<div class="ps" id="s5-ps">500.7 MB / 1001.4 MB &middot; 50%</div>
+<div class="big" id="s5-big">50%</div>
+<div class="pbar"><div id="s5-bar"></div></div>
+<div class="ptrip"><div><div class="k">Speed</div><div class="v">48.6 MB/s</div></div><div><div class="k">ETA</div><div class="v">11 s</div></div><div><div class="k">Threads</div><div class="v">32</div></div></div>
+<div class="pstatus" id="s5-status">Downloading&hellip;</div>
+</div>
+</section>
+
+<!-- SCENE 6 media 24-27 -->
+<section id="sc6" class="clip scene" data-start="24" data-duration="3" data-track-index="5">
+<div class="cap" id="s6-cap">Video &amp; Media Grabber</div>
+<div class="tiers" id="s6-tiers">
+<div class="tier hot"><span class="q">2160p 4K 60fps</span><span class="d">best video + audio merged</span><span class="badge">PICKED</span></div>
+<div class="tier"><span class="q">Playlists</span><span class="d">whole channels in one go</span></div>
+<div class="tier"><span class="q">Audio extract</span><span class="d">MP3 / M4A in one click</span></div>
+<div class="tier"><span class="q">Live HLS (.m3u8)</span><span class="d">chunks assembled to MP4</span></div>
+</div>
+</section>
+
+<!-- SCENE 7 outro 27-30 -->
+<section id="sc7" class="clip scene" data-start="27" data-duration="3" data-track-index="6">
+<img class="logo-big" id="s7-logo" src="assets/img/wdm-logo-256.png" alt="WDM logo" />
+<div class="brand" id="s7-brand">WDM</div>
+<div class="freeline" id="s7-free">Free &amp; open source &middot; MIT &middot; No telemetry.</div>
+<div class="urlpill" id="s7-url">Download for Windows &middot; get-wdm.vercel.app</div>
+</section>
+
+<!-- AUDIO -->
+<audio id="mus1" data-start="0" data-duration="28" data-track-index="10" data-volume="0.32" src="assets/music/happy-beats-business-moves-vol-12-by-ende-dot-app.mp3"></audio>
+<audio id="mus2" data-start="28" data-duration="2" data-track-index="10" data-media-start="28" data-volume="0.10" src="assets/music/happy-beats-business-moves-vol-12-by-ende-dot-app.mp3"></audio>
+<audio id="sfx-slam" data-start="2.1" data-duration="0.18" data-track-index="11" data-volume="0.70" src="assets/sfx/impact/impactSoft_medium_001.ogg"></audio>
+<audio id="sfx-r1" data-start="3.82" data-duration="0.19" data-track-index="12" data-volume="0.55" src="assets/sfx/interface/drop_002.ogg"></audio>
+<audio id="sfx-r2" data-start="4.91" data-duration="0.11" data-track-index="13" data-volume="0.55" src="assets/sfx/interface/drop_001.ogg"></audio>
+<audio id="sfx-r3" data-start="6.0" data-duration="0.19" data-track-index="14" data-volume="0.55" src="assets/sfx/interface/drop_002.ogg"></audio>
+<audio id="sfx-r4" data-start="7.09" data-duration="0.11" data-track-index="15" data-volume="0.55" src="assets/sfx/interface/drop_001.ogg"></audio>
+<audio id="sfx-k1" data-start="9.3" data-duration="0.69" data-track-index="16" data-volume="0.55" src="assets/sfx/casino/card-place-1.ogg"></audio>
+<audio id="sfx-k2" data-start="12.4" data-duration="0.17" data-track-index="17" data-volume="0.65" src="assets/sfx/casino/chip-lay-1.ogg"></audio>
+<audio id="sfx-toast" data-start="14.2" data-duration="0.5" data-track-index="18" data-volume="0.60" src="assets/sfx/casino/card-place-2.ogg"></audio>
+<audio id="sfx-stamp" data-start="15.84" data-duration="0.17" data-track-index="19" data-volume="0.70" src="assets/sfx/casino/chip-lay-2.ogg"></audio>
+<audio id="sfx-glitch" data-start="19.66" data-duration="0.3" data-track-index="20" data-volume="0.50" src="assets/sfx/interface/error_005.ogg"></audio>
+<audio id="sfx-ok" data-start="22.9" data-duration="0.17" data-track-index="21" data-volume="0.70" src="assets/sfx/casino/chip-lay-1.ogg"></audio>
+<audio id="sfx-media" data-start="24.6" data-duration="0.11" data-track-index="22" data-volume="0.60" src="assets/sfx/interface/drop_001.ogg"></audio>
+<audio id="sfx-logo" data-start="27.25" data-duration="1.48" data-track-index="23" data-volume="0.75" src="assets/sfx/impact/impactBell_heavy_000.ogg"></audio>
+</div>
+<script>
+const tl = gsap.timeline({paused:true});
+tl.fromTo("#glow",{opacity:.55},{opacity:.9,duration:2.4,yoyo:true,repeat:11},0);
+/* SCENE 1 */
+tl.fromTo("#s1-logo",{opacity:0,scale:.7},{opacity:1,scale:1,duration:.5},.05);
+tl.fromTo("#s1-eyebrow",{opacity:0,y:18},{opacity:1,y:0,duration:.5},.15);
+tl.fromTo("#s1-head",{opacity:0,y:26},{opacity:1,y:0,duration:.6},.35);
+/* beat-locked: bar slam ~2.2s near the 2.19s beat */
+tl.to("#s1-bar",{scaleX:1,duration:.6,ease:"power2.in"},1.6);
+/* SCENE 2 queue: rows on the beat grid 3.82 / 4.91 / 6.00 / 7.09 */
+tl.fromTo("#s2-cap",{opacity:0,y:22},{opacity:1,y:0,duration:.4},3.0);
+tl.fromTo("#s2-sub",{opacity:0,y:14},{opacity:1,y:0,duration:.35},3.15);
+tl.fromTo("#s2-win",{opacity:0,y:36},{opacity:1,y:0,duration:.5},3.2);
+tl.fromTo("#s2-r1",{opacity:0,x:-36},{opacity:1,x:0,duration:.35},3.82);
+tl.to("#s2-b1",{scaleX:.66,duration:1.0},4.05);
+tl.fromTo("#s2-r2",{opacity:0,x:-36},{opacity:1,x:0,duration:.35},4.91);
+tl.to("#s2-b2",{scaleX:1,duration:.8},5.15);
+tl.fromTo("#s2-r3",{opacity:0,x:-36},{opacity:1,x:0,duration:.35},6.0);
+tl.to("#s2-b3",{scaleX:.5,duration:.8},6.25);
+tl.fromTo("#s2-r4",{opacity:0,x:-36},{opacity:1,x:0,duration:.35},7.09);
+tl.to("#s2-b4",{scaleX:.24,duration:.7},7.3);
+/* SCENE 3 streams: cascade from the 9.29s strong cue */
+tl.fromTo("#s3-cap",{opacity:0,y:22},{opacity:1,y:0,duration:.4},9.05);
+tl.fromTo("#s3-sub",{opacity:0,y:14},{opacity:1,y:0,duration:.35},9.2);
+tl.fromTo("#s3-chunks",{opacity:0},{opacity:1,duration:.25},9.2);
+tl.to("#k3",{duration:.12,className:"chunk fill"},9.3);
+tl.to("#k7",{duration:.12,className:"chunk fill"},9.55);
+tl.to("#k1",{duration:.12,className:"chunk fill"},9.8);
+tl.to("#k12",{duration:.12,className:"chunk fill"},10.05);
+tl.to("#k5",{duration:.12,className:"chunk fill"},10.3);
+tl.to("#k9",{duration:.12,className:"chunk fill"},10.55);
+tl.to("#k2",{duration:.12,className:"chunk fill"},10.8);
+tl.to("#k14",{duration:.12,className:"chunk fill"},11.05);
+tl.to("#k6",{duration:.12,className:"chunk fill"},11.3);
+tl.to("#k11",{duration:.12,className:"chunk fill"},11.55);
+tl.to("#k4",{duration:.12,className:"chunk fill"},11.8);
+tl.to("#k16",{duration:.12,className:"chunk fill"},12.05);
+tl.to("#k8",{duration:.12,className:"chunk fill"},12.3);
+tl.to("#k13",{duration:.12,className:"chunk fill"},12.55);
+tl.to("#k10",{duration:.12,className:"chunk fill"},12.8);
+tl.to("#k15",{duration:.12,className:"chunk fill"},13.05);
+tl.fromTo("#s3-speed",{opacity:0},{opacity:1,duration:.3},9.4);
+tl.fromTo("#s3-threads",{opacity:0,y:14},{opacity:1,y:0,duration:.35},12.9);
+tl.set("#s3-speed",{textContent:"14.2 MB/s"},9.6);
+tl.set("#s3-speed",{textContent:"28.7 MB/s"},10.1);
+tl.set("#s3-speed",{textContent:"43.1 MB/s"},10.6);
+tl.set("#s3-speed",{textContent:"57.9 MB/s"},11.1);
+tl.set("#s3-speed",{textContent:"71.3 MB/s"},11.6);
+tl.set("#s3-speed",{textContent:"79.8 MB/s"},12.1);
+tl.set("#s3-speed",{textContent:"86.4 MB/s"},12.6);
+/* SCENE 4 hook: toast 14.2, stamp beat-locked 15.84s */
+tl.fromTo("#s4-cap",{opacity:0,y:22},{opacity:1,y:0,duration:.4},14.05);
+tl.fromTo("#s4-sub",{opacity:0,y:14},{opacity:1,y:0,duration:.35},14.2);
+tl.fromTo("#s4-toast",{opacity:0,y:30},{opacity:1,y:0,duration:.45},14.2);
+tl.to("#s4-stamp",{opacity:1,scale:1,duration:.25,ease:"power3.in"},15.84);
+tl.fromTo("#s4-catch",{opacity:0,y:24},{opacity:1,y:0,duration:.4},16.15);
+tl.set("#s4-tsub",{textContent:"5.7 GB \u00B7 Cancelled by WDM catcher"},16.15);
+/* SCENE 5 resume: glitch on the 19.66s strong cue, complete near 22.93s */
+tl.fromTo("#s5-cap",{opacity:0,y:22},{opacity:1,y:0,duration:.4},19.05);
+tl.fromTo("#s5-sub",{opacity:0,y:14},{opacity:1,y:0,duration:.35},19.2);
+tl.fromTo("#s5-card",{opacity:0,y:30},{opacity:1,y:0,duration:.45},19.25);
+tl.to("#s5-bar",{scaleX:.68,duration:1.2},19.4);
+tl.set("#s5-status",{textContent:"CONNECTION LOST \u2014 retrying\u2026",className:"pstatus bad"},19.66);
+tl.to("#s5-bar",{scaleX:.68,duration:.9},19.66);
+tl.set("#s5-status",{textContent:"Resumed from byte 524,288,000 \u2014 verifying\u2026",className:"pstatus"},20.7);
+tl.to("#s5-bar",{scaleX:1,duration:1.9,ease:"power1.inOut"},20.7);
+tl.set("#s5-ps",{textContent:"1001.4 MB / 1001.4 MB \u00B7 100%"},22.6);
+tl.set("#s5-big",{textContent:"100%"},22.6);
+tl.set("#s5-status",{textContent:"Complete \u00B7 Verified \u00B7 SHA-256 ok",className:"pstatus good"},22.9);
+tl.set("#s5-bar",{className:"ok"},22.9);
+/* SCENE 6 media: rows together 24.6, hold */
+tl.fromTo("#s6-cap",{opacity:0,y:22},{opacity:1,y:0,duration:.4},24.1);
+tl.fromTo("#s6-tiers",{opacity:0,y:26},{opacity:1,y:0,duration:.45},24.6);
+/* SCENE 7 outro: logo beat-locked to the 27.30s strong cue */
+tl.fromTo("#s7-logo",{opacity:0,scale:.6},{opacity:1,scale:1,duration:.45,ease:"power3.out"},26.85);
+tl.fromTo("#s7-brand",{opacity:0,y:22},{opacity:1,y:0,duration:.35},27.3);
+tl.fromTo("#s7-free",{opacity:0},{opacity:1,duration:.3},27.6);
+tl.fromTo("#s7-url",{opacity:0,y:14},{opacity:1,y:0,duration:.3},27.9);
+window.__timelines = window.__timelines || {};
+window.__timelines["main"] = tl;
+tl.seek(0);
+</script>
+</body>
+</html>

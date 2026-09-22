@@ -1,0 +1,1 @@
+Downloads without the bottleneck. WDM: 32 parallel streams, browser hook, crash-proof resume. Free & open source — get-wdm.vercel.app.
