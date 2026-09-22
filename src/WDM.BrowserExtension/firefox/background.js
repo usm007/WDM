@@ -160,14 +160,35 @@ webext.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
 
   if (message.action === "mediaDetected") {
-    // Content-script key observations ride along: attach to the tracked entry
-    // so the resource list / download payloads carry the hint (B6b).
+    // Content-script observations ride along: key URL + probed quality/size
+    // merge into the tracked entry so the popup + payloads show them (B6b).
     try {
       const s = message.stream;
-      if (s && s.url && s.keyUrl) {
+      if (s && s.url) {
         for (const map of tabMediaMap.values()) {
           const e = map.get(s.url);
-          if (e && !e.keyUrl) e.keyUrl = s.keyUrl;
+          if (!e) continue;
+          if (s.keyUrl && !e.keyUrl) e.keyUrl = s.keyUrl;
+          if (s.fileName && !e.fileName) e.fileName = s.fileName;
+          if (s.quality && !e.quality) e.quality = s.quality;
+          if (s.resolution && !e.resolution) e.resolution = s.resolution;
+          if (s.size && !e.size) e.size = s.size;
+          if (s.label && (e.label === "Video" || GENERIC_MEDIA_RE.test(e.label) || PROVIDER_TITLE_RE.test(e.label)) && !PROVIDER_TITLE_RE.test(s.label)) {
+            e.label = s.label;
+          }
+          if (s.pageTitle && !e.pageTitle) e.pageTitle = s.pageTitle;
+        }
+        // Content scripts in embed iframes report the real top title they
+        // learned via wdmMediaHint — adopt it for sibling entries still stuck
+        // on the provider shell.
+        if (s.pageTitle && !PROVIDER_TITLE_RE.test(s.pageTitle) && sender && sender.tab && sender.tab.id != null) {
+          const map = tabMediaMap.get(sender.tab.id);
+          if (map) {
+            for (const e of map.values()) {
+              if (PROVIDER_TITLE_RE.test(e.label || "")) { e.label = s.pageTitle; e.pageTitle = s.pageTitle; }
+              else if (!e.pageTitle) e.pageTitle = s.pageTitle;
+            }
+          }
         }
       }
     } catch {}
@@ -197,7 +218,7 @@ webext.runtime.onMessage.addListener((message, sender, sendResponse) => {
         const tabId = tabs && tabs[0] ? tabs[0].id : null;
         const map = tabId != null ? tabMediaMap.get(tabId) : null;
         const media = map
-          ? Array.from(map.values()).map(i => ({ url: i.url, label: i.label, type: i.type, time: i.time, keyUrl: i.keyUrl || null }))
+          ? Array.from(map.values()).map(i => ({ url: i.url, label: i.label, type: i.type, time: i.time, keyUrl: i.keyUrl || null, quality: i.quality || parseQualityFromUrl(i.url) || null, resolution: i.resolution || null, size: i.size || null, sizeText: i.size ? formatBytes(i.size) : null, pageTitle: i.pageTitle || null, fileName: i.fileName || null }))
           : [];
         sendResponse({ media, wdmActive: isWdmActive });
       } catch (err) {
@@ -352,6 +373,23 @@ function getHeader(headers, name) {
   for (const h of headers) if (h.name.toLowerCase() === n) return h.value || null;
   return null;
 }
+// Content-Disposition filename at capture time (1DM CD parse): RFC 2231
+// filename*= first, then plain filename=. Only labels the entry — the desktop
+// probe re-parses authoritatively at download start.
+function parseCdFileName(raw) {
+  try {
+    if (!raw || typeof raw !== "string") return "";
+    let m = raw.match(/filename\*\s*=\s*(?:[^']*'[^']*')?([^;]+)/i);
+    if (m && m[1]) {
+      const cand = m[1].trim().replace(/^"|"$/g, "");
+      try { const d = decodeURIComponent(cand); if (d) return d.slice(0, 180); } catch {}
+      if (cand) return cand.slice(0, 180);
+    }
+    m = raw.match(/filename\s*=\s*"([^"]+)"|filename\s*=\s*([^;\s]+)/i);
+    const fn = ((m && (m[1] || m[2])) || "").trim();
+    return fn ? fn.slice(0, 180) : "";
+  } catch { return ""; }
+}
 function getFileExt(url) {
   try {
     const p = new URL(url).pathname;
@@ -433,10 +471,55 @@ function cleanTabTitle(title) {
   } catch { return ""; }
 }
 const GENERIC_MEDIA_RE = /^(master|index|playlist|chunklist|manifest|stream|play|video|media|file|download|index-v1-a\d+|seg-?\d*)(\.(m3u8|mpd|mp4|webm|mkv|mov|flv))?$/i;
+// Embed-provider tab titles ("Viduki.net Api 1") are shells, not film names —
+// kept as-is only when no cleaner title is available.
+const PROVIDER_TITLE_RE = /(viduki|vidy\.st|vidfast|vidlink|vidrock|vidzee|voe|filemoon|dood|streamwish|vitacloud|mixdrop|uptostream|\bembed\b|\bplayer\b|\bapi\b)/i;
+// Server filename -> label stem ("Film.2024.mkv" -> "Film.2024"). Only real
+// media filenames qualify; generic stems fall back to the page title.
+const CD_MEDIA_EXT_RE = /\.(mp4|m4v|webm|mkv|avi|mov|flv|mpd|m3u8|mp3|m4a)(\?|$)/i;
+function cdLabelStem(fn) {
+  try {
+    let s = String(fn || "").split("?")[0].split("/").pop().split("\\").pop().trim();
+    try { s = decodeURIComponent(s); } catch {}
+    if (!s || !CD_MEDIA_EXT_RE.test(s)) return "";
+    const dot = s.lastIndexOf(".");
+    if (dot > 0) s = s.slice(0, dot);
+    if (!s || GENERIC_MEDIA_RE.test(s)) return "";
+    return s.slice(0, 120);
+  } catch { return ""; }
+}
 
 const API_BODY_RE = /(\/api\/stream|\/api\/videos?\b|\/api\/player|\/player-core|\/api\/streaming)\b/i;
 
-function registerTabMedia(tabId, url, hint) {
+// Broad rendition parse for tokenized player URLs (1080p, /1080/, ?res=720,
+// hls-480, itag=22). Returns "" when the URL carries no quality signal.
+function parseQualityFromUrl(url) {
+  try {
+    if (!url || typeof url !== "string") return "";
+    let m = url.match(/(\d{3,4})p/i);
+    if (m) return (/4k/i.test(url) && m[1] === "2160" ? "4K" : m[1] + "p");
+    if (/(^|[^a-z])4k([^a-z]|$)/i.test(url)) return "4K";
+    m = url.match(/[/?&=_-](2160|1440|1080|720|480|360|240)(?=[/?&=_\-.#]|$)/);
+    if (m) return m[1] + "p";
+    m = url.match(/(?:height|res|resolution|quality|q)[=:](2160|1440|1080|720|480|360|240)/i);
+    if (m) return m[1] + "p";
+    m = url.match(/hls[-_](2160|1440|1080|720|480|360)/i);
+    if (m) return m[1] + "p";
+  } catch {}
+  return "";
+}
+function formatBytes(n) {
+  try {
+    n = Number(n);
+    if (!(n > 0)) return "";
+    const units = ["B", "KB", "MB", "GB"];
+    let u = 0;
+    while (n >= 1024 && u < units.length - 1) { n /= 1024; u++; }
+    return u === 0 ? Math.round(n) + " " + units[u] : n.toFixed(1) + " " + units[u];
+  } catch { return ""; }
+}
+
+function registerTabMedia(tabId, url, hint, extra) {
   if (!url || !tabId || tabId < 0) return;
   if (isBlockedCapture(url)) return; // user-blocked domain/URL: never listed
   if (isYouTubeUrl(url)) return;
@@ -462,7 +545,20 @@ function registerTabMedia(tabId, url, hint) {
   if (!kind) return; // unverified opaque URLs stay hidden until verified
   if (!tabMediaMap.has(tabId)) tabMediaMap.set(tabId, new Map());
   const map = tabMediaMap.get(tabId);
-  if (map.has(url)) return;
+  const known = map.get(url);
+  const extraQuality = extra && extra.quality ? extra.quality : parseQualityFromUrl(url);
+  const extraSize = extra && extra.size ? extra.size : null;
+  const cdName = extra && extra.fileName ? String(extra.fileName) : "";
+  if (known) {
+    if (!known.quality && extraQuality) known.quality = extraQuality;
+    if (!known.size && extraSize) known.size = extraSize;
+    if (!known.fileName && cdName) {
+      known.fileName = cdName;
+      const stem = cdLabelStem(cdName);
+      if (stem) known.label = stem;
+    }
+    return;
+  }
   if (map.size >= 25) {
     const oldestKey = map.keys().next().value;
     if (oldestKey) map.delete(oldestKey);
@@ -471,21 +567,41 @@ function registerTabMedia(tabId, url, hint) {
   try { label = new URL(url).pathname.split("/").pop() || ""; } catch { label = url; }
   if (label.includes("?")) label = label.split("?")[0];
   try { label = decodeURIComponent(label); } catch {}
-  const info = { url, label: label || "Video", type: kind, time: Date.now() };
+  // Server filename (Content-Disposition) is authoritative — it wins over URL
+  // basenames whenever it names a real media file.
+  const cdStem = cdLabelStem(cdName);
+  if (cdStem) label = cdStem;
+  const quality = extraQuality || null;
+  const size = extraSize || null;
+  // Real stream name: cleaned top-tab title ("Land of Bad - 1Tube" -> "Land of
+  // Bad"); the pageTitle rides along so iframe content scripts can drop their
+  // provider-shell title ("Viduki.net Api 1").
+  let pageTitle = "";
+  const info = { url, label: label || "Video", type: kind, time: Date.now(), quality, size, pageTitle: "", fileName: cdName || null };
   map.set(url, info);
   updateBadge(tabId);
   // Resolve a display title for generic basenames without blocking registration.
   try {
-    if (!label || GENERIC_MEDIA_RE.test(label)) {
-      webext.tabs.get(tabId).then((tab) => {
+    webext.tabs.get(tabId).then((tab) => {
+      try {
+        const rawTitle = tab && tab.title ? tab.title : "";
+        const title = cleanTabTitle(rawTitle);
+        if (!title) return;
+        if (map.get(url) !== info) return;
+        info.pageTitle = title;
+        if (!label || GENERIC_MEDIA_RE.test(label) || PROVIDER_TITLE_RE.test(label)) info.label = title;
+        // Forward the real name to every frame's sniffer so the overlay
+        // dropdown (often running inside the embed iframe) shows the film,
+        // not the provider shell.
         try {
-          const title = cleanTabTitle(tab && tab.title);
-          if (title && map.get(url) === info) info.label = title;
+          webext.tabs.sendMessage(tabId, { action: "wdmMediaHint", url, hint: info.type, pageTitle: title, quality: info.quality || null, size: info.size || null, fileName: info.fileName || null }).catch(() => {});
         } catch {}
-      }).catch(() => {});
-    }
+      } catch {}
+    }).catch(() => {
+      try { webext.tabs.sendMessage(tabId, { action: "wdmMediaHint", url, hint: info.type, fileName: info.fileName || null }).catch(() => {}); } catch {}
+    });
   } catch {}
-  try { webext.tabs.sendMessage(tabId, { action: "wdmMediaHint", url, hint: info.type }).catch(()=>{}); } catch {}
+  try { webext.tabs.sendMessage(tabId, { action: "wdmMediaHint", url, hint: info.type, quality: quality || null, size: size || null, fileName: info.fileName || null }).catch(()=>{}); } catch {}
 }
 
 // Hook webRequest for media streams (background side, covers workers/CSP bypass)
@@ -493,22 +609,31 @@ try {
   if (webext.webRequest && webext.webRequest.onHeadersReceived) {
     webext.webRequest.onHeadersReceived.addListener((details) => {
       try {
+        // Observed Content-Length rides along as the size hint (direct mp4s
+        // show "MP4 720p • 1.2 GB" instead of a bare "VIDEO").
+        let observedSize = null;
+        try {
+          const cl = parseInt(getHeader(details.responseHeaders, "content-length") || "0", 10);
+          if (cl > 0 && cl < 32 * 1024 * 1024 * 1024) observedSize = cl;
+        } catch {}
         // Pending opaque URLs: confirm via observed content-type (passive, no
         // extra requests, no CORS issues). Video/HLS/DASH confirms, else drop.
         const pend = pendingVerify.get(details.url);
+        const cdName = parseCdFileName(getHeader(details.responseHeaders, "content-disposition") || "");
+        const hintExtra = (observedSize || cdName) ? { size: observedSize, fileName: cdName || null } : null;
         if (pend) {
           pendingVerify.delete(details.url);
           if (pend.tabId === details.tabId) {
             const ctype = (getHeader(details.responseHeaders, "content-type") || "").toLowerCase();
             if (ctype.startsWith("video/") || ctype.includes("mpegurl") || ctype.includes("m3u8") ||
                 ctype.includes("dash+xml") || ctype.includes("mp2t")) {
-              registerTabMedia(details.tabId, details.url, classifyUrl(details.url) || "Video");
+              registerTabMedia(details.tabId, details.url, classifyUrl(details.url) || "Video", hintExtra);
               return;
             }
           }
         }
         if (isMediaResponse(details)) {
-          registerTabMedia(details.tabId, details.url, classifyUrl(details.url));
+          registerTabMedia(details.tabId, details.url, classifyUrl(details.url), hintExtra);
         }
       } catch {}
     }, { urls: ["<all_urls>"] }, ["responseHeaders"]);
@@ -537,6 +662,41 @@ try {
     });
   }
 } catch {}
+
+// ── Page Resources push (P1a): push tabMediaMap to the desktop app ──────
+async function pushPageMedia() {
+  try {
+    for (const [tabId, map] of tabMediaMap.entries()) {
+      if (!map || map.size === 0) continue;
+      const resources = [];
+      for (const [url, info] of map.entries()) {
+        resources.push({
+          url: info.url || url,
+          label: info.label || "",
+          type: info.type || "",
+          size: info.size || null,
+          quality: info.quality || null,
+          pageTitle: info.pageTitle || "",
+          time: info.time || 0,
+        });
+      }
+      let tabTitle = "";
+      let tabUrl = "";
+      try {
+        const tab = await webext.tabs.get(tabId);
+        tabTitle = tab?.title || "";
+        tabUrl = tab?.url || "";
+      } catch {}
+      const payload = JSON.stringify({ tabId: String(tabId), tabTitle, tabUrl, resources });
+      fetch(WDM_HOST + "/download/page-media-batch", {
+        method: "POST",
+        headers: Object.assign({ "Content-Type": "application/json" }, WDM_TOKEN ? { "X-WDM-Token": WDM_TOKEN } : {}),
+        body: payload,
+      }).catch(() => {});
+    }
+  } catch {}
+}
+setInterval(pushPageMedia, 5000);
 
 // Gather cookies for the download URL's own domain (plus parent domains).
 // The referrer/page host is deliberately NOT merged: page-session cookies
@@ -598,7 +758,12 @@ webext.downloads.onCreated.addListener(async (item) => {
     return;
   }
 
-  if (!isWdmActive) return;
+  // Cold-start race: SW may wake for this event before the initial
+  // checkWdm() at load finishes; await it rather than silently dropping.
+  if (!isWdmActive) {
+    await checkWdm();
+    if (!isWdmActive) return;
+  }
 
   loopGuard.set(downloadUrl, Date.now() + 15000);
 

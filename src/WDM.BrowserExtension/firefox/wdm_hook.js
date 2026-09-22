@@ -68,16 +68,66 @@
     if (hint) notify(url, hint);
   }
 
+  // 1DM handleM3u8Url equivalent: a playlist behind an opaque (tokenized)
+  // URL still starts with #EXTM3U. Header check first (cheap), then a capped
+  // text peek. Only unclassified URLs — classified ones already notified.
+  function sniffBody(url, getText, getCtype) {
+    try {
+      if (!url || typeof url !== "string" || !/^https?:\/\//i.test(url)) return;
+      if (AUDIO_RE.test(url) || classify(url)) return;
+      var ct = "";
+      try { ct = getCtype ? (getCtype() || "") : ""; } catch (e) {}
+      if (/mpegurl|m3u8/i.test(ct)) { notify(url, "HLS"); return; }
+      if (/dash\+xml/i.test(ct)) { notify(url, "DASH"); return; }
+      if (ct && !/text\/|json|javascript|ecmascript/i.test(ct)) return;
+      try {
+        getText(function (text) {
+          try {
+            if (typeof text !== "string" || text.length < 7) return;
+            var head = text.slice(0, 512).replace(/^[\s\uFEFF]*/, "");
+            if (head.indexOf("#EXTM3U") === 0) notify(url, "HLS");
+          } catch (e) {}
+        });
+      } catch (e) {}
+    } catch (e) {}
+  }
+
   // Hook fetch()
   var origFetch = window.fetch;
   if (origFetch) {
     window.fetch = function () {
+      var reqUrl = null;
       try {
         var req = arguments[0];
-        var url = typeof req === "string" ? req : (req && req.url);
-        checkUrl(url);
+        reqUrl = typeof req === "string" ? req : (req && req.url);
+        checkUrl(reqUrl);
       } catch {}
-      return origFetch.apply(this, arguments);
+      var promise = origFetch.apply(this, arguments);
+      // Response-body sniff for opaque URLs (page context can read them).
+      (function (seenUrl, p) {
+        try {
+          p.then(function (resp) {
+            try {
+              if (!resp || resp.type === "opaque") return resp;
+              // ponytail: bodies over 256 KiB are never buffered for a peek;
+              // switch to a streaming reader if a large manifest ever needs it.
+              try {
+                var clen = resp.headers ? resp.headers.get("content-length") : null;
+                if (clen && parseInt(clen, 10) > 262144) return resp;
+              } catch (e) {}
+              sniffBody(seenUrl,
+                function (cb) {
+                  try { resp.clone().text().then(cb).catch(function () {}); } catch (e) {}
+                },
+                function () {
+                  try { return (resp.headers && resp.headers.get("content-type")) || ""; } catch (e) { return ""; }
+                });
+            } catch (e) {}
+            return resp;
+          }).catch(function () {});
+        } catch (e) {}
+      })(reqUrl, promise);
+      return promise;
     };
   }
 
@@ -86,6 +136,23 @@
   XMLHttpRequest.prototype.open = function (method, url) {
     try {
       checkUrl(url);
+      // Same-origin XHR exposes responseText on load — same sniff as fetch.
+      if (typeof url === "string") {
+        try {
+          var xhr = this, sniffUrl = url;
+          xhr.addEventListener("load", function () {
+            try {
+              sniffBody(sniffUrl, function (cb) {
+                var t = null;
+                try { t = xhr.responseText; } catch (e) { return; }
+                cb(t);
+              }, function () {
+                try { return xhr.getResponseHeader("content-type") || ""; } catch (e) { return ""; }
+              });
+            } catch (e) {}
+          });
+        } catch (e) {}
+      }
     } catch {}
     return origOpen.apply(this, arguments);
   };

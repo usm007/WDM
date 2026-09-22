@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
+using System.Text.Json;
 
 namespace WDM.Services;
 
@@ -32,27 +33,172 @@ public static class BrowserIntegration
         "WDM", "BrowserExtension");
 
     /// <summary>
-    /// Copies bundled extension files to a stable per-user location.
+    /// Copies bundled extension files to a stable per-user location for
+    /// <b>Load unpacked</b> (the only supported Chromium pathway).
+    /// Version-aware: when the deployed folder is current the copy is skipped,
+    /// so a running browser's unpacked install is never rewritten under it on
+    /// every boot. Pack artifacts (crx/xpi/update.xml/pem) and the Firefox-only
+    /// subfolder are excluded — they don't belong in an unpacked load.
     /// </summary>
     public static string DeployExtension()
     {
         string dst = DeployDir;
         string? src = FindSourceDir();
 
-        // If the app is already deployed next to its data dir (e.g. the installed
-        // copy under %LOCALAPPDATA%\WDM), the "source" resolves to the destination
-        // itself; copying a directory onto itself fails. In that case the extension
+        // With a per-machine install the source is {app}\BrowserExtension under
+        // %ProgramFiles%\WDM (read-only) and the destination is the per-user
+        // DeployDir below; in dev layouts source may equal destination, and
+        // copying a directory onto itself fails. In that case the extension
         // is already in place, so just ensure the folder exists.
         if (src is not null && Directory.Exists(src)
             && !string.Equals(Path.GetFullPath(src), Path.GetFullPath(dst), StringComparison.OrdinalIgnoreCase))
         {
-            CopyDirectory(src, dst);
+            if (!DeployIsCurrent(src, dst))
+                CopyUnpackedExtension(src, dst);
         }
         else if (!Directory.Exists(dst))
         {
             Directory.CreateDirectory(dst);
         }
 
+        // Belt-and-braces: shipped manifests once carried a dev-machine
+        // update_url (file:///E:/WDM-master/...). Chrome update-checks unpacked
+        // extensions that declare update_url, and a dead URL gets the install
+        // disabled after reboot. The deployed copy must never declare one.
+        try { StripDeployedUpdateUrl(dst); } catch { }
+        WriteExtensionToken(dst);
+
+        return dst;
+    }
+
+    /// <summary>True when the deployed unpacked folder matches the bundled
+    /// source (same version + key, no update_url, no missing files).</summary>
+    private static bool DeployIsCurrent(string src, string dst)
+    {
+        try
+        {
+            string srcManifest = Path.Combine(src, "manifest.json");
+            string dstManifest = Path.Combine(dst, "manifest.json");
+            if (!File.Exists(srcManifest) || !File.Exists(dstManifest))
+                return false;
+            string? srcVersion = ReadManifestProperty(srcManifest, "version");
+            string? dstVersion = ReadManifestProperty(dstManifest, "version");
+            if (string.IsNullOrEmpty(srcVersion) ||
+                !string.Equals(srcVersion, dstVersion, StringComparison.OrdinalIgnoreCase))
+                return false;
+            // Same pinned key => same extension ID across reboots.
+            string? srcKey = ReadManifestProperty(srcManifest, "key");
+            string? dstKey = ReadManifestProperty(dstManifest, "key");
+            if (!string.Equals(srcKey ?? "", dstKey ?? "", StringComparison.Ordinal))
+                return false;
+            if (ReadManifestProperty(dstManifest, "update_url") is not null)
+                return false;
+            foreach (string file in EnumerateUnpackedFiles(src))
+            {
+                string rel = Path.GetRelativePath(src, file);
+                if (!File.Exists(Path.Combine(dst, rel)))
+                    return false;
+            }
+            return true;
+        }
+        catch { return false; } // unknown => redeploy
+    }
+
+    private static string? ReadManifestProperty(string path, string name)
+    {
+        try
+        {
+            using var doc = JsonDocument.Parse(File.ReadAllText(path));
+            if (doc.RootElement.TryGetProperty(name, out var el) &&
+                el.ValueKind == JsonValueKind.String)
+                return el.GetString();
+        }
+        catch { }
+        return null;
+    }
+
+    private static IEnumerable<string> EnumerateUnpackedFiles(string root)
+    {
+        foreach (string file in Directory.GetFiles(root))
+        {
+            if (!IsPackArtifact(file, root))
+                yield return file;
+        }
+        foreach (string sub in Directory.GetDirectories(root))
+        {
+            if (IsPackArtifact(Path.Combine(sub, "__dir__"), root))
+                continue;
+            foreach (string file in EnumerateUnpackedFiles(sub))
+                yield return file;
+        }
+    }
+
+    private static bool IsPackArtifact(string fullPath, string root)
+    {
+        string rel = Path.GetRelativePath(root, fullPath);
+        if (rel.Equals("firefox", StringComparison.OrdinalIgnoreCase) ||
+            rel.StartsWith("firefox" + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase))
+            return true;
+        string name = Path.GetFileName(fullPath.TrimEnd(Path.DirectorySeparatorChar));
+        if (name.Equals("update.xml", StringComparison.OrdinalIgnoreCase))
+            return true;
+        string ext = Path.GetExtension(name);
+        return ext.Equals(".pem", StringComparison.OrdinalIgnoreCase) ||
+               ext.Equals(".crx", StringComparison.OrdinalIgnoreCase) ||
+               ext.Equals(".xpi", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static void CopyUnpackedExtension(string source, string destination)
+    {
+        Directory.CreateDirectory(destination);
+        foreach (string file in EnumerateUnpackedFiles(source))
+        {
+            string rel = Path.GetRelativePath(source, file);
+            string target = Path.Combine(destination, rel);
+            Directory.CreateDirectory(Path.GetDirectoryName(target)!);
+            File.Copy(file, target, overwrite: true);
+        }
+        // Remove stale pack artifacts from earlier deploys — they don't belong
+        // in a Load unpacked folder.
+        foreach (string file in Directory.GetFiles(destination))
+        {
+            if (IsPackArtifact(file, destination))
+            {
+                try { File.Delete(file); } catch { }
+            }
+        }
+    }
+
+    /// <summary>Removes update_url from the deployed manifest (rewrites the file
+    /// only when the property is present). Unpacked installs must never declare
+    /// an update URL — a dead one gets the extension disabled after reboot.</summary>
+    private static void StripDeployedUpdateUrl(string dst)
+    {
+        string manifestPath = Path.Combine(dst, "manifest.json");
+        if (!File.Exists(manifestPath))
+            return;
+        string json = File.ReadAllText(manifestPath);
+        using var doc = JsonDocument.Parse(json);
+        if (!doc.RootElement.TryGetProperty("update_url", out _))
+            return;
+        using var outStream = new MemoryStream();
+        using (var writer = new Utf8JsonWriter(outStream, new JsonWriterOptions { Indented = true }))
+        {
+            writer.WriteStartObject();
+            foreach (var prop in doc.RootElement.EnumerateObject())
+            {
+                if (prop.NameEquals("update_url"))
+                    continue;
+                prop.WriteTo(writer);
+            }
+            writer.WriteEndObject();
+        }
+        File.WriteAllText(manifestPath,
+            System.Text.Encoding.UTF8.GetString(outStream.ToArray()));
+    }
+
+    private static void WriteExtensionToken(string dst)
+    {
         // Ship the loopback auth token alongside the unpacked extension so the
         // background worker can authenticate capture calls (see CaptureAuth).
         // Deliberately NOT web-accessible: only the extension itself may read it.
@@ -67,8 +213,6 @@ public static class BrowserIntegration
                 File.WriteAllText(tokenPath, tokenJson);
         }
         catch { /* token file is best-effort; the server still enforces SSRF/Origin checks */ }
-
-        return dst;
     }
 
     private static string? FindSourceDir()
@@ -253,20 +397,4 @@ public static class BrowserIntegration
         }
     }
 
-    private static void CopyDirectory(string source, string destination)
-    {
-        Directory.CreateDirectory(destination);
-
-        foreach (string file in Directory.GetFiles(source))
-        {
-            string target = Path.Combine(destination, Path.GetFileName(file));
-            File.Copy(file, target, overwrite: true);
-        }
-
-        foreach (string sub in Directory.GetDirectories(source))
-        {
-            string target = Path.Combine(destination, Path.GetFileName(sub));
-            CopyDirectory(sub, target);
-        }
-    }
 }

@@ -15,9 +15,9 @@
 ; so no dead update check) is the only supported Chromium pathway; Firefox uses
 ; the AMO store listing. On install we REMOVE our own stale policy entries from
 ; previous versions so the old policy CRX stops shadowing the unpacked install.
-; Uninstall still removes them via RemoveForceInstallPolicy. WriteForceInstallPolicy
-; is kept (unused) for reference. The private key (*.pem) is NEVER shipped -
-; [Files] excludes it.
+; Uninstall still removes them via RemoveForceInstallPolicy. The write path is
+; gone (no CRX is built or referenced anywhere); only the removal side remains.
+; The private key (*.pem) is NEVER shipped - [Files] excludes it.
 ; Requires Inno Setup 6 (https://jrsoftware.org/isinfo.php)
 ; Compile: ISCC.exe installer.iss
 ; Velopack pack (delta): dotnet publish -> vpk pack --packId WDM --packVersion 2.8.1 ...
@@ -88,10 +88,9 @@ Type: files; Name: "{app}\*"
 Type: filesandordirs; Name: "{app}"
 
 [Registry]
-; Browser force-install policies are written by [Code] WriteForceInstallPolicy
-; (free-index search under HKLM Policies, so we never clobber another product's
-; value "1"). Static entries are intentionally avoided here. Cleanup happens in
-; CurUninstallStepChanged via RemoveForceInstallPolicy. Firefox stays on the
+; No force-install policy is written anymore (Load unpacked is the only Chromium
+; pathway). Stale entries from previous versions are removed by [Code]
+; RemoveForceInstallPolicy on install and uninstall. Firefox stays on the
 ; AMO store listing + manual install (unsigned XPI cannot be policy-installed).
 ; Machine-wide auto-start (no per-user areas: the installer runs elevated, so a
 ; {userstartup} shortcut would land in the admin's profile, not the user's).
@@ -129,90 +128,217 @@ begin
   KillProcess('qjs.exe');
 end;
 
-{ Converts a local path to a file:// URL (forward slashes, spaces encoded). }
-function WdmFileUrl(const Path: String): String;
+{ Surgical removal of our own ExtensionSettings entry. ExtensionSettings is a
+  single shared JSON object keyed by extension ID, potentially owned by other
+  products or enterprise policy. Never delete the whole value when other
+  tenants exist: cut out only our key (brace-matched, string-aware) and write
+  the   remainder back; delete the value only when nothing (or an empty object) remains.
+  On any parse uncertainty, leave the value for the admin (returns False). }
+function TryRemoveWdmKey(const Val, ExtId: String; var NewVal: String): Boolean;
 var
-  S: String;
+  KeyQuoted: String;
+  KeyPos, ColonPos, ObjStart, ObjEnd, SliceStart, SliceEnd: Integer;
+  I, Depth: Integer;
+  InStr, Esc: Boolean;
+  Ch: Char;
 begin
-  S := Path;
-  StringChangeEx(S, '\', '/', True);
-  StringChangeEx(S, ' ', '%20', True);
-  Result := 'file:///' + S;
-end;
-
-{ Finds a value name under Subkey that already holds our entry (prefix match)
-  or the first free numeric slot ("1".."99"). Returns '' when full. }
-function FindPolicySlot(const Subkey, WantPrefix: String): String;
-var
-  I: Integer;
-  Name, Val: String;
-begin
-  Result := '';
-  for I := 1 to 99 do
+  Result := False;
+  NewVal := Val;
+  KeyQuoted := '"' + ExtId + '"';
+  KeyPos := Pos(KeyQuoted, Val);
+  if KeyPos = 0 then
+    Exit;
+  ColonPos := 0;
+  for I := KeyPos + Length(KeyQuoted) to Length(Val) do
   begin
-    Name := IntToStr(I);
-    if RegQueryStringValue(HKLM, Subkey, Name, Val) then
+    if Val[I] = ':' then
     begin
-      if Pos(WantPrefix, Val) = 1 then
-      begin
-        Result := Name;
-        Exit;
-      end;
+      ColonPos := I;
+      Break;
+    end;
+    if (Val[I] <> ' ') and (Val[I] <> #9) and (Val[I] <> #13) and (Val[I] <> #10) then
+      Exit;
+  end;
+  if ColonPos = 0 then
+    Exit;
+  ObjStart := 0;
+  for I := ColonPos + 1 to Length(Val) do
+  begin
+    if Val[I] = '{' then
+    begin
+      ObjStart := I;
+      Break;
+    end;
+    if (Val[I] <> ' ') and (Val[I] <> #9) and (Val[I] <> #13) and (Val[I] <> #10) then
+      Exit;
+  end;
+  if ObjStart = 0 then
+    Exit;
+  Depth := 0;
+  InStr := False;
+  Esc := False;
+  ObjEnd := 0;
+  for I := ObjStart to Length(Val) do
+  begin
+    Ch := Val[I];
+    if InStr then
+    begin
+      if Esc then
+        Esc := False
+      else if Ch = '\' then
+        Esc := True
+      else if Ch = '"' then
+        InStr := False;
     end
     else
     begin
-      Result := Name;
-      Exit;
+      if Ch = '"' then
+        InStr := True
+      else if Ch = '{' then
+        Depth := Depth + 1
+      else if Ch = '}' then
+      begin
+        Depth := Depth - 1;
+        if Depth = 0 then
+        begin
+          ObjEnd := I;
+          Break;
+        end;
+      end;
     end;
   end;
-end;
-
-procedure WriteForceInstallPolicy(const VendorKey: String);
-var
-  ListKey, SrcKey, Slot, ExtDirUrl: String;
-begin
-  ExtDirUrl := WdmFileUrl(ExpandConstant('{app}\BrowserExtension'));
-  ListKey := VendorKey + '\ExtensionInstallForcelist';
-  SrcKey := VendorKey + '\ExtensionInstallSources';
-  Slot := FindPolicySlot(ListKey, WdmExtId + ';');
-  if Slot <> '' then
-    RegWriteStringValue(HKLM, ListKey, Slot, WdmExtId + ';' + ExtDirUrl + '/update.xml');
-  Slot := FindPolicySlot(SrcKey, ExtDirUrl + '/');
-  if Slot <> '' then
-    RegWriteStringValue(HKLM, SrcKey, Slot, ExtDirUrl + '/*');
-end;
-
-{ Counts occurrences of Sub in S (Inno Pascal has no string-count helper). }
-function CountOccurrences(const Sub, S: String): Integer;
-var
-  Rest: String;
-  P: Integer;
-begin
-  Result := 0;
-  Rest := S;
-  P := Pos(Sub, Rest);
-  while P > 0 do
+  if ObjEnd = 0 then
+    Exit;
+  SliceStart := KeyPos;
+  while (SliceStart > 1) and ((Val[SliceStart - 1] = ' ') or (Val[SliceStart - 1] = #9) or (Val[SliceStart - 1] = #13) or (Val[SliceStart - 1] = #10)) do
+    SliceStart := SliceStart - 1;
+  SliceEnd := ObjEnd;
+  I := SliceEnd + 1;
+  while (I <= Length(Val)) and ((Val[I] = ' ') or (Val[I] = #9) or (Val[I] = #13) or (Val[I] = #10)) do
+    I := I + 1;
+  if (I <= Length(Val)) and (Val[I] = ',') then
+    SliceEnd := I
+  else
   begin
-    Result := Result + 1;
-    Rest := Copy(Rest, P + Length(Sub), Length(Rest));
-    P := Pos(Sub, Rest);
+    I := SliceStart - 1;
+    while (I >= 1) and ((Val[I] = ' ') or (Val[I] = #9) or (Val[I] = #13) or (Val[I] = #10)) do
+      I := I - 1;
+    if (I >= 1) and (Val[I] = ',') then
+      SliceStart := I;
   end;
+  NewVal := Copy(Val, 1, SliceStart - 1) + Copy(Val, SliceEnd + 1, Length(Val));
+  Result := True;
 end;
 
-{ ExtensionSettings is a single shared JSON value: delete it only when WDM is
-  almost certainly the sole tenant (our ID present, at most one
-  installation_mode block, i.e. the shape our own tooling wrote); a shared
-  multi-product value is left for the admin rather than clobbered. }
 procedure RemoveOurExtensionSettings(const Root: Integer; const VendorKey: String);
 var
-  Val: String;
+  Val, NewVal, Trimmed: String;
 begin
   if not RegQueryStringValue(Root, VendorKey, 'ExtensionSettings', Val) then
     Exit;
   if Pos(WdmExtId, Val) = 0 then
     Exit;
-  if CountOccurrences('"installation_mode"', Val) <= 1 then
-    RegDeleteValue(Root, VendorKey, 'ExtensionSettings');
+  { Uncertain JSON shape -> leave for the admin, never clobber. }
+  if not TryRemoveWdmKey(Val, WdmExtId, NewVal) then
+    Exit;
+  Trimmed := Trim(NewVal);
+  if (Trimmed = '') or (Trimmed = '{}') then
+    RegDeleteValue(Root, VendorKey, 'ExtensionSettings')
+  else
+    RegWriteStringValue(Root, VendorKey, 'ExtensionSettings', NewVal);
+end;
+
+{ Numeric forcelist slot helpers: Chrome reads ExtensionInstallForcelist as a
+  contiguous 1..N list. Deleting our slot without compacting leaves a gap
+  (e.g. only "2" remains) that can hide other products' entries, looking like
+  we deleted them. Compact back to 1..N after our removal. }
+function SlotNum(const Name: String; var N: Integer): Boolean;
+var
+  I, V: Integer;
+begin
+  Result := False;
+  N := 0;
+  if Length(Name) = 0 then
+    Exit;
+  V := 0;
+  for I := 1 to Length(Name) do
+  begin
+    if (Name[I] < '0') or (Name[I] > '9') then
+      Exit;
+    V := V * 10 + (Ord(Name[I]) - Ord('0'));
+    if V > 99 then
+      Exit;
+  end;
+  if V < 1 then
+    Exit;
+  N := V;
+  Result := True;
+end;
+
+procedure CompactForcelist(const Root: Integer; const ListKey: String);
+var
+  Names: TArrayOfString;
+  Nums: array of Integer;
+  Vals: array of String;
+  I, J, N, TmpN: Integer;
+  TmpV, Vv: String;
+  Contig: Boolean;
+begin
+  if not RegGetValueNames(Root, ListKey, Names) then
+    Exit;
+  SetArrayLength(Nums, 0);
+  SetArrayLength(Vals, 0);
+  for I := 0 to GetArrayLength(Names) - 1 do
+  begin
+    if SlotNum(Names[I], N) then
+      if RegQueryStringValue(Root, ListKey, Names[I], Vv) then
+      begin
+        J := GetArrayLength(Nums);
+        SetArrayLength(Nums, J + 1);
+        SetArrayLength(Vals, J + 1);
+        Nums[J] := N;
+        Vals[J] := Vv;
+      end;
+  end;
+  N := GetArrayLength(Nums);
+  if N = 0 then
+    Exit;
+  for I := 1 to N - 1 do
+  begin
+    TmpN := Nums[I];
+    TmpV := Vals[I];
+    J := I - 1;
+    while (J >= 0) and (Nums[J] > TmpN) do
+    begin
+      Nums[J + 1] := Nums[J];
+      Vals[J + 1] := Vals[J];
+      J := J - 1;
+    end;
+    Nums[J + 1] := TmpN;
+    Vals[J + 1] := TmpV;
+  end;
+  Contig := True;
+  for I := 0 to N - 1 do
+    if Nums[I] <> I + 1 then
+    begin
+      Contig := False;
+      Break;
+    end;
+  if Contig then
+    Exit;
+  for I := 0 to N - 1 do
+    RegDeleteValue(Root, ListKey, IntToStr(Nums[I]));
+  for I := 0 to N - 1 do
+    RegWriteStringValue(Root, ListKey, IntToStr(I + 1), Vals[I]);
+end;
+
+{ WDM source-URL footprint: require the joined path segment so unrelated paths
+  that merely contain both words elsewhere never match. Covers filesystem
+  (WDM\BrowserExtension) and file:// URL (WDM/BrowserExtension) forms, both
+  the legacy %LocalAppData%\WDM and the per-machine install dir. }
+function IsWdmSourceUrl(const Val: String): Boolean;
+begin
+  Result := (Pos('WDM\BrowserExtension', Val) > 0) or (Pos('WDM/BrowserExtension', Val) > 0);
 end;
 
 { Deletes only values that belong to WDM (prefix/footprint match), leaving other
@@ -223,21 +349,29 @@ var
   ListKey, SrcKey, Val: String;
   Names: TArrayOfString;
   I: Integer;
+  DeletedForcelist: Boolean;
 begin
   ListKey := VendorKey + '\ExtensionInstallForcelist';
   SrcKey := VendorKey + '\ExtensionInstallSources';
+  DeletedForcelist := False;
   if RegGetValueNames(Root, ListKey, Names) then
     for I := 0 to GetArrayLength(Names) - 1 do
       if RegQueryStringValue(Root, ListKey, Names[I], Val) then
         if Pos(WdmExtId + ';', Val) = 1 then
+        begin
           RegDeleteValue(Root, ListKey, Names[I]);
+          DeletedForcelist := True;
+        end;
+  { Keep the list contiguous so remaining third-party entries still apply. }
+  if DeletedForcelist then
+    CompactForcelist(Root, ListKey);
   if RegGetValueNames(Root, SrcKey, Names) then
     for I := 0 to GetArrayLength(Names) - 1 do
       if RegQueryStringValue(Root, SrcKey, Names[I], Val) then
         { Path-independent footprint match: old installs pointed at
-          %LocalAppData%\WDM, new ones at {app}; matching the current URL
+          %LocalAppData%\WDM, new ones at the install dir; matching the current URL
           would miss exactly the stale entries that shadow the unpacked load. }
-        if (Pos('WDM', Val) > 0) and (Pos('BrowserExtension', Val) > 0) then
+        if IsWdmSourceUrl(Val) then
           RegDeleteValue(Root, SrcKey, Names[I]);
   RemoveOurExtensionSettings(Root, VendorKey);
 end;

@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.IO;
 using System.Windows;
 using WDM.Models;
+using WDM.Services;
 
 namespace WDM;
 
@@ -83,7 +84,8 @@ public partial class DownloadCompleteDialog : Window
             }
             catch (Exception ex)
             {
-                MessageBox.Show(this, $"Could not open file:\n{ex.Message}", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+                App.LogException(ex);
+                UserFriendlyError.ShowError(this, "Couldn't open file", "The file couldn't be opened. It may have been moved or deleted.");
             }
         }
         else
@@ -115,7 +117,8 @@ public partial class DownloadCompleteDialog : Window
         }
         catch (Exception ex)
         {
-            MessageBox.Show(this, $"Could not open folder:\n{ex.Message}", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+            App.LogException(ex);
+            UserFriendlyError.ShowError(this, "Couldn't open folder", "The folder couldn't be opened. It may have been moved or deleted.");
         }
     }
 

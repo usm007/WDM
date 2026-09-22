@@ -143,7 +143,8 @@ public partial class UpdateAvailableDialog : Window
             catch (Exception ex)
             {
                 ProgressPanel.Visibility = Visibility.Collapsed;
-                DetailsText.Text = $"{(isDelta ? "Delta" : "Full package")} download failed: {ex.Message}";
+                App.LogException(ex);
+                DetailsText.Text = "The update couldn't be downloaded. Check your internet connection and try again.";
                 InstallButton.IsEnabled = true;
                 LaterButton.IsEnabled = true;
             }
@@ -203,7 +204,8 @@ public partial class UpdateAvailableDialog : Window
         {
             ProgressPanel.Visibility = Visibility.Collapsed;
             // More friendly error + offer to open release page
-            DetailsText.Text = $"Download failed: {ex.Message}{Environment.NewLine}Please try again or open the release page to download manually.";
+            App.LogException(ex);
+            DetailsText.Text = $"The installer couldn't be downloaded.{Environment.NewLine}Please try again or open the release page to download manually.";
             InstallButton.IsEnabled = true;
             LaterButton.IsEnabled = true;
             InstallButton.Content = "Open Release Page";

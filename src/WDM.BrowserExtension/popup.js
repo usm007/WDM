@@ -87,11 +87,11 @@ function renderMedia(wdmActive) {
     info.className = "media-info";
     const name = document.createElement("div");
     name.className = "media-name";
-    name.textContent = m.label || m.url;
+    name.textContent = displayName(m);
     name.title = m.url;
     const meta = document.createElement("div");
     meta.className = "media-meta";
-    meta.textContent = (m.type || "Video") + " • " + ageText(m.time);
+    meta.textContent = metaText(m);
     info.appendChild(name);
     info.appendChild(meta);
 
@@ -125,6 +125,60 @@ function ageText(t) {
   return Math.floor(s / 60) + "m ago";
 }
 
+// Real stream name + rendition: "Land of Bad" with "HLS 1080p • 1.2 GB"
+// instead of "Viduki.net Api 1" with a bare "HLS".
+function displayQuality(m) {
+  try {
+    if (m && m.quality) return m.quality;
+    const url = (m && m.url) || "";
+    let mt = url.match(/(\d{3,4})p/i);
+    if (mt) return mt[1] + "p";
+    if (/(^|[^a-z])4k([^a-z]|$)/i.test(url)) return "4K";
+    mt = url.match(/[/?&=_-](2160|1440|1080|720|480|360|240)(?=[/?&=_\-.#]|$)/);
+    if (mt) return mt[1] + "p";
+  } catch {}
+  return "";
+}
+function displayName(m) {
+  try {
+    let base = (m && (m.label || m.pageTitle)) || (m && m.url) || "Video";
+    if (/^(master|index|playlist|chunklist|manifest|stream|play|video|media|file|download)(\.(m3u8|mpd|mp4|webm|mkv|mov|flv))?$/i.test(base)) {
+      base = (m && m.pageTitle) || base;
+    }
+    return base || m.url;
+  } catch { return (m && m.url) || "Video"; }
+}
+function metaText(m) {
+  try {
+    const q = displayQuality(m);
+    const type = (m && m.type) || "Video";
+    const size = (m && (m.sizeText || (m.size ? formatBytes(m.size) : ""))) || "";
+    let head = q ? type + " " + q : type;
+    if (size) head += " • " + size;
+    return head + " • " + ageText(m && m.time);
+  } catch { return ageText(m && m.time); }
+}
+function formatBytes(n) {
+  try {
+    n = Number(n);
+    if (!(n > 0)) return "";
+    const units = ["B", "KB", "MB", "GB"];
+    let u = 0;
+    while (n >= 1024 && u < units.length - 1) { n /= 1024; u++; }
+    return u === 0 ? Math.round(n) + " " + units[u] : n.toFixed(1) + " " + units[u];
+  } catch { return ""; }
+}
+function downloadFileName(m) {
+  try {
+    let base = displayName(m);
+    const q = displayQuality(m);
+    if (q && base.toLowerCase().indexOf(q.toLowerCase()) < 0 && !/(\d{3,4}p|4K)\s*$/i.test(base)) {
+      base = base + " " + q;
+    }
+    return base.slice(0, 180);
+  } catch { return (m && m.label) || null; }
+}
+
 async function copyUrl(url) {
   try {
     await navigator.clipboard.writeText(url);
@@ -146,7 +200,7 @@ async function downloadOne(m) {
   try {
     await webext.runtime.sendMessage({
       action: "download",
-      payload: { url: m.url, fileName: m.label || null, headers: {}, keyUrl: m.keyUrl || null, ...pageContext() }
+      payload: { url: m.url, fileName: downloadFileName(m) || null, headers: {}, keyUrl: m.keyUrl || null, pageTitle: m.pageTitle || m.label || null, ...pageContext() }
     });
     window.close();
   } catch (err) {
@@ -159,7 +213,7 @@ async function downloadAll() {
   try {
     await webext.runtime.sendMessage({
       action: "downloadBatch",
-      items: currentMedia.map(m => ({ url: m.url, fileName: m.label || null, headers: {}, keyUrl: m.keyUrl || null }))
+      items: currentMedia.map(m => ({ url: m.url, fileName: downloadFileName(m) || null, headers: {}, keyUrl: m.keyUrl || null, pageTitle: m.pageTitle || m.label || null }))
     });
     window.close();
   } catch (err) {

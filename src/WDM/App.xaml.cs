@@ -15,6 +15,29 @@ public partial class App : Application
     public static bool StartMinimized { get; private set; }
     public static bool IsTestMode { get; private set; }
 
+    /// <summary>Launch flags that mean "stay silent in the tray" (autostart entries,
+    /// MinimizeToTray relaunch). Forwarded bare-flag args must never restore the window.</summary>
+    private static readonly string[] SilentFlags =
+    {
+        "/minimized", "--minimized", "-minimized",
+        "/autostart", "--autostart",
+        "/tray", "--tray", "-tray",
+        "/silent", "--silent", "-silent",
+        "/background",
+    };
+
+    public static bool IsSilentFlag(string? arg) =>
+        !string.IsNullOrWhiteSpace(arg) &&
+        SilentFlags.Any(f => string.Equals(f, arg.Trim(), StringComparison.OrdinalIgnoreCase));
+
+    /// <summary>True when the args carry an actionable URL (browser "download with WDM"
+    /// handoff). Bare-flag launches (e.g. boot /minimized) must stay silent.</summary>
+    public static bool ArgsContainUrl(string[]? args) =>
+        args is not null && args.Any(a =>
+            !string.IsNullOrWhiteSpace(a) &&
+            (a.StartsWith("http://", StringComparison.OrdinalIgnoreCase) ||
+             a.StartsWith("https://", StringComparison.OrdinalIgnoreCase)));
+
     private static Mutex? _singleInstanceMutex;
     private static bool _ownsMutex;
     private const string MutexId = @"Local\WDM.SingleInstance.4F3B2C0A-8D2E-4B7A-9C1E-6A5B4D3E2F10";
@@ -85,12 +108,17 @@ public partial class App : Application
             _ownsMutex = createdNew;
             if (!createdNew && !isTestMode)
             {
-                // Forward our command line to the running instance (restores it
-                // even when it is hidden to the tray with no HWND to find),
-                // then exit. HWND focus-steal stays as a fallback.
-                try { SingleInstancePipe.TrySendArgs(SingleInstancePipe.PipeNameForCurrentSession(), e.Args, 800); }
-                catch { }
-                BringExistingInstanceToFront();
+                // Duplicate boot entry (HKCU + HKLM Run) or user relaunch: a bare-flag
+                // handoff (e.g. /minimized, no URL) must exit quietly — forwarding it
+                // would restore the main window and break silent autostart.
+                // Only forward actionable args (a download URL); focus-steal is the
+                // fallback for interactive relaunches, never for silent ones.
+                if (ArgsContainUrl(e.Args))
+                {
+                    try { SingleInstancePipe.TrySendArgs(SingleInstancePipe.PipeNameForCurrentSession(), e.Args, 800); }
+                    catch { }
+                    BringExistingInstanceToFront();
+                }
                 Shutdown();
                 return;
             }
@@ -118,10 +146,18 @@ public partial class App : Application
             string.Equals(a, "--silent", StringComparison.OrdinalIgnoreCase) ||
             string.Equals(a, "/background", StringComparison.OrdinalIgnoreCase) ||
             string.Equals(a, "-minimized", StringComparison.OrdinalIgnoreCase) ||
-            string.Equals(a, "-silent", StringComparison.OrdinalIgnoreCase) ||
-            string.Equals(a, "-tray", StringComparison.OrdinalIgnoreCase));
+             string.Equals(a, "-silent", StringComparison.OrdinalIgnoreCase) ||
+             string.Equals(a, "-tray", StringComparison.OrdinalIgnoreCase));
+        // Local activity log (testing): silent file log, real launches only
+        // (screenshot mode returned earlier and never reaches here).
+        ActivityLog.Start(UpdateChecker.CurrentVersion.ToString(), e.Args, StartMinimized);
+        ActivityLog.Write("ARGS", ArgsContainUrl(e.Args) ? "launch carries download URL(s)" : "no URL args");
         if (!isTestMode)
-            BrowserIntegration.DeployExtension();
+            _ = System.Threading.Tasks.Task.Run(() =>
+            {
+                try { BrowserIntegration.DeployExtension(); }
+                catch { /* best-effort: on-demand paths re-deploy; never block first paint */ }
+            });
         // Migrate user data out of the legacy install-root location first, so every
         // read below (settings, tasks, engines, WebView2 profile) hits the new home.
         if (!isTestMode)
@@ -167,7 +203,10 @@ public partial class App : Application
             mainWindow.Hide();
         }
 
-        if (e.Args.Length > 0)
+        // A boot/autostart launch carries only silent flags (e.g. /minimized):
+        // invoking the handler would RestoreWindow() and pop the big window.
+        // Only forward actionable args (a download URL) to the fresh window.
+        if (ArgsContainUrl(e.Args))
         {
             SecondInstanceHandler?.Invoke(e.Args);
         }
@@ -206,6 +245,7 @@ public partial class App : Application
 
     protected override void OnExit(ExitEventArgs e)
     {
+        try { ActivityLog.Stop(); } catch { }
         try { _pipeCts?.Cancel(); } catch { }
         _pipeCts?.Dispose();
         _pipeCts = null;
@@ -221,6 +261,7 @@ public partial class App : Application
     public static void LogException(Exception? ex)
     {
         if (ex is null) return;
+        try { ActivityLog.Write("ERROR", ex.GetType().Name + ": " + ex.Message); } catch { }
         try
         {
             Directory.CreateDirectory(TaskStore.AppDir);

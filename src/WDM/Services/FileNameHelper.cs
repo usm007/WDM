@@ -312,6 +312,12 @@ public static class FileNameHelper
         foreach (var pattern in sitePatterns)
             name = Regex.Replace(name, pattern, " ");
 
+        // E1. Strip generic web-series noise that clutters video names
+        name = Regex.Replace(name, @"(?i)\bCompleted(\s+Web)?(\s+Series)?\b", " ");
+        name = Regex.Replace(name, @"(?i)\bWeb\s*Series\b", " ");
+        name = Regex.Replace(name, @"(?i)\bE\s*Sub(s)?\b", " ");
+        name = Regex.Replace(name, @"(?i)\s*\(Ep\.\s*\d+\s*-\s*\d+\)\s*", " ");
+
         // E. Replace dots and underscores with spaces (protecting decimal numbers/versions like 5.1, v1.2.3)
         name = name.Replace('_', ' ');
         name = Regex.Replace(name, @"(?<=[a-zA-Z])\.(?=[a-zA-Z0-9])|(?<=[0-9])\.(?=[a-zA-Z])", " ");
@@ -339,6 +345,11 @@ public static class FileNameHelper
         var keepRegex = new Regex(@"(1080p|720p|4k|2160p|480p|x264|h264|x265|hevc|10bit|hdr|aac|dts|5\.1|7\.1|bluray|web-dl|webrip|S\d{2}E\d{2})", RegexOptions.IgnoreCase);
         name = Regex.Replace(name, @"\[(.*?)\]", match => keepRegex.IsMatch(match.Value) ? match.Value.Trim('[', ']') : "");
         name = Regex.Replace(name, @"\((.*?)\)", match => (keepRegex.IsMatch(match.Value) || Regex.IsMatch(match.Value, @"^\(?\d+\)?$")) ? match.Value : "");
+
+        // I. Enforce video format: [Name] [year] [language] [quality]
+        string formatted = TryFormatVideoName(name, ext);
+        if (formatted is not null)
+            return FinalizeName(formatted, ext);
 
         return FinalizeName(name, ext);
     }
@@ -405,6 +416,60 @@ public static class FileNameHelper
 
     public static string CleanVideoFileName(string fileName, string? pageTitle = null, string? referer = null) =>
         SmartSanitizeFileName(fileName, pageTitle, referer);
+
+    /// <summary>[Name] [year] [language] [quality] — the only video name shape.
+    /// Returns null when the input doesn't look like a video title (no year /
+    /// quality signal), so callers fall back to the existing heuristic.</summary>
+    private static string? TryFormatVideoName(string stem, string ext)
+    {
+        if (string.IsNullOrWhiteSpace(stem)) return null;
+        string lowerExt = (ext ?? "").ToLowerInvariant();
+        bool isVideo = lowerExt is ".mp4" or ".mkv" or ".avi" or ".mov" or ".webm" or ".ts" or ".flv" or ".m4v";
+        if (!isVideo) return null;
+
+        // Must have at least a year or a quality token to qualify as a video release name.
+        var yearMatch = Regex.Match(stem, @"\(?(19|20)\d{2}\)?");
+        bool hasQuality = Regex.IsMatch(stem, @"(?i)\b(480p|720p|1080p|2160p|4K|10bit|HDR|HEVC|x264|x265|WEB-DL|BluRay)\b");
+        if (!yearMatch.Success && !hasQuality) return null;
+
+        string working = stem;
+
+        // Extract year (keep parentheses form)
+        string? year = null;
+        var ym = Regex.Match(working, @"\((19|20)\d{2}\)");
+        if (ym.Success) year = ym.Value;
+        else
+        {
+            var ym2 = Regex.Match(working, @"\b(19|20)\d{2}\b");
+            if (ym2.Success) year = $"({ym2.Value})";
+        }
+        if (year is not null) working = Regex.Replace(working, Regex.Escape(year), " ", RegexOptions.IgnoreCase);
+
+        // Extract language (first match wins)
+        string? language = null;
+        var langRx = new Regex(@"(?i)\b(Hindi|English|Tamil|Telugu|Malayalam|Kannada|Bengali|Marathi|Punjabi|Dual Audio|Multi Audio)\b");
+        var lm = langRx.Match(working);
+        if (lm.Success) { language = lm.Value; working = working.Remove(lm.Index, lm.Length).Insert(lm.Index, " "); }
+
+        // Extract quality tokens in order of appearance: 480p/720p/1080p/4K/HEVC/x264 etc
+        var qualityTokens = new List<string>();
+        var qRx = new Regex(@"(?i)\b(480p|720p|1080p|2160p|4K|HEVC|x264|x265|10bit|HDR|BluRay|WEB-DL)\b");
+        foreach (Match m in qRx.Matches(working))
+            if (!qualityTokens.Any(t => string.Equals(t, m.Value, StringComparison.OrdinalIgnoreCase)))
+                qualityTokens.Add(m.Value);
+        working = qRx.Replace(working, " ");
+
+        // Remaining is the name — collapse, strip trailing dashes/parens
+        string name = Regex.Replace(working, @"\s+", " ").Trim().Trim('-', ' ', '.', '_', ',', '|', '~', ':', ';', '(', ')');
+        name = Regex.Replace(name, @"\s+", " ").Trim();
+        if (string.IsNullOrWhiteSpace(name)) return null;
+
+        var parts = new List<string> { name };
+        if (year is not null) parts.Add(year);
+        if (language is not null) parts.Add(language);
+        if (qualityTokens.Count > 0) parts.Add(string.Join(" ", qualityTokens));
+        return string.Join(" ", parts);
+    }
 
     /// <summary>True for manifest/chunklist basenames that carry no title
     /// ("master", "index", "playlist", "index-v1-a1", "seg-12", ...).</summary>

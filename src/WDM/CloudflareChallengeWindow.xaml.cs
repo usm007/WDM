@@ -18,6 +18,12 @@ public partial class CloudflareChallengeWindow : Wpf.Ui.Controls.FluentWindow
     public string? FinalRedirectUrl { get; private set; }
     public bool ClearanceCaptured { get; private set; }
 
+    /// <summary>When true, skips WebView2 initialization entirely (screenshot /
+    /// test automation). Initializing WebView2 on an offscreen window aborts
+    /// with E_ABORT (0x80004004) and must never pop a modal MessageBox, which
+    /// would block the automation run.</summary>
+    public static bool SuppressBrowserInit { get; set; }
+
     public CloudflareChallengeWindow(DownloadTask task)
     {
         InitializeComponent();
@@ -36,6 +42,14 @@ public partial class CloudflareChallengeWindow : Wpf.Ui.Controls.FluentWindow
 
     private async Task InitWebViewAsync()
     {
+        // Screenshot / test mode: no real browser — show a static placeholder
+        // instead of failing with E_ABORT + a modal MessageBox.
+        if (SuppressBrowserInit)
+        {
+            LoadingOverlay.Visibility = Visibility.Collapsed;
+            StatusText.Text = "Browser preview disabled in screenshot mode — solve the check in the live app and WDM will capture clearance cookies here.";
+            return;
+        }
         try
         {
             string userDataDir = Path.Combine(Services.TaskStore.AppDir, "WebView2");
@@ -55,7 +69,7 @@ public partial class CloudflareChallengeWindow : Wpf.Ui.Controls.FluentWindow
             if (!Uri.TryCreate(_task.Url, UriKind.Absolute, out var target) ||
                 (target.Scheme != Uri.UriSchemeHttp && target.Scheme != Uri.UriSchemeHttps))
             {
-                MessageBox.Show(this, "This download has no valid page URL to solve.", "WebView Error", MessageBoxButton.OK, MessageBoxImage.Error);
+                StatusText.Text = "This download has no valid page URL to solve.";
                 return;
             }
             if (LooksLikeDirectFile(target))
@@ -66,8 +80,11 @@ public partial class CloudflareChallengeWindow : Wpf.Ui.Controls.FluentWindow
         }
         catch (Exception ex)
         {
+            // Never modal here: a failed init (e.g. E_ABORT on an offscreen /
+            // closing window, missing WebView2 runtime) is an inline status,
+            // so automation runs are never blocked by a popup.
             LoadingOverlay.Visibility = Visibility.Collapsed;
-            MessageBox.Show(this, $"Failed to initialize browser engine: {ex.Message}", "WebView Error", MessageBoxButton.OK, MessageBoxImage.Error);
+            StatusText.Text = Services.UserFriendlyError.For(ex);
         }
     }
 

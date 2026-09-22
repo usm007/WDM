@@ -23,6 +23,11 @@ public partial class WelcomeWindow : Wpf.Ui.Controls.FluentWindow
         {
             YouTubeBtn.Content = "Signed in — Click to re-authenticate...";
         }
+
+        Loaded += (_, __) =>
+        {
+            try { string p = Services.BrowserIntegration.DeployExtension(); if (ExtensionPathBox != null) ExtensionPathBox.Text = p; } catch { }
+        };
     }
 
     protected override void OnSourceInitialized(System.EventArgs e)
@@ -39,39 +44,58 @@ public partial class WelcomeWindow : Wpf.Ui.Controls.FluentWindow
         }
         catch (System.Exception ex)
         {
-            MessageBox.Show($"Could not open the Add-ons page: {ex.Message}", "WDM", MessageBoxButton.OK, MessageBoxImage.Warning);
+            App.LogException(ex);
+            Services.UserFriendlyError.ShowWarning(this, "Couldn't open page", "The browser page couldn't be opened. Please try again.");
         }
     }
 
     private void SetupChrome_Click(object sender, RoutedEventArgs e)
     {
-        // Step 1: deploy extension to local dir and copy the path to clipboard.
         string path;
         try
         {
             path = Services.BrowserIntegration.DeployExtension();
             Clipboard.SetText(path);
+            if (ExtensionPathBox != null) ExtensionPathBox.Text = path;
         }
         catch (Exception ex)
         {
-            CopyFeedbackText.Text = $"Could not prepare extension folder: {ex.Message}";
+            App.LogException(ex);
+            CopyFeedbackText.Text = "The extension folder couldn't be prepared. Please try again.";
             return;
         }
 
-        // Step 2: open chrome://extensions (or edge://extensions) in the first
-        // detected Chromium browser.
+        try { Services.BrowserIntegration.OpenExtensionsPage(); }
+        catch (Exception ex)
+        {
+            App.LogException(ex);
+            CopyFeedbackText.Text = "The extensions page couldn't be opened. Please open it by hand in your browser.";
+        }
+
+        ChromeStepsPanel.Visibility = System.Windows.Visibility.Visible;
+        if (CopyPathLabel != null) CopyPathLabel.Text = "Copied ✓";
+        SetupChromeBtn.Content = "Open Extensions Page Again  →";
+    }
+
+    private void CopyPath_Click(object sender, RoutedEventArgs e)
+    {
+        string path;
+        try { path = Services.BrowserIntegration.DeployExtension(); if (ExtensionPathBox != null) ExtensionPathBox.Text = path; }
+        catch { path = Services.BrowserIntegration.DeployDir; }
         try
         {
-            Services.BrowserIntegration.OpenExtensionsPage();
+            Clipboard.SetText(path);
+            ChromeStepsPanel.Visibility = System.Windows.Visibility.Visible;
+            if (CopyPathLabel != null) CopyPathLabel.Text = "Copied ✓";
+            var timer = new System.Windows.Threading.DispatcherTimer { Interval = TimeSpan.FromSeconds(2.5) };
+            timer.Tick += (_, __) => { timer.Stop(); if (CopyPathLabel != null) CopyPathLabel.Text = "Copy"; };
+            timer.Start();
         }
         catch (Exception ex)
         {
-            CopyFeedbackText.Text = $"Could not open the extensions page: {ex.Message}";
+            App.LogException(ex);
+            CopyFeedbackText.Text = "Couldn't copy the path — please copy it by hand from the box above.";
         }
-
-        // Reveal the compact 2-step instruction panel.
-        ChromeStepsPanel.Visibility = System.Windows.Visibility.Visible;
-        SetupChromeBtn.Content = "Open Extensions Page Again  →";
     }
 
     private void YouTubeBtn_Click(object sender, RoutedEventArgs e)
@@ -88,7 +112,8 @@ public partial class WelcomeWindow : Wpf.Ui.Controls.FluentWindow
         }
         catch (System.Exception ex)
         {
-            MessageBox.Show(this, "Could not open YouTube Sign-In window: " + ex.Message, "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+            App.LogException(ex);
+            Services.UserFriendlyError.ShowError(this, "Couldn't open sign-in", "The YouTube sign-in window couldn't be opened. Please try again.");
         }
     }
 
@@ -121,7 +146,8 @@ public partial class WelcomeWindow : Wpf.Ui.Controls.FluentWindow
         }
         catch (System.Exception ex)
         {
-            MessageBox.Show(this, "Failed to download YouTube engine plugins:\n" + ex.Message, "Engine Setup Error", MessageBoxButton.OK, MessageBoxImage.Error);
+            App.LogException(ex);
+            Services.UserFriendlyError.ShowError(this, "Couldn't set up YouTube downloads", "The YouTube downloader couldn't be set up. Check your internet connection and try again.");
             _settings.EnableYouTubeDownloads = false;
             Services.TaskStore.SaveSettings(_settings);
             ActivateBtn.IsEnabled = true;

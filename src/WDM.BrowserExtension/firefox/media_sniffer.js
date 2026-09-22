@@ -19,6 +19,24 @@
   // Basenames that carry no title (master.m3u8, index-v1-a1.m3u8, ...): labeled
   // from the page title instead so WDM never saves "master.ts".
   const GENERIC_MEDIA_RE = /^(master|index|playlist|chunklist|manifest|stream|play|video|media|file|download|index-v1-a\d+|seg-?\d*)(\.(m3u8|mpd|mp4|webm|mkv|mov|flv))?$/i;
+  // Server filenames (Content-Disposition, observed by background) that name a
+  // real media file. The stem replaces generic URL basenames / shell titles.
+  const CD_MEDIA_EXT_RE = /\.(mp4|m4v|webm|mkv|avi|mov|flv|mpd|m3u8|mp3|m4a)(\?|$)/i;
+  function cdLabelStem(fn) {
+    try {
+      let s = String(fn || "").split("?")[0].split("/").pop().split("\\").pop().trim();
+      try { s = decodeURIComponent(s); } catch {}
+      if (!s || !CD_MEDIA_EXT_RE.test(s)) return "";
+      const dot = s.lastIndexOf(".");
+      if (dot > 0) s = s.slice(0, dot);
+      if (!s || GENERIC_MEDIA_RE.test(s)) return "";
+      return s.slice(0, 120);
+    } catch { return ""; }
+  }
+  // Embed-iframe titles carry no film name ("Viduki.net Api 1", "Vidl link Player"):
+  // when the local document title looks like a provider shell, the top-page
+  // title forwarded by background (pageTitleHint) wins instead.
+  const EMBED_PROVIDER_TITLE_RE = /(viduki|vidy\.st|vidfast|vidlink|vidrock|vidzee|voe|filemoon|dood|streamwish|vitacloud|mixdrop|uptostream|\bembed\b|\bplayer\b|\bapi\b)/i;
   // API endpoints whose JSON bodies (not URLs) carry the real stream, e.g.
   // vidwara POST /api/stream -> {streaming_url}. Never treated as downloadable
   // items themselves — only scanned for embedded stream URLs.
@@ -70,17 +88,207 @@
   });
   // Background webRequest hint (for worker/CSP streams not visible to content).
   // Background only forwards verified video kinds, so register directly.
+  // The hint may carry the top-page title + observed quality/size so iframe
+  // embeds (whose document.title is just "Viduki.net Api 1") still show the
+  // real film name and rendition quality.
   try {
     const w = typeof browser !== "undefined" ? browser : chrome;
     if (w && w.runtime && w.runtime.onMessage) {
       w.runtime.onMessage.addListener((msg) => {
-        if (msg && msg.action === "wdmMediaHint" && msg.url) registerMediaStream(msg.url, msg.hint || null);
+        if (msg && msg.action === "wdmMediaHint" && msg.url) {
+          if (typeof msg.pageTitle === "string" && msg.pageTitle.trim().length >= 4) {
+            pageTitleHint = msg.pageTitle.trim().slice(0, 120);
+            // Backfill the real name onto entries stuck with a provider title.
+            try {
+              for (const e of detectedStreams.values()) {
+                if (e && (isProviderTitle(e.label) || !e.label || e.label === "Video") && !isProviderTitle(pageTitleHint)) {
+                  e.label = pageTitleHint;
+                  e.pageTitle = pageTitleHint;
+                }
+              }
+            } catch {}
+          }
+          registerMediaStream(msg.url, msg.hint || null, null, {
+            quality: msg.quality || null,
+            resolution: msg.resolution || null,
+            size: msg.size || null,
+            pageTitle: msg.pageTitle || null,
+            fileName: msg.fileName || null
+          });
+        }
       });
     }
   } catch {}
   injectMainHook();
 
-  const detectedStreams = new Map(); // url -> { url, label, type, size, quality, resolution }
+  const detectedStreams = new Map(); // url -> { url, label, type, size, quality, resolution, pageTitle }
+  // Top-page title as told by background (tab.title). Set before the map is
+  // used by the listener above at runtime (listener fires later), so `let`
+  // placement here is safe — assignment happens only inside callbacks.
+  let pageTitleHint = "";
+  // Master playlist probe cache: masterUrl -> { best, variants: Map<absUrl, height> }.
+  const masterProbeCache = new Map();
+  // Live decoded frame height from the playing <video> (e.g. 1080). Used as a
+  // last-resort quality signal when URLs are fully tokenized.
+  let liveVideoHeight = 0;
+
+  function isProviderTitle(t) {
+    try {
+      if (!t || typeof t !== "string") return true;
+      const s = t.trim();
+      if (s.length < 4) return true;
+      if (s === "Video") return true;
+      return EMBED_PROVIDER_TITLE_RE.test(s);
+    } catch { return false; }
+  }
+  function realTitle() {
+    try {
+      const local = cleanTitleText(document.title);
+      // Prefer the top-page title when the local one is a provider shell
+      // ("Viduki.net Api 1") or missing entirely (bare embed iframe).
+      if (pageTitleHint && !isProviderTitle(pageTitleHint)) {
+        if (!local || isProviderTitle(local)) return pageTitleHint;
+        // Both look real (edge: same-tab navigation) — the longer, more
+        // specific one usually names the film, not the host.
+        if (local.length < pageTitleHint.length - 12) return pageTitleHint;
+        return local;
+      }
+      return local || pageTitleHint || "";
+    } catch { return pageTitleHint || ""; }
+  }
+  // Snap a raw pixel height to the standard rendition ladder for badges.
+  function snapHeight(h) {
+    try {
+      h = parseInt(h, 10);
+      if (!(h > 0)) return 0;
+      const ladder = [2160, 1440, 1080, 720, 480, 360, 240];
+      for (const std of ladder) { if (h >= std - 40) return std; }
+      return h;
+    } catch { return 0; }
+  }
+  // Broad quality parse for tokenized player URLs: 1080p, /1080/, _720_,
+  // ?height=1080, &res=720, itag-style and hls-XXX variants.
+  function parseQualityFromUrl(url) {
+    try {
+      if (!url || typeof url !== "string") return "";
+      let m = url.match(/(\d{3,4})p/i);
+      if (m) {
+        const h = snapHeight(m[1]);
+        if (h) return h >= 2160 && /4k/i.test(url) ? "4K" : h + "p";
+      }
+      if (/(^|[^a-z])4k([^a-z]|$)/i.test(url)) return "4K";
+      m = url.match(/[/?&=_-](2160|1440|1080|720|480|360|240)(?=[/?&=_\-.#]|$)/);
+      if (m) return m[1] === "2160" && /4k/i.test(url) ? "4K" : m[1] + "p";
+      m = url.match(/(?:height|res|resolution|quality|q)[=:](2160|1440|1080|720|480|360|240)/i);
+      if (m) return m[1] + "p";
+      m = url.match(/hls[-_](2160|1440|1080|720|480|360)/i);
+      if (m) return m[1] + "p";
+      m = url.match(/[?&]itag=(22|37|46|18|59|43|35|44|34)/i);
+      if (m) {
+        const itag = { "22": "720p", "37": "1080p", "46": "1080p", "18": "360p", "59": "480p", "43": "360p", "35": "480p", "44": "480p", "34": "360p" };
+        return itag[m[1].toLowerCase()] || "";
+      }
+    } catch {}
+    return "";
+  }
+  // Fetch a master .m3u8 and map its variants to heights (RESOLUTION wins,
+  // BANDWIDTH orders). Resolves relative variant URIs against the master URL.
+  // Best-effort: CORS or token expiry just leaves quality unknown.
+  function probeHlsQuality(masterUrl) {
+    try {
+      if (!masterUrl || masterProbeCache.has(masterUrl)) {
+        const c = masterProbeCache.get(masterUrl);
+        if (c) applyMasterVariants(masterUrl, c);
+        return;
+      }
+      if (!/\.m3u8(\?|$)/i.test(masterUrl)) return;
+      masterProbeCache.set(masterUrl, null); // in-flight marker
+      fetch(masterUrl, { credentials: "omit", cache: "no-store" }).then((r) => {
+        if (!r || !r.ok) { masterProbeCache.delete(masterUrl); return null; }
+        return r.text();
+      }).then((text) => {
+        try {
+          if (!text || typeof text !== "string" || text.indexOf("#EXTM3U") < 0) { masterProbeCache.delete(masterUrl); return; }
+          if (text.length > 65536) text = text.slice(0, 65536);
+          const lines = text.split("\n");
+          const variants = new Map();
+          let best = 0;
+          for (let i = 0; i < lines.length; i++) {
+            const line = (lines[i] || "").trim();
+            if (line.toLowerCase().indexOf("#ext-x-stream-inf:") !== 0) continue;
+            let height = 0;
+            const rm = /RESOLUTION\s*=\s*\d+\s*x\s*(\d+)/i.exec(line);
+            if (rm) height = snapHeight(rm[1]);
+            let uri = null;
+            for (let j = i + 1; j < lines.length; j++) {
+              const cand = (lines[j] || "").trim();
+              if (!cand) continue;
+              if (cand.charAt(0) === "#") { i = j; break; }
+              uri = cand; i = j; break;
+            }
+            if (!uri) continue;
+            let abs = uri;
+            try { abs = new URL(uri, masterUrl).href; } catch {}
+            if (height) {
+              variants.set(abs, height);
+              if (height > best) best = height;
+            }
+          }
+          // No RESOLUTION tags: fall back to BANDWIDTH order (highest = best),
+          // labeled from any quality token in the variant URIs.
+          if (!best && variants.size === 0) {
+            let bwBest = "";
+            let bwBestVal = -1;
+            for (let i = 0; i < lines.length; i++) {
+              const line = (lines[i] || "").trim();
+              if (line.toLowerCase().indexOf("#ext-x-stream-inf:") !== 0) continue;
+              const bm = /BANDWIDTH\s*=\s*(\d+)/i.exec(line);
+              const bw = bm ? parseInt(bm[1], 10) : -1;
+              for (let j = i + 1; j < lines.length; j++) {
+                const cand = (lines[j] || "").trim();
+                if (!cand) continue;
+                if (cand.charAt(0) === "#") { i = j; break; }
+                if (bw > bwBestVal) { bwBestVal = bw; bwBest = cand; }
+                i = j; break;
+              }
+            }
+            if (bwBest) {
+              let abs = bwBest;
+              try { abs = new URL(bwBest, masterUrl).href; } catch {}
+              const q = parseQualityFromUrl(abs);
+              if (q) {
+                const h = q === "4K" ? 2160 : (parseInt(q, 10) || 0);
+                if (h) { variants.set(abs, h); best = h; }
+              }
+            }
+          }
+          if (!best) { masterProbeCache.delete(masterUrl); return; }
+          const entry = { best, variants };
+          masterProbeCache.set(masterUrl, entry);
+          applyMasterVariants(masterUrl, entry);
+        } catch { try { masterProbeCache.delete(masterUrl); } catch {} }
+      }).catch(() => { try { masterProbeCache.delete(masterUrl); } catch {} });
+    } catch {}
+  }
+  function applyMasterVariants(masterUrl, entry) {
+    try {
+      if (!entry || !entry.best) return;
+      let changed = false;
+      const bestQ = entry.best >= 2160 ? "4K" : entry.best + "p";
+      for (const [variantUrl, h] of entry.variants.entries()) {
+        const e = detectedStreams.get(variantUrl);
+        if (e && !e.quality) {
+          e.quality = h >= 2160 ? "4K" : h + "p";
+          e.resolution = h;
+          changed = true;
+        }
+      }
+      // The master entry itself carries the ladder peak ("HLS 1080p").
+      const m = detectedStreams.get(masterUrl);
+      if (m && !m.quality) { m.quality = bestQ; m.resolution = entry.best; changed = true; }
+      void changed;
+    } catch {}
+  }
   // Playlist URL -> observed EXT-X-KEY URI (1DM onPotentialM3u8AesKey equivalent).
   // Filled when a playlist response body is scanned; attached to the download
   // payload at click time. The desktop engine verifies by fetching — hint only.
@@ -135,25 +343,53 @@
   checkWdm();
   setInterval(checkWdm, 5000);
 
-  // 2. Dispatch download to WDM
+  // 2. Dispatch download to WDM. Accepts either (url, label, type) or a
+  // stream entry object — the entry form carries quality/pageTitle so the
+  // desktop app saves "Land of Bad 1080p.mp4" instead of "master.m3u8".
+  function buildDownloadFileName(entryOrLabel, quality) {
+    try {
+      let base = "";
+      let q = quality || "";
+      if (entryOrLabel && typeof entryOrLabel === "object") {
+        base = entryOrLabel.label || entryOrLabel.pageTitle || "";
+        q = entryOrLabel.quality || q;
+      } else {
+        base = entryOrLabel || "";
+      }
+      base = String(base || "").trim();
+      if (isProviderTitle(base)) base = realTitle() || base;
+      if (!base) base = realTitle() || "Video";
+      if (q && !new RegExp(q.replace("4K", "4K"), "i").test(base)) {
+        // Avoid "Land of Bad 1080p 1080p": append once.
+        if (!/(\d{3,4}p|4K)\s*$/i.test(base)) base = base + " " + q;
+      }
+      return base.slice(0, 180);
+    } catch { return (typeof entryOrLabel === "string" ? entryOrLabel : "Video"); }
+  }
   function sendToWdm(url, label, streamType) {
+    // Entry-object form: sendToWdm(entry).
+    let entry = null;
+    if (url && typeof url === "object") { entry = url; url = entry.url; label = entry.label; streamType = entry.type; }
+    const quality = (entry && entry.quality) || (entry ? qualityOf(entry) : (typeof label === "string" ? "" : ""));
     // Page-local blob: fetch here (only this context can read it) and stream
     // base64 chunks to the desktop app, which imports the bytes as a file.
     if (typeof url === "string" && url.startsWith("blob:")) {
-      sendBlobToWdm(url, label).catch((e) => console.warn("[WDM] Blob handoff failed:", e));
+      try { sendBlobToWdm(url, buildDownloadFileName(entry || label, quality)).catch((e) => console.warn("[WDM] Blob handoff failed:", e)); }
+      catch (e) { console.warn("[WDM] Blob handoff failed:", e); }
       return;
     }
+    const title = realTitle() || document.title || null;
     const payload = {
       url: url,
-      fileName: label || null,
+      fileName: buildDownloadFileName(entry || label, quality) || null,
       referer: location.href,
       headers: {
         "Referer": location.href,
         "Origin": location.origin
       },
-      pageTitle: document.title || null,
+      pageTitle: title,
       streamType: streamType || "auto",
-      keyUrl: playlistKeyHints.get(url) || null
+      keyUrl: (entry && entry.keyUrl) || playlistKeyHints.get(url) || null
     };
 
     try {
@@ -361,12 +597,24 @@
       try { if (videoEl._wdmRO) videoEl._wdmRO.disconnect(); } catch {}
       try { if (videoEl._wdmIO) videoEl._wdmIO.disconnect(); } catch {}
     });
-    // Quality parsed from the URL for rendition labels (".../1080p/...", "movie-720p.mp4").
+    // Quality for rendition badges. Priority: probed master playlist /
+    // background observation > live <video> frame height > URL tokens.
     function qualityOf(s) {
       try {
-        const m = s.url.match(/(\d{3,4})p/i);
-        if (m) return m[1] + "p";
-        if (/(^|[^a-z])4k([^a-z]|$)/i.test(s.url)) return "4K";
+        if (!s) return "";
+        if (typeof s.quality === "string" && s.quality) return s.quality;
+        if (s.resolution && parseInt(s.resolution, 10) > 0) {
+          const h = snapHeight(s.resolution);
+          if (h) return h >= 2160 ? "4K" : h + "p";
+        }
+        if (s.url) {
+          const q = parseQualityFromUrl(s.url);
+          if (q) return q;
+        }
+        if (liveVideoHeight && (s.type === "HLS" || s.type === "DASH")) {
+          const h = snapHeight(liveVideoHeight);
+          if (h) return h >= 2160 ? "4K" : h + "p";
+        }
       } catch {}
       return "";
     }
@@ -437,15 +685,19 @@
         return;
       }
 
-      // Show the grouped video entries with quality badges
+      // Show the grouped video entries with quality badges. Labels show the
+      // real stream name (top-page title), badges carry type + rendition
+      // ("HLS 1080p") so identical provider shells become distinguishable.
       const toShow = streams.slice(0, 6);
       for (const s of toShow) {
         const item = document.createElement("div");
         item.className = "wdm-dropdown-item";
         const q = qualityOf(s);
-        let pretty = (s.label && s.label.startsWith("master-")) ? "Main video (DASH)" : (s.label || "Video");
+        let rawLabel = (s.label && s.label.startsWith("master-")) ? "Main video (DASH)" : (s.label || s.pageTitle || "Video");
+        if (isProviderTitle(rawLabel)) rawLabel = s.pageTitle && !isProviderTitle(s.pageTitle) ? s.pageTitle : (realTitle() || rawLabel);
+        let pretty = rawLabel;
         let badge = s.type || "Video";
-        if (q && !pretty.includes(q)) badge = badge + " " + q;
+        if (q && pretty.toLowerCase().indexOf(q.toLowerCase()) < 0) badge = badge + " " + q;
         // Build DOM with textContent/setAttribute only — never innerHTML with
         // attacker-controlled URLs/labels (XSS via title="..." breakout).
         const labelDiv = document.createElement("div");
@@ -460,7 +712,7 @@
         item.addEventListener("click", (e) => {
           e.stopPropagation();
           dropdown.classList.remove("wdm-open");
-          sendToWdm(s.url, s.label, s.type);
+          sendToWdm(s);
           const label = overlay.querySelector(".wdm-player-overlay-label");
           if (label) { label.textContent = "Sent to WDM!"; setTimeout(() => { label.textContent = "Download this video"; }, 2000); }
         });
@@ -480,7 +732,7 @@
         return;
       }
       if (streams.length === 1) {
-        sendToWdm(streams[0].url, streams[0].label, streams[0].type);
+        sendToWdm(streams[0]);
         const label = overlay.querySelector(".wdm-player-overlay-label");
         if (label) { label.textContent = "Sent to WDM!"; setTimeout(() => { label.textContent = "Download this video"; }, 2000); }
       } else {
@@ -603,7 +855,8 @@
   // 6. Record and sync a discovered stream URL — video only. Anything that is
   // not provably HLS/DASH/direct-video is ignored here (opaque URLs go through
   // sendVerifyMedia and only return if background confirms video content).
-  function registerMediaStream(url, hintType, customLabel) {
+  // extra carries background enrichment {quality, resolution, size, pageTitle}.
+  function registerMediaStream(url, hintType, customLabel, extra) {
     if (!url || typeof url !== "string") return;
     if (url.startsWith("data:") || url.startsWith("blob:http://127.0.0.1") || url.startsWith("blob:http://localhost")) return;
     // Player API endpoints (e.g. POST /api/stream) are scanned for bodies,
@@ -630,7 +883,28 @@
     }
 
     if (AUDIO_RE.test(url)) return; // never list audio, even from <video> tags
-    if (detectedStreams.has(url)) return;
+    const existing = detectedStreams.get(url);
+    if (existing) {
+      // Enrich a known entry (background hint arrived after first sighting).
+      try {
+        if (extra && typeof extra === "object") {
+          if (!existing.quality && extra.quality) existing.quality = extra.quality;
+          if (!existing.resolution && extra.resolution) existing.resolution = extra.resolution;
+          if (!existing.size && extra.size) existing.size = extra.size;
+          if (extra.fileName && !existing.fileName) {
+            existing.fileName = extra.fileName;
+            const stem = cdLabelStem(extra.fileName);
+            if (stem) existing.label = stem;
+          }
+          if (extra.pageTitle && typeof extra.pageTitle === "string" && extra.pageTitle.trim().length >= 4) {
+            pageTitleHint = extra.pageTitle.trim().slice(0, 120);
+            if (isProviderTitle(existing.label)) { existing.label = pageTitleHint; existing.pageTitle = pageTitleHint; }
+          }
+        }
+        if (!existing.quality && existing.type === "HLS") probeHlsQuality(url);
+      } catch {}
+      return;
+    }
 
     // Trusted background verification passes explicit kinds through; everything
     // else must match a known video pattern or it is dropped. Explicit
@@ -647,8 +921,16 @@
     if (!type) return;
 
     let label = customLabel;
-    // Blob URLs carry opaque UUID paths: use the page title, not the UUID.
-    if (!label && url.startsWith("blob:")) label = cleanTitleText(document.title) || "Video";
+    let pageTitle = (extra && extra.pageTitle) || pageTitleHint || "";
+    // Background/top-page title wins over a provider-shell iframe title.
+    if (typeof pageTitle === "string" && pageTitle.trim().length >= 4) {
+      pageTitleHint = pageTitle.trim().slice(0, 120);
+      pageTitle = pageTitleHint;
+    } else {
+      pageTitle = pageTitleHint;
+    }
+    // Blob URLs carry opaque UUID paths: use the real title, not the UUID.
+    if (!label && url.startsWith("blob:")) label = realTitle() || "Video";
     if (!label) {
       try {
         const u = new URL(url);
@@ -658,15 +940,31 @@
       } catch {
         label = "";
       }
-      // Generic manifest/segment basenames ("master.m3u8") become the page title
-      // so WDM saves "My Film.mp4" instead of "master.ts".
-      if (!label || GENERIC_MEDIA_RE.test(label)) {
-        label = cleanTitleText(document.title) || "Video";
+      // Generic manifest/segment basenames ("master.m3u8") and provider-shell
+      // iframe titles ("Viduki.net Api 1") become the real film title so WDM
+      // saves "Land of Bad.mp4" instead of "master.ts".
+      if (!label || GENERIC_MEDIA_RE.test(label) || isProviderTitle(label)) {
+        label = realTitle() || "Video";
       }
+    } else if (isProviderTitle(label)) {
+      label = realTitle() || label;
     }
+    // Server filename (Content-Disposition) is authoritative — it wins over
+    // URL basenames and page titles whenever it names a real media file.
+    const cdStem = (extra && extra.fileName) ? cdLabelStem(extra.fileName) : "";
+    if (cdStem) label = cdStem;
 
-    const streamInfo = { url, label, type, time: Date.now() };
+    let quality = (extra && extra.quality) || parseQualityFromUrl(url);
+    let resolution = (extra && extra.resolution) || null;
+    let size = (extra && extra.size) || null;
+    const cdFileName = (extra && extra.fileName) || null;
+    const streamInfo = { url, label, type, time: Date.now(), quality: quality || null, resolution: resolution || null, size: size || null, pageTitle: realTitle() || null, fileName: cdFileName };
     detectedStreams.set(url, streamInfo);
+    // Tokenized HLS masters hide rendition quality in the URL — probe the
+    // playlist once for RESOLUTION so the badge can show "HLS 1080p".
+    if (type === "HLS" && !quality) {
+      try { probeHlsQuality(url); } catch {}
+    }
 
     // Notify background script to update icon badge & media popup list
     try {
@@ -714,20 +1012,32 @@
     return out;
   }
   function observeDomVideos() {
+    const noteResolution = (el) => {
+      // Live decoded frame size is the ground truth when manifest URLs are
+      // tokenized (".../playlist?token=abc" carries no 1080p token).
+      try {
+        const h = el && el.videoHeight ? el.videoHeight : 0;
+        if (h >= 240 && h > liveVideoHeight) liveVideoHeight = h;
+      } catch {}
+    };
     const inspectElement = (el) => {
       if (el.tagName.toLowerCase() !== "video") return;
+      noteResolution(el);
       checkElementSrc(el.currentSrc || el.src);
       // Check child <source> elements (including <video><source>)
       el.querySelectorAll("source").forEach((s) => { if (s.src) checkElementSrc(s.src); });
       getOrCreateOverlay(el);
       el.addEventListener("play", () => {
+        noteResolution(el);
         if (el.currentSrc) checkElementSrc(el.currentSrc);
         getOrCreateOverlay(el);
       });
       el.addEventListener("loadedmetadata", () => {
+        noteResolution(el);
         if (el.currentSrc) checkElementSrc(el.currentSrc);
         getOrCreateOverlay(el);
       });
+      try { el.addEventListener("resize", () => noteResolution(el)); } catch {}
       el.addEventListener("error", () => {
         // Some sites set src after error retry with m3u8
         setTimeout(() => {
@@ -762,6 +1072,7 @@
     setInterval(() => {
       queryAllVideos(document).forEach(e => {
         if (!playerOverlays.has(e)) getOrCreateOverlay(e);
+        try { if (e.videoHeight >= 240 && e.videoHeight > liveVideoHeight) liveVideoHeight = e.videoHeight; } catch {}
         const src = e.currentSrc || e.src;
         if (src && !detectedStreams.has(src)) checkElementSrc(src);
       });
@@ -826,7 +1137,7 @@
             fileName: null,
             referer: location.href,
             headers: { "Referer": location.href, "Origin": location.origin },
-            pageTitle: document.title || null,
+            pageTitle: realTitle() || document.title || null,
             streamType: "page",
             pageUrl: location.href
           }
@@ -855,7 +1166,19 @@
       if (overlay._wdmFeedbackUntil && Date.now() < overlay._wdmFeedbackUntil) return;
       const label = overlay.querySelector(".wdm-player-overlay-label");
       if (!label) return;
-      label.textContent = detectedStreams.size > 0 ? "Download this video" : "Resolve in WDM";
+      if (detectedStreams.size === 0) { label.textContent = "Resolve in WDM"; return; }
+      // Show the peak known rendition on the button ("Download this video • 1080p").
+      let best = 0;
+      let bestQ = "";
+      try {
+        for (const s of detectedStreams.values()) {
+          const q = qualityOf(s);
+          if (!q) continue;
+          const r = q === "4K" ? 5000 : (parseInt(q, 10) || 0);
+          if (r > best) { best = r; bestQ = q; }
+        }
+      } catch {}
+      label.textContent = bestQ ? "Download this video • " + bestQ : "Download this video";
     } catch {}
   }
 
@@ -927,14 +1250,39 @@
     };
   }
 
+  // 1DM logAnchorOrImageHit equivalent: a press on a link/thumbnail whose
+  // href/src is direct media captures streams DOM scans never see. Passive —
+  // never blocks or hijacks the click.
+  function hookMediaClicks() {
+    try {
+      window.addEventListener("pointerdown", function (e) {
+        try {
+          const t = e.target && e.target.closest ? e.target.closest("a,img") : null;
+          if (!t) return;
+          let u = t.href || t.src || "";
+          if ((!u || typeof u !== "string") && t.getAttribute) {
+            u = t.getAttribute("href") || t.getAttribute("src") || "";
+          }
+          if (!u || typeof u !== "string" || /^data:/i.test(u)) return;
+          if (AUDIO_RE.test(u)) return;
+          if (HLS_RE.test(u)) registerMediaStream(u, "HLS");
+          else if (DASH_RE.test(u)) registerMediaStream(u, "DASH");
+          else if (VIDEO_FILE_RE.test(u)) registerMediaStream(u, "Video");
+        } catch {}
+      }, { capture: true, passive: true });
+    } catch {}
+  }
+
   // Bootstrap
   if (document.readyState === "loading") {
     document.addEventListener("DOMContentLoaded", () => {
       observeDomVideos();
       hookNetworkRequests();
+      hookMediaClicks();
     });
   } else {
     observeDomVideos();
     hookNetworkRequests();
+    hookMediaClicks();
   }
 })();

@@ -110,13 +110,17 @@ public sealed class DownloadTask : INotifyPropertyChanged
             if (Set(ref _category, value))
             {
                 Raise(nameof(CategoryBrush));
-                Raise(nameof(TypeIcon));
                 Raise(nameof(TypeSymbol));
             }
         }
     }
     public string? Checksum { get; set; }
     public DateTime? CompletedAt { get; set; }
+
+    /// <summary>Set when an HLS download was kept as .ts because conversion was
+    /// wanted (container MP4/MKV) but ffmpeg is not installed. The UI notifies
+    /// the user where to get it. Transient: never persisted.</summary>
+    public bool RemuxSkippedNoFfmpeg { get; set; }
 
     private PriorityLevel _priority = PriorityLevel.Normal;
     public PriorityLevel Priority
@@ -319,6 +323,16 @@ public sealed class DownloadTask : INotifyPropertyChanged
             if (Set(ref _error, value))
                 Raise(nameof(StatusText));
         }
+    }
+
+    /// <summary>Full guidance for the failed task (hover tooltip). The
+    /// <see cref="Error"/> row text stays short; this keeps the actionable
+    /// detail one hover away.</summary>
+    private string? _errorDetail;
+    public string? ErrorDetail
+    {
+        get => _errorDetail;
+        set => Set(ref _errorDetail, value);
     }
 
     /// <summary>Whether the download can be resumed/paused mid-transfer, as determined
@@ -554,16 +568,6 @@ public sealed class DownloadTask : INotifyPropertyChanged
             return System.Windows.Media.Brushes.Gray;
         }
     }
-
-    public string TypeIcon => Category switch
-    {
-        DownloadCategory.Video => char.ConvertFromUtf32(0xF0381),
-        DownloadCategory.Music => char.ConvertFromUtf32(0xF0387),
-        DownloadCategory.Document => char.ConvertFromUtf32(0xF0219),
-        DownloadCategory.Compressed => char.ConvertFromUtf32(0xF05C4),
-        DownloadCategory.Program => char.ConvertFromUtf32(0xF08C6),
-        _ => char.ConvertFromUtf32(0xF0224),
-    };
 
     public SymbolRegular TypeSymbol => Category switch
     {

@@ -141,9 +141,18 @@ public sealed class DownloadEngine
             {
                 var response = await base.SendAsync(request, cancellationToken);
                 if ((int)response.StatusCode is < 300 or >= 400)
+                {
+                    // Pin the effective (post-redirect) request so downstream
+                    // code (e.g. HLS relative-URL resolution) can see the final
+                    // URL instead of the pre-redirect one.
+                    try { response.RequestMessage = request; } catch { }
                     return response;
+                }
                 if (response.Headers.Location is null)
+                {
+                    try { response.RequestMessage = request; } catch { }
                     return response;
+                }
 
                 var next = response.Headers.Location;
                 if (!next.IsAbsoluteUri)
@@ -167,8 +176,10 @@ public sealed class DownloadEngine
                 }
 
                 response.Dispose();
+                var forwarded = new HttpRequestMessage(HttpMethod.Get, next);
+                CopyHeaders(request, forwarded);
                 request.Dispose();
-                request = new HttpRequestMessage(HttpMethod.Get, next);
+                request = forwarded;
             }
             request.Dispose();
             throw new HttpRequestException($"Too many redirects (>{maxRedirects}).");
@@ -182,6 +193,24 @@ public sealed class DownloadEngine
                 return false;
             try { return CaptureServer.IsBlockedResolveTarget(uri.ToString()); }
             catch { return false; }
+        }
+
+        /// <summary>Forwards the original request headers onto a redirect hop so
+        /// signed/CDN-gated hosts (Referer/Origin/Cookie) still see browser context
+        /// after a 302 (e.g. load-balancer host → CDN host). Session credentials
+        /// (Cookie/Authorization) only go to the same host — never to a
+        /// cross-host redirect target. Same fail-closed rule as BuildRequest.</summary>
+        private static void CopyHeaders(HttpRequestMessage from, HttpRequestMessage to)
+        {
+            bool sameHost = IsSameHost(from.RequestUri?.ToString() ?? "", to.RequestUri?.ToString() ?? "");
+            foreach (var header in from.Headers)
+            {
+                if (!sameHost && (header.Key.Equals("Cookie", StringComparison.OrdinalIgnoreCase) ||
+                                  header.Key.Equals("Authorization", StringComparison.OrdinalIgnoreCase) ||
+                                  header.Key.Equals("Proxy-Authorization", StringComparison.OrdinalIgnoreCase)))
+                    continue;
+                try { to.Headers.TryAddWithoutValidation(header.Key, header.Value); } catch { }
+            }
         }
     }
 
@@ -230,6 +259,7 @@ public sealed class DownloadEngine
             if (task.Status != TaskStatus.Paused)
                 return;
             task.Error = null;
+            task.ErrorDetail = null;
             task.Eta = "";
         }
         Start(task);
@@ -334,6 +364,7 @@ public sealed class DownloadEngine
             ReleaseReservedPath(task.FullPath);
             task.Status = TaskStatus.Paused;
             task.Error = "Stopped";
+            task.ErrorDetail = null;
             TaskChanged?.Invoke();
             return;
         }
@@ -347,6 +378,7 @@ public sealed class DownloadEngine
         task.SpeedBps = 0;
         task.Eta = "";
         task.Error = "Stopped";
+        task.ErrorDetail = null;
         TaskChanged?.Invoke();
 
         _ = Task.Run(async () =>
@@ -587,7 +619,8 @@ public sealed class DownloadEngine
                 }
                 catch (Embed.EmbedInteractionRequiredException ex)
                 {
-                    task.Error = ex.Message + " Open the page in the WDM browser to continue.";
+                    task.Error = "Error: open page in browser";
+                    task.ErrorDetail = ex.Message + " Open the page in the WDM browser to continue.";
                     task.Status = TaskStatus.Failed;
                     task.IsPreparing = false;
                     task.PhaseText = "";
@@ -780,7 +813,8 @@ public sealed class DownloadEngine
                 // cfEx.IsSolvable and its own per-task attempt guard; a repeat
                 // block or hard block stays Failed with an actionable message.
                 task.Status = TaskStatus.Failed;
-                task.Error = cfEx.Message;
+                task.Error = UserFriendlyError.ForDownload(cfEx);
+                task.ErrorDetail = cfEx.Message;
                 task.IsPreparing = false;
                 task.PhaseText = "";
                 CloudflareBlocked?.Invoke(task, cfEx);
@@ -788,7 +822,8 @@ public sealed class DownloadEngine
             else
             {
                 task.Status = ex is FileChangedException ? TaskStatus.Paused : TaskStatus.Failed;
-                task.Error = ex.Message;
+                task.Error = UserFriendlyError.ForDownload(ex);
+                task.ErrorDetail = UserFriendlyError.For(ex);
                 task.IsPreparing = false;
                 task.PhaseText = "";
             }
@@ -1488,16 +1523,18 @@ public sealed class DownloadEngine
                 task.FileName = ReserveRenamedFile(task, task.FileName);
             }
             task.Error = null;
+            task.ErrorDetail = null;
             await RunFfmpegManifestAsync(session, $"HLS packaged streams ({packEx.Method})");
         }
 
         session.Token.ThrowIfCancellationRequested();
 
         // Optional auto-remux of the TS concat into the container chosen in
-        // settings (MP4 default, MKV, or KeepTs = off) when ffmpeg is available
-        // so the finished file is "My Film.mp4", not "My Film.ts".
+        // settings (MP4 default, MKV, or KeepTs = off) so the finished file
+        // is "My Film.mp4", not "My Film.ts". RemuxHlsAsync itself skips when
+        // ffmpeg is missing (flagging the task so the UI can notify) or when
+        // the user chose KeepTs.
         if (task.FileName.EndsWith(".ts", StringComparison.OrdinalIgnoreCase)
-            && File.Exists(EngineManager.FfmpegPath)
             && File.Exists(task.FullPath))
         {
             await RemuxHlsAsync(session, task);
@@ -1517,6 +1554,14 @@ public sealed class DownloadEngine
         }
         if (container == HlsContainer.KeepTs)
             return;
+        if (!File.Exists(EngineManager.FfmpegPath))
+        {
+            // Conversion wanted but impossible: leave the .ts and flag it so
+            // the UI can tell the user where to download ffmpeg. Never convert
+            // without it — no silent re-encode path exists.
+            task.RemuxSkippedNoFfmpeg = true;
+            return;
+        }
         string targetExt = container == HlsContainer.Mkv ? ".mkv" : ".mp4";
         if (task.FileName.EndsWith(targetExt, StringComparison.OrdinalIgnoreCase))
             return;
@@ -1589,7 +1634,19 @@ public sealed class DownloadEngine
             if (proc.ExitCode == 0 && File.Exists(outPath) && new FileInfo(outPath).Length > 0)
             {
                 try { File.Delete(tsPath); } catch { }
-                task.FileName = ReserveRenamedFile(task, Path.GetFileName(outPath));
+                // The remux output is already uniquely ours (timestamp-suffixed
+                // on collision above): point the task at it directly. Routing it
+                // through ReserveRenamedFile would mistake our own fresh file for
+                // a collision and park the task on a phantom " (1)" name that was
+                // never written.
+                string oldFull = task.FullPath;
+                task.FileName = Path.GetFileName(outPath);
+                task.RemuxSkippedNoFfmpeg = false;
+                lock (_lock)
+                {
+                    _reservedPaths.Remove(oldFull);
+                    _reservedPaths.Add(task.FullPath);
+                }
                 task.TotalBytes = new FileInfo(outPath).Length;
                 Interlocked.Exchange(ref session.BytesDownloaded, task.TotalBytes);
                 Interlocked.Exchange(ref session.LastBytes, task.TotalBytes);
@@ -2030,14 +2087,25 @@ public sealed class DownloadEngine
         var request = new HttpRequestMessage(method, targetUrl);
         if (range is not null)
             request.Headers.Range = range;
+        // Captured tasks often carry BOTH task.Referer and Headers["Referer"].
+        // Applying both sends the header twice, which strict WAFs reject with
+        // 403 (reproduced: duplicate Referer always blocked, single passes).
+        bool refererApplied = false;
         if (!string.IsNullOrWhiteSpace(task.Referer) && Uri.TryCreate(task.Referer, UriKind.Absolute, out var referer))
+        {
             request.Headers.Referrer = referer;
+            refererApplied = true;
+        }
         bool sameHost = IsSameHost(targetUrl, task.Url);
         // Apply per-task custom headers (e.g. Cookie, Authorization, Referer).
         bool cookieApplied = false;
         foreach (var kv in task.Headers)
         {
             if (string.IsNullOrWhiteSpace(kv.Key) || string.IsNullOrWhiteSpace(kv.Value))
+                continue;
+            // Already applied above — never send twice.
+            if (refererApplied && (kv.Key.Equals("Referer", StringComparison.OrdinalIgnoreCase) ||
+                                   kv.Key.Equals("Referrer", StringComparison.OrdinalIgnoreCase)))
                 continue;
             // Internal routing hints (e.g. X-WDM-StreamType) must never leave the client.
             if (kv.Key.StartsWith("X-WDM-", StringComparison.OrdinalIgnoreCase))
@@ -2200,8 +2268,9 @@ public sealed class DownloadEngine
                     || name.EndsWith(".m3u", StringComparison.OrdinalIgnoreCase))
                     name = Path.ChangeExtension(name, ".ts");
                 string cleaned = SanitizeFileName(name);
-                if (IsMediaFile(cleaned))
-                    cleaned = CleanReleaseName(cleaned);
+                // CleanReleaseName previously stripped codec/quality/year (HEVC, 480p, 2026)
+                // which users expect to keep — e.g. "Waiting Hai S01 (2026) Hindi HEVC 480p".
+                // Keep the SmartSanitize result as-is.
                 return cleaned;
             }
         }
@@ -3039,7 +3108,8 @@ public sealed class DownloadEngine
             else
             {
                 task.Status = TaskStatus.Failed;
-                task.Error = "yt-dlp exited with error code " + proc.ExitCode;
+                task.Error = "Error: video unavailable";
+                task.ErrorDetail = "The video couldn't be downloaded. It may be private, removed, or need sign-in — try the YouTube sign-in option.";
                 task.SpeedBps = 0;
                 task.Eta = "";
                 task.IsPreparing = false;
@@ -3057,7 +3127,8 @@ public sealed class DownloadEngine
         catch (Exception ex)
         {
             task.Status = TaskStatus.Failed;
-            task.Error = ex.Message;
+            task.Error = UserFriendlyError.ForDownload(ex);
+            task.ErrorDetail = UserFriendlyError.For(ex);
             task.SpeedBps = 0;
             task.Eta = "";
             task.IsPreparing = false;

@@ -34,6 +34,19 @@ public static class ScreenshotGenerator
 
         Directory.CreateDirectory(lightDir);
         Directory.CreateDirectory(darkDir);
+        string maximizedDir = Path.Combine(outputDir, "maximized");
+        string maxLightDir = Path.Combine(maximizedDir, "light");
+        string maxDarkDir = Path.Combine(maximizedDir, "dark");
+        try { if (Directory.Exists(maximizedDir)) Directory.Delete(maximizedDir, true); } catch { }
+        Directory.CreateDirectory(maxLightDir);
+        Directory.CreateDirectory(maxDarkDir);
+
+        // Never spin up a real WebView2 browser during captures: on an
+        // offscreen window EnsureCoreWebView2Async aborts with E_ABORT and
+        // used to pop a modal MessageBox mid-run.
+        CloudflareChallengeWindow.SuppressBrowserInit = true;
+        try
+        {
 
         Console.WriteLine("==================================================");
         Console.WriteLine("   WDM Automated Screenshot Generator Starting   ");
@@ -157,6 +170,10 @@ public static class ScreenshotGenerator
             var extensionDialog = new BrowserExtensionDialog();
             SaveWindowScreenshot(extensionDialog, Path.Combine(targetDir, "11_BrowserExtensionDialog.png"));
 
+            // 11b. ExtensionGuideWindow (short native guide)
+            var guideWindow = new ExtensionGuideWindow();
+            SaveWindowScreenshot(guideWindow, Path.Combine(targetDir, "11b_ExtensionGuideWindow.png"));
+
             // 12. ExtensionReloadNoticeDialog
             var reloadNoticeDialog = new ExtensionReloadNoticeDialog("1.1.3", "1.1.4");
             SaveWindowScreenshot(reloadNoticeDialog, Path.Combine(targetDir, "12_ExtensionReloadNoticeDialog.png"));
@@ -212,6 +229,53 @@ public static class ScreenshotGenerator
             trayPanel.ShowPanel(activeTask);
             SaveWindowScreenshot(trayPanel, Path.Combine(targetDir, "17_TrayProgressPanel.png"));
             try { trayPanel.Close(); } catch { }
+
+            // 18. Maximized pass (1920x1040 ≈ maximized 1080p): only
+            // resizable windows change here; fixed dialogs are unaffected.
+            // Select a task so the wide-layout side inspector renders too.
+            string maxDir = Path.Combine(maximizedDir, themeFolder);
+            viewModel.SelectedTask = viewModel.Tasks.FirstOrDefault();
+            var maxMain = new MainWindow { DataContext = viewModel, Width = 1920, Height = 1040 };
+            SaveWindowScreenshot(maxMain, Path.Combine(maxDir, "01_MainWindow_Maximized.png"));
+            viewModel.SelectedTask = null;
+
+            var maxEmptyVm = new MainViewModel();
+            maxEmptyVm.SuppressPersistence();
+            maxEmptyVm.Settings.UseDarkTheme = dark;
+            var maxEmpty = new MainWindow { DataContext = maxEmptyVm, Width = 1920, Height = 1040 };
+            SaveWindowScreenshot(maxEmpty, Path.Combine(maxDir, "01b_MainWindow_Empty_Maximized.png"));
+
+            var maxOptions = new OptionsDialog(viewModel) { Width = 1920, Height = 1040 };
+            SaveWindowScreenshot(maxOptions, Path.Combine(maxDir, "03_OptionsDialog_Maximized.png"));
+
+            var maxWelcome = new WelcomeWindow(viewModel.Settings) { Width = 1920, Height = 1040 };
+            SaveWindowScreenshot(maxWelcome, Path.Combine(maxDir, "13_WelcomeWindow_Maximized.png"));
+
+            try
+            {
+                var maxCfTask = new DownloadTask(Dispatcher.CurrentDispatcher) { Url = "https://protected-site.example/download.zip", FileName = "protected-download.zip" };
+                var maxCf = new CloudflareChallengeWindow(maxCfTask) { Width = 1920, Height = 1040 };
+                SaveWindowScreenshot(maxCf, Path.Combine(maxDir, "15_CloudflareChallengeWindow_Maximized.png"));
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[!] Maximized CloudflareChallengeWindow skipped: {ex.Message}");
+            }
+
+            try
+            {
+                var maxYt = new YouTubeSignInWindow() { Width = 1920, Height = 1040 };
+                SaveWindowScreenshot(maxYt, Path.Combine(maxDir, "16_YouTubeSignInWindow_Maximized.png"));
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[!] Maximized YouTubeSignInWindow skipped: {ex.Message}");
+            }
+        }
+        }
+        finally
+        {
+            CloudflareChallengeWindow.SuppressBrowserInit = false;
         }
 
         Console.WriteLine("\n==================================================");
@@ -279,10 +343,57 @@ public static class ScreenshotGenerator
         foreach (var (tag, fileName) in tabs)
         {
             SwitchOptionsDialogTab(optionsDialog, tag);
+            // Top of the page.
+            ScrollOptionsTo(optionsDialog, 0);
             SaveWindowScreenshot(optionsDialog, Path.Combine(targetDir, fileName), closeWindow: false);
+            // Scrolled states so every option on tall pages is visible somewhere.
+            var scroller = FindOptionsScroller(optionsDialog);
+            if (scroller != null && scroller.ExtentHeight > scroller.ViewportHeight + 40)
+            {
+                if (scroller.ExtentHeight > scroller.ViewportHeight * 2 + 40)
+                {
+                    ScrollOptionsTo(optionsDialog, (scroller.ExtentHeight - scroller.ViewportHeight) / 2);
+                    SaveWindowScreenshot(optionsDialog, Path.Combine(targetDir, WithSuffix(fileName, "_mid")), closeWindow: false);
+                }
+                ScrollOptionsTo(optionsDialog, double.MaxValue);
+                SaveWindowScreenshot(optionsDialog, Path.Combine(targetDir, WithSuffix(fileName, "_bottom")), closeWindow: false);
+            }
         }
 
         try { optionsDialog.Close(); } catch { }
+    }
+
+    private static string WithSuffix(string fileName, string suffix) =>
+        Path.GetFileNameWithoutExtension(fileName) + suffix + Path.GetExtension(fileName);
+
+    /// <summary>Finds the settings inspector ScrollViewer (the largest
+    /// scrollable area in the dialog — not inner dropdowns or code boxes).</summary>
+    private static System.Windows.Controls.ScrollViewer? FindOptionsScroller(DependencyObject depObj)
+    {
+        System.Windows.Controls.ScrollViewer? best = null;
+        foreach (var sv in FindVisualChildren<System.Windows.Controls.ScrollViewer>(depObj))
+        {
+            if (sv.ViewportHeight > 0 && sv.ExtentHeight > sv.ViewportHeight + 1 &&
+                (best == null || sv.ExtentHeight > best.ExtentHeight))
+                best = sv;
+        }
+        return best;
+    }
+
+    private static void ScrollOptionsTo(DependencyObject depObj, double offset)
+    {
+        var sv = FindOptionsScroller(depObj);
+        if (sv == null) return;
+        try
+        {
+            if (offset == double.MaxValue)
+                sv.ScrollToBottom();
+            else
+                sv.ScrollToVerticalOffset(offset);
+            sv.UpdateLayout();
+            DoEvents();
+        }
+        catch { }
     }
 
     private static void SwitchOptionsDialogTab(OptionsDialog dialog, string tag)

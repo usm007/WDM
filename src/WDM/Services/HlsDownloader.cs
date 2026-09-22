@@ -70,7 +70,7 @@ public static class HlsDownloader
         Func<long, CancellationToken, Task> throttle,
         Dictionary<string, string>? headers = null)
     {
-        var playlist = await ResolvePlaylistAsync(http, manifestUrl, referer, headers, ct);
+        var (playlist, effectiveManifestUrl) = await ResolvePlaylistAsync(http, manifestUrl, referer, headers, ct);
 
         // Packaged encryption (SAMPLE-AES et al.): segment-level CBC decrypt
         // cannot handle it. The engine catches this and retries via ffmpeg-direct.
@@ -81,7 +81,7 @@ public static class HlsDownloader
         byte[]? initSegment = null;
         if (!string.IsNullOrEmpty(playlist.InitUri))
         {
-            initSegment = await DownloadBytesAsync(http, ResolveUrl(manifestUrl, playlist.InitUri), referer, headers, ct);
+            initSegment = await DownloadBytesAsync(http, ResolveUrl(effectiveManifestUrl, playlist.InitUri), referer, headers, ct);
             playlist.TotalBytes += initSegment.Length;
         }
 
@@ -342,12 +342,16 @@ public static class HlsDownloader
         return 0;
     }
 
-    private static async Task<Playlist> ResolvePlaylistAsync(
+    private static async Task<(Playlist Playlist, string EffectiveUrl)> ResolvePlaylistAsync(
         HttpClient http, string manifestUrl, string? referer, Dictionary<string, string>? headers, CancellationToken ct)
     {
         for (int depth = 0; depth < 3; depth++)
         {
-            string text = await FetchTextAsync(http, manifestUrl, referer, headers, ct);
+            var (text, effectiveUrl) = await FetchTextAsync(http, manifestUrl, referer, headers, ct);
+            // The manifest may have 302-redirected (load-balancer -> CDN):
+            // relative variant/segment/key URLs belong to the FINAL host,
+            // not the pre-redirect one.
+            manifestUrl = effectiveUrl;
 
             // Master playlists reference variant media playlists via #EXT-X-STREAM-INF
             // lines; those variant URIs must never be mistaken for media segments.
@@ -365,7 +369,7 @@ public static class HlsDownloader
                 throw new InvalidOperationException("Not a valid HLS playlist.");
 
             await PrepareKeysAsync(http, manifestUrl, referer, headers, playlist, ct);
-            return playlist;
+            return (playlist, manifestUrl);
         }
 
         throw new InvalidOperationException("HLS playlist did not resolve to a media playlist.");
@@ -455,6 +459,98 @@ public static class HlsDownloader
             }
         }
         yield return attrList.Substring(start);
+    }
+
+    /// <summary>Represents one variant from an HLS master playlist.</summary>
+    public sealed class HlsVariantInfo
+    {
+        public long Bandwidth { get; init; }
+        public int? Height { get; init; }
+        public string? Codecs { get; init; }
+        public string VariantUrl { get; init; } = "";
+        public string Label { get; init; } = "";
+    }
+
+    /// <summary>Fetches an HLS master playlist and returns all available variants
+    /// (quality levels). Returns null if the URL is not a master playlist.
+    /// Used by the Add dialog to offer a quality picker before download starts.</summary>
+    public static async Task<List<HlsVariantInfo>> ParseMasterVariantsAsync(
+        HttpClient http, string manifestUrl, string? referer, Dictionary<string, string>? headers, CancellationToken ct)
+    {
+        var result = new List<HlsVariantInfo>();
+        var (text, effectiveUrl) = await FetchTextAsync(http, manifestUrl, referer, headers, ct);
+        manifestUrl = effectiveUrl;
+        if (!text.Contains("#EXT-X-STREAM-INF:", StringComparison.OrdinalIgnoreCase))
+            return result;
+
+        var lines = text.Split('\n');
+        for (int i = 0; i < lines.Length; i++)
+        {
+            string line = lines[i].Trim();
+            if (!line.StartsWith("#EXT-X-STREAM-INF:", StringComparison.OrdinalIgnoreCase))
+                continue;
+
+            long bandwidth = -1;
+            int? height = null;
+            string? codecs = null;
+            foreach (var attr in SplitAttributes(line.Substring("#EXT-X-STREAM-INF:".Length)))
+            {
+                int eq = attr.IndexOf('=');
+                if (eq < 0) continue;
+                string key = attr.Substring(0, eq).Trim();
+                string value = attr.Substring(eq + 1).Trim().Trim('"');
+                if (key.Equals("BANDWIDTH", StringComparison.OrdinalIgnoreCase))
+                    long.TryParse(value, out bandwidth);
+                else if (key.Equals("RESOLUTION", StringComparison.OrdinalIgnoreCase))
+                {
+                    int x = value.IndexOf('x');
+                    if (x > 0 && int.TryParse(value.Substring(x + 1).TrimEnd('"'), out int resHeight))
+                        height = resHeight;
+                }
+                else if (key.Equals("CODECS", StringComparison.OrdinalIgnoreCase))
+                    codecs = value;
+            }
+
+            string? uri = null;
+            for (int j = i + 1; j < lines.Length; j++)
+            {
+                string candidate = lines[j].Trim();
+                if (candidate.Length == 0) continue;
+                if (candidate.StartsWith("#")) { i = j; continue; }
+                uri = candidate;
+                i = j;
+                break;
+            }
+            if (uri is null) continue;
+
+            string resolved = ResolveUrl(manifestUrl, uri);
+            string label = height.HasValue
+                ? $"{height.Value}p"
+                : bandwidth > 0
+                    ? $"{bandwidth / 1000} kbps"
+                    : "Best";
+            if (!string.IsNullOrWhiteSpace(codecs))
+                label += $" ({codecs})";
+
+            result.Add(new HlsVariantInfo
+            {
+                Bandwidth = bandwidth,
+                Height = height,
+                Codecs = codecs,
+                VariantUrl = resolved,
+                Label = label,
+            });
+        }
+
+        result.Sort((a, b) =>
+        {
+            int ha = a.Height ?? 0;
+            int hb = b.Height ?? 0;
+            if (ha != hb) return ha.CompareTo(hb);
+            return a.Bandwidth.CompareTo(b.Bandwidth);
+        });
+
+        return result;
     }
 
     internal static Playlist? ParsePlaylist(string text, string baseUrl)
@@ -776,7 +872,7 @@ public static class HlsDownloader
         }
     }
 
-    private static async Task<string> FetchTextAsync(HttpClient http, string url, string? referer, Dictionary<string, string>? headers, CancellationToken ct)
+    private static async Task<(string Text, string EffectiveUrl)> FetchTextAsync(HttpClient http, string url, string? referer, Dictionary<string, string>? headers, CancellationToken ct)
     {
         const int maxPlaylistBytes = 10 * 1024 * 1024;
         int attempt = 0;
@@ -789,6 +885,10 @@ public static class HlsDownloader
                 ApplyHeaders(request, referer, headers);
                 using var response = await http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, ct);
                 response.EnsureSuccessStatusCode();
+                // Effective URL after any redirects (guard pins the final
+                // request on the response): relative playlist entries resolve
+                // against this, not the pre-redirect URL.
+                string effectiveUrl = response.RequestMessage?.RequestUri?.ToString() ?? url;
                 // Bound playlist reads: a manifest URL returning a full media
                 // file would otherwise OOM the process as a single string.
                 await using var stream = await response.Content.ReadAsStreamAsync(ct);
@@ -803,7 +903,7 @@ public static class HlsDownloader
                         throw new InvalidOperationException("HLS playlist too large — refusing to parse.");
                     sb.Append(buf, 0, n);
                 }
-                return sb.ToString();
+                return (sb.ToString(), effectiveUrl);
             }
             catch (Exception ex) when (attempt < MaxRetries && !ct.IsCancellationRequested &&
                                        (ex is HttpRequestException || ex is IOException || ex is TaskCanceledException))

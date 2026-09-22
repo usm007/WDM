@@ -93,6 +93,55 @@ public sealed class CaptureServer : IDisposable
         }
     }
 
+    // ── page resources (browser extension tab media map) ────────────────
+    // The extension periodically POSTs the full per-tab media map so the
+    // desktop UI can display it in the Page Resources dialog.  The app
+    // never polls the extension; it only serves the latest snapshot.
+    private static readonly object _pageMediaLock = new();
+    private static Dictionary<string, List<PageResourceEntry>> _pageMediaStore = new(StringComparer.OrdinalIgnoreCase);
+    private static DateTime _pageMediaAt;
+
+    /// <summary>Snapshot of the extension's tabMediaMap for a single tab.</summary>
+    internal sealed class PageMediaBatch
+    {
+        public string TabId { get; set; } = "";
+        public string TabTitle { get; set; } = "";
+        public string TabUrl { get; set; } = "";
+        public List<PageResourceEntry> Resources { get; set; } = new();
+    }
+
+    internal sealed class PageResourceEntry
+    {
+        public string Url { get; set; } = "";
+        public string Label { get; set; } = "";
+        public string Type { get; set; } = "";
+        public long? Size { get; set; }
+        public string? Quality { get; set; }
+        public string? PageTitle { get; set; }
+        public long Time { get; set; }
+    }
+
+    /// <summary>Receives a batch of page resources from the extension
+    /// (<c>POST /download/page-media-batch</c>).</summary>
+    internal static void UpdatePageMedia(string tabId, string tabTitle, string tabUrl, List<PageResourceEntry> resources)
+    {
+        lock (_pageMediaLock)
+        {
+            _pageMediaStore[tabId] = resources;
+            _pageMediaAt = DateTime.UtcNow;
+        }
+    }
+
+    /// <summary>Returns all currently tracked page resources keyed by tab id.</summary>
+    internal static Dictionary<string, List<PageResourceEntry>> GetPageMediaSnapshot()
+    {
+        lock (_pageMediaLock)
+        {
+            // Return a shallow copy so callers don't need to hold the lock.
+            return _pageMediaStore.ToDictionary(kv => kv.Key, kv => kv.Value.ToList(), StringComparer.OrdinalIgnoreCase);
+        }
+    }
+
     internal static bool IsMegaHost(string? url)
     {
         if (string.IsNullOrWhiteSpace(url) || !Uri.TryCreate(url, UriKind.Absolute, out var uri))
@@ -316,6 +365,7 @@ public sealed class CaptureServer : IDisposable
                         IsConnected = true;
                         ExtensionConnected?.Invoke();
                         _onCapture(item.Url, item.FileName, item.Referer, item.Headers, item.PageTitle);
+                        ActivityLog.Write("CAPTURE", $"{ActivityLog.HostOf(item.Url)} | {item.FileName} | {item.Url}");
                         await WriteResponseAsync(stream, HttpStatusCode.OK, "{\"accepted\":true}", origin);
                     }
                     catch
@@ -367,6 +417,7 @@ public sealed class CaptureServer : IDisposable
                         IsConnected = true;
                         ExtensionConnected?.Invoke();
                         OnBatchCapture(accepted);
+                        ActivityLog.Write("CAPTURE-BATCH", $"{accepted.Count} item(s), {errors.Count} rejected");
                         string resp = JsonSerializer.Serialize(new
                         {
                             accepted = accepted.Count,
@@ -566,6 +617,77 @@ public sealed class CaptureServer : IDisposable
                     return;
                 }
 
+                // POST /download/page-media-batch — extension pushes its
+                // tabMediaMap so the desktop UI can display page resources.
+                if (method == "POST" && path == "/download/page-media-batch")
+                {
+                    if (IsBrowserWebOrigin(origin))
+                    {
+                        await WriteResponseAsync(stream, HttpStatusCode.Forbidden, "{\"error\":\"forbidden origin\"}", origin);
+                        return;
+                    }
+                    if (!IsAuthorized(origin, authToken))
+                    {
+                        await WriteResponseAsync(stream, HttpStatusCode.Unauthorized, "{\"error\":\"unauthorized\"}", origin);
+                        return;
+                    }
+                    try
+                    {
+                        var batch = JsonSerializer.Deserialize<PageMediaBatch>(body, JsonOptions);
+                        if (batch is null || string.IsNullOrWhiteSpace(batch.TabId))
+                            throw new InvalidOperationException("Bad batch");
+                        UpdatePageMedia(batch.TabId, batch.TabTitle ?? "", batch.TabUrl ?? "", batch.Resources);
+                        await WriteResponseAsync(stream, HttpStatusCode.OK, "{\"ok\":true}", origin);
+                    }
+                    catch
+                    {
+                        await WriteResponseAsync(stream, HttpStatusCode.BadRequest, "{\"error\":\"invalid request\"}", origin);
+                    }
+                    return;
+                }
+
+                // GET /page-resources — returns the latest page resources snapshot
+                // for all tabs (or a single tab if tabId is specified).
+                if (method == "GET" && path.StartsWith("/page-resources", StringComparison.OrdinalIgnoreCase))
+                {
+                    if (IsBrowserWebOrigin(origin))
+                    {
+                        await WriteResponseAsync(stream, HttpStatusCode.Forbidden, "{\"error\":\"forbidden origin\"}", origin);
+                        return;
+                    }
+                    if (!IsAuthorized(origin, authToken))
+                    {
+                        await WriteResponseAsync(stream, HttpStatusCode.Unauthorized, "{\"error\":\"unauthorized\"}", origin);
+                        return;
+                    }
+                    try
+                    {
+                        string? filterTabId = null;
+                        string qs = path.Contains('?') ? path[(path.IndexOf('?') + 1)..] : "";
+                        foreach (var pair in qs.Split('&'))
+                        {
+                            var kv = pair.Split('=', 2);
+                            if (kv.Length == 2 && kv[0].Equals("tabId", StringComparison.OrdinalIgnoreCase))
+                                filterTabId = Uri.UnescapeDataString(kv[1]);
+                        }
+                        var snapshot = GetPageMediaSnapshot();
+                        if (!string.IsNullOrWhiteSpace(filterTabId) && snapshot.TryGetValue(filterTabId, out var tabResources))
+                        {
+                            var single = new Dictionary<string, List<PageResourceEntry>> { [filterTabId] = tabResources };
+                            await WriteResponseAsync(stream, HttpStatusCode.OK, JsonSerializer.Serialize(single, JsonWriteOptions), origin);
+                        }
+                        else
+                        {
+                            await WriteResponseAsync(stream, HttpStatusCode.OK, JsonSerializer.Serialize(snapshot, JsonWriteOptions), origin);
+                        }
+                    }
+                    catch
+                    {
+                        await WriteResponseAsync(stream, HttpStatusCode.InternalServerError, "{\"error\":\"internal\"}", origin);
+                    }
+                    return;
+                }
+
                 await WriteResponseAsync(stream, HttpStatusCode.NotFound, "", origin);
             }
             catch
@@ -759,6 +881,14 @@ public sealed class CaptureServer : IDisposable
             Headers = headers,
             PageTitle = pageTitle,
         };
+        // The engine sends task.Referer as the Referer header itself — a
+        // Referer/Referrer entry left in Headers would go out twice and strict
+        // WAFs reject duplicated headers with 403. Keep the single source.
+        if (!string.IsNullOrWhiteSpace(referer))
+        {
+            headers.Remove("Referer");
+            headers.Remove("Referrer");
+        }
         return true;
     }
 

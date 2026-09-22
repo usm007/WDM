@@ -37,15 +37,15 @@ public partial class EmbedInteractionWindow : Wpf.Ui.Controls.FluentWindow
 
     private async void OnLoaded(object sender, RoutedEventArgs e)
     {
-        string? runtimeVersion = null;
+        // Pre-flight: the version query itself throws when no runtime exists.
         try
         {
-            runtimeVersion = CoreWebView2Environment.GetAvailableBrowserVersionString();
+            _ = CoreWebView2Environment.GetAvailableBrowserVersionString();
         }
         catch (Exception ex)
         {
-            StatusText.Text = "Microsoft Edge WebView2 Runtime is required but is not installed. "
-                + "Install it from https://developer.microsoft.com/microsoft-edge/webview2/ (" + ex.Message + ")";
+            App.LogException(ex);
+            StatusText.Text = "The built-in browser part isn't installed. Please install the WebView2 Runtime from Microsoft, then try again.";
             StatusText.Foreground = (System.Windows.Media.Brush)(TryFindResource("Brush.Danger") ?? System.Windows.Media.Brushes.Red);
             return;
         }
@@ -73,15 +73,15 @@ public partial class EmbedInteractionWindow : Wpf.Ui.Controls.FluentWindow
         }
         catch (Exception ex)
         {
-            StatusText.Text = "WebView2 runtime is unavailable or failed to initialize"
-                + (runtimeVersion is null ? "" : $" (found {runtimeVersion})") + ": " + ex.Message;
+            App.LogException(ex);
+            StatusText.Text = "The built-in browser couldn't start. Please try again.";
             StatusText.Foreground = (System.Windows.Media.Brush)(TryFindResource("Brush.Danger") ?? System.Windows.Media.Brushes.Red);
         }
     }
 
     private void Core_ProcessFailed(object? sender, CoreWebView2ProcessFailedEventArgs args)
     {
-        try { StatusText.Text = "Browser process failed (" + args.ProcessFailedKind + "). Click 'Reload page' to retry."; }
+        try { StatusText.Text = "The browser part closed unexpectedly. Click 'Reload page' to try again."; }
         catch { }
     }
 
@@ -117,7 +117,11 @@ public partial class EmbedInteractionWindow : Wpf.Ui.Controls.FluentWindow
     private void Reload_Click(object sender, RoutedEventArgs e)
     {
         try { _webView?.CoreWebView2?.Navigate(_pageUrl); }
-        catch (Exception ex) { StatusText.Text = "Failed to navigate: " + ex.Message; }
+        catch (Exception ex)
+        {
+            App.LogException(ex);
+            StatusText.Text = "The page couldn't be opened. Check your connection and try again.";
+        }
     }
 
     private void Cancel_Click(object sender, RoutedEventArgs e) => Close();

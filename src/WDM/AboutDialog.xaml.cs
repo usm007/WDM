@@ -42,6 +42,14 @@ public partial class AboutDialog : Window
         }
     }
 
+    /// <summary>User-triggered error report: copies diagnostics to the
+    /// clipboard and opens a pre-filled GitHub issue. Nothing is sent
+    /// automatically — the user reviews and submits it themselves.</summary>
+    private void ReportProblem_Click(object sender, RoutedEventArgs e)
+    {
+        IssueReporter.Report(this);
+    }
+
     private async void CheckUpdateClick(object sender, RoutedEventArgs e)
     {
         CheckUpdateButton.IsEnabled = false;
@@ -91,20 +99,24 @@ public partial class AboutDialog : Window
             if (latest is null)
             {
                 UpdateStatusText.Text = "Could not reach GitHub — try again later.";
+                ActivityLog.Write("UPDATE", "check: unreachable");
             }
             else if (latest.Version is { } version && version.CompareTo(UpdateChecker.CurrentVersion) > 0)
             {
                 UpdateStatusText.Text = "";
+                ActivityLog.Write("UPDATE", $"check: {latest.Version} available");
                 ShowInlineUpdate(latest, null);
             }
             else
             {
                 UpdateStatusText.Text = "You are running the latest version.";
+                ActivityLog.Write("UPDATE", "check: up to date");
             }
         }
         catch (Exception ex)
         {
-            UpdateStatusText.Text = $"Check failed: {ex.Message}";
+            App.LogException(ex);
+            UpdateStatusText.Text = "Couldn't check for updates. Check your internet connection and try again.";
         }
         finally
         {
@@ -236,7 +248,8 @@ public partial class AboutDialog : Window
             }
             catch (Exception ex)
             {
-                InlineStatusText.Text = $"Could not resolve delta update: {ex.Message} — try again.";
+                App.LogException(ex);
+                InlineStatusText.Text = "Couldn't prepare the update — check your connection and try again.";
                 InlineLaterButton.IsEnabled = true;
                 InlineInstallButton.IsEnabled = true;
                 InlineInstallButton.Content = "Download & Install";
@@ -286,7 +299,8 @@ public partial class AboutDialog : Window
                 _isDownloading = false;
                 InlineProgressPanel.Visibility = Visibility.Collapsed;
                 InlineStatusText.Visibility = Visibility.Visible;
-                InlineStatusText.Text = $"{(isDelta ? "Delta" : "Full package")} download failed: {ex.Message}";
+                App.LogException(ex);
+                InlineStatusText.Text = "The update couldn't be downloaded. Check your internet connection and try again.";
                 InlineLaterButton.IsEnabled = true;
                 InlineInstallButton.IsEnabled = true;
             }
@@ -322,7 +336,8 @@ public partial class AboutDialog : Window
             _isDownloading = false;
             InlineProgressPanel.Visibility = Visibility.Collapsed;
             InlineStatusText.Visibility = Visibility.Visible;
-            InlineStatusText.Text = $"Download failed: {ex.Message} — try again.";
+            App.LogException(ex);
+            InlineStatusText.Text = "The installer couldn't be downloaded. Check your internet connection and try again.";
             InlineLaterButton.IsEnabled = true;
             InlineInstallButton.IsEnabled = true;
             InlineInstallButton.Content = "Download & Install";
