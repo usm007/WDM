@@ -444,7 +444,7 @@
     <!-- Document Metadata Header -->
     <div class="doc-meta">
         <div class="doc-meta-item"><strong>Document ID:</strong> WDM-TR-2024-001</div>
-        <div class="doc-meta-item"><strong>Revision:</strong> 2.7.2</div>
+        <div class="doc-meta-item"><strong>Revision:</strong> 2.8.1</div>
         <div class="doc-meta-item"><strong>Security Level:</strong> Public Reference</div>
         <div class="doc-meta-item"><strong>Author:</strong> WDM Engineering Group</div>
     </div>
@@ -606,6 +606,18 @@
                         <td>Health-check verifying desktop client is active on port 17530.</td>
                     </tr>
                     <tr>
+                        <td><code>/ping</code></td>
+                        <td>GET</td>
+                        <td>None (response: status, version, minCatchBytes)</td>
+                        <td>Presence probe polled by the extension; advertises the live Minimum auto-catch size gate (Settings &gt; Browser Integration, default 200 MB) so small files stay in the browser.</td>
+                    </tr>
+                    <tr>
+                        <td><code>/download/batch</code></td>
+                        <td>POST</td>
+                        <td>JSON: up to 50 capture items (same per-item validation as /download)</td>
+                        <td>Batch hand-off (multi-post / page resources / "download all"); valid items are queued via a checklist dialog, per-item failures reported without dropping the batch.</td>
+                    </tr>
+                    <tr>
                         <td><code>/cookies</code></td>
                         <td>POST</td>
                         <td>JSON: Netscape cookie format string</td>
@@ -726,12 +738,12 @@
                     <tr>
                         <td><strong>Installation Mechanism</strong></td>
                         <td>Modifies Windows Registry keys under <code>HKCU\Software\Google\Chrome\NativeMessagingHosts</code> during installer run.</td>
-                        <td>Clean unpacked folder deployment under <code>%LOCALAPPDATA%\WDM\BrowserExtension</code>. Zero registry keys altered.</td>
+                        <td>Per-machine install to <code>C:\Program Files\WDM</code>. The app keeps a stable per-user unpacked copy under <code>%LOCALAPPDATA%\WDM\BrowserExtension</code> (pinned key = stable extension ID, no update URL, auth token included) — Load unpacked once, it survives reboots and updates.</td>
                     </tr>
                     <tr>
                         <td><strong>Portability</strong></td>
                         <td>Non-portable; tightly coupled to installer and administrative registry rights.</td>
-                        <td>Fully portable; runs from standalone archive without privilege escalation.</td>
+                        <td>Installed copy requires admin (per-machine); the extension folder itself stays human-readable and the app re-deploys it per user without privilege escalation.</td>
                     </tr>
                     <tr>
                         <td><strong>Code Transparency</strong></td>
@@ -758,6 +770,11 @@
         <p>
             Follow this deterministic procedure to register the WDM Download Catcher extension in your primary browser.
         </p>
+        <div class="note-card">
+            <strong>One procedure for every PC:</strong> WDM uses Load unpacked from a stable
+            per-user folder — no store review wait, no registry policy that can fight the
+            install on reboot. The manual steps below are required once per browser.
+        </div>
 
         <h3>5.1 Chromium-Based Browsers (Google Chrome, Microsoft Edge, Brave, Opera, Vivaldi)</h3>
 
@@ -799,6 +816,11 @@
             <p>
                 Select the folder and click <strong>Select Folder</strong>. The extension card <strong>WDM Download Catcher</strong> will instantly register and activate.
             </p>
+            <p style="font-size: 13.5px; color: var(--text-secondary);">
+                <em>Important:</em> use exactly this folder, not the copy under <code>C:\Program Files\WDM</code>.
+                WDM refreshes this per-user folder on every launch and writes its loopback authentication token
+                (<code>wdm-token.json</code>) here — the extension cannot talk to the desktop app without it.
+            </p>
         </div>
 
         <!-- Figure 3: Technical UI Schematic -->
@@ -836,7 +858,7 @@
                 <text x="44" y="114" fill="#FFFFFF" font-family="Inter, sans-serif" font-size="14" font-weight="700" text-anchor="middle">W</text>
                 
                 <text x="70" y="106" fill="#F8FAFC" font-family="Inter, sans-serif" font-size="12" font-weight="600">WDM Download Catcher</text>
-                <text x="70" y="122" fill="#38BDF8" font-family="'JetBrains Mono', monospace" font-size="10">1.1.4 | Manifest V3</text>
+                <text x="70" y="122" fill="#38BDF8" font-family="'JetBrains Mono', monospace" font-size="10">1.2.0 | Manifest V3</text>
                 <text x="70" y="138" fill="#94A3B8" font-family="Inter, sans-serif" font-size="10">Captures browser downloads &amp; forwards to WDM engine.</text>
 
                 <!-- Indicator Pill -->
@@ -863,7 +885,7 @@
         </p>
         <ul style="padding-left: 24px; margin-bottom: 16px;">
             <li><strong>Official AMO Listing (Recommended):</strong> Install directly with one click from the <a href="https://addons.mozilla.org/en-US/firefox/addon/wdm-download-catcher/" target="_blank" style="color: var(--accent-blue);">Mozilla Add-ons Store</a>. This package is cryptographically signed by Mozilla.</li>
-            <li><strong>Developer / Nightly Channels:</strong> Navigate to <code>about:debugging#/runtime/this-firefox</code>, click <strong>Load Temporary Add-on</strong>, and select <code>manifest.json</code> from <code>%LOCALAPPDATA%\WDM\BrowserExtension\firefox\manifest.json</code>.</li>
+            <li><strong>Developer / Nightly Channels (source checkout only):</strong> Navigate to <code>about:debugging#/runtime/this-firefox</code>, click <strong>Load Temporary Add-on</strong>, and select <code>manifest.json</code> from the <code>firefox\</code> subfolder of a WDM source checkout. (The installed app ships only the Chromium files, so this path is unavailable for installed copies — use the AMO listing.)</li>
         </ul>
     </section>
 
@@ -907,6 +929,13 @@
     <!-- Section 7 -->
     <section id="sec-7">
         <h2>7. Operational Reference &amp; Citations</h2>
+        <h3>7.1 What's new in v2.8 (additive)</h3>
+        <p>
+            Minimum auto-catch size (default 200 MB, 0 disables, unknown sizes always pass, explicit
+            extension clicks bypass); <code>POST /download/batch</code> (≤50 items) with checklist dialog;
+            page-resource list with block-domain / block-URL; frame-tree grabber, HLS key-hint forwarding,
+            SAMPLE-AES ffmpeg-direct fallback, blob-chunk pipeline, and MEGA session handoff.
+        </p>
         <ol class="references-list">
             <li>Chromium Projects. (2020). <em>Manifest V3 Migration Checklist &amp; Security Principles</em>. <a href="https://developer.chrome.com/docs/extensions/mv3/intro/" target="_blank">developer.chrome.com</a></li>
             <li>Fielding, R., et al. (2014). <em>Hypertext Transfer Protocol (HTTP/1.1): Range Requests</em>. RFC 7233, Internet Engineering Task Force (IETF). <a href="https://datatracker.ietf.org/doc/html/rfc7233" target="_blank">rfc-editor.org/rfc/rfc7233</a></li>

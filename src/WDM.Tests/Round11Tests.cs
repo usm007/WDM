@@ -127,7 +127,7 @@ public sealed class Round11Tests
             "SchedulerSpeedBox", "SchedulerDayMonday", "SchedulerDaySunday",
             "NotifyAddedBox", "NotifyStartedBox", "NotifyErrorBox", "NotifySoundBox",
             "DetailedNotifyBox", "MoveOnFinishBox", "MoveFolderBox", "RemoveLinkBox",
-            "DeleteAfterDaysBox", "MinCatchBox",
+            "DeleteAfterDaysBox", "MinCatchBox", "MinCatchCustomBox",
         })
             Assert.Contains($"x:Name=\"{name}\"", options);
 

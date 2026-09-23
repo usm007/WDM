@@ -67,6 +67,7 @@
                     <RowDefinition Height="Auto" /> <!-- File name -->
                     <RowDefinition Height="Auto" /> <!-- Category -->
                     <RowDefinition Height="Auto" /> <!-- YouTube Options -->
+                    <RowDefinition Height="Auto" /> <!-- HLS Options -->
                     <RowDefinition Height="Auto" /> <!-- Advanced Options -->
                 </Grid.RowDefinitions>
 
@@ -96,7 +97,11 @@
                                  </Image.Clip>
                              </Image>
                             <ui:SymbolIcon x:Name="ProbeIcon" Grid.Column="1" Symbol="ArrowSync24" FontSize="14"
-                                           Margin="0,0,6,0" VerticalAlignment="Center" Foreground="{DynamicResource Brush.Accent}" />
+                                           Margin="0,0,6,0" VerticalAlignment="Center" Foreground="{DynamicResource Brush.Accent}">
+                                <ui:SymbolIcon.RenderTransform>
+                                    <RotateTransform x:Name="ProbeSpin" Angle="0" CenterX="7" CenterY="7" />
+                                </ui:SymbolIcon.RenderTransform>
+                            </ui:SymbolIcon>
                             <TextBlock x:Name="ProbeText" Grid.Column="2" Text="Analyzing link—¦" FontSize="12"
                                        Foreground="{DynamicResource Brush.TextDim}" VerticalAlignment="Center" TextWrapping="Wrap" />
                             <ui:Button x:Name="YtSignInButton" Grid.Column="3" Content="Sign In" Visibility="Collapsed"
@@ -211,18 +216,36 @@
                     </StackPanel>
                 </Border>
 
-                <!-- HLS quality options -->
-                <Border Grid.Row="4" Grid.Column="0" Grid.ColumnSpan="2" x:Name="HlsPanel"
+                <!-- HLS Quality Options -->
+                <Border Grid.Row="5" Grid.Column="0" Grid.ColumnSpan="2" x:Name="HlsPanel"
                         Background="{DynamicResource Brush.SurfaceAlt}" BorderBrush="{DynamicResource Brush.Border}" BorderThickness="1"
                         CornerRadius="4" Padding="12,10" Margin="0,0,0,10" Visibility="Collapsed">
-                    <StackPanel Orientation="Horizontal">
-                        <TextBlock Text="Stream quality" FontSize="12" Foreground="{DynamicResource Brush.TextMuted}" VerticalAlignment="Center" Margin="0,0,8,0" />
-                        <ComboBox x:Name="HlsQualityBox" Height="28" Width="220" />
+                    <StackPanel>
+                        <TextBlock Text="HLS Stream Quality" FontSize="13" FontWeight="SemiBold"
+                                   Foreground="{DynamicResource Brush.Text}" Margin="0,0,0,6" />
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="10" />
+                                <ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
+                            <StackPanel Grid.Column="0">
+                                <TextBlock x:Name="HlsQualityLabel" Text="Quality" FontSize="12" Foreground="{DynamicResource Brush.TextMuted}" Margin="0,0,0,3" />
+                                <ComboBox x:Name="HlsQualityBox" Height="28" SelectionChanged="HlsQualityBox_SelectionChanged" />
+                            </StackPanel>
+                            <StackPanel Grid.Column="2">
+                                <TextBlock Text="Container" FontSize="12" Foreground="{DynamicResource Brush.TextMuted}" Margin="0,0,0,3" />
+                                <ComboBox x:Name="HlsContainerBox" Height="28" SelectedIndex="0">
+                                    <ComboBoxItem Content="Auto (TS → MP4 remux)" Tag="" />
+                                    <ComboBoxItem Content="Keep .ts" Tag="keep-ts" />
+                                </ComboBox>
+                            </StackPanel>
+                        </Grid>
                     </StackPanel>
                 </Border>
 
                 <!-- Advanced options -->
-                <Expander Grid.Row="5" Grid.Column="0" Grid.ColumnSpan="2"
+                <Expander Grid.Row="6" Grid.Column="0" Grid.ColumnSpan="2"
                           Header="Advanced options" Foreground="{DynamicResource Brush.TextDim}"
                           FontSize="12" FontWeight="Medium" Margin="0,0,0,6">
                     <StackPanel Margin="0,8,0,0">

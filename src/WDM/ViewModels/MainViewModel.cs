@@ -113,6 +113,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
     public RelayCommand RefreshLinkCommand { get; }
     public RelayCommand OpenFolderCommand { get; }
     public RelayCommand CleanFileNameCommand { get; }
+    public RelayCommand OpenPageResourcesCommand { get; }
 
     /// <summary>Raised before a destructive delete so the view can confirm with the
     /// user. The handler shows the themed DeleteConfirmDialog and, if confirmed, sets
@@ -132,7 +133,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
         _onEngineTaskCompleted = task => Dispatch(() =>
         {
             task.CompletedAt ??= DateTime.Now;
-            ActivityLog.Write("DONE", $"Completed: '{task.FileName}' ({task.TotalBytes:N0} bytes)");
+            ActivityLog.Write("DONE", $"{task.FileName} | {task.DisplaySizeText}");
             TaskCompleted?.Invoke(task);
             HandlePostDownload(task);
             MaybeShutdownOnQueueComplete();
@@ -227,11 +228,13 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
         }, _ => SelectedTask is { Status: TaskStatus.Failed or TaskStatus.Paused });
         OpenFolderCommand = new RelayCommand(p => RevealTask(p as DownloadTask ?? SelectedTask));
         CleanFileNameCommand = new RelayCommand(_ => CleanSelectedFileNames(), _ => SelectedTask is not null || SelectedTasks.Count > 0);
+        OpenPageResourcesCommand = new RelayCommand(_ => ShowPageResourcesDialog());
 
         TasksView = CollectionViewSource.GetDefaultView(Tasks);
-        TasksView.Filter = FilterTask;
-        TasksView.SortDescriptions.Add(
-            new SortDescription(nameof(DownloadTask.AddedAt), ListSortDirection.Descending));
+        // NOTE: Filter + sort are attached AFTER LoadPersistedTasks() below.
+        // The view is live-sorted, so bulk-adding with sort active re-sorts on
+        // every Add (O(n^2) stall). (ListCollectionView also throws if modified
+        // inside DeferRefresh, so deferred-batch is not an option.)
 
         // 1. Views Section (All, Queue, Finished, Paused, Failed)
         Filters.Add(new FilterItem(FilterKind.All));
@@ -271,6 +274,11 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
         _schedulerTimer.Start();
 
         LoadPersistedTasks();
+        // Attach filter + sort once, after the bulk load: a single refresh
+        // instead of one re-sort per added task.
+        TasksView.Filter = FilterTask;
+        TasksView.SortDescriptions.Add(
+            new SortDescription(nameof(DownloadTask.AddedAt), ListSortDirection.Descending));
         UpdateStatus();
     }
 
@@ -455,10 +463,46 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
         {
             _selectedTask = value;
             OnPropertyChanged(nameof(SelectedTask));
+            OnPropertyChanged(nameof(IsInspectorVisible));
+            OnPropertyChanged(nameof(IsBottomDetailsVisible));
+            OnPropertyChanged(nameof(InspectorColumnWidth));
             UpdateSelectionProperties();
             CommandManager.InvalidateRequerySuggested();
         }
     }
+
+    /// <summary>Width at which the main window switches to the wide layout:
+    /// extra list columns (Status/Speed/ETA) plus the side inspector panel.</summary>
+    public const double WideLayoutThreshold = 1100;
+
+    private bool _isWideLayout;
+    /// <summary>True when the main window is wide enough for the expanded
+    /// layout. Set by the view on SizeChanged; defaults to false so the
+    /// compact 784px design is untouched.</summary>
+    public bool IsWideLayout
+    {
+        get => _isWideLayout;
+        set
+        {
+            if (_isWideLayout == value)
+                return;
+            _isWideLayout = value;
+            OnPropertyChanged(nameof(IsWideLayout));
+            OnPropertyChanged(nameof(IsInspectorVisible));
+            OnPropertyChanged(nameof(IsBottomDetailsVisible));
+            OnPropertyChanged(nameof(InspectorColumnWidth));
+        }
+    }
+
+    /// <summary>Side inspector shows only in the wide layout with a selection.</summary>
+    public bool IsInspectorVisible => IsWideLayout && SelectedTask is not null;
+
+    /// <summary>Bottom details strip is the narrow-window counterpart of the
+    /// side inspector — hidden when wide to avoid duplicate info.</summary>
+    public bool IsBottomDetailsVisible => SelectedTask is not null && !IsWideLayout;
+
+    public GridLength InspectorColumnWidth =>
+        IsInspectorVisible ? new GridLength(300) : new GridLength(0);
 
     public string StatusText
     {
@@ -730,7 +774,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
         }
         if (!_cfAttempted.Add(task.Id))
         {
-            task.Error = cfEx.Message + " (Background Cloudflare solve already tried once — get a fresh link, then use Refresh Link.)";
+            task.Error = cfEx.Message + " (Already tried once in the background — get a fresh link, then use Refresh Link.)";
             return;
         }
         if (!_cfSolving.Add(task.Id))
@@ -861,6 +905,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
         Tasks.Add(task);
         ApplyCategoryRouting(task);
         Engine.Start(task);
+        ActivityLog.Write("ADD", $"{ActivityLog.HostOf(url)} | {task.FileName} | {url.Trim()}");
         // BUG-034: A new download is active — cancel any pending shutdown that
         // was scheduled for "queue empty" so the machine doesn't shut down
         // mid-download.
@@ -888,7 +933,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
         }
         task.Category = DownloadTask.Categorize(task.FileName);
         Tasks.Add(task);
-        ActivityLog.Write("ADD", $"Added: '{task.FileName}' ({task.Url})");
+        ActivityLog.Write("ADD", $"{ActivityLog.HostOf(task.Url)} | {task.FileName} | {task.Url}");
         _lastNotifiedStatus[task.Id] = task.Status;
         if (Settings.NotifyOnAdded)
             NotificationRequested?.Invoke(task, NotifyKind.Added);
@@ -929,6 +974,17 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
     }
 
     public void OpenAddDialog() => AddTaskRequested?.Invoke(null);
+
+    private void ShowPageResourcesDialog()
+    {
+        try
+        {
+            var dlg = new PageResourcesDialog(this);
+            dlg.Owner = App.Current.MainWindow;
+            dlg.Show();
+        }
+        catch { }
+    }
 
     /// <summary>Imports an assembled blob (1DM SaveBlobTask write → flow 4.1):
     /// moves the staged bytes into the download folder and records a finished
@@ -1172,6 +1228,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
             if (prev == task.Status)
                 continue;
             _lastNotifiedStatus[task.Id] = task.Status;
+            ActivityLog.Write("TASK", $"{task.FileName} {prev}->{task.Status}" + (task.Status == TaskStatus.Failed && !string.IsNullOrWhiteSpace(task.Error) ? " | " + task.Error : ""));
             NotifyKind kind = NotificationCenter.Decide(prev, task.Status, Settings);
             if (kind != NotifyKind.None)
                 NotificationRequested?.Invoke(task, kind);
@@ -1252,6 +1309,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
     {
         Engine.Remove(task);
         Tasks.Remove(task);
+        ActivityLog.Write("REMOVE", $"{task.FileName} [{task.Status}]");
         SaveTasksSoon();
         UpdateStatus();
     }
@@ -1264,6 +1322,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
         task.Error = null;
         task.Eta = "";
         Engine.Start(task);
+        ActivityLog.Write("RETRY", task.FileName);
         SaveTasksSoon();
         UpdateStatus();
     }
@@ -1277,6 +1336,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
         task.Error = null;
         task.Eta = "";
         Engine.Start(task);
+        ActivityLog.Write("REFRESH-LINK", $"{task.FileName} -> {ActivityLog.HostOf(newUrl)}");
         SaveTasksSoon();
         UpdateStatus();
     }
@@ -1635,11 +1695,8 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
             }
             catch (Exception ex)
             {
-                MessageBox.Show(
-                    $"Unable to open \"{task.FileName}\":\n{ex.Message}",
-                    "Open failed",
-                    MessageBoxButton.OK,
-                    MessageBoxImage.Error);
+                App.LogException(ex);
+                UserFriendlyError.ShowError(null, "Couldn't open file", "The file couldn't be opened. It may have been moved or deleted.");
             }
         }
         else
@@ -1934,15 +1991,13 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
             });
             if (proc is null)
                 throw new InvalidOperationException("Could not start the shutdown process.");
+            ActivityLog.Write("SHUTDOWN", "queue complete — system shutdown scheduled (60s)");
             return true;
         }
         catch (Exception ex)
         {
-            MessageBox.Show(
-                $"WDM could not shut down the computer:\n{ex.Message}\n\nRun 'shutdown /s /t 60' manually, or 'shutdown /a' to abort a pending shutdown.",
-                "Shutdown failed",
-                MessageBoxButton.OK,
-                MessageBoxImage.Warning);
+            App.LogException(ex);
+            UserFriendlyError.ShowWarning(null, "Couldn't shut down", "WDM couldn't shut down the computer. You can shut it down yourself from the Start menu.");
             return false;
         }
     }

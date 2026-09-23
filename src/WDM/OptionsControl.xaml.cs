@@ -19,7 +19,6 @@ public partial class OptionsControl : UserControl
     private bool _isInitializingAppearance = true;
 
     public event EventHandler? CloseRequested;
-    public event EventHandler? OpenExtensionHelperRequested;
 
     public OptionsControl()
     {
@@ -194,7 +193,8 @@ public partial class OptionsControl : UserControl
         }
         catch (Exception ex)
         {
-            MessageBox.Show("Failed to download YouTube engine plugins:\n" + ex.Message, "Engine Setup Error", MessageBoxButton.OK, MessageBoxImage.Error);
+            App.LogException(ex);
+            UserFriendlyError.ShowError(Window.GetWindow(this), "Couldn't set up YouTube downloads", "The YouTube downloader couldn't be set up. Check your internet connection and try again.");
             s.EnableYouTubeDownloads = false;
             TaskStore.SaveSettings(s);
         }
@@ -230,8 +230,9 @@ public partial class OptionsControl : UserControl
                 catch (Exception ex)
                 {
                     versionLabel.Text = "version unknown";
+                    App.LogException(ex);
                     if (YtStatusBadgeSub != null)
-                        YtStatusBadgeSub.Text = $"Engine ready, version check failed: {ex.Message}";
+                        YtStatusBadgeSub.Text = "Engine ready — version check didn't go through.";
                 }
             }
         }
@@ -264,7 +265,8 @@ public partial class OptionsControl : UserControl
         }
         catch (Exception ex)
         {
-            MessageBox.Show("Could not open YouTube Sign-In window: " + ex.Message, "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+            App.LogException(ex);
+            UserFriendlyError.ShowError(Window.GetWindow(this), "Couldn't open sign-in", "The YouTube sign-in window couldn't be opened. Please try again.");
         }
     }
 
@@ -440,7 +442,8 @@ public partial class OptionsControl : UserControl
             _latestRelease = null;
             _velopackUpdate = null;
             LatestVersionText.Text = "—";
-            UpdateStatusText.Text = $"Check failed: {ex.Message}";
+            App.LogException(ex);
+            UpdateStatusText.Text = "Couldn't check for updates. Check your internet connection and try again.";
         }
         finally
         {
@@ -497,7 +500,8 @@ public partial class OptionsControl : UserControl
             catch (Exception ex)
             {
                 UpdateProgressPanel.Visibility = Visibility.Collapsed;
-                UpdateStatusText.Text = $"{(isDelta ? "Delta" : "Full package")} download failed: {ex.Message}";
+                App.LogException(ex);
+                UpdateStatusText.Text = "The update couldn't be downloaded. Check your internet connection and try again.";
                 DownloadInstallButton.IsEnabled = true;
                 OpenReleaseButton.IsEnabled = true;
                 CheckNowButton.IsEnabled = true;
@@ -548,7 +552,8 @@ public partial class OptionsControl : UserControl
         catch (Exception ex)
         {
             UpdateProgressPanel.Visibility = Visibility.Collapsed;
-            UpdateStatusText.Text = $"Download failed: {ex.Message}";
+            App.LogException(ex);
+            UpdateStatusText.Text = "The installer couldn't be downloaded. Check your internet connection and try again.";
             DownloadInstallButton.IsEnabled = true;
             OpenReleaseButton.IsEnabled = true;
             CheckNowButton.IsEnabled = true;
@@ -593,8 +598,9 @@ public partial class OptionsControl : UserControl
         }
     }
 
-    /// <summary>Minimum auto-catch size box: selects the matching preset or shows
-    /// the custom value as text (editable for manual entry).</summary>
+    /// <summary>Minimum auto-catch size box: selects the matching preset, or the
+    /// Custom row with the value as text. The custom field is only enabled for
+    /// Custom (a plain non-editable dropdown renders reliably everywhere).</summary>
     private void InitMinCatchBox(long bytes)
     {
         if (MinCatchBox is null)
@@ -606,28 +612,58 @@ public partial class OptionsControl : UserControl
                 long.TryParse(tag, out long preset) && preset == bytes)
             {
                 MinCatchBox.SelectedItem = item;
-                // Set the editable text explicitly too: SelectedItem→Text coercion
-                // doesn't always repaint in offscreen captures (and costs nothing live).
-                MinCatchBox.Text = ci.Content?.ToString() ?? "";
+                if (MinCatchCustomBox != null)
+                {
+                    MinCatchCustomBox.Text = "";
+                    MinCatchCustomBox.IsEnabled = false;
+                }
                 return;
             }
         }
-        MinCatchBox.Text = FormatCatchSize(bytes);
+        foreach (var item in MinCatchBox.Items)
+        {
+            if (item is ComboBoxItem ci && ci.Tag is string tag && tag == "custom")
+            {
+                MinCatchBox.SelectedItem = item;
+                break;
+            }
+        }
+        if (MinCatchCustomBox != null)
+        {
+            MinCatchCustomBox.Text = FormatCatchSize(bytes);
+            MinCatchCustomBox.IsEnabled = true;
+        }
+    }
+
+    private void MinCatch_Changed(object sender, SelectionChangedEventArgs e)
+    {
+        if (MinCatchBox is null || MinCatchCustomBox is null)
+            return;
+        bool custom = MinCatchBox.SelectedItem is ComboBoxItem ci &&
+                      ci.Tag is string tag && tag == "custom";
+        MinCatchCustomBox.IsEnabled = custom;
+        if (!custom)
+            MinCatchCustomBox.Text = "";
     }
 
     private void SaveMinCatchBox(AppSettings s)
     {
         if (MinCatchBox is null)
             return;
+        bool custom = MinCatchBox.SelectedItem is ComboBoxItem sel &&
+                      sel.Tag is string selTag && selTag == "custom";
+        if (custom)
+        {
+            // Custom row: invalid text keeps the current value.
+            if (MinCatchCustomBox != null && TryParseCatchSize(MinCatchCustomBox.Text, out long parsed))
+                s.MinCatchSizeBytes = parsed;
+            return;
+        }
         if (MinCatchBox.SelectedItem is ComboBoxItem ci && ci.Tag is string tag &&
             long.TryParse(tag, out long preset) && preset >= 0)
         {
             s.MinCatchSizeBytes = Math.Min(preset, 10L * 1024 * 1024 * 1024);
-            return;
         }
-        // Manual entry (editable box): invalid text keeps the current value.
-        if (TryParseCatchSize(MinCatchBox.Text, out long custom))
-            s.MinCatchSizeBytes = custom;
     }
 
     /// <summary>Parses a manual size entry: bare number = MB; MB/GB (or M/G/KB/K)
@@ -719,6 +755,11 @@ public partial class OptionsControl : UserControl
         }
     }
 
+    private void OpenMoreHelp_Click(object sender, RoutedEventArgs e)
+    {
+        BrowserIntegration.OpenExtensionGuide();
+    }
+
     private void OpenGuide_Click(object sender, RoutedEventArgs e)
     {
         var window = new ExtensionGuideWindow
@@ -726,16 +767,6 @@ public partial class OptionsControl : UserControl
             Owner = Window.GetWindow(this) ?? Application.Current?.MainWindow
         };
         window.ShowDialog();
-    }
-
-    private void OpenExtensionHelper_Click(object sender, RoutedEventArgs e)
-    {
-        OpenExtensionHelperRequested?.Invoke(this, EventArgs.Empty);
-    }
-
-    private void OpenMoreHelp_Click(object sender, RoutedEventArgs e)
-    {
-        BrowserIntegration.OpenExtensionGuide();
     }
 
     private static string ExtractFirstDigit(string input)

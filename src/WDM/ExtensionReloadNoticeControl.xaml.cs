@@ -51,7 +51,8 @@ public partial class ExtensionReloadNoticeControl : UserControl
         }
         catch (Exception ex)
         {
-            FeedbackText.Text = "Could not copy: " + ex.Message;
+            App.LogException(ex);
+            FeedbackText.Text = "Couldn't copy the path — please copy it by hand from the box above.";
         }
     }
 

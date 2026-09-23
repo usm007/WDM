@@ -51,7 +51,6 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
         MainViewModel.Restarting += OnRestarting;
 
         SettingsContent.CloseRequested += (_, _) => ShowDownloadsView();
-        SettingsContent.OpenExtensionHelperRequested += (_, _) => ShowExtensionInstallerDialog(fromSettings: true);
         ExtensionContent.DoneRequested += (_, _) => ShowDownloadsView();
         NoticeContent.CloseRequested += (_, _) => ShowDownloadsView();
 
@@ -121,7 +120,9 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
                 }
                 ShowAddDialog(url, name, referer, headers, fromCapture: true, pageTitle: pageTitle);
             }));
-        _captureServer.Start();
+        // Loopback listener bind happens off the UI thread so slow/busy boot
+        // networking can never delay first paint. Callers marshal via dispatcher.
+        _ = Task.Run(() => _captureServer.Start());
         _captureServer.OnBatchCapture = items => _dispatcher.BeginInvoke(() => ShowBatchAddDialog(items));
         _captureServer.OnBlobCaptured = result => _dispatcher.BeginInvoke(() => _viewModel.AddCompletedFile(result));
         _captureServer.MinCatchBytesProvider = () => _viewModel.Settings.MinCatchSizeBytes;
@@ -145,6 +146,15 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
         // List shortcut keys (Delete/Enter/Space/F5) fall back to the window
         // when focused outside the DataGrid, without interfering with text controls.
         KeyDown += OnWindowKeyDown;
+
+        // Adaptive layout: at/above the wide threshold the download list gains
+        // Status/Speed/ETA columns and the side inspector appears. Uses the
+        // live DataContext (not the ctor VM) so screenshot VMs work too.
+        SizeChanged += (_, _) =>
+        {
+            if (DataContext is MainViewModel vm)
+                vm.IsWideLayout = ActualWidth >= MainViewModel.WideLayoutThreshold;
+        };
 
         _trayTimer = new System.Windows.Threading.DispatcherTimer
         {
@@ -177,7 +187,8 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
             {
                 return;
             }
-            BrowserIntegration.DeployExtension();
+            // NOTE: extension deploy runs once in App.OnStartup on a background
+            // thread — never re-deploy synchronously here; it blocked first paint.
             if (!_captureServer.IsConnected && !_viewModel.Settings.HasPromptedExtensionInstall && !App.StartMinimized)
             {
                 _viewModel.Settings.HasPromptedExtensionInstall = true;
@@ -200,8 +211,18 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
                 }
             }
 
-            _viewModel.Settings.LastRunVersion = UpdateChecker.CurrentVersion.ToString();
-            _viewModel.PersistSettings();
+            // Version stamp + settings flush off the UI thread: disk + registry
+            // writes must not sit between Show() and first render (white window).
+            string currentStamp = UpdateChecker.CurrentVersion.ToString();
+            _ = Task.Run(() =>
+            {
+                try
+                {
+                    _viewModel.Settings.LastRunVersion = currentStamp;
+                    _viewModel.PersistSettings();
+                }
+                catch { }
+            });
 
             // Started via the Windows-startup shortcut: run in the background and only
             // surface the window when the user clicks the tray icon.
@@ -496,7 +517,8 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
         }
         catch (Exception ex)
         {
-            System.Windows.MessageBox.Show(ex.ToString());
+            App.LogException(ex);
+            UserFriendlyError.ShowError(this, "Settings", "The Settings page couldn't be opened. Please try again.");
         }
     }
 
@@ -517,9 +539,13 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
     }
 
     /// <summary>Second-instance handoff (see <see cref="Services.SingleInstancePipe"/>):
-    /// restores a possibly tray-hidden window and opens any forwarded URL.</summary>
+    /// restores a possibly tray-hidden window and opens any forwarded URL.
+    /// Bare-flag handoffs (boot duplicate /minimized, no URL) are ignored so a
+    /// silent autostart can never pop the main window.</summary>
     public void HandleSecondInstance(string[] args)
     {
+        if (args is { Length: > 0 } && !App.ArgsContainUrl(args))
+            return;
         RestoreWindow();
         try
         {

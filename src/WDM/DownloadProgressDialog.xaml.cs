@@ -491,6 +491,7 @@ public partial class DownloadProgressDialog : Window, INotifyPropertyChanged
     private void ResumeClick(object sender, RoutedEventArgs e)
     {
         Task.Error = null;
+        Task.ErrorDetail = null;
         Task.Eta = "";
         _mainViewModel.Engine.Start(Task);
         _mainViewModel.SaveTasksSoon();

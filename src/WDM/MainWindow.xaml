@@ -32,6 +32,10 @@
         <vm:RetryVisibilityConverter x:Key="RetryVis" />
         <vm:NullToVisibilityConverter x:Key="NullToVis" />
         <vm:InverseNullToVisibilityConverter x:Key="InverseNullToVis" />
+        <vm:BoolToGridLengthConverter x:Key="BoolToGridLen" />
+        <!-- DataContext proxy for ColumnDefinitions (non-visual: no
+             RelativeSource/ElementName works there, incl. row templates). -->
+        <vm:BindingProxy x:Key="WideProxy" Data="{Binding IsWideLayout}" />
         <BooleanToVisibilityConverter x:Key="BoolToVis" />
 
         <!-- Sidebar action link button (e.g. Browser Integration) -->
@@ -195,6 +199,12 @@
                             AutomationProperties.AutomationId="BtnClearCompleted" AutomationProperties.Name="Clear finished downloads">
                         <ui:SymbolIcon Symbol="Dismiss24" FontSize="16" Foreground="{DynamicResource Brush.TextDim}" />
                     </Button>
+
+                    <!-- Action 6: Page Resources -->
+                    <Button Style="{StaticResource Button.CommandBarIcon}" Command="{Binding OpenPageResourcesCommand}" ToolTip="Page Resources — view media detected in browser tabs"
+                            AutomationProperties.AutomationId="BtnPageResources" AutomationProperties.Name="Page Resources">
+                        <ui:SymbolIcon Symbol="List24" FontSize="16" Foreground="{DynamicResource Brush.TextDim}" />
+                    </Button>
                 </StackPanel>
             </DockPanel>
         </Border>
@@ -208,6 +218,8 @@
                 <ColumnDefinition x:Name="SidebarColumn" Width="118" />
                 <ColumnDefinition Width="1" />
                 <ColumnDefinition Width="*" />
+                <!-- Wide-layout side inspector (0 when narrow / no selection) -->
+                <ColumnDefinition Width="{Binding InspectorColumnWidth}" />
             </Grid.ColumnDefinitions>
 
             <!-- Navigation Sidebar (Categories & Views) -->
@@ -303,15 +315,22 @@
                     <Border Grid.Row="0" Background="{DynamicResource Brush.SurfaceAlt}" BorderBrush="{DynamicResource Brush.Border}" BorderThickness="0,0,0,1" Padding="12,0" Height="26">
                         <Grid VerticalAlignment="Center">
                             <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="26" />
+                                <ColumnDefinition Width="34" />
                                 <ColumnDefinition Width="*" MinWidth="130" />
                                 <ColumnDefinition Width="80" />
                                 <ColumnDefinition Width="145" />
                                 <ColumnDefinition Width="40" />
+                                <!-- Wide-layout columns: collapse to 0 below the threshold -->
+                                <ColumnDefinition Width="{Binding Data, Source={StaticResource WideProxy}, Converter={StaticResource BoolToGridLen}, ConverterParameter=85}" />
+                                <ColumnDefinition Width="{Binding Data, Source={StaticResource WideProxy}, Converter={StaticResource BoolToGridLen}, ConverterParameter=95}" />
+                                <ColumnDefinition Width="{Binding Data, Source={StaticResource WideProxy}, Converter={StaticResource BoolToGridLen}, ConverterParameter=70}" />
                             </Grid.ColumnDefinitions>
                             <TextBlock Grid.Column="1" Text="File Name" FontSize="11" FontWeight="SemiBold" Foreground="{DynamicResource Brush.TextDim}" VerticalAlignment="Center" />
                             <TextBlock Grid.Column="2" Text="Progress" FontSize="11" FontWeight="SemiBold" Foreground="{DynamicResource Brush.TextDim}" HorizontalAlignment="Left" VerticalAlignment="Center" />
                             <TextBlock Grid.Column="3" Text="Size" FontSize="11" FontWeight="SemiBold" Foreground="{DynamicResource Brush.TextDim}" HorizontalAlignment="Left" VerticalAlignment="Center" />
+                            <TextBlock Grid.Column="5" Text="Status" FontSize="11" FontWeight="SemiBold" Foreground="{DynamicResource Brush.TextDim}" HorizontalAlignment="Left" VerticalAlignment="Center" />
+                            <TextBlock Grid.Column="6" Text="Speed" FontSize="11" FontWeight="SemiBold" Foreground="{DynamicResource Brush.TextDim}" HorizontalAlignment="Left" VerticalAlignment="Center" />
+                            <TextBlock Grid.Column="7" Text="ETA" FontSize="11" FontWeight="SemiBold" Foreground="{DynamicResource Brush.TextDim}" HorizontalAlignment="Left" VerticalAlignment="Center" />
                         </Grid>
                     </Border>
 
@@ -438,21 +457,31 @@
                                     <DataTemplate>
                                         <Grid Margin="12,0,12,0" Height="44" VerticalAlignment="Center">
                                             <Grid.ColumnDefinitions>
-                                                <!-- Col 0: File Type Icon -->
-                                                <ColumnDefinition Width="26" />
+                                                <!-- Col 0: File Type Icon in subtle tile -->
+                                                <ColumnDefinition Width="34" />
                                                 <!-- Col 1: File Name -->
                                                 <ColumnDefinition Width="*" MinWidth="130" />
                                                 <!-- Col 2: Progress Column (Completion percentage) -->
                                                 <ColumnDefinition Width="80" />
-                                                <!-- Col 3: Size Column (Downloaded / Total or Downloaded) -->
+                                                <!-- Col 3: Size Column (Downloaded / Total or Downloaded if total unknown) -->
                                                 <ColumnDefinition Width="145" />
                                                 <!-- Col 4: Open Folder Button -->
                                                 <ColumnDefinition Width="40" />
+                                                <!-- Wide-layout columns (Status / Speed / ETA) -->
+                                                <ColumnDefinition Width="{Binding Data, Source={StaticResource WideProxy}, Converter={StaticResource BoolToGridLen}, ConverterParameter=85}" />
+                                                <ColumnDefinition Width="{Binding Data, Source={StaticResource WideProxy}, Converter={StaticResource BoolToGridLen}, ConverterParameter=95}" />
+                                                <ColumnDefinition Width="{Binding Data, Source={StaticResource WideProxy}, Converter={StaticResource BoolToGridLen}, ConverterParameter=70}" />
                                             </Grid.ColumnDefinitions>
 
-                                            <!-- Col 0: File Type Icon -->
-                                            <ui:SymbolIcon Grid.Column="0" Symbol="{Binding TypeSymbol}" FontSize="16"
-                                                           Foreground="{Binding CategoryBrush}" HorizontalAlignment="Left" VerticalAlignment="Center" Margin="0,0,6,0" />
+                                            <!-- Col 0: File Type Icon in subtle tile -->
+                                            <Border Grid.Column="0" Width="28" Height="28" CornerRadius="6"
+                                                    Background="{DynamicResource Brush.SurfaceAlt}"
+                                                    BorderBrush="{DynamicResource Brush.Border}" BorderThickness="1"
+                                                    HorizontalAlignment="Left" VerticalAlignment="Center" Margin="0,0,6,0">
+                                                <ui:SymbolIcon Symbol="{Binding TypeSymbol}" FontSize="15"
+                                                               Foreground="{DynamicResource Brush.TextDim}"
+                                                               HorizontalAlignment="Center" VerticalAlignment="Center" />
+                                            </Border>
 
                                             <!-- Col 1: File Name -->
                                             <StackPanel Grid.Column="1" VerticalAlignment="Center" Margin="0,0,10,0">
@@ -460,7 +489,7 @@
                                                            Foreground="{DynamicResource Brush.Text}" TextTrimming="CharacterEllipsis"
                                                            ToolTip="{Binding DisplayFileName}" VerticalAlignment="Center" />
                                                 <TextBlock Text="{Binding Error}" FontSize="9.5" Foreground="{DynamicResource Brush.StatusFailed}"
-                                                           TextTrimming="CharacterEllipsis" ToolTip="{Binding Error}" VerticalAlignment="Center" Margin="0,1.5,0,0"
+                                                           TextTrimming="CharacterEllipsis" ToolTip="{Binding ErrorDetail}" VerticalAlignment="Center" Margin="0,1.5,0,0"
                                                            Visibility="{Binding HasFailureError, Converter={StaticResource BoolToVis}}" />
                                             </StackPanel>
 
@@ -486,6 +515,21 @@
                                                        HorizontalAlignment="Left" VerticalAlignment="Center">
                                                 <ui:SymbolIcon Symbol="Folder20" FontSize="15" Foreground="{DynamicResource Brush.TextDim}" />
                                             </ui:Button>
+
+                                            <!-- Col 5: Status (wide layout only) -->
+                                            <TextBlock Grid.Column="5" Text="{Binding PrimaryStatusText}" FontSize="11.5" FontWeight="SemiBold"
+                                                       Foreground="{Binding Status, Converter={StaticResource StatusBrush}}"
+                                                       HorizontalAlignment="Left" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
+
+                                            <!-- Col 6: Speed (wide layout only) -->
+                                            <TextBlock Grid.Column="6" Text="{Binding SpeedText, Converter={StaticResource EmptyDash}}" FontSize="11.5"
+                                                       Foreground="{DynamicResource Brush.TextDim}"
+                                                       HorizontalAlignment="Left" VerticalAlignment="Center" />
+
+                                            <!-- Col 7: ETA / time (wide layout only) -->
+                                            <TextBlock Grid.Column="7" Text="{Binding EtaOrDashText}" FontSize="11.5"
+                                                       Foreground="{DynamicResource Brush.TextDim}"
+                                                       HorizontalAlignment="Left" VerticalAlignment="Center" />
                                         </Grid>
                                     </DataTemplate>
                                 </DataGridTemplateColumn.CellTemplate>
@@ -505,11 +549,12 @@
                     </StackPanel>
                 </Grid>
 
-                <!-- Row 1: Selected Item Details Inspector Panel (Visible when an item is selected) -->
+                <!-- Row 1: Selected Item Details Inspector Panel (narrow windows only;
+                     the side inspector replaces it in the wide layout) -->
                 <Border Grid.Row="1" Background="{DynamicResource Brush.Surface}"
                         BorderBrush="{DynamicResource Brush.Border}" BorderThickness="0,1,0,0"
                         Padding="14,8,14,10"
-                        Visibility="{Binding SelectedTask, Converter={StaticResource NullToVis}}">
+                        Visibility="{Binding IsBottomDetailsVisible, Converter={StaticResource BoolToVis}}">
                     <Grid DataContext="{Binding SelectedTask}">
                         <Grid.ColumnDefinitions>
                             <!-- Left Info Fields Grid -->
@@ -584,6 +629,71 @@
                 </Border>
                 </Grid>
             </Grid>
+
+            <!-- Wide-layout side inspector: selection details + quick actions.
+                 Visible only when the window is wide and an item is selected. -->
+            <Border Grid.Column="3" Background="{DynamicResource Brush.Surface}"
+                    BorderBrush="{DynamicResource Brush.Border}" BorderThickness="1,0,0,0"
+                    Visibility="{Binding IsInspectorVisible, Converter={StaticResource BoolToVis}}">
+                <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="14,12">
+                    <StackPanel>
+                        <TextBlock Text="DETAILS" FontSize="9" FontWeight="Bold" Foreground="{DynamicResource Brush.TextMuted}" Margin="0,0,0,4" />
+                        <TextBlock Text="{Binding SelectedTask.DisplayFileName}" FontSize="13" FontWeight="SemiBold"
+                                   Foreground="{DynamicResource Brush.Text}" TextWrapping="Wrap" ToolTip="{Binding SelectedTask.DisplayFileName}" />
+                        <TextBlock Text="{Binding SelectedTask.DomainText}" FontSize="11.5" Foreground="{DynamicResource Brush.Accent}"
+                                   TextTrimming="CharacterEllipsis" ToolTip="{Binding SelectedTask.Url}" Margin="0,2,0,10" />
+
+                        <DockPanel LastChildFill="False" Margin="0,0,0,4">
+                            <TextBlock DockPanel.Dock="Left" Text="{Binding SelectedTask.PrimaryStatusText}" FontSize="12" FontWeight="Bold"
+                                       Foreground="{Binding SelectedTask.Status, Converter={StaticResource StatusBrush}}" />
+                            <TextBlock DockPanel.Dock="Right" Text="{Binding SelectedTask.DownloadedOfTotalText}" FontSize="11" FontWeight="SemiBold" Foreground="{DynamicResource Brush.Accent}" />
+                        </DockPanel>
+                        <ProgressBar Style="{StaticResource ProgressBar.DetailsPanel}"
+                                     Value="{Binding SelectedTask.Progress}" Maximum="100" Height="6" Margin="0,0,0,12"
+                                     Background="#DBEAFE" Foreground="{DynamicResource Brush.Accent}" />
+
+                        <UniformGrid Columns="2" Margin="0,0,0,4">
+                            <StackPanel Margin="0,0,8,8">
+                                <TextBlock Text="SPEED" FontSize="9" FontWeight="Bold" Foreground="{DynamicResource Brush.TextMuted}" />
+                                <TextBlock Text="{Binding SelectedTask.SpeedText, Converter={StaticResource EmptyDash}}" FontSize="12" Foreground="{DynamicResource Brush.Text}" />
+                            </StackPanel>
+                            <StackPanel Margin="0,0,0,8">
+                                <TextBlock Text="TIME LEFT" FontSize="9" FontWeight="Bold" Foreground="{DynamicResource Brush.TextMuted}" />
+                                <TextBlock Text="{Binding SelectedTask.EtaDetailText}" FontSize="12" Foreground="{DynamicResource Brush.Text}" />
+                            </StackPanel>
+                            <StackPanel Margin="0,0,8,8">
+                                <TextBlock Text="SIZE" FontSize="9" FontWeight="Bold" Foreground="{DynamicResource Brush.TextMuted}" />
+                                <TextBlock Text="{Binding SelectedTask.DisplaySizeText}" FontSize="12" Foreground="{DynamicResource Brush.Text}" />
+                            </StackPanel>
+                            <StackPanel Margin="0,0,0,8">
+                                <TextBlock Text="CONNECTIONS" FontSize="9" FontWeight="Bold" Foreground="{DynamicResource Brush.TextMuted}" />
+                                <TextBlock Text="{Binding SelectedTask.ConnectionsText}" FontSize="12" Foreground="{DynamicResource Brush.Text}" />
+                            </StackPanel>
+                            <StackPanel Margin="0,0,8,8">
+                                <TextBlock Text="ADDED" FontSize="9" FontWeight="Bold" Foreground="{DynamicResource Brush.TextMuted}" />
+                                <TextBlock Text="{Binding SelectedTask.AddedAt, StringFormat='{}{0:MMM dd, yyyy HH:mm}'}" FontSize="12" Foreground="{DynamicResource Brush.Text}" />
+                            </StackPanel>
+                            <StackPanel Margin="0,0,0,8">
+                                <TextBlock Text="SAVED TO" FontSize="9" FontWeight="Bold" Foreground="{DynamicResource Brush.TextMuted}" />
+                                <TextBlock Text="{Binding SelectedTask.SaveFolder}" FontSize="12" Foreground="{DynamicResource Brush.Text}"
+                                           TextTrimming="CharacterEllipsis" ToolTip="{Binding SelectedTask.FullPath}" />
+                            </StackPanel>
+                        </UniformGrid>
+
+                        <TextBlock Text="ACTIONS" FontSize="9" FontWeight="Bold" Foreground="{DynamicResource Brush.TextMuted}" Margin="0,4,0,6" />
+                        <UniformGrid Columns="2">
+                            <ui:Button Style="{StaticResource Button.SecondaryAction}" Content="Open file" Command="{Binding OpenFileCommand}" Height="30" Margin="0,0,6,6" />
+                            <ui:Button Style="{StaticResource Button.SecondaryAction}" Content="Open folder" Command="{Binding RevealCommand}" Height="30" Margin="0,0,0,6" />
+                            <ui:Button Style="{StaticResource Button.SecondaryAction}" Content="Resume" Command="{Binding ResumeCommand}" Height="30" Margin="0,0,6,6" />
+                            <ui:Button Style="{StaticResource Button.SecondaryAction}" Content="Pause" Command="{Binding PauseCommand}" Height="30" Margin="0,0,0,6" />
+                            <ui:Button Style="{StaticResource Button.SecondaryAction}" Content="Restart" Command="{Binding RetryCommand}" Height="30" Margin="0,0,6,6" />
+                            <ui:Button Style="{StaticResource Button.SecondaryAction}" Content="Refresh link" Command="{Binding RefreshLinkCommand}" Height="30" Margin="0,0,0,6" />
+                            <ui:Button Style="{StaticResource Button.SecondaryAction}" Content="Properties" Command="{Binding PropertiesCommand}" Height="30" Margin="0,0,6,0" />
+                            <ui:Button Style="{StaticResource Button.SecondaryAction}" Content="Delete" Command="{Binding RemoveCommand}" Height="30" Margin="0,0,0,0" />
+                        </UniformGrid>
+                    </StackPanel>
+                </ScrollViewer>
+            </Border>
         </Grid>
 
         <!-- Full-Overlay Integrated Views (Settings, Extensions, Reload Notice) - Covers Command Bar & Workspace, leaving Titlebar & Bottom Bar visible -->

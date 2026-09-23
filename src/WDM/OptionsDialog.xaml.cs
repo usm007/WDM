@@ -15,11 +15,6 @@ public partial class OptionsDialog : Wpf.Ui.Controls.FluentWindow
             DialogResult = true;
             Close();
         };
-        SettingsControl.OpenExtensionHelperRequested += (_, _) =>
-        {
-            var helper = new BrowserExtensionDialog { Owner = this };
-            helper.ShowDialog();
-        };
     }
 
     public void SwitchTab(string tag) => SettingsControl.SwitchTab(tag);

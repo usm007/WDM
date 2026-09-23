@@ -25,7 +25,9 @@ public partial class AddDownloadDialog : Window
     private CancellationTokenSource? _probeCts;
     private ResolvedQuery? _lastResolved;
     private List<QualityOption> _ytQualityOptions = new();
-    private List<HlsDownloader.HlsVariant> _hlsVariants = new();
+    private List<HlsDownloader.HlsVariantInfo> _hlsVariants = new();
+    private string _originalHlsUrl = "";
+    private bool _suppressHlsSelection;
 
     public AddDownloadDialog(MainViewModel viewModel, string? prefillUrl = null, string? prefillFileName = null, string? prefillReferer = null, Dictionary<string, string>? prefillHeaders = null)
     {
@@ -167,8 +169,12 @@ public partial class AddDownloadDialog : Window
 
     private void UrlBox_TextChanged(object sender, TextChangedEventArgs e)
     {
-        string url = UrlBox.Text.Trim();
-        bool isValid = DownloadEngine.IsHttpUrl(url);
+        string raw = UrlBox.Text.Trim().Trim('"', '\'', '<', '>', '`');
+        // Common paste artifact: copied with surrounding whitespace/quotes/brackets from chat/email.
+        // Also handle a trailing line-break that Trim already removed, but keep embedded % encoding as-is.
+        string url = raw;
+        bool isValid = Uri.TryCreate(url, UriKind.Absolute, out var uri) &&
+                       (uri.Scheme == Uri.UriSchemeHttp || uri.Scheme == Uri.UriSchemeHttps || uri.Scheme == Uri.UriSchemeFtp);
 
         OkButton.IsEnabled = isValid;
         if (DownloadLaterButton != null) DownloadLaterButton.IsEnabled = isValid;
@@ -186,7 +192,7 @@ public partial class AddDownloadDialog : Window
             ProbeBadge.Visibility = Visibility.Collapsed;
             YtSignInButton.Visibility = Visibility.Collapsed;
             if (HlsPanel != null) HlsPanel.Visibility = Visibility.Collapsed;
-            _hlsVariants = new List<HlsDownloader.HlsVariant>();
+            _hlsVariants = new List<HlsDownloader.HlsVariantInfo>();
             UpdateCategoryBadge();
             return;
         }
@@ -204,7 +210,7 @@ public partial class AddDownloadDialog : Window
         if (_viewModel.Settings.EnableYouTubeDownloads && MediaResolver.IsYoutubeUrl(url))
         {
             if (HlsPanel != null) HlsPanel.Visibility = Visibility.Collapsed;
-            _hlsVariants = new List<HlsDownloader.HlsVariant>();
+            _hlsVariants = new List<HlsDownloader.HlsVariantInfo>();
             ProbeYouTubeUrlAsync(url);
         }
         else
@@ -330,7 +336,8 @@ public partial class AddDownloadDialog : Window
                 }
                 else
                 {
-                    ProbeText.Text = "YouTube analysis: " + ex.Message;
+                    App.LogException(ex);
+                    ProbeText.Text = "Couldn't check that YouTube link: " + UserFriendlyError.For(ex);
                     YtSignInButton.Visibility = Visibility.Collapsed;
                 }
                 if (YtThumbnail != null) YtThumbnail.Visibility = Visibility.Collapsed;
@@ -454,8 +461,10 @@ public partial class AddDownloadDialog : Window
 
         ProbeBadge.Visibility = Visibility.Visible;
         ProbeIcon.Symbol = SymbolRegular.ArrowSync24;
-        ProbeText.Text = "Inspecting URL capabilities...";
+        ProbeText.Text = "Checking link…";
         _probeTotalBytes = -1;
+        StartProbeAnimation();
+        SetButtonsProbing(true);
 
         // Note: embed/player pages are caught via the browser extension (overlay
         // "Resolve in WDM" or auto-captured streams), not by pasting. The engine
@@ -468,6 +477,13 @@ public partial class AddDownloadDialog : Window
                 AllowAutoRedirect = true,
                 UseCookies = false,
             };
+            // Route the probe (and the HLS playlist fetch below) through the manual proxy when set.
+            var proxy = DownloadEngine.BuildProxy(_viewModel.Settings);
+            if (proxy is not null)
+            {
+                handler.Proxy = proxy;
+                handler.UseProxy = true;
+            }
             using var http = new HttpClient(handler) { Timeout = TimeSpan.FromSeconds(6) };
             http.DefaultRequestHeaders.UserAgent.ParseAdd("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0 Safari/537.36");
 
@@ -543,7 +559,7 @@ public partial class AddDownloadDialog : Window
             {
                 ProbeIcon.Symbol = SymbolRegular.CheckmarkCircle24;
                 ProbeText.Text = $"{sizeStr} • HLS stream (downloads as one media file)";
-                LoadHlsVariantsAsync(url, customHeaders, ct);
+                _ = LoadHlsVariantsAsync(url, http, ct);
             }
             else if (supportsRanges)
             {
@@ -572,56 +588,50 @@ public partial class AddDownloadDialog : Window
                 ProbeText.Text = "URL ready for download";
             }
         }
+        finally
+        {
+            StopProbeAnimation();
+            SetButtonsProbing(false);
+        }
+    }
+
+    private void StartProbeAnimation()
+    {
+        try
+        {
+            var anim = new System.Windows.Media.Animation.DoubleAnimation(0, 360, TimeSpan.FromSeconds(0.9))
+            {
+                RepeatBehavior = System.Windows.Media.Animation.RepeatBehavior.Forever
+            };
+            ProbeSpin.BeginAnimation(System.Windows.Media.RotateTransform.AngleProperty, anim);
+        }
+        catch { }
+    }
+
+    private void StopProbeAnimation()
+    {
+        try { ProbeSpin.BeginAnimation(System.Windows.Media.RotateTransform.AngleProperty, null); ProbeSpin.Angle = 0; } catch { }
+    }
+
+    private void SetButtonsProbing(bool probing)
+    {
+        try
+        {
+            Dispatcher.Invoke(() =>
+            {
+                bool urlOk = Uri.TryCreate(UrlBox.Text.Trim().Trim('"', '\'', '<', '>', '`'), UriKind.Absolute, out var u) && (u.Scheme == Uri.UriSchemeHttp || u.Scheme == Uri.UriSchemeHttps || u.Scheme == Uri.UriSchemeFtp);
+                OkButton.IsEnabled = !probing && urlOk;
+                if (DownloadLaterButton != null) DownloadLaterButton.IsEnabled = !probing && urlOk;
+                OkButton.Content = probing ? "Checking…" : "Start download";
+                if (DownloadLaterButton != null) DownloadLaterButton.Content = probing ? "Checking…" : "Download later";
+            });
+        }
+        catch { }
     }
 
     /// <summary>HLS rendition picker (gap 4): lists master-playlist variants so
     /// the user can choose e.g. 720p instead of best-only. "Best available"
     /// (index 0) keeps today's behavior; panels hide on miss/single variant.</summary>
-    private async void LoadHlsVariantsAsync(string url, Dictionary<string, string> headers, CancellationToken ct)
-    {
-        try
-        {
-            var handler = new SocketsHttpHandler
-            {
-                AllowAutoRedirect = true,
-                UseCookies = false,
-            };
-            // Route the playlist fetch through the manual proxy when set.
-            var proxy = DownloadEngine.BuildProxy(_viewModel.Settings);
-            if (proxy is not null)
-            {
-                handler.Proxy = proxy;
-                handler.UseProxy = true;
-            }
-            using var http = new HttpClient(handler) { Timeout = TimeSpan.FromSeconds(8) };
-            http.DefaultRequestHeaders.UserAgent.ParseAdd("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0 Safari/537.36");
-            string? referer = headers.TryGetValue("Referer", out var rf) ? rf : null;
-            var variants = await HlsDownloader.ListVariantsAsync(http, url, referer, headers, ct);
-            if (ct.IsCancellationRequested || !IsLoaded)
-                return;
-            if (!string.Equals(UrlBox.Text.Trim(), url, StringComparison.Ordinal))
-                return;
-            if (variants.Count > 1 && HlsQualityBox != null && HlsPanel != null)
-            {
-                _hlsVariants = variants;
-                var items = new List<string> { "Best available" };
-                items.AddRange(variants.Select(v => v.Label));
-                HlsQualityBox.ItemsSource = items;
-                HlsQualityBox.SelectedIndex = 0;
-                HlsPanel.Visibility = Visibility.Visible;
-            }
-            else if (HlsPanel != null)
-            {
-                HlsPanel.Visibility = Visibility.Collapsed;
-            }
-        }
-        catch
-        {
-            if (HlsPanel != null && !ct.IsCancellationRequested)
-                HlsPanel.Visibility = Visibility.Collapsed;
-        }
-    }
-
     private static bool IsGenericName(string name) =>
         string.IsNullOrWhiteSpace(name)
         || FileNameHelper.IsGenericStem(Path.GetFileNameWithoutExtension(name.Trim()))
@@ -727,6 +737,54 @@ public partial class AddDownloadDialog : Window
 
     private void CategoryBox_SelectionChanged(object sender, SelectionChangedEventArgs e) => ApplyRouting();
 
+    // ── HLS variant picker ─────────────────────────────────────────────
+    private async Task LoadHlsVariantsAsync(string url, HttpClient http, CancellationToken ct)
+    {
+        try
+        {
+            var headers = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            foreach (var kv in ParseHeaders())
+                headers[kv.Key] = kv.Value;
+            if (!string.IsNullOrWhiteSpace(_prefillReferer) && !headers.ContainsKey("Referer"))
+                headers["Referer"] = _prefillReferer;
+            if (_prefillHeaders is not null)
+            {
+                foreach (var kv in _prefillHeaders)
+                    headers.TryAdd(kv.Key, kv.Value);
+            }
+
+            var variants = await HlsDownloader.ParseMasterVariantsAsync(http, url, _prefillReferer, headers, ct);
+            if (ct.IsCancellationRequested || !IsLoaded || variants.Count == 0)
+                return;
+
+            _hlsVariants = variants;
+            _originalHlsUrl = url;
+            _suppressHlsSelection = true;
+            HlsQualityBox.ItemsSource = variants.Select(v => v.Label).ToList();
+            HlsQualityBox.SelectedIndex = variants.Count - 1; // best quality
+            _suppressHlsSelection = false;
+            HlsPanel.Visibility = Visibility.Visible;
+        }
+        catch
+        {
+            // Not a master playlist or fetch failed — no quality picker needed.
+        }
+    }
+
+    private void HlsQualityBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (_suppressHlsSelection || _hlsVariants.Count == 0)
+            return;
+        int idx = HlsQualityBox.SelectedIndex;
+        if (idx < 0 || idx >= _hlsVariants.Count)
+            return;
+        string selected = _hlsVariants[idx].VariantUrl;
+        if (!string.IsNullOrWhiteSpace(selected) && UrlBox is not null)
+        {
+            UrlBox.Text = selected;
+        }
+    }
+
     private void BrowseClick(object sender, RoutedEventArgs e)
     {
         var dialog = new OpenFolderDialog
@@ -760,7 +818,7 @@ public partial class AddDownloadDialog : Window
             HlsQualityBox != null && HlsQualityBox.SelectedIndex > 0 &&
             HlsQualityBox.SelectedIndex - 1 < _hlsVariants.Count)
         {
-            url = _hlsVariants[HlsQualityBox.SelectedIndex - 1].Url;
+            url = _hlsVariants[HlsQualityBox.SelectedIndex - 1].VariantUrl;
         }
 
         int chunks = 0;

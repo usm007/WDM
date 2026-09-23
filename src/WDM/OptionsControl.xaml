@@ -177,7 +177,7 @@
                             <ui:CardControl.Header>
                                 <StackPanel>
                                     <TextBlock Text="Auto-resume failed downloads" FontWeight="Medium" FontSize="13" Foreground="{DynamicResource Brush.Text}" />
-                                    <TextBlock Text="Re-queue failed downloads about once a minute, up to the retry budget above. Manual pause/cancel always wins." FontSize="11.5" Foreground="{DynamicResource Brush.TextMuted}" Margin="0,2,0,0" TextWrapping="Wrap" MaxWidth="260" />
+                                    <TextBlock Text="Re-queue failed downloads about once a minute, up to the retry budget above. Manual pause/cancel always wins." FontSize="11.5" Foreground="{DynamicResource Brush.TextMuted}" Margin="0,2,0,0" TextWrapping="Wrap" MaxWidth="260" HorizontalAlignment="Left" TextAlignment="Left" />
                                 </StackPanel>
                             </ui:CardControl.Header>
                             <ui:ToggleSwitch x:Name="AutoResumeBox" />
@@ -189,7 +189,7 @@
                             <ui:CardControl.Header>
                                 <StackPanel>
                                     <TextBlock Text="Download only in time window" FontWeight="Medium" FontSize="13" Foreground="{DynamicResource Brush.Text}" />
-                                    <TextBlock Text="Hold the queue outside the window; resume on re-entry. Manual start always wins." FontSize="11.5" Foreground="{DynamicResource Brush.TextMuted}" Margin="0,2,0,0" TextWrapping="Wrap" MaxWidth="260" />
+                                    <TextBlock Text="Hold the queue outside the window; resume on re-entry. Manual start always wins." FontSize="11.5" Foreground="{DynamicResource Brush.TextMuted}" Margin="0,2,0,0" TextWrapping="Wrap" MaxWidth="260" HorizontalAlignment="Left" TextAlignment="Left" />
                                 </StackPanel>
                             </ui:CardControl.Header>
                             <ui:ToggleSwitch x:Name="SchedulerBox" />
@@ -199,7 +199,7 @@
                             <ui:CardControl.Header>
                                 <StackPanel>
                                     <TextBlock Text="Window start / stop (HH:mm)" FontWeight="Medium" FontSize="13" Foreground="{DynamicResource Brush.Text}" />
-                                    <TextBlock Text="Overnight windows wrap midnight (22:00–07:00). Equal times = all day." FontSize="11.5" Foreground="{DynamicResource Brush.TextMuted}" Margin="0,2,0,0" TextWrapping="Wrap" MaxWidth="260" />
+                                    <TextBlock Text="Overnight windows wrap midnight (22:00–07:00). Equal times = all day." FontSize="11.5" Foreground="{DynamicResource Brush.TextMuted}" Margin="0,2,0,0" TextWrapping="Wrap" MaxWidth="260" HorizontalAlignment="Left" TextAlignment="Left" />
                                 </StackPanel>
                             </ui:CardControl.Header>
                             <StackPanel Orientation="Horizontal">
@@ -213,25 +213,25 @@
                             <ui:CardControl.Header>
                                 <StackPanel>
                                     <TextBlock Text="Active days" FontWeight="Medium" FontSize="13" Foreground="{DynamicResource Brush.Text}" />
-                                    <TextBlock Text="The window applies only on checked days." FontSize="11.5" Foreground="{DynamicResource Brush.TextMuted}" Margin="0,2,0,0" />
+                                    <TextBlock Text="The window applies only on checked days." FontSize="11.5" Foreground="{DynamicResource Brush.TextMuted}" Margin="0,2,0,10" />
+                                    <WrapPanel Orientation="Horizontal">
+                                        <CheckBox x:Name="SchedulerDayMonday" Content="Mo" Margin="0,0,10,6" />
+                                        <CheckBox x:Name="SchedulerDayTuesday" Content="Tu" Margin="0,0,10,6" />
+                                        <CheckBox x:Name="SchedulerDayWednesday" Content="We" Margin="0,0,10,6" />
+                                        <CheckBox x:Name="SchedulerDayThursday" Content="Th" Margin="0,0,10,6" />
+                                        <CheckBox x:Name="SchedulerDayFriday" Content="Fr" Margin="0,0,10,6" />
+                                        <CheckBox x:Name="SchedulerDaySaturday" Content="Sa" Margin="0,0,10,6" />
+                                        <CheckBox x:Name="SchedulerDaySunday" Content="Su" Margin="0,0,10,6" />
+                                    </WrapPanel>
                                 </StackPanel>
                             </ui:CardControl.Header>
-                            <WrapPanel Orientation="Horizontal" MaxWidth="200">
-                                <CheckBox x:Name="SchedulerDayMonday" Content="Mo" Margin="0,0,6,4" />
-                                <CheckBox x:Name="SchedulerDayTuesday" Content="Tu" Margin="0,0,6,4" />
-                                <CheckBox x:Name="SchedulerDayWednesday" Content="We" Margin="0,0,6,4" />
-                                <CheckBox x:Name="SchedulerDayThursday" Content="Th" Margin="0,0,6,4" />
-                                <CheckBox x:Name="SchedulerDayFriday" Content="Fr" Margin="0,0,6,4" />
-                                <CheckBox x:Name="SchedulerDaySaturday" Content="Sa" Margin="0,0,6,4" />
-                                <CheckBox x:Name="SchedulerDaySunday" Content="Su" Margin="0,0,6,4" />
-                            </WrapPanel>
                         </ui:CardControl>
 
                         <ui:CardControl Margin="0,0,0,12">
                             <ui:CardControl.Header>
                                 <StackPanel>
                                     <TextBlock Text="Window speed limit (KB/s)" FontWeight="Medium" FontSize="13" Foreground="{DynamicResource Brush.Text}" />
-                                    <TextBlock Text="Extra bandwidth ceiling inside the window (0 = scheduled full speed)." FontSize="11.5" Foreground="{DynamicResource Brush.TextMuted}" Margin="0,2,0,0" TextWrapping="Wrap" MaxWidth="260" />
+                                    <TextBlock Text="Extra bandwidth ceiling inside the window (0 = scheduled full speed)." FontSize="11.5" Foreground="{DynamicResource Brush.TextMuted}" Margin="0,2,0,0" TextWrapping="Wrap" MaxWidth="260" HorizontalAlignment="Left" TextAlignment="Left" />
                                 </StackPanel>
                             </ui:CardControl.Header>
                             <ui:TextBox x:Name="SchedulerSpeedBox" Width="180" Height="32" VerticalContentAlignment="Center" FontSize="12" ToolTip="0 = no extra limit" PlaceholderText="0" />
@@ -298,7 +298,7 @@
                             <ui:CardControl.Header>
                                 <StackPanel>
                                     <TextBlock Text="Default folder" FontWeight="Medium" FontSize="13" Foreground="{DynamicResource Brush.Text}" />
-                                    <TextBlock Text="Location where new downloads are stored by default." FontSize="11.5" Foreground="{DynamicResource Brush.TextMuted}" Margin="0,2,0,0" TextWrapping="Wrap" MaxWidth="260" />
+                                    <TextBlock Text="Location where new downloads are stored by default." FontSize="11.5" Foreground="{DynamicResource Brush.TextMuted}" Margin="0,2,0,0" TextWrapping="Wrap" MaxWidth="260" HorizontalAlignment="Left" TextAlignment="Left" />
                                 </StackPanel>
                             </ui:CardControl.Header>
                             <StackPanel Orientation="Horizontal">
@@ -386,18 +386,23 @@
                             <ui:CardControl.Header>
                                 <StackPanel>
                                     <TextBlock Text="Minimum auto-catch size" FontWeight="Medium" FontSize="13" Foreground="{DynamicResource Brush.Text}" />
-                                    <TextBlock Text="Only hand browser downloads at or above this size to WDM — smaller files stay in the browser. Unknown sizes always pass. 0 disables the gate." FontSize="11.5" Foreground="{DynamicResource Brush.TextMuted}" Margin="0,2,0,0" TextWrapping="Wrap" MaxWidth="260" />
+                                    <TextBlock Text="Only hand browser downloads at or above this size to WDM — smaller files stay in the browser. Unknown sizes always pass. 0 disables the gate." FontSize="11.5" Foreground="{DynamicResource Brush.TextMuted}" Margin="0,2,0,0" TextWrapping="Wrap" MaxWidth="260" HorizontalAlignment="Left" TextAlignment="Left" />
                                 </StackPanel>
                             </ui:CardControl.Header>
-                            <ComboBox x:Name="MinCatchBox" Width="180" Height="32" IsEditable="True">
-                                <ComboBoxItem Content="100 MB" Tag="104857600" />
-                                <ComboBoxItem Content="200 MB (recommended)" Tag="209715200" />
-                                <ComboBoxItem Content="300 MB" Tag="314572800" />
-                                <ComboBoxItem Content="400 MB" Tag="419430400" />
-                                <ComboBoxItem Content="500 MB" Tag="524288000" />
-                                <ComboBoxItem Content="750 MB" Tag="786432000" />
-                                <ComboBoxItem Content="1 GB" Tag="1073741824" />
-                            </ComboBox>
+                            <StackPanel>
+                                <ComboBox x:Name="MinCatchBox" Width="180" Height="32" SelectionChanged="MinCatch_Changed">
+                                    <ComboBoxItem Content="None (catch all)" Tag="0" />
+                                    <ComboBoxItem Content="100 MB" Tag="104857600" />
+                                    <ComboBoxItem Content="200 MB (recommended)" Tag="209715200" />
+                                    <ComboBoxItem Content="300 MB" Tag="314572800" />
+                                    <ComboBoxItem Content="400 MB" Tag="419430400" />
+                                    <ComboBoxItem Content="500 MB" Tag="524288000" />
+                                    <ComboBoxItem Content="750 MB" Tag="786432000" />
+                                    <ComboBoxItem Content="1 GB" Tag="1073741824" />
+                                    <ComboBoxItem Content="Custom…" Tag="custom" />
+                                </ComboBox>
+                                <ui:TextBox x:Name="MinCatchCustomBox" Width="180" Height="32" Margin="0,6,0,0" VerticalContentAlignment="Center" FontSize="12" PlaceholderText="Custom MB, e.g. 250 or 1.5 GB" />
+                            </StackPanel>
                         </ui:CardControl>
 
                         <TextBlock Text="Extension deployment" FontSize="12.5" FontWeight="SemiBold" Foreground="{DynamicResource Brush.TextDim}" Margin="0,4,0,6" />
@@ -522,7 +527,7 @@
                             <ui:CardControl.Header>
                                 <StackPanel>
                                     <TextBlock Text="HLS output container" FontWeight="Medium" FontSize="13" Foreground="{DynamicResource Brush.Text}" />
-                                    <TextBlock Text="After HLS segments are stitched, remux via bundled ffmpeg into MP4 (compatible), MKV (more tracks), or keep the .TS file." FontSize="11.5" Foreground="{DynamicResource Brush.TextMuted}" Margin="0,2,0,0" TextWrapping="Wrap" MaxWidth="260" />
+                                    <TextBlock Text="After HLS segments are stitched, remux via bundled ffmpeg into MP4 (compatible), MKV (more tracks), or keep the .TS file." FontSize="11.5" Foreground="{DynamicResource Brush.TextMuted}" Margin="0,2,0,0" TextWrapping="Wrap" MaxWidth="260" HorizontalAlignment="Left" TextAlignment="Left" />
                                 </StackPanel>
                             </ui:CardControl.Header>
                             <ComboBox x:Name="HlsContainerBox" Width="180" Height="32" SelectionChanged="HlsContainer_Changed">
@@ -536,7 +541,7 @@
                             <ui:CardControl.Header>
                                 <StackPanel>
                                     <TextBlock Text="Run post-download script" FontWeight="Medium" FontSize="13" Foreground="{DynamicResource Brush.Text}" />
-                                    <TextBlock Text="Execute program or script when a download finishes (passes file path as argument)." FontSize="11.5" Foreground="{DynamicResource Brush.TextMuted}" Margin="0,2,0,0" TextWrapping="Wrap" MaxWidth="260" />
+                                    <TextBlock Text="Execute program or script when a download finishes (passes file path as argument)." FontSize="11.5" Foreground="{DynamicResource Brush.TextMuted}" Margin="0,2,0,0" TextWrapping="Wrap" MaxWidth="260" HorizontalAlignment="Left" TextAlignment="Left" />
                                 </StackPanel>
                             </ui:CardControl.Header>
                             <StackPanel Orientation="Horizontal">
@@ -551,7 +556,7 @@
                             <ui:CardControl.Header>
                                 <StackPanel>
                                     <TextBlock Text="Move files when finished" FontWeight="Medium" FontSize="13" Foreground="{DynamicResource Brush.Text}" />
-                                    <TextBlock Text="Relocate completed files into this folder (collisions get numbered names)." FontSize="11.5" Foreground="{DynamicResource Brush.TextMuted}" Margin="0,2,0,0" TextWrapping="Wrap" MaxWidth="260" />
+                                    <TextBlock Text="Relocate completed files into this folder (collisions get numbered names)." FontSize="11.5" Foreground="{DynamicResource Brush.TextMuted}" Margin="0,2,0,0" TextWrapping="Wrap" MaxWidth="260" HorizontalAlignment="Left" TextAlignment="Left" />
                                 </StackPanel>
                             </ui:CardControl.Header>
                             <StackPanel>
@@ -567,7 +572,7 @@
                             <ui:CardControl.Header>
                                 <StackPanel>
                                     <TextBlock Text="Remove link after finish" FontWeight="Medium" FontSize="13" Foreground="{DynamicResource Brush.Text}" />
-                                    <TextBlock Text="Drop the list entry when a download completes (the file stays on disk)." FontSize="11.5" Foreground="{DynamicResource Brush.TextMuted}" Margin="0,2,0,0" TextWrapping="Wrap" MaxWidth="260" />
+                                    <TextBlock Text="Drop the list entry when a download completes (the file stays on disk)." FontSize="11.5" Foreground="{DynamicResource Brush.TextMuted}" Margin="0,2,0,0" TextWrapping="Wrap" MaxWidth="260" HorizontalAlignment="Left" TextAlignment="Left" />
                                 </StackPanel>
                             </ui:CardControl.Header>
                             <ui:ToggleSwitch x:Name="RemoveLinkBox" />
@@ -577,7 +582,7 @@
                             <ui:CardControl.Header>
                                 <StackPanel>
                                     <TextBlock Text="Delete finished links after N days" FontWeight="Medium" FontSize="13" Foreground="{DynamicResource Brush.Text}" />
-                                    <TextBlock Text="Auto-remove finished entries older than this (0 = keep). Files stay on disk." FontSize="11.5" Foreground="{DynamicResource Brush.TextMuted}" Margin="0,2,0,0" TextWrapping="Wrap" MaxWidth="260" />
+                                    <TextBlock Text="Auto-remove finished entries older than this (0 = keep). Files stay on disk." FontSize="11.5" Foreground="{DynamicResource Brush.TextMuted}" Margin="0,2,0,0" TextWrapping="Wrap" MaxWidth="260" HorizontalAlignment="Left" TextAlignment="Left" />
                                 </StackPanel>
                             </ui:CardControl.Header>
                             <ui:TextBox x:Name="DeleteAfterDaysBox" Width="180" Height="32" VerticalContentAlignment="Center" FontSize="12" ToolTip="0 = keep finished links" PlaceholderText="0" />

@@ -600,6 +600,98 @@ public static class HlsDownloader
         yield return attrList.Substring(start);
     }
 
+    /// <summary>Represents one variant from an HLS master playlist.</summary>
+    public sealed class HlsVariantInfo
+    {
+        public long Bandwidth { get; init; }
+        public int? Height { get; init; }
+        public string? Codecs { get; init; }
+        public string VariantUrl { get; init; } = "";
+        public string Label { get; init; } = "";
+    }
+
+    /// <summary>Fetches an HLS master playlist and returns all available variants
+    /// (quality levels). Returns null if the URL is not a master playlist.
+    /// Used by the Add dialog to offer a quality picker before download starts.</summary>
+    public static async Task<List<HlsVariantInfo>> ParseMasterVariantsAsync(
+        HttpClient http, string manifestUrl, string? referer, Dictionary<string, string>? headers, CancellationToken ct)
+    {
+        var result = new List<HlsVariantInfo>();
+        var (text, effectiveUrl) = await FetchTextAsync(http, manifestUrl, referer, headers, ct);
+        manifestUrl = effectiveUrl;
+        if (!text.Contains("#EXT-X-STREAM-INF:", StringComparison.OrdinalIgnoreCase))
+            return result;
+
+        var lines = text.Split('\n');
+        for (int i = 0; i < lines.Length; i++)
+        {
+            string line = lines[i].Trim();
+            if (!line.StartsWith("#EXT-X-STREAM-INF:", StringComparison.OrdinalIgnoreCase))
+                continue;
+
+            long bandwidth = -1;
+            int? height = null;
+            string? codecs = null;
+            foreach (var attr in SplitAttributes(line.Substring("#EXT-X-STREAM-INF:".Length)))
+            {
+                int eq = attr.IndexOf('=');
+                if (eq < 0) continue;
+                string key = attr.Substring(0, eq).Trim();
+                string value = attr.Substring(eq + 1).Trim().Trim('"');
+                if (key.Equals("BANDWIDTH", StringComparison.OrdinalIgnoreCase))
+                    long.TryParse(value, out bandwidth);
+                else if (key.Equals("RESOLUTION", StringComparison.OrdinalIgnoreCase))
+                {
+                    int x = value.IndexOf('x');
+                    if (x > 0 && int.TryParse(value.Substring(x + 1).TrimEnd('"'), out int resHeight))
+                        height = resHeight;
+                }
+                else if (key.Equals("CODECS", StringComparison.OrdinalIgnoreCase))
+                    codecs = value;
+            }
+
+            string? uri = null;
+            for (int j = i + 1; j < lines.Length; j++)
+            {
+                string candidate = lines[j].Trim();
+                if (candidate.Length == 0) continue;
+                if (candidate.StartsWith("#")) { i = j; continue; }
+                uri = candidate;
+                i = j;
+                break;
+            }
+            if (uri is null) continue;
+
+            string resolved = ResolveUrl(manifestUrl, uri);
+            string label = height.HasValue
+                ? $"{height.Value}p"
+                : bandwidth > 0
+                    ? $"{bandwidth / 1000} kbps"
+                    : "Best";
+            if (!string.IsNullOrWhiteSpace(codecs))
+                label += $" ({codecs})";
+
+            result.Add(new HlsVariantInfo
+            {
+                Bandwidth = bandwidth,
+                Height = height,
+                Codecs = codecs,
+                VariantUrl = resolved,
+                Label = label,
+            });
+        }
+
+        result.Sort((a, b) =>
+        {
+            int ha = a.Height ?? 0;
+            int hb = b.Height ?? 0;
+            if (ha != hb) return ha.CompareTo(hb);
+            return a.Bandwidth.CompareTo(b.Bandwidth);
+        });
+
+        return result;
+    }
+
     internal static Playlist? ParsePlaylist(string text, string baseUrl)
     {
         const int maxSegments = 10000;

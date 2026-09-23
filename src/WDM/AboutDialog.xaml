@@ -67,6 +67,13 @@
                     </Hyperlink>
                 </TextBlock>
 
+                <TextBlock HorizontalAlignment="Center" Margin="0,0,0,8">
+                    <Hyperlink Click="ReportProblem_Click"
+                               Foreground="{DynamicResource Brush.TextMuted}" FontSize="12">
+                        <Run Text="Report a problem" />
+                    </Hyperlink>
+                </TextBlock>
+
                 <!-- Inline Update Available Panel — hidden until Check finds an update -->
                 <Border x:Name="InlineUpdatePanel" Visibility="Collapsed"
                         Background="{DynamicResource Brush.SurfaceAlt}"

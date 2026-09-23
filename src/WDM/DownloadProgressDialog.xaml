@@ -89,9 +89,14 @@
                         <Button Style="{StaticResource Button.DialogClose}" ToolTip="Close (Esc)" Click="CloseClick" Margin="0,-4,-6,0" />
                     </StackPanel>
                     <DockPanel VerticalAlignment="Center">
-                        <ui:SymbolIcon DockPanel.Dock="Left" Symbol="{Binding Task.TypeSymbol}"
-                                       FontSize="16" Foreground="{DynamicResource Brush.Accent}"
-                                       VerticalAlignment="Center" Margin="0,0,8,0" />
+                        <Border DockPanel.Dock="Left" Width="28" Height="28" CornerRadius="6"
+                                Background="{DynamicResource Brush.SurfaceAlt}"
+                                BorderBrush="{DynamicResource Brush.Border}" BorderThickness="1"
+                                VerticalAlignment="Center" Margin="0,0,8,0">
+                            <ui:SymbolIcon Symbol="{Binding Task.TypeSymbol}"
+                                           FontSize="15" Foreground="{DynamicResource Brush.TextDim}"
+                                           HorizontalAlignment="Center" VerticalAlignment="Center" />
+                        </Border>
                         <TextBlock Text="{Binding Task.FileName}" FontWeight="SemiBold" FontSize="13.5"
                                    Foreground="{DynamicResource Brush.Text}" VerticalAlignment="Center"
                                    TextTrimming="CharacterEllipsis" ToolTip="{Binding Task.FileName}" />

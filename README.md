@@ -9,12 +9,17 @@ An IDM-inspired no-nonsense download manager for Windows, written in C# / WPF / 
 - **Multi-threaded downloads** — dynamic segmentation with a shared chunk pool: the file is divided into small byte-range chunks that any worker thread can pick up as they finish, so slower segments don't idle threads.
 - **Pause / Resume** — the set of completed chunks is persisted to a `*.wdmstate` file next to the target; resuming skips chunks already on disk and continues from there, even across restarts.
 - **Automatic retry** — transient failures and HTTP 408/429/5xx responses are retried with exponential backoff.
-- **Browser download catching** — a small Chrome/Edge/Firefox extension (Manifest V3) intercepts downloads and hands them to WDM over a localhost server (`http://127.0.0.1:17530`).
+- **Browser download catching** — a small Chrome/Edge/Firefox extension (Manifest V3) intercepts downloads and hands them to WDM over a localhost server (`http://127.0.0.1:17530`). **Minimum auto-catch size** (default 200 MB, 0–10 GB) keeps small files in the browser; unknown sizes always pass and explicit extension clicks always bypass the gate.
+- **Batch catch & page resources** — `/download/batch` opens a checklist dialog to queue several links at once; the extension popup lists page resources with block-domain / block-URL, frame-tree grabbing, blob-chunk pipeline and MEGA session handoff.
 - **YouTube & media sites** — powered by [yt-dlp](https://github.com/yt-dlp/yt-dlp): resolve videos, audio and playlists, pick a quality tier (up to 4K, or audio-only MP3/M4A), and authenticate with cookies from your browser or a built-in WebView2 YouTube sign-in.
-- **HLS streaming downloads** — `.m3u8` manifests are downloaded as a single media file: master/media playlists, AES-128 segment decryption, TS and fMP4 segments, 8 concurrent segments.
+- **HLS streaming downloads** — `.m3u8` manifests are downloaded as a single media file: master/media playlists, AES-128 segment decryption, TS and fMP4 segments, 8 concurrent segments. Output container is selectable: MP4 (default), MKV, or keep `.TS` (no ffmpeg remux). SAMPLE-AES falls back to ffmpeg-direct.
+- **Download scheduler** — optional time window (HH:mm, wraps midnight) + active days + in-window speed cap; the queue holds outside the window and resumes on re-entry. Manual start always wins.
 - **Speed limiting** — per-download and global throughput limits.
 - **Priorities & categories** — Low/Normal/High priority that reorders the queue, and automatic categorization by file extension with optional per-category save folders.
 - **Post-download actions** — optional SHA-256 checksum computation and a script/command to run on completion.
+- **Finish automation** — move files on finish (collision-safe rename), drop the list entry on completion, and auto-prune finished links after N days (files stay on disk).
+- **Resilience** — Pause All / Resume All respects max-concurrent, size-aware duplicate detection, failed auto-resume timer (re-queues about once a minute up to the retry budget; manual pause/cancel wins), and per-event notifications (added / started / error) with optional sound.
+- **Link maintenance** — Refresh Link re-probes a stale URL, stable task IDs with segment snapshots and merge diagnostics for troubleshooting.
 - **Light & dark themes**, two visual styles, tray icon with progress flyout, and automatic update checks against GitHub Releases.
 
 ## Structure
@@ -101,8 +106,8 @@ Output: `output\WDM_Setup_<version>.exe`. Per-user install into `%LocalAppData%\
 Build Velopack release (self-contained .NET 8, requires `vpk` CLI: `dotnet tool install -g vpk`):
 ```
 dotnet publish src/WDM/WDM.csproj -c Release -r win-x64 --self-contained true -o publish
-vpk pack --packId WDM --packVersion 2.7.2 --packDir publish --mainExe WDM.exe --outputDir output
-# upload output/RELEASES + *.nupkg to GitHub Release alongside WDM_Setup_2.7.2.exe
+vpk pack --packId WDM --packVersion 2.8.1 --packDir publish --mainExe WDM.exe --outputDir output
+# upload output/RELEASES + *.nupkg to GitHub Release alongside WDM_Setup_2.8.1.exe
 # Or use: powershell -File build-velopack.ps1  (now defaults to self-contained, ~150MB, no .NET install needed)
 ```
 

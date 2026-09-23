@@ -369,6 +369,7 @@ public sealed class DownloadEngine
             if (task.Status != TaskStatus.Paused)
                 return;
             task.Error = null;
+            task.ErrorDetail = null;
             task.Eta = "";
         }
         Start(task);
@@ -486,6 +487,7 @@ public sealed class DownloadEngine
             ReleaseReservedPath(task.FullPath);
             task.Status = TaskStatus.Paused;
             task.Error = "Stopped";
+            task.ErrorDetail = null;
             TaskChanged?.Invoke();
             return;
         }
@@ -499,6 +501,7 @@ public sealed class DownloadEngine
         task.SpeedBps = 0;
         task.Eta = "";
         task.Error = "Stopped";
+        task.ErrorDetail = null;
         TaskChanged?.Invoke();
 
         _ = Task.Run(async () =>
@@ -755,7 +758,8 @@ public sealed class DownloadEngine
                 }
                 catch (Embed.EmbedInteractionRequiredException ex)
                 {
-                    task.Error = ex.Message + " Open the page in the WDM browser to continue.";
+                    task.Error = "Error: open page in browser";
+                    task.ErrorDetail = ex.Message + " Open the page in the WDM browser to continue.";
                     task.Status = TaskStatus.Failed;
                     task.IsPreparing = false;
                     task.PhaseText = "";
@@ -948,7 +952,8 @@ public sealed class DownloadEngine
                 // cfEx.IsSolvable and its own per-task attempt guard; a repeat
                 // block or hard block stays Failed with an actionable message.
                 task.Status = TaskStatus.Failed;
-                task.Error = cfEx.Message;
+                task.Error = UserFriendlyError.ForDownload(cfEx);
+                task.ErrorDetail = cfEx.Message;
                 task.IsPreparing = false;
                 task.PhaseText = "";
                 ActivityLog.Write("FAIL", $"Failed: '{task.FileName}' | {task.Error}");
@@ -957,7 +962,8 @@ public sealed class DownloadEngine
             else
             {
                 task.Status = ex is FileChangedException ? TaskStatus.Paused : TaskStatus.Failed;
-                task.Error = ex.Message;
+                task.Error = UserFriendlyError.ForDownload(ex);
+                task.ErrorDetail = UserFriendlyError.For(ex);
                 task.IsPreparing = false;
                 task.PhaseText = "";
                 if (task.Status == TaskStatus.Failed)
@@ -1532,6 +1538,7 @@ public sealed class DownloadEngine
                 task.FileName = ReserveRenamedFile(task, task.FileName);
             }
             task.Error = null;
+            task.ErrorDetail = null;
             await RunFfmpegManifestAsync(session, $"HLS packaged streams ({packEx.Method})");
         }
 
@@ -2137,14 +2144,25 @@ public sealed class DownloadEngine
         var request = new HttpRequestMessage(method, targetUrl);
         if (range is not null)
             request.Headers.Range = range;
+        // Captured tasks often carry BOTH task.Referer and Headers["Referer"].
+        // Applying both sends the header twice, which strict WAFs reject with
+        // 403 (reproduced: duplicate Referer always blocked, single passes).
+        bool refererApplied = false;
         if (!string.IsNullOrWhiteSpace(task.Referer) && Uri.TryCreate(task.Referer, UriKind.Absolute, out var referer))
+        {
             request.Headers.Referrer = referer;
+            refererApplied = true;
+        }
         bool sameHost = IsSameHost(targetUrl, task.Url);
         // Apply per-task custom headers (e.g. Cookie, Authorization, Referer).
         bool cookieApplied = false;
         foreach (var kv in task.Headers)
         {
             if (string.IsNullOrWhiteSpace(kv.Key) || string.IsNullOrWhiteSpace(kv.Value))
+                continue;
+            // Already applied above — never send twice.
+            if (refererApplied && (kv.Key.Equals("Referer", StringComparison.OrdinalIgnoreCase) ||
+                                   kv.Key.Equals("Referrer", StringComparison.OrdinalIgnoreCase)))
                 continue;
             // Internal routing hints (e.g. X-WDM-StreamType) must never leave the client.
             if (kv.Key.StartsWith("X-WDM-", StringComparison.OrdinalIgnoreCase))
@@ -2307,8 +2325,9 @@ public sealed class DownloadEngine
                     || name.EndsWith(".m3u", StringComparison.OrdinalIgnoreCase))
                     name = Path.ChangeExtension(name, ".ts");
                 string cleaned = SanitizeFileName(name);
-                if (IsMediaFile(cleaned))
-                    cleaned = CleanReleaseName(cleaned);
+                // CleanReleaseName previously stripped codec/quality/year (HEVC, 480p, 2026)
+                // which users expect to keep — e.g. "Waiting Hai S01 (2026) Hindi HEVC 480p".
+                // Keep the SmartSanitize result as-is.
                 return cleaned;
             }
         }
@@ -3173,7 +3192,8 @@ public sealed class DownloadEngine
             else
             {
                 task.Status = TaskStatus.Failed;
-                task.Error = "yt-dlp exited with error code " + proc.ExitCode;
+                task.Error = "Error: video unavailable";
+                task.ErrorDetail = "The video couldn't be downloaded. It may be private, removed, or need sign-in — try the YouTube sign-in option.";
                 task.SpeedBps = 0;
                 task.Eta = "";
                 task.IsPreparing = false;
@@ -3191,7 +3211,8 @@ public sealed class DownloadEngine
         catch (Exception ex)
         {
             task.Status = TaskStatus.Failed;
-            task.Error = ex.Message;
+            task.Error = UserFriendlyError.ForDownload(ex);
+            task.ErrorDetail = UserFriendlyError.For(ex);
             task.SpeedBps = 0;
             task.Eta = "";
             task.IsPreparing = false;
