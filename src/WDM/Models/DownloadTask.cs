@@ -118,6 +118,11 @@ public sealed class DownloadTask : INotifyPropertyChanged
     public string? Checksum { get; set; }
     public DateTime? CompletedAt { get; set; }
 
+    /// <summary>Set when an HLS download was kept as .ts because conversion was
+    /// wanted (container MP4/MKV) but ffmpeg is not installed. The UI notifies
+    /// the user where to get it. Transient: never persisted.</summary>
+    public bool RemuxSkippedNoFfmpeg { get; set; }
+
     private PriorityLevel _priority = PriorityLevel.Normal;
     public PriorityLevel Priority
     {

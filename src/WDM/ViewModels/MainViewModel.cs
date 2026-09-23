@@ -127,10 +127,12 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
         Engine.MaxConcurrent = Settings.MaxConcurrentDownloads;
         Engine.GlobalSpeedLimitKbps = Settings.GlobalSpeedLimitKbps;
         Engine.MaxRetries = Settings.MaxRetries;
+        Engine.ApplyProxy(Settings);
         _onEngineTaskChanged = () => Dispatch(OnTasksChanged);
         _onEngineTaskCompleted = task => Dispatch(() =>
         {
             task.CompletedAt ??= DateTime.Now;
+            ActivityLog.Write("DONE", $"Completed: '{task.FileName}' ({task.TotalBytes:N0} bytes)");
             TaskCompleted?.Invoke(task);
             HandlePostDownload(task);
             MaybeShutdownOnQueueComplete();
@@ -886,6 +888,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
         }
         task.Category = DownloadTask.Categorize(task.FileName);
         Tasks.Add(task);
+        ActivityLog.Write("ADD", $"Added: '{task.FileName}' ({task.Url})");
         _lastNotifiedStatus[task.Id] = task.Status;
         if (Settings.NotifyOnAdded)
             NotificationRequested?.Invoke(task, NotifyKind.Added);
@@ -1276,6 +1279,116 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
         Engine.Start(task);
         SaveTasksSoon();
         UpdateStatus();
+    }
+
+    /// <summary>Mid-download edit (gap 9): rewrites URL/Referer/headers and
+    /// resumes from existing progress. Active tasks are paused first and the
+    /// session unwind is awaited (≤5s); false when it didn't unwind in time.</summary>
+    public async Task<bool> ApplyTaskEditsAsync(DownloadTask task, string newUrl, string? referer, Dictionary<string, string>? headers)
+    {
+        bool wasActive = task.Status == TaskStatus.Downloading || task.Status == TaskStatus.Queued;
+        if (wasActive)
+            Engine.Pause(task);
+        for (int i = 0; i < 100 && Engine.IsRunning(task); i++)
+            await Task.Delay(50);
+        if (Engine.IsRunning(task))
+            return false;
+        Engine.UpdateLink(task, newUrl, referer, headers);
+        task.AutoResumeAttempts = 0;
+        task.Error = null;
+        task.Eta = "";
+        if (wasActive && task.Status == TaskStatus.Paused)
+            Engine.Start(task);
+        SaveTasksSoon();
+        UpdateStatus();
+        return true;
+    }
+
+    /// <summary>Third-party automation API (gap 8, Ghost aria2-RPC equivalent).
+    /// Invoked on the UI thread via dispatcher Invoke from CaptureServer —
+    /// never call from a dispatcher handler (it would deadlock).</summary>
+    public IReadOnlyList<CaptureServer.ApiTaskInfo> ApiListTasks()
+    {
+        return Tasks.Select(t => new CaptureServer.ApiTaskInfo
+        {
+            Id = t.Id,
+            Url = t.Url,
+            FileName = t.FileName,
+            Status = t.Status.ToString(),
+            Progress = t.Progress,
+            TotalBytes = t.TotalBytes,
+            SpeedBps = t.SpeedBps,
+        }).ToList();
+    }
+
+    public Guid ApiAddTask(CaptureServer.ApiAddRequest req)
+    {
+        var task = new DownloadTask(_dispatcher)
+        {
+            Url = req.Url!.Trim(),
+            Referer = string.IsNullOrWhiteSpace(req.Referer) ? null : req.Referer.Trim(),
+            Headers = req.Headers is null
+                ? new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+                : new Dictionary<string, string>(req.Headers, StringComparer.OrdinalIgnoreCase),
+            SaveFolder = Settings.DownloadFolder,
+        };
+        task.FileName = string.IsNullOrWhiteSpace(req.FileName)
+            ? DownloadEngine.DeriveName(task.Url)
+            : DownloadEngine.SanitizeFileName(req.FileName);
+        task.Category = DownloadTask.Categorize(task.FileName);
+        if (!req.Start)
+            task.Status = TaskStatus.Paused;
+        Tasks.Add(task);
+        ApplyCategoryRouting(task);
+        if (req.Start)
+        {
+            Engine.Start(task);
+            CancelPendingShutdownIfAny();
+        }
+        SaveTasksSoon();
+        UpdateStatus();
+        return task.Id;
+    }
+
+    public bool ApiCommand(Guid id, string command)
+    {
+        var task = Tasks.FirstOrDefault(t => t.Id == id);
+        if (task is null)
+            return false;
+        switch ((command ?? "").Trim().ToLowerInvariant())
+        {
+            case "pause":
+                Engine.Pause(task);
+                break;
+            case "resume":
+                if (task.Status == TaskStatus.Failed)
+                {
+                    task.AutoResumeAttempts = 0;
+                    task.Error = null;
+                    task.Eta = "";
+                    Engine.Start(task);
+                }
+                else
+                {
+                    Engine.Resume(task);
+                }
+                break;
+            case "retry":
+                task.AutoResumeAttempts = 0;
+                task.Error = null;
+                task.Eta = "";
+                Engine.Start(task);
+                break;
+            case "remove":
+                Engine.Remove(task, deleteFiles: false);
+                Tasks.Remove(task);
+                break;
+            default:
+                return false;
+        }
+        SaveTasksSoon();
+        UpdateStatus();
+        return true;
     }
 
     public void CopySelectedUrl()
@@ -1698,6 +1811,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
         Engine.MaxConcurrent = Settings.MaxConcurrentDownloads;
         Engine.GlobalSpeedLimitKbps = Settings.GlobalSpeedLimitKbps;
         Engine.MaxRetries = Settings.MaxRetries;
+        Engine.ApplyProxy(Settings);
         ApplyRunAtStartup();
     }
 

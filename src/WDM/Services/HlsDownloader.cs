@@ -23,6 +23,15 @@ public static class HlsDownloader
         }
     }
 
+    /// <summary>HTTP failure no retry can fix (dead/expired token link,
+    /// revoked access). Thrown instead of retrying 401/403/404/410 so a dead
+    /// link fails in seconds rather than sitting in "Preparing" for an hour.</summary>
+    public sealed class HlsFatalHttpException : HttpRequestException
+    {
+        public HlsFatalHttpException(string message, System.Net.HttpStatusCode? statusCode)
+            : base(message, null, statusCode) { }
+    }
+
     internal sealed class Segment
     {
         public string Uri = "";
@@ -31,6 +40,19 @@ public static class HlsDownloader
         public byte[]? Iv;
         public long Start;
         public long Length;
+    }
+
+    private static bool IsFatalStatus(System.Net.HttpStatusCode code) =>
+        code is System.Net.HttpStatusCode.Unauthorized or System.Net.HttpStatusCode.Forbidden
+            or System.Net.HttpStatusCode.NotFound or System.Net.HttpStatusCode.Gone;
+
+    private static void ThrowIfFatalStatus(HttpResponseMessage resp, string url)
+    {
+        if (IsFatalStatus(resp.StatusCode))
+            throw new HlsFatalHttpException(
+                $"Stream link rejected ({(int)resp.StatusCode} {resp.StatusCode}) — " +
+                $"the link is dead, expired, or access was revoked; retrying won't help: {url}",
+                resp.StatusCode);
     }
 
     internal sealed class Playlist
@@ -42,6 +64,54 @@ public static class HlsDownloader
         /// (e.g. SAMPLE-AES): segments are packaged-encrypted and need ffmpeg.</summary>
         public bool HasUnsupportedEncryption;
         public string? UnsupportedMethod;
+    }
+
+    /// <summary>One rendition of an HLS master playlist (IDM/XDM-style quality
+    /// picker). Url is absolute; Label is "1080p"/"4K"/"720p"/"2.4 Mbps"/"Audio".</summary>
+    public sealed class HlsVariant
+    {
+        public string Url = "";
+        public long Bandwidth;
+        public int Height;
+        public string Label = "";
+    }
+
+    /// <summary>Fetches a master playlist and lists its renditions (best first).
+    /// Returns a single "Best available" entry when the URL is already a media
+    /// playlist, and an empty list when it isn't a playlist at all.</summary>
+    public static async Task<List<HlsVariant>> ListVariantsAsync(
+        HttpClient http, string masterUrl, string? referer,
+        Dictionary<string, string>? headers, CancellationToken ct)
+    {
+        var (text, effectiveUrl) = await FetchTextAsync(http, masterUrl, referer, headers, ct);
+        if (!text.Contains("#EXT-X-STREAM-INF:", StringComparison.OrdinalIgnoreCase))
+        {
+            if (text.Contains("#EXTM3U", StringComparison.OrdinalIgnoreCase))
+                return new List<HlsVariant> { new HlsVariant { Url = effectiveUrl, Label = "Best available" } };
+            return new List<HlsVariant>();
+        }
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var variants = ParseMasterVariants(text, effectiveUrl)
+            .Where(t => seen.Add(t.uri))
+            .Select(t => new HlsVariant
+            {
+                Url = t.uri,
+                Bandwidth = t.bandwidth,
+                Height = t.height ?? 0,
+                Label = VariantLabel(t.bandwidth, t.height ?? 0),
+            })
+            .OrderByDescending(v => v.Height)
+            .ThenByDescending(v => v.Bandwidth)
+            .ToList();
+        return variants;
+    }
+
+    internal static string VariantLabel(long bandwidth, int height)
+    {
+        if (height >= 2160) return "4K";
+        if (height > 0) return height + "p";
+        if (bandwidth > 0) return (bandwidth / 1_000_000.0).ToString("0.0", System.Globalization.CultureInfo.InvariantCulture) + " Mbps";
+        return "Audio";
     }
 
     private const int MaxConcurrentSegments = 8;
@@ -68,9 +138,10 @@ public static class HlsDownloader
         Action<long> addBytes,
         Action<long> setTotalBytes,
         Func<long, CancellationToken, Task> throttle,
-        Dictionary<string, string>? headers = null)
+        Dictionary<string, string>? headers = null,
+        Action<string>? setPhase = null)
     {
-        var playlist = await ResolvePlaylistAsync(http, manifestUrl, referer, headers, ct);
+        var (playlist, effectiveManifestUrl) = await ResolvePlaylistAsync(http, manifestUrl, referer, headers, ct);
 
         // Packaged encryption (SAMPLE-AES et al.): segment-level CBC decrypt
         // cannot handle it. The engine catches this and retries via ffmpeg-direct.
@@ -81,12 +152,12 @@ public static class HlsDownloader
         byte[]? initSegment = null;
         if (!string.IsNullOrEmpty(playlist.InitUri))
         {
-            initSegment = await DownloadBytesAsync(http, ResolveUrl(manifestUrl, playlist.InitUri), referer, headers, ct);
+            initSegment = await DownloadBytesAsync(http, ResolveUrl(effectiveManifestUrl, playlist.InitUri), referer, headers, ct);
             playlist.TotalBytes += initSegment.Length;
         }
 
         // Discover each segment's size so the engine can show real progress and ETA.
-        await ProbeSegmentSizesAsync(http, playlist, referer, headers, ct);
+        await ProbeSegmentSizesAsync(http, playlist, referer, headers, setPhase, ct);
         setTotalBytes(playlist.TotalBytes);
         if (initSegment is not null)
             addBytes(initSegment.Length);
@@ -218,24 +289,64 @@ public static class HlsDownloader
     }
 
     private static async Task ProbeSegmentSizesAsync(
-        HttpClient http, Playlist playlist, string? referer, Dictionary<string, string>? headers, CancellationToken ct)
+        HttpClient http, Playlist playlist, string? referer, Dictionary<string, string>? headers,
+        Action<string>? setPhase, CancellationToken ct)
     {
+        int total = playlist.Segments.Count;
+        long probed = 0;
+        void Report()
+        {
+            try { setPhase?.Invoke($"Probing segment sizes ({Interlocked.Read(ref probed)}/{total})…"); } catch { }
+        }
+
+        // Fast death for dead links: probe segment 0 alone first. A revoked /
+        // expired token fails here in seconds instead of after all N probes.
+        // (Fatal propagates; anything else records size 0 = unknown.)
+        if (total > 0)
+        {
+            var first = playlist.Segments[0];
+            if (first.Length > 0)
+                Interlocked.Add(ref playlist.TotalBytes, first.Length);
+            else
+            {
+                first.Length = await ProbeSizeAsync(http, first.Uri, referer, headers, ct);
+                Interlocked.Add(ref playlist.TotalBytes, first.Length);
+            }
+            Interlocked.Increment(ref probed);
+            Report();
+        }
+
+        // Best-effort remainder: unknown sizes only lose Range/ETA precision,
+        // so cap the whole phase at 60s rather than hanging "Preparing" on a
+        // tarpitting CDN. Skipped segments keep Length 0 and still download.
+        var sw = System.Diagnostics.Stopwatch.StartNew();
         var parallelOptions = new ParallelOptions
         {
             MaxDegreeOfParallelism = MaxConcurrentSegments,
             CancellationToken = ct
         };
 
-        await Parallel.ForEachAsync(playlist.Segments, parallelOptions, async (seg, token) =>
+        await Parallel.ForEachAsync(playlist.Segments.Skip(1), parallelOptions, async (seg, token) =>
         {
-            if (seg.Length > 0)
+            try
             {
+                if (seg.Length > 0)
+                {
+                    Interlocked.Add(ref playlist.TotalBytes, seg.Length);
+                    return;
+                }
+                if (sw.Elapsed > TimeSpan.FromSeconds(60))
+                    return; // budget spent: download proceeds with unknown size
+                seg.Length = await ProbeSizeAsync(http, seg.Uri, referer, headers, token);
                 Interlocked.Add(ref playlist.TotalBytes, seg.Length);
-                return;
             }
-            seg.Length = await ProbeSizeAsync(http, seg.Uri, referer, headers, token);
-            Interlocked.Add(ref playlist.TotalBytes, seg.Length);
+            finally
+            {
+                Interlocked.Increment(ref probed);
+                Report();
+            }
         });
+        try { setPhase?.Invoke("Downloading segments…"); } catch { }
     }
 
     private static void ApplyHeaders(HttpRequestMessage req, string? referer, Dictionary<string, string>? headers)
@@ -299,24 +410,36 @@ public static class HlsDownloader
 
     private static async Task<long> ProbeSizeAsync(HttpClient http, string url, string? referer, Dictionary<string, string>? headers, CancellationToken ct)
     {
-        int attempt = 0;
-        while (attempt <= MaxRetries)
+        // Best-effort: 2 attempts, 15s per request (the engine-wide 60s client
+        // timeout would otherwise let one tarpitted segment burn minutes).
+        // Unknown size (0) is safe — the segment still downloads, just without
+        // a Range header. Only a dead link (fatal status on the GET fallback)
+        // aborts the whole download.
+        const int ProbeAttempts = 2;
+        for (int attempt = 0; attempt < ProbeAttempts; attempt++)
         {
+            ct.ThrowIfCancellationRequested();
+            using var attemptCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            attemptCts.CancelAfter(TimeSpan.FromSeconds(15));
+            var act = attemptCts.Token;
             try
             {
                 using var request = new HttpRequestMessage(HttpMethod.Head, url);
                 request.Headers.TryAddWithoutValidation("Accept-Encoding", "identity");
                 ApplyHeaders(request, referer, headers);
-                using var response = await http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, ct);
+                using var response = await http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, act);
                 long length = response.Content.Headers.ContentLength ?? 0;
                 if (response.IsSuccessStatusCode && length > 0)
                     return length;
 
-                // CDNs rejecting HEAD (e.g. 405/403) or returning 0 length: fall back to a ranged GET for the size.
+                // CDNs rejecting HEAD (e.g. 405, or 403 for HEAD-only): fall
+                // back to a ranged GET — but a fatal status THERE means the
+                // link itself is dead, so throw instead of returning 0.
                 using var get = new HttpRequestMessage(HttpMethod.Get, url);
                 get.Headers.Range = new System.Net.Http.Headers.RangeHeaderValue(0, 0);
                 ApplyHeaders(get, referer, headers);
-                using var getResp = await http.SendAsync(get, HttpCompletionOption.ResponseHeadersRead, ct);
+                using var getResp = await http.SendAsync(get, HttpCompletionOption.ResponseHeadersRead, act);
+                ThrowIfFatalStatus(getResp, url);
                 if (getResp.Content.Headers.ContentRange?.Length is long total && total > 0)
                     return total;
                 if (getResp.Content.Headers.ContentLength is long getLen && getLen > 0)
@@ -327,27 +450,32 @@ public static class HlsDownloader
             {
                 throw;
             }
-            catch (Exception) when (attempt < MaxRetries && !ct.IsCancellationRequested)
+            catch (HlsFatalHttpException)
             {
-                attempt++;
-                await Task.Delay(Math.Min(4000, 500 * attempt), ct);
+                throw; // dead link: abort the download immediately, never retry
+            }
+            catch (Exception) when (attempt + 1 < ProbeAttempts && !ct.IsCancellationRequested)
+            {
+                await Task.Delay(500, ct);
             }
             catch
             {
-                // Probe failure after retries shouldn't fail the entire HLS download;
-                // return 0 (size unknown) so the segment download loop can proceed.
                 return 0;
             }
         }
         return 0;
     }
 
-    private static async Task<Playlist> ResolvePlaylistAsync(
+    private static async Task<(Playlist Playlist, string EffectiveUrl)> ResolvePlaylistAsync(
         HttpClient http, string manifestUrl, string? referer, Dictionary<string, string>? headers, CancellationToken ct)
     {
         for (int depth = 0; depth < 3; depth++)
         {
-            string text = await FetchTextAsync(http, manifestUrl, referer, headers, ct);
+            var (text, effectiveUrl) = await FetchTextAsync(http, manifestUrl, referer, headers, ct);
+            // The manifest may have 302-redirected (load-balancer -> CDN):
+            // relative variant/segment/key URLs belong to the FINAL host,
+            // not the pre-redirect one.
+            manifestUrl = effectiveUrl;
 
             // Master playlists reference variant media playlists via #EXT-X-STREAM-INF
             // lines; those variant URIs must never be mistaken for media segments.
@@ -365,7 +493,7 @@ public static class HlsDownloader
                 throw new InvalidOperationException("Not a valid HLS playlist.");
 
             await PrepareKeysAsync(http, manifestUrl, referer, headers, playlist, ct);
-            return playlist;
+            return (playlist, manifestUrl);
         }
 
         throw new InvalidOperationException("HLS playlist did not resolve to a media playlist.");
@@ -377,6 +505,24 @@ public static class HlsDownloader
         long bestBandwidth = -1;
         int? bestHeight = null;
 
+        foreach (var (uri, bandwidth, height) in ParseMasterVariants(text, null))
+        {
+            if (bandwidth > bestBandwidth
+                || (bandwidth == bestBandwidth && height is int h && (bestHeight is null || h > bestHeight)))
+            {
+                best = uri;
+                bestBandwidth = bandwidth;
+                bestHeight = height;
+            }
+        }
+        return best;
+    }
+
+    /// <summary>All usable variants of a master playlist. When baseUrl is set,
+    /// relative variant URIs are resolved to absolute URLs.</summary>
+    private static List<(string uri, long bandwidth, int? height)> ParseMasterVariants(string text, string? baseUrl)
+    {
+        var out_ = new List<(string uri, long bandwidth, int? height)>();
         var lines = text.Split('\n');
         for (int i = 0; i < lines.Length; i++)
         {
@@ -423,16 +569,13 @@ public static class HlsDownloader
             }
             if (uri is null)
                 continue;
-
-            if (bandwidth > bestBandwidth
-                || (bandwidth == bestBandwidth && height is int h && (bestHeight is null || h > bestHeight)))
+            if (baseUrl is not null)
             {
-                best = uri;
-                bestBandwidth = bandwidth;
-                bestHeight = height;
+                try { uri = ResolveUrl(baseUrl, uri); } catch { continue; }
             }
+            out_.Add((uri, bandwidth, height));
         }
-        return best;
+        return out_;
     }
 
     /// <summary>Splits an EXT-X-STREAM-INF attribute list on commas that are
@@ -694,6 +837,7 @@ public static class HlsDownloader
                     request.Headers.Range = new System.Net.Http.Headers.RangeHeaderValue(seg.Start, seg.Start + seg.Length - 1);
 
                 using var response = await http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, ct);
+                ThrowIfFatalStatus(response, seg.Uri);
                 response.EnsureSuccessStatusCode();
                 await using var input = await response.Content.ReadAsStreamAsync(ct);
                 await using var output = new FileStream(tempFile, FileMode.Create, FileAccess.Write, FileShare.None);
@@ -713,6 +857,7 @@ public static class HlsDownloader
                 return output.Length;
             }
             catch (Exception ex) when (attempt < MaxRetries && !ct.IsCancellationRequested &&
+                                       ex is not HlsFatalHttpException &&
                                        (ex is HttpRequestException || ex is IOException || ex is TaskCanceledException))
             {
                 if (DownloadEngine.IsFatalDiskError(ex))
@@ -764,10 +909,15 @@ public static class HlsDownloader
                 request.Headers.TryAddWithoutValidation("Accept-Encoding", "identity");
                 ApplyHeaders(request, referer, headers);
                 using var response = await http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, ct);
+                ThrowIfFatalStatus(response, url);
                 response.EnsureSuccessStatusCode();
                 return await response.Content.ReadAsByteArrayAsync(ct);
             }
+            // NOTE: HlsFatalHttpException intentionally still matches the
+            // HttpRequestException arm below so DownloadKeyWithFallbackAsync
+            // gets its one fallback shot; the fallback's own fatal propagates.
             catch (Exception ex) when (attempt < MaxRetries && !ct.IsCancellationRequested &&
+                                       ex is not HlsFatalHttpException &&
                                        (ex is HttpRequestException || ex is IOException || ex is TaskCanceledException))
             {
                 attempt++;
@@ -776,7 +926,7 @@ public static class HlsDownloader
         }
     }
 
-    private static async Task<string> FetchTextAsync(HttpClient http, string url, string? referer, Dictionary<string, string>? headers, CancellationToken ct)
+    private static async Task<(string Text, string EffectiveUrl)> FetchTextAsync(HttpClient http, string url, string? referer, Dictionary<string, string>? headers, CancellationToken ct)
     {
         const int maxPlaylistBytes = 10 * 1024 * 1024;
         int attempt = 0;
@@ -788,7 +938,12 @@ public static class HlsDownloader
                 request.Headers.TryAddWithoutValidation("Accept-Encoding", "identity");
                 ApplyHeaders(request, referer, headers);
                 using var response = await http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, ct);
+                ThrowIfFatalStatus(response, url);
                 response.EnsureSuccessStatusCode();
+                // Effective URL after any redirects (guard pins the final
+                // request on the response): relative playlist entries resolve
+                // against this, not the pre-redirect URL.
+                string effectiveUrl = response.RequestMessage?.RequestUri?.ToString() ?? url;
                 // Bound playlist reads: a manifest URL returning a full media
                 // file would otherwise OOM the process as a single string.
                 await using var stream = await response.Content.ReadAsStreamAsync(ct);
@@ -803,9 +958,10 @@ public static class HlsDownloader
                         throw new InvalidOperationException("HLS playlist too large — refusing to parse.");
                     sb.Append(buf, 0, n);
                 }
-                return sb.ToString();
+                return (sb.ToString(), effectiveUrl);
             }
             catch (Exception ex) when (attempt < MaxRetries && !ct.IsCancellationRequested &&
+                                       ex is not HlsFatalHttpException &&
                                        (ex is HttpRequestException || ex is IOException || ex is TaskCanceledException))
             {
                 attempt++;

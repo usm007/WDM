@@ -26,6 +26,7 @@ public sealed class CaptureServer : IDisposable
     private readonly CancellationTokenSource _cts = new();
     private readonly SemaphoreSlim _throttle = new(20, 20);
     private bool _running;
+    private int _disposed;
 
     /// <summary>Batch capture sink (1DM <c>action_download_list</c>): invoked by
     /// <c>POST /download/batch</c> with the validated items. Null means the UI
@@ -41,6 +42,41 @@ public sealed class CaptureServer : IDisposable
     /// <summary>Live settings provider (wired by the view): the minimum auto-catch
     /// size advertised to the extension via <c>/ping</c>. Null = no gate.</summary>
     public Func<long>? MinCatchBytesProvider { get; set; }
+
+    /// <summary>Third-party automation (gap 8, Ghost aria2-RPC equivalent):
+    /// <c>GET /api/tasks</c> lists, <c>POST /api/add</c> enqueues without a
+    /// dialog, <c>POST /api/command</c> pauses/resumes/removes/retries by id.
+    /// Strict token required (no migration grace — callers aren't the
+    /// extension); null hooks answer 503. Wired by the view to the ViewModel.</summary>
+    public Func<IReadOnlyList<ApiTaskInfo>>? OnApiListTasks { get; set; }
+    public Func<ApiAddRequest, Guid?>? OnApiAddTask { get; set; }
+    public Func<Guid, string, bool>? OnApiCommand { get; set; }
+
+    public sealed class ApiTaskInfo
+    {
+        public Guid Id { get; set; }
+        public string Url { get; set; } = "";
+        public string FileName { get; set; } = "";
+        public string Status { get; set; } = "";
+        public int Progress { get; set; }
+        public long TotalBytes { get; set; }
+        public double SpeedBps { get; set; }
+    }
+
+    public sealed class ApiAddRequest
+    {
+        public string? Url { get; set; }
+        public string? FileName { get; set; }
+        public string? Referer { get; set; }
+        public Dictionary<string, string>? Headers { get; set; }
+        public bool Start { get; set; } = true;
+    }
+
+    public sealed class ApiCommandRequest
+    {
+        public string? Id { get; set; }
+        public string? Command { get; set; }
+    }
 
     // ── blob assembly (1DM blob: fetch→base64→write) ─────────────────────
     private readonly object _blobLock = new();
@@ -121,6 +157,7 @@ public sealed class CaptureServer : IDisposable
         {
             _listener.Start();
             _running = true;
+            ActivityLog.Write("SERVER", $"Capture server listening on 127.0.0.1:{BoundPort}");
             _ = Task.Run(AcceptLoopAsync);
         }
         catch (Exception)
@@ -315,6 +352,7 @@ public sealed class CaptureServer : IDisposable
                             throw new InvalidOperationException("Bad url");
                         IsConnected = true;
                         ExtensionConnected?.Invoke();
+                        ActivityLog.Write("CAPTURE", $"Browser captured: {item.FileName ?? item.Url}");
                         _onCapture(item.Url, item.FileName, item.Referer, item.Headers, item.PageTitle);
                         await WriteResponseAsync(stream, HttpStatusCode.OK, "{\"accepted\":true}", origin);
                     }
@@ -566,6 +604,125 @@ public sealed class CaptureServer : IDisposable
                     return;
                 }
 
+                // GET /api/tasks — automation list. Strict token (no grace).
+                if (method == "GET" && path == "/api/tasks")
+                {
+                    if (IsBrowserWebOrigin(origin))
+                    {
+                        await WriteResponseAsync(stream, HttpStatusCode.Forbidden, "{\"error\":\"forbidden origin\"}", origin);
+                        return;
+                    }
+                    if (!CaptureAuth.Validate(authToken))
+                    {
+                        await WriteResponseAsync(stream, HttpStatusCode.Unauthorized, "{\"error\":\"valid X-WDM-Token required\"}", origin);
+                        return;
+                    }
+                    if (OnApiListTasks is null)
+                    {
+                        await WriteResponseAsync(stream, HttpStatusCode.ServiceUnavailable, "{\"error\":\"api not wired\"}", origin);
+                        return;
+                    }
+                    try
+                    {
+                        var tasks = OnApiListTasks();
+                        string resp = JsonSerializer.Serialize(new { tasks }, JsonWriteOptions);
+                        await WriteResponseAsync(stream, HttpStatusCode.OK, resp, origin);
+                    }
+                    catch
+                    {
+                        await WriteResponseAsync(stream, HttpStatusCode.InternalServerError, "{\"error\":\"list failed\"}", origin);
+                    }
+                    return;
+                }
+
+                // POST /api/add {url,fileName?,referer?,headers?,start?} — enqueue
+                // without a dialog. Same URL/header policy as capture endpoints.
+                if (method == "POST" && path == "/api/add")
+                {
+                    if (IsBrowserWebOrigin(origin))
+                    {
+                        await WriteResponseAsync(stream, HttpStatusCode.Forbidden, "{\"error\":\"forbidden origin\"}", origin);
+                        return;
+                    }
+                    if (!CaptureAuth.Validate(authToken))
+                    {
+                        await WriteResponseAsync(stream, HttpStatusCode.Unauthorized, "{\"error\":\"valid X-WDM-Token required\"}", origin);
+                        return;
+                    }
+                    if (OnApiAddTask is null)
+                    {
+                        await WriteResponseAsync(stream, HttpStatusCode.ServiceUnavailable, "{\"error\":\"api not wired\"}", origin);
+                        return;
+                    }
+                    try
+                    {
+                        var req = JsonSerializer.Deserialize<ApiAddRequest>(body, JsonOptions);
+                        string? url = req?.Url?.Trim();
+                        if (req is null || string.IsNullOrWhiteSpace(url) || url.Length > 2048 || !IsAllowedCaptureUrl(url))
+                            throw new InvalidOperationException("Bad url");
+                        req.Url = url;
+                        req.Headers = SanitizeCaptureHeaders(req.Headers);
+                        var id = OnApiAddTask(req);
+                        if (id is null)
+                            throw new InvalidOperationException("Not accepted");
+                        string resp = JsonSerializer.Serialize(new { id = id.Value }, JsonWriteOptions);
+                        await WriteResponseAsync(stream, HttpStatusCode.OK, resp, origin);
+                    }
+                    catch (InvalidOperationException ex)
+                    {
+                        string msg = ex.Message == "Bad url" ? "invalid url" : "not accepted";
+                        await WriteResponseAsync(stream, HttpStatusCode.BadRequest, $"{{\"error\":\"{msg}\"}}", origin);
+                    }
+                    catch
+                    {
+                        await WriteResponseAsync(stream, HttpStatusCode.InternalServerError, "{\"error\":\"add failed\"}", origin);
+                    }
+                    return;
+                }
+
+                // POST /api/command {id,command} — pause|resume|remove|retry.
+                if (method == "POST" && path == "/api/command")
+                {
+                    if (IsBrowserWebOrigin(origin))
+                    {
+                        await WriteResponseAsync(stream, HttpStatusCode.Forbidden, "{\"error\":\"forbidden origin\"}", origin);
+                        return;
+                    }
+                    if (!CaptureAuth.Validate(authToken))
+                    {
+                        await WriteResponseAsync(stream, HttpStatusCode.Unauthorized, "{\"error\":\"valid X-WDM-Token required\"}", origin);
+                        return;
+                    }
+                    if (OnApiCommand is null)
+                    {
+                        await WriteResponseAsync(stream, HttpStatusCode.ServiceUnavailable, "{\"error\":\"api not wired\"}", origin);
+                        return;
+                    }
+                    try
+                    {
+                        var req = JsonSerializer.Deserialize<ApiCommandRequest>(body, JsonOptions);
+                        string? cmd = req?.Command?.Trim().ToLowerInvariant();
+                        if (req is null || !Guid.TryParse(req.Id, out var id) ||
+                            cmd is not ("pause" or "resume" or "remove" or "retry"))
+                            throw new InvalidOperationException("Bad command");
+                        bool ok = OnApiCommand(id, cmd);
+                        if (!ok)
+                            throw new InvalidOperationException("Not found");
+                        await WriteResponseAsync(stream, HttpStatusCode.OK, "{\"ok\":true}", origin);
+                    }
+                    catch (InvalidOperationException ex)
+                    {
+                        string msg = ex.Message == "Bad command" ? "unknown id or command (pause|resume|remove|retry)" : "unknown task id";
+                        var status = ex.Message == "Bad command" ? HttpStatusCode.BadRequest : HttpStatusCode.NotFound;
+                        await WriteResponseAsync(stream, status, $"{{\"error\":\"{msg}\"}}", origin);
+                    }
+                    catch
+                    {
+                        await WriteResponseAsync(stream, HttpStatusCode.InternalServerError, "{\"error\":\"command failed\"}", origin);
+                    }
+                    return;
+                }
+
                 await WriteResponseAsync(stream, HttpStatusCode.NotFound, "", origin);
             }
             catch
@@ -626,8 +783,17 @@ public sealed class CaptureServer : IDisposable
 
     public void Dispose()
     {
+        if (Interlocked.Exchange(ref _disposed, 1) != 0)
+            return;
         _running = false;
-        _cts.Cancel();
+        try
+        {
+            _cts.Cancel();
+        }
+        catch
+        {
+            // Ignore.
+        }
         try
         {
             _listener.Stop();
@@ -672,6 +838,8 @@ public sealed class CaptureServer : IDisposable
 
     private static bool IsAllowedCaptureUrl(string url)
     {
+        if (string.IsNullOrWhiteSpace(url) || url.Contains('\r') || url.Contains('\n'))
+            return false;
         if (!Uri.TryCreate(url, UriKind.Absolute, out var uri))
             return false;
         if (uri.Scheme != Uri.UriSchemeHttp && uri.Scheme != Uri.UriSchemeHttps)
@@ -933,6 +1101,8 @@ public sealed class CaptureServer : IDisposable
         {
             if (!Uri.TryCreate(url, UriKind.Absolute, out var uri) || string.IsNullOrWhiteSpace(uri.Host))
                 return true;
+            if (uri.Scheme != Uri.UriSchemeHttp && uri.Scheme != Uri.UriSchemeHttps)
+                return true;
             string host = uri.Host.Trim().Trim('.').ToLowerInvariant();
             if (host == "localhost" || host.EndsWith(".local", StringComparison.Ordinal) ||
                 host.EndsWith(".localhost", StringComparison.Ordinal) || host == "metadata.google.internal")
@@ -1105,6 +1275,21 @@ public sealed class CaptureServer : IDisposable
     private sealed class BatchPayload
     {
         public List<CapturePayload>? Items { get; set; }
+    }
+
+    /// <summary>One page resource observed by the extension (media inventory per
+    /// tab). Shape mirrors the page-media-batch payload so PageResourcesDialog
+    /// can deserialize the snapshot. The collecting endpoint itself is not
+    /// wired yet — the dialog stays dormant until then.</summary>
+    internal sealed class PageResourceEntry
+    {
+        public string Url { get; set; } = "";
+        public string Label { get; set; } = "";
+        public string Type { get; set; } = "";
+        public long? Size { get; set; }
+        public string? Quality { get; set; }
+        public string? PageTitle { get; set; }
+        public long Time { get; set; }
     }
 
     /// <summary>One validated batch capture item (1DM download-list entry).</summary>

@@ -2,17 +2,21 @@ using System.Diagnostics;
 using System.IO;
 using System.Windows;
 using WDM.Models;
+using WDM.Services;
+using WDM.ViewModels;
 
 namespace WDM;
 
 public partial class TaskPropertiesDialog : Wpf.Ui.Controls.FluentWindow
 {
     private readonly DownloadTask _task;
+    private readonly MainViewModel? _viewModel;
 
-    public TaskPropertiesDialog(DownloadTask task)
+    public TaskPropertiesDialog(DownloadTask task, MainViewModel? viewModel = null)
     {
         InitializeComponent();
         _task = task;
+        _viewModel = viewModel;
 
         FileNameText.Text = task.FileName;
         StatusText.Text = task.StatusText;
@@ -25,6 +29,7 @@ public partial class TaskPropertiesDialog : Wpf.Ui.Controls.FluentWindow
         }
         catch { }
         UrlText.Text = task.Url;
+        RefererText.Text = task.Referer ?? "";
         FolderText.Text = task.SaveFolder;
         SizeText.Text = task.SizeText;
         ProgressBar.Value = task.Progress;
@@ -43,8 +48,16 @@ public partial class TaskPropertiesDialog : Wpf.Ui.Controls.FluentWindow
         }
         else
         {
-            HeadersText.Text = "None";
+            HeadersText.Text = "";
         }
+
+        // Editing a finished download is meaningless; screenshots pass no
+        // viewmodel, which also forces read-only mode.
+        bool editable = _viewModel is not null && task.Status != TaskStatus.Completed;
+        UrlText.IsReadOnly = !editable;
+        RefererText.IsReadOnly = !editable;
+        HeadersText.IsReadOnly = !editable;
+        SaveButton.Visibility = editable ? Visibility.Visible : Visibility.Collapsed;
 
         if (task.Status == TaskStatus.Completed)
         {
@@ -72,6 +85,73 @@ public partial class TaskPropertiesDialog : Wpf.Ui.Controls.FluentWindow
         {
             // Clipboard lock fallback
         }
+    }
+
+    /// <summary>Mid-download edit (gap 9): rewrites URL/Referer/headers and
+    /// resumes from existing progress via MainViewModel.ApplyTaskEditsAsync.
+    /// Active tasks are paused first; paused/failed tasks stay paused.</summary>
+    private async void SaveClick(object sender, RoutedEventArgs e)
+    {
+        if (_viewModel is null)
+            return;
+        string url = UrlText.Text.Trim();
+        if (!DownloadEngine.IsHttpUrl(url))
+        {
+            string msg = DownloadEngine.IsFtpUrl(url)
+                ? "FTP downloads aren't supported yet — paste an http(s) link instead."
+                : "Enter a valid http(s) URL.";
+            MessageBox.Show(this, msg, "Invalid URL", MessageBoxButton.OK, MessageBoxImage.Warning);
+            return;
+        }
+        string? referer = string.IsNullOrWhiteSpace(RefererText.Text) ? null : RefererText.Text.Trim();
+        var headers = ParseHeaderLines(HeadersText.Text);
+        bool sameUrl = string.Equals(url, _task.Url, StringComparison.Ordinal);
+        bool sameReferer = string.Equals(referer ?? "", _task.Referer ?? "", StringComparison.Ordinal);
+        bool sameHeaders = headers.Count == _task.Headers.Count &&
+            headers.All(kv => _task.Headers.TryGetValue(kv.Key, out var v) && v == kv.Value);
+        if (sameUrl && sameReferer && sameHeaders)
+        {
+            MessageBox.Show(this, "No changes to save.", "Properties", MessageBoxButton.OK, MessageBoxImage.Information);
+            return;
+        }
+        SaveButton.IsEnabled = false;
+        try
+        {
+            bool ok = await _viewModel.ApplyTaskEditsAsync(_task, url, referer, headers);
+            if (!ok)
+            {
+                MessageBox.Show(this, "The download is still stopping — try Save again in a moment.", "Properties", MessageBoxButton.OK, MessageBoxImage.Warning);
+                return;
+            }
+            UrlText.Text = _task.Url;
+            Close();
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show(this, "Could not apply changes: " + ex.Message, "Properties", MessageBoxButton.OK, MessageBoxImage.Warning);
+        }
+        finally
+        {
+            SaveButton.IsEnabled = true;
+        }
+    }
+
+    private static Dictionary<string, string> ParseHeaderLines(string? text)
+    {
+        var headers = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        if (string.IsNullOrWhiteSpace(text))
+            return headers;
+        foreach (string line in text.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries))
+        {
+            int colon = line.IndexOf(':');
+            if (colon < 1)
+                continue;
+            string key = line.Substring(0, colon).Trim();
+            string value = line.Substring(colon + 1).Trim();
+            if (!string.IsNullOrWhiteSpace(key) && !string.IsNullOrWhiteSpace(value))
+                headers[key] = value;
+        }
+        return headers;
     }
 
     private void FolderClick(object sender, RoutedEventArgs e)

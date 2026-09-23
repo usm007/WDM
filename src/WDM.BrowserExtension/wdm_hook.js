@@ -90,6 +90,60 @@
     return origOpen.apply(this, arguments);
   };
 
+  // MSE recording (gap 5): URL-less players feed bytes via SourceBuffer, so
+  // accumulate appendBuffer payloads per MediaSource and mint a Blob URL the
+  // sniffer lists like any blob — download happens only on user click.
+  // ponytail: 1 GiB cap per MediaSource, then stop (memory ceiling); raw
+  // concat, no transmux (init+segments play for fMP4/TS).
+  try {
+    var MSE_CAP = 1024 * 1024 * 1024;
+    var MSE_REMINT = 1024 * 1024;
+    var mseStores = new WeakMap();
+    function mseStore(ms) {
+      var st = mseStores.get(ms);
+      if (!st) { st = { mime: "", parts: [], bytes: 0, url: null, minted: 0, done: false }; mseStores.set(ms, st); }
+      return st;
+    }
+    function mseMint(ms, st) {
+      if (!ms || !st || st.done || st.bytes - st.minted < MSE_REMINT) return;
+      try {
+        var url = URL.createObjectURL(new Blob(st.parts, { type: st.mime || "video/mp4" }));
+        if (st.url) { try { URL.revokeObjectURL(st.url); } catch (e) {} }
+        st.url = url;
+        st.minted = st.bytes;
+        notifyBlob(url);
+      } catch (e) {}
+    }
+    if (window.MediaSource && MediaSource.prototype && MediaSource.prototype.addSourceBuffer) {
+      var origAddSB = MediaSource.prototype.addSourceBuffer;
+      MediaSource.prototype.addSourceBuffer = function (mime) {
+        var sb = origAddSB.apply(this, arguments);
+        try {
+          var ms = this, st = mseStore(ms);
+          if (!st.mime && typeof mime === "string") st.mime = mime.split(";")[0];
+          var origAppend = sb.appendBuffer.bind(sb);
+          sb.appendBuffer = function (data) {
+            try {
+              if (!st.done && st.bytes < MSE_CAP && data) {
+                var copy = null;
+                if (data instanceof ArrayBuffer) copy = data.slice(0);
+                else if (data && data.buffer instanceof ArrayBuffer) copy = data.buffer.slice(data.byteOffset || 0, (data.byteOffset || 0) + (data.byteLength || 0));
+                if (copy && copy.byteLength) {
+                  if (st.bytes + copy.byteLength > MSE_CAP) st.done = true;
+                  else { st.parts.push(copy); st.bytes += copy.byteLength; }
+                }
+              }
+            } catch (e) {}
+            return origAppend(data);
+          };
+          sb.addEventListener("updateend", function () { try { mseMint(ms, st); } catch (e) {} });
+          if (ms.addEventListener) ms.addEventListener("sourceended", function () { try { mseMint(ms, st); } catch (e) {} });
+        } catch (e) {}
+        return sb;
+      };
+    }
+  } catch {}
+
   // MEGA sid: once shortly after install (late login) + every 2 minutes.
   try {
     setTimeout(reportMegaSid, 3000);

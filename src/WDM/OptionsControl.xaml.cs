@@ -43,6 +43,11 @@ public partial class OptionsControl : UserControl
         if (SchedulerStopBox != null) SchedulerStopBox.Text = s.SchedulerStop.ToString(@"hh\:mm");
         if (SchedulerSpeedBox != null) SchedulerSpeedBox.Text = s.SchedulerSpeedLimitKbps.ToString();
         SetSchedulerDays(s.SchedulerDays);
+        if (ProxyBox != null) ProxyBox.IsChecked = s.ProxyEnabled;
+        if (ProxyHostBox != null) ProxyHostBox.Text = s.ProxyHost ?? "";
+        if (ProxyPortBox != null) ProxyPortBox.Text = s.ProxyPort.ToString();
+        if (ProxyUserBox != null) ProxyUserBox.Text = s.ProxyUsername ?? "";
+        if (ProxyPassBox != null) ProxyPassBox.Text = s.ProxyPassword ?? "";
 
         RouteBox.IsChecked = s.RouteByCategory;
         VideoFolderBox.Text = s.CategoryFolders.GetValueOrDefault(DownloadCategory.Video.ToString()) ?? "";
@@ -283,6 +288,12 @@ public partial class OptionsControl : UserControl
             s.SchedulerSpeedLimitKbps = Math.Min(sspeed, 1_000_000);
         s.SchedulerDays = GetSchedulerDays();
         s.GlobalSpeedLimitKbps = long.TryParse(SpeedBox?.Text?.Trim(), out long speed) && speed >= 0 ? speed : 0;
+        if (ProxyBox != null) s.ProxyEnabled = ProxyBox.IsChecked == true;
+        if (ProxyHostBox != null) s.ProxyHost = ProxyHostBox.Text?.Trim() ?? "";
+        if (ProxyPortBox != null && int.TryParse(ProxyPortBox.Text?.Trim(), out int pport))
+            s.ProxyPort = Math.Clamp(pport, 1, 65535);
+        if (ProxyUserBox != null) s.ProxyUsername = string.IsNullOrWhiteSpace(ProxyUserBox.Text) ? null : ProxyUserBox.Text.Trim();
+        if (ProxyPassBox != null) s.ProxyPassword = string.IsNullOrEmpty(ProxyPassBox.Text) ? null : ProxyPassBox.Text;
 
         s.RouteByCategory = RouteBox?.IsChecked == true;
         if (VideoFolderBox != null)
@@ -706,6 +717,15 @@ public partial class OptionsControl : UserControl
             ScriptBox.Text = dialog.FileName;
             SaveCurrentSettings();
         }
+    }
+
+    private void OpenGuide_Click(object sender, RoutedEventArgs e)
+    {
+        var window = new ExtensionGuideWindow
+        {
+            Owner = Window.GetWindow(this) ?? Application.Current?.MainWindow
+        };
+        window.ShowDialog();
     }
 
     private void OpenExtensionHelper_Click(object sender, RoutedEventArgs e)

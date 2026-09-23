@@ -4,18 +4,28 @@ using System.Net.Http;
 using System.Net.Http.Headers;
 using System.Text.Json;
 using WDM.Models;
+using WDM.Services.Chunking;
 
 namespace WDM.Services;
 
 public sealed class DownloadEngine
 {
-    private readonly HttpClient _http;
     private readonly object _lock = new();
     private readonly Dictionary<Guid, Session> _sessions = new();
     private readonly List<DownloadTask> _queue = new();
     private readonly HashSet<string> _reservedPaths = new(StringComparer.OrdinalIgnoreCase);
     private readonly System.Timers.Timer _meter;
     private readonly SpeedGovernor _governor = new();
+    private HttpClient _http;
+    private bool _proxyConfigured;
+    private bool _lastProxyEnabled;
+    private string? _lastProxyHost;
+    private int _lastProxyPort;
+    private string? _lastProxyUsername;
+    private string? _lastProxyPassword;
+    /// <summary>http_proxy-style URL for child processes (ffmpeg manifest
+    /// capture); null when the proxy is off. Set by <see cref="ApplyProxy"/>.</summary>
+    private string? _proxyEnv;
     private long _totalSpeedBps;
     private int _maxConcurrent = 3;
     private int _maxRetries = 3;
@@ -104,7 +114,7 @@ public sealed class DownloadEngine
 
     public long TotalSpeedBps => Interlocked.Read(ref _totalSpeedBps);
 
-    private static HttpClient CreateClient()
+    private static HttpClient CreateClient(IWebProxy? proxy = null)
     {
         var inner = new SocketsHttpHandler
         {
@@ -113,6 +123,13 @@ public sealed class DownloadEngine
             AutomaticDecompression = DecompressionMethods.All,
             UseCookies = false, // Must be false so custom Cookie headers are sent raw without .NET stripping them
         };
+        if (proxy is not null)
+        {
+            inner.Proxy = proxy;
+            inner.UseProxy = true;
+        }
+        // Proxy off = untouched defaults (UseProxy=true honors the system proxy,
+        // exactly as before this feature existed).
         var client = new HttpClient(new SchemeDowngradeGuard(inner))
         {
             Timeout = TimeSpan.FromSeconds(60),
@@ -122,6 +139,99 @@ public sealed class DownloadEngine
         client.DefaultRequestHeaders.Accept.ParseAdd("*/*");
         client.DefaultRequestHeaders.AcceptLanguage.ParseAdd("en-US,en;q=0.9");
         return client;
+    }
+
+    /// <summary>Manual HTTP/HTTPS proxy from settings (IDM-style). Null unless
+    /// enabled with a host. Tolerates a pasted "http://host:port" in the host box.</summary>
+    public static IWebProxy? BuildProxy(AppSettings s)
+    {
+        try
+        {
+            if (s is null || !s.ProxyEnabled || string.IsNullOrWhiteSpace(s.ProxyHost))
+                return null;
+            string host = s.ProxyHost.Trim();
+            int port = Math.Clamp(s.ProxyPort, 1, 65535);
+            if (host.StartsWith("http://", StringComparison.OrdinalIgnoreCase) ||
+                host.StartsWith("https://", StringComparison.OrdinalIgnoreCase))
+            {
+                if (!Uri.TryCreate(host, UriKind.Absolute, out var pu))
+                    return null;
+                host = pu.Host;
+                if (pu.Port > 0)
+                    port = pu.Port;
+            }
+            var proxy = new WebProxy(new Uri($"http://{host}:{port}"))
+            {
+                BypassProxyOnLocal = true,
+            };
+            if (!string.IsNullOrWhiteSpace(s.ProxyUsername))
+                proxy.Credentials = new NetworkCredential(s.ProxyUsername.Trim(), s.ProxyPassword ?? "");
+            return proxy;
+        }
+        catch { return null; }
+    }
+
+    /// <summary>http_proxy-style URL for child processes (yt-dlp --proxy,
+    /// ffmpeg http_proxy env). Null when the proxy is off.</summary>
+    public static string? ProxyUrlFor(AppSettings s)
+    {
+        try
+        {
+            if (s is null || !s.ProxyEnabled || string.IsNullOrWhiteSpace(s.ProxyHost))
+                return null;
+            string host = s.ProxyHost.Trim();
+            int port = Math.Clamp(s.ProxyPort, 1, 65535);
+            if (host.StartsWith("http://", StringComparison.OrdinalIgnoreCase) ||
+                host.StartsWith("https://", StringComparison.OrdinalIgnoreCase))
+            {
+                if (!Uri.TryCreate(host, UriKind.Absolute, out var pu))
+                    return null;
+                host = pu.Host;
+                if (pu.Port > 0)
+                    port = pu.Port;
+            }
+            if (host.Contains('/') || host.Contains(' ') || host.Contains('@'))
+                return null;
+            if (!string.IsNullOrWhiteSpace(s.ProxyUsername))
+                return $"http://{Uri.EscapeDataString(s.ProxyUsername.Trim())}:{Uri.EscapeDataString(s.ProxyPassword ?? "")}@{host}:{port}";
+            return $"http://{host}:{port}";
+        }
+        catch { return null; }
+    }
+
+    /// <summary>Applies the settings proxy to the engine client (covers plain
+    /// downloads and HLS — HlsDownloader reuses this client) and records the
+    /// child-process proxy URL. In-flight requests on the old client fail over
+    /// to the normal retry path. Call on startup and settings save.</summary>
+    public void ApplyProxy(AppSettings s)
+    {
+        lock (_lock)
+        {
+            if (_proxyConfigured &&
+                _lastProxyEnabled == s.ProxyEnabled &&
+                string.Equals(_lastProxyHost, s.ProxyHost, StringComparison.Ordinal) &&
+                _lastProxyPort == s.ProxyPort &&
+                string.Equals(_lastProxyUsername, s.ProxyUsername, StringComparison.Ordinal) &&
+                string.Equals(_lastProxyPassword, s.ProxyPassword, StringComparison.Ordinal))
+            {
+                return;
+            }
+
+            _proxyConfigured = true;
+            _lastProxyEnabled = s.ProxyEnabled;
+            _lastProxyHost = s.ProxyHost;
+            _lastProxyPort = s.ProxyPort;
+            _lastProxyUsername = s.ProxyUsername;
+            _lastProxyPassword = s.ProxyPassword;
+            _proxyEnv = ProxyUrlFor(s);
+
+            // Recreate HttpClient with the new proxy.
+            // CRITICAL: Do NOT call old.Dispose()! In-flight chunk workers or HLS segments
+            // currently reading from the old client will complete gracefully without throwing
+            // ObjectDisposedException. SocketsHttpHandler has no unmanaged resources and will be
+            // garbage collected once all ongoing requests finish.
+            _http = CreateClient(BuildProxy(s));
+        }
     }
 
     /// <summary>Delegating handler that follows HTTP redirects but refuses
@@ -141,9 +251,18 @@ public sealed class DownloadEngine
             {
                 var response = await base.SendAsync(request, cancellationToken);
                 if ((int)response.StatusCode is < 300 or >= 400)
+                {
+                    // Pin the effective (post-redirect) request so downstream
+                    // code (e.g. HLS relative-URL resolution) can see the final
+                    // URL instead of the pre-redirect one.
+                    try { response.RequestMessage = request; } catch { }
                     return response;
+                }
                 if (response.Headers.Location is null)
+                {
+                    try { response.RequestMessage = request; } catch { }
                     return response;
+                }
 
                 var next = response.Headers.Location;
                 if (!next.IsAbsoluteUri)
@@ -167,8 +286,10 @@ public sealed class DownloadEngine
                 }
 
                 response.Dispose();
+                var forwarded = new HttpRequestMessage(HttpMethod.Get, next);
+                CopyHeaders(request, forwarded);
                 request.Dispose();
-                request = new HttpRequestMessage(HttpMethod.Get, next);
+                request = forwarded;
             }
             request.Dispose();
             throw new HttpRequestException($"Too many redirects (>{maxRedirects}).");
@@ -182,6 +303,24 @@ public sealed class DownloadEngine
                 return false;
             try { return CaptureServer.IsBlockedResolveTarget(uri.ToString()); }
             catch { return false; }
+        }
+
+        /// <summary>Forwards the original request headers onto a redirect hop so
+        /// signed/CDN-gated hosts (Referer/Origin/Cookie) still see browser context
+        /// after a 302 (e.g. load-balancer host → CDN host). Session credentials
+        /// (Cookie/Authorization) only go to the same host — never to a
+        /// cross-host redirect target. Same fail-closed rule as BuildRequest.</summary>
+        private static void CopyHeaders(HttpRequestMessage from, HttpRequestMessage to)
+        {
+            bool sameHost = IsSameHost(from.RequestUri?.ToString() ?? "", to.RequestUri?.ToString() ?? "");
+            foreach (var header in from.Headers)
+            {
+                if (!sameHost && (header.Key.Equals("Cookie", StringComparison.OrdinalIgnoreCase) ||
+                                  header.Key.Equals("Authorization", StringComparison.OrdinalIgnoreCase) ||
+                                  header.Key.Equals("Proxy-Authorization", StringComparison.OrdinalIgnoreCase)))
+                    continue;
+                try { to.Headers.TryAddWithoutValidation(header.Key, header.Value); } catch { }
+            }
         }
     }
 
@@ -238,8 +377,9 @@ public sealed class DownloadEngine
     /// <summary>Swaps the task's download link. The stored ETag/Last-Modified identity
     /// is cleared (a refreshed URL may serve the same file with different headers) and
     /// the task is flagged so the next start resumes from the existing progress when
-    /// the new file matches in size, or restarts from zero otherwise.</summary>
-    public void UpdateLink(DownloadTask task, string newUrl)
+    /// the new file matches in size, or restarts from zero otherwise.
+    /// Optional referer/headers replace the request context (gap 9: mid-download edit).</summary>
+    public void UpdateLink(DownloadTask task, string newUrl, string? referer = null, Dictionary<string, string>? headers = null)
     {
         lock (_lock)
         {
@@ -251,8 +391,19 @@ public sealed class DownloadEngine
             task.Etag = null;
             task.LastModified = null;
             task.LinkRefreshed = true;
+            if (referer is not null)
+                task.Referer = string.IsNullOrWhiteSpace(referer) ? null : referer.Trim();
+            if (headers is not null)
+                task.Headers = new Dictionary<string, string>(headers, StringComparer.OrdinalIgnoreCase);
         }
         TaskChanged?.Invoke();
+    }
+
+    /// <summary>True while the task holds an engine session (starting,
+    /// downloading, or unwinding after cancel). Used to wait out Pause.</summary>
+    public bool IsRunning(DownloadTask task)
+    {
+        lock (_lock) return _sessions.ContainsKey(task.Id);
     }
 
     public void Pause(DownloadTask task)
@@ -268,6 +419,7 @@ public sealed class DownloadEngine
                 task.SpeedBps = 0;
                 task.Eta = "";
             }
+            ActivityLog.Write("PAUSE", $"Paused: '{task.FileName}'");
             TaskChanged?.Invoke();
             return;
         }
@@ -382,6 +534,10 @@ public sealed class DownloadEngine
     {
         Session? session;
         lock (_lock) _sessions.TryGetValue(task.Id, out session);
+        // Adaptive engine: block records are geometry-independent; the sidecar
+        // stays authoritative for huge files (null past the cap).
+        if (session?.RangeEngine is { } engine)
+            return engine.SnapshotSegments();
         var state = session?.State;
         if (state is null || state.ChunkCount <= 0 || state.ChunkCount > 4096)
             return null;
@@ -495,6 +651,7 @@ public sealed class DownloadEngine
         task.IsPreparing = true;
         task.PhaseText = task.IsYouTube ? "Preparing video…" : "Resolving stream…";
         task.Eta = "";
+        ActivityLog.Write("START", $"Downloading: '{task.FileName}' ({task.Url})");
         TaskChanged?.Invoke();
         // Track the run so Stop/Remove can wait for every in-flight chunk worker to
         // unwind before touching the partial files.
@@ -542,6 +699,17 @@ public sealed class DownloadEngine
 
         bool linkRefreshed = task.LinkRefreshed;
         task.LinkRefreshed = false;
+        // No FTP stack (HttpClient-only engine): fail fast with guidance
+        // instead of dying inside the probe with a transport error.
+        if (IsFtpUrl(task.Url))
+        {
+            task.Error = "FTP downloads aren't supported yet — paste an http(s) link instead.";
+            task.Status = TaskStatus.Failed;
+            task.IsPreparing = false;
+            task.PhaseText = "";
+            TaskChanged?.Invoke();
+            return;
+        }
         try
         {
             // Embed/player pages (/e/, /embed/) resolve to a direct stream first.
@@ -783,6 +951,7 @@ public sealed class DownloadEngine
                 task.Error = cfEx.Message;
                 task.IsPreparing = false;
                 task.PhaseText = "";
+                ActivityLog.Write("FAIL", $"Failed: '{task.FileName}' | {task.Error}");
                 CloudflareBlocked?.Invoke(task, cfEx);
             }
             else
@@ -791,6 +960,10 @@ public sealed class DownloadEngine
                 task.Error = ex.Message;
                 task.IsPreparing = false;
                 task.PhaseText = "";
+                if (task.Status == TaskStatus.Failed)
+                    ActivityLog.Write("FAIL", $"Failed: '{task.FileName}' | {task.Error}");
+                else
+                    ActivityLog.Write("PAUSE", $"Paused: '{task.FileName}' (file changed on server)");
             }
         }
         finally
@@ -1235,193 +1408,59 @@ public sealed class DownloadEngine
     private async Task RunChunkedAsync(Session session, long totalBytes)
     {
         var task = session.Task;
-        int count = task.ChunkCount > 0 ? task.ChunkCount : AutoChunkCount(totalBytes);
-        if (task.ChunkCount != count)
-            task.ChunkCount = count;
+        // Initial worker hint only (display + seed): long-term sizing and
+        // concurrency are owned by the adaptive range engine at runtime.
+        int hint = task.ChunkCount > 0 ? task.ChunkCount : AutoChunkCount(totalBytes);
+        int initial = Math.Clamp(hint, SchedulerController.MinWorkers, SchedulerController.MaxWorkers);
+        task.ChunkCount = initial;
 
-        // Dynamic segmentation: a shared pool of chunks keeps every thread busy until
-        // the file is done, regardless of which segments finish early.
-        long chunkSize = totalBytes / (count * 8L);
-        chunkSize = Math.Clamp(chunkSize, 128 * 1024, 16 * 1024 * 1024);
-        if (chunkSize < 1)
-            chunkSize = 1;
-        long chunkCountLong = (totalBytes + chunkSize - 1) / chunkSize;
-        if (chunkCountLong < 1 || chunkCountLong > 100_000)
-            throw new InvalidOperationException("Server reported an implausible file size.");
-        int chunkCount = (int)chunkCountLong;
-
-        session.State = ChunkState.Load(session.StatePath, totalBytes, chunkSize, chunkCount);
-        // A6: sidecar lost (cleaner tools, manual delete) but tasks.json carries a
-        // snapshot with identical geometry — restore it instead of re-fetching.
-        // A present sidecar always wins; a mismatch is ignored (fresh bitmap).
-        if (!session.State.WasLoadedFromDisk && task.SegmentSnapshot is { Count: > 0 } &&
-            session.State.TryImportRecords(task.SegmentSnapshot, chunkCount))
+        var urls = new List<string> { task.Url };
+        if (task.Mirrors is not null)
         {
-            session.State.Save(session.StatePath);
-        }
-        session.ChunkSize = chunkSize;
-        session.NextChunk = session.State.GetNextIncomplete(0);
-        Interlocked.Exchange(ref session.BytesDownloaded, session.State.CompletedBytes);
-        Interlocked.Exchange(ref session.LastBytes, session.State.CompletedBytes);
-
-        await using (var prealloc = new FileStream(task.FullPath, FileMode.OpenOrCreate, FileAccess.Write, FileShare.ReadWrite))
-        {
-            // Resume-corruption guard: if the partial file was truncated
-            // externally (AV cleaner, user edit, disk repair) after chunks were
-            // marked complete, the bitmap would skip re-fetching those ranges
-            // and assemble a file with zero-filled holes. Completed bytes can
-            // never exceed the bytes actually on disk — if they do, the bitmap
-            // is stale and the download restarts from scratch.
-            long onDisk = prealloc.Length;
-            if (onDisk < totalBytes && session.State.CompletedBytes > onDisk)
+            foreach (var mirror in task.Mirrors)
             {
-                session.State = ChunkState.Fresh(session.StatePath, totalBytes, chunkSize, chunkCount);
-                session.NextChunk = 0;
-                Interlocked.Exchange(ref session.BytesDownloaded, 0);
-                Interlocked.Exchange(ref session.LastBytes, 0);
+                string url = mirror.Trim();
+                if (!string.IsNullOrWhiteSpace(url) && !urls.Contains(url, StringComparer.OrdinalIgnoreCase))
+                    urls.Add(url);
             }
-            if (prealloc.Length != totalBytes)
-                prealloc.SetLength(totalBytes);
         }
 
-        var workers = new List<Task>();
-        for (int w = 0; w < count; w++)
-        {
-            int worker = w;
-            workers.Add(Task.Run(() => RunChunkWorkerAsync(session, worker)));
-        }
-        await Task.WhenAll(workers);
-        session.Token.ThrowIfCancellationRequested();
-
-        if (session.State.Completed != chunkCount)
-            throw new InvalidOperationException("Download did not complete all segments.");
-
-        session.State.Delete(session.StatePath);
+        var engine = new AdaptiveRangeEngine();
+        session.RangeEngine = engine;
+        await engine.RunAsync(
+            totalBytes,
+            task.FullPath,
+            session.StatePath,
+            urls,
+            task.Etag,
+            task.LastModified,
+            initial,
+            MaxRetries,
+            task.SegmentSnapshot,
+            () => _http,
+            (method, range, url) => BuildRequest(method, task, range, url),
+            (response, url) => ClassifyCloudflareForRange(response, url),
+            async (bytes, ct) =>
+            {
+                await _governor.ThrottleAsync(EffectiveLimitKbps(), bytes, ct);
+                await session.Governor.ThrottleAsync(task.SpeedLimitKbps, bytes, ct);
+            },
+            bytes => Interlocked.Add(ref session.BytesDownloaded, bytes),
+            baseline =>
+            {
+                Interlocked.Exchange(ref session.BytesDownloaded, baseline);
+                Interlocked.Exchange(ref session.LastBytes, baseline);
+            },
+            session.Token);
     }
 
-    private async Task RunChunkWorkerAsync(Session session, int worker)
+    /// <summary>Stream-path Cloudflare verdict for the range transport: an explicit
+    /// managed challenge becomes a typed exception, anything else is not a block.</summary>
+    internal static Exception? ClassifyCloudflareForRange(HttpResponseMessage response, string url)
     {
-        var task = session.Task;
-        var state = session.State ?? throw new InvalidOperationException("Chunk state missing.");
-        await using var output = new FileStream(task.FullPath, FileMode.OpenOrCreate, FileAccess.Write, FileShare.ReadWrite);
-
-        while (true)
-        {
-            int index;
-            lock (session.ClaimLock)
-            {
-                // Atomically claim the smallest incomplete chunk at or past the
-                // cursor so two workers can never take the same index and no
-                // incomplete index is skipped.
-                index = state.GetNextIncomplete(session.NextChunk);
-                if (index >= state.ChunkCount)
-                    return;
-                session.NextChunk = index + 1;
-            }
-            if (state.IsCompleted(index))
-                continue;
-
-            long from = (long)index * session.ChunkSize;
-            long to = Math.Min(from + session.ChunkSize, task.TotalBytes) - 1;
-            if (from > to)
-            {
-                state.SetCompleted(index);
-                continue;
-            }
-
-            await DownloadChunkWithRetryAsync(session, output, from, to, index, state);
-        }
-    }
-
-    private async Task DownloadChunkWithRetryAsync(Session session, FileStream output, long from, long to, int index, ChunkState state)
-    {
-        var task = session.Task;
-        int attempt = 0;
-        int rotations = 0;
-        int urlCount = 1 + (task.Mirrors?.Count ?? 0);
-        while (true)
-        {
-            long chunkBytes;
-            try
-            {
-                chunkBytes = await DownloadChunkAsync(session, output, from, to);
-            }
-            catch (Exception ex) when ((IsTransient(ex) || ex is HttpRequestException) &&
-                                       !session.Token.IsCancellationRequested)
-            {
-                if (IsFatalDiskError(ex))
-                    throw;
-                if (attempt < MaxRetries)
-                {
-                    await BackoffAsync(attempt, session.Token);
-                    attempt++;
-                    continue;
-                }
-                // Retries on the current URL are exhausted; fall over to the next
-                // mirror and give the chunk a fresh set of attempts — but only
-                // until every URL has been tried, otherwise this loops forever.
-                if (session.RotateUrl(task) && rotations + 1 < urlCount)
-                {
-                    rotations++;
-                    attempt = 0;
-                    continue;
-                }
-                throw;
-            }
-
-            if (chunkBytes < 0)
-                return;
-            state.SetCompleted(index);
-            state.SaveIfDirty(session.StatePath);
-            return;
-        }
-    }
-
-    private async Task<long> DownloadChunkAsync(Session session, FileStream output, long from, long to)
-    {
-        var task = session.Task;
-        long attemptBytes = 0;
-        try
-        {
-            var response = await SendWithRetryAsync(() => BuildRequest(HttpMethod.Get, task, new RangeHeaderValue(from, to), session.CurrentUrl(task)), session.Token);
-            using (response)
-            {
-                if (IsCloudflareChallenge(response))
-                    throw BuildCloudflareExceptionForStream(response, session.CurrentUrl(task));
-                if (response.StatusCode != HttpStatusCode.PartialContent)
-                    throw new InvalidOperationException("Server does not support range downloads.");
-                var cr = response.Content.Headers.ContentRange;
-                if (cr?.From != from || cr?.To != to)
-                    throw new HttpRequestException($"Server returned wrong range (asked {from}-{to}, got {cr?.From}-{cr?.To}).");
-
-                await using var input = await response.Content.ReadAsStreamAsync(session.Token);
-                output.Position = from;
-                var buffer = new byte[256 * 1024];
-                long written = 0;
-                int read;
-                while ((read = await input.ReadAsync(buffer, session.Token)) > 0)
-                {
-                    await _governor.ThrottleAsync(EffectiveLimitKbps(), read, session.Token);
-                    await session.Governor.ThrottleAsync(task.SpeedLimitKbps, read, session.Token);
-                    await output.WriteAsync(buffer.AsMemory(0, read), session.Token);
-                    written += read;
-                    attemptBytes += read;
-                    Interlocked.Add(ref session.BytesDownloaded, read);
-                    session.Token.ThrowIfCancellationRequested();
-                }
-                if (written < to - from + 1)
-                    throw new HttpRequestException($"Chunk incomplete: got {written} of {to - from + 1} bytes.");
-                return written;
-            }
-        }
-        catch
-        {
-            if (attemptBytes > 0)
-            {
-                Interlocked.Add(ref session.BytesDownloaded, -attemptBytes);
-            }
-            throw;
-        }
+        if (!IsCloudflareChallenge(response))
+            return null;
+        return BuildCloudflareExceptionForStream(response, url);
     }
 
     /// <summary>Page title captured by the browser extension (X-WDM-PageTitle).
@@ -1475,7 +1514,12 @@ public sealed class DownloadEngine
                     await _governor.ThrottleAsync(EffectiveLimitKbps(), bytes, ct);
                     await session.Governor.ThrottleAsync(task.SpeedLimitKbps, bytes, ct);
                 },
-                task.Headers);
+                task.Headers,
+                phase =>
+                {
+                    task.PhaseText = phase;
+                    TaskChanged?.Invoke();
+                });
         }
         catch (HlsDownloader.HlsPackagedStreamException packEx)
         {
@@ -1494,10 +1538,11 @@ public sealed class DownloadEngine
         session.Token.ThrowIfCancellationRequested();
 
         // Optional auto-remux of the TS concat into the container chosen in
-        // settings (MP4 default, MKV, or KeepTs = off) when ffmpeg is available
-        // so the finished file is "My Film.mp4", not "My Film.ts".
+        // settings (MP4 default, MKV, or KeepTs = off) so the finished file
+        // is "My Film.mp4", not "My Film.ts". RemuxHlsAsync itself skips when
+        // ffmpeg is missing (flagging the task so the UI can notify) or when
+        // the user chose KeepTs.
         if (task.FileName.EndsWith(".ts", StringComparison.OrdinalIgnoreCase)
-            && File.Exists(EngineManager.FfmpegPath)
             && File.Exists(task.FullPath))
         {
             await RemuxHlsAsync(session, task);
@@ -1517,6 +1562,14 @@ public sealed class DownloadEngine
         }
         if (container == HlsContainer.KeepTs)
             return;
+        if (!File.Exists(EngineManager.FfmpegPath))
+        {
+            // Conversion wanted but impossible: leave the .ts and flag it so
+            // the UI can tell the user where to download ffmpeg. Never convert
+            // without it — no silent re-encode path exists.
+            task.RemuxSkippedNoFfmpeg = true;
+            return;
+        }
         string targetExt = container == HlsContainer.Mkv ? ".mkv" : ".mp4";
         if (task.FileName.EndsWith(targetExt, StringComparison.OrdinalIgnoreCase))
             return;
@@ -1589,7 +1642,19 @@ public sealed class DownloadEngine
             if (proc.ExitCode == 0 && File.Exists(outPath) && new FileInfo(outPath).Length > 0)
             {
                 try { File.Delete(tsPath); } catch { }
-                task.FileName = ReserveRenamedFile(task, Path.GetFileName(outPath));
+                // The remux output is already uniquely ours (timestamp-suffixed
+                // on collision above): point the task at it directly. Routing it
+                // through ReserveRenamedFile would mistake our own fresh file for
+                // a collision and park the task on a phantom " (1)" name that was
+                // never written.
+                string oldFull = task.FullPath;
+                task.FileName = Path.GetFileName(outPath);
+                task.RemuxSkippedNoFfmpeg = false;
+                lock (_lock)
+                {
+                    _reservedPaths.Remove(oldFull);
+                    _reservedPaths.Add(task.FullPath);
+                }
                 task.TotalBytes = new FileInfo(outPath).Length;
                 Interlocked.Exchange(ref session.BytesDownloaded, task.TotalBytes);
                 Interlocked.Exchange(ref session.LastBytes, task.TotalBytes);
@@ -1618,9 +1683,43 @@ public sealed class DownloadEngine
             task.FileName = ReserveRenamedFile(task, task.FileName);
         }
 
-        await RunFfmpegManifestAsync(session, "DASH streams (.mpd)");
+        await RunNativeDashAsync(session);
 
         session.Token.ThrowIfCancellationRequested();
+    }
+
+    /// <summary>Native DASH first (gap 7: best video+audio AdaptationSets via
+    /// <see cref="DashDownloader"/>), ffmpeg-direct passthrough on any parse or
+    /// segment failure. DRM fails fast with guidance instead of passthrough.</summary>
+    private async Task RunNativeDashAsync(Session session)
+    {
+        var task = session.Task;
+        try
+        {
+            await DashDownloader.DownloadAsync(
+                _http,
+                task.Url,
+                task.Referer,
+                task.FullPath,
+                session.Token,
+                bytes => Interlocked.Add(ref session.BytesDownloaded, bytes),
+                total => task.TotalBytes = total,
+                async (bytes, ct) =>
+                {
+                    await _governor.ThrottleAsync(EffectiveLimitKbps(), bytes, ct);
+                    await session.Governor.ThrottleAsync(task.SpeedLimitKbps, bytes, ct);
+                },
+                task.Headers);
+        }
+        catch (DashDownloader.DashUnsupportedException)
+        {
+            throw;
+        }
+        catch (Exception) when (!session.Token.IsCancellationRequested)
+        {
+            task.Error = null;
+            await RunFfmpegManifestAsync(session, "DASH streams (.mpd)");
+        }
     }
 
     /// <summary>Streams a manifest URL straight through ffmpeg (-c copy): the DASH
@@ -1647,6 +1746,12 @@ public sealed class DownloadEngine
             {
                 psi.ArgumentList.Add("-headers");
                 psi.ArgumentList.Add($"Referer: {task.Referer}\r\nUser-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0 Safari/537.36\r\n");
+            }
+            // Manual proxy (settings): ffmpeg honors http_proxy/https_proxy env.
+            if (!string.IsNullOrWhiteSpace(_proxyEnv))
+            {
+                psi.Environment["http_proxy"] = _proxyEnv;
+                psi.Environment["https_proxy"] = _proxyEnv;
             }
 
             psi.ArgumentList.Add("-y");
@@ -1911,7 +2016,9 @@ public sealed class DownloadEngine
                 session.Task.Eta = speed > 1 ? FormatEta(remaining / speed) : "";
             }
 
-            if (session.State is not null)
+            if (session.RangeEngine is { } rangeEngine)
+                ChunkProgressUpdated?.Invoke(session.Task, rangeEngine.ProgressFractions());
+            else if (session.State is not null)
                 ChunkProgressUpdated?.Invoke(session.Task, session.State.ProgressPercent());
         }
         Interlocked.Exchange(ref _totalSpeedBps, total);
@@ -2024,7 +2131,7 @@ public sealed class DownloadEngine
         await Task.Delay(ms, ct);
     }
 
-    private static HttpRequestMessage BuildRequest(HttpMethod method, DownloadTask task, RangeHeaderValue? range, string? url = null)
+    internal static HttpRequestMessage BuildRequest(HttpMethod method, DownloadTask task, RangeHeaderValue? range, string? url = null)
     {
         string targetUrl = url ?? task.Url;
         var request = new HttpRequestMessage(method, targetUrl);
@@ -2485,6 +2592,30 @@ public sealed class DownloadEngine
         public TorrentNotSupportedException(string message) : base(message) { }
     }
 
+    /// <summary>Only http(s) is downloadable: the engine is HttpClient-based
+    /// and has no FTP stack. Dialogs validate with <see cref="IsHttpUrl"/>;
+    /// ftp:// that reaches the engine anyway (capture, batch, legacy tasks)
+    /// fails fast in <c>RunSessionAsync</c> instead of dying in HttpClient.</summary>
+    internal static bool IsHttpUrl(string? url)
+    {
+        try
+        {
+            return Uri.TryCreate((url ?? "").Trim().Trim('"', '\'', '<', '>', '`'), UriKind.Absolute, out var u) &&
+                (u.Scheme == Uri.UriSchemeHttp || u.Scheme == Uri.UriSchemeHttps);
+        }
+        catch { return false; }
+    }
+
+    internal static bool IsFtpUrl(string? url)
+    {
+        try
+        {
+            return Uri.TryCreate((url ?? "").Trim().Trim('"', '\'', '<', '>', '`'), UriKind.Absolute, out var u) &&
+                u.Scheme == Uri.UriSchemeFtp;
+        }
+        catch { return false; }
+    }
+
     /// <summary>1DM-style probe triage on the collected headers (runs after mirrors,
     /// outside the retry loops so a page/torrent verdict never burns retries).</summary>
     private static void ThrowIfUnsupportedContent(DownloadTask task, ProbeMeta meta)
@@ -2592,6 +2723,9 @@ public sealed class DownloadEngine
         public CancellationTokenSource Cts { get; } = new();
         public CancellationToken Token => Cts.Token;
         public ChunkState? State { get; set; }
+        /// <summary>Live adaptive range engine for chunked downloads (null on
+        /// HLS/DASH/single-stream/YouTube paths, which keep their own logic).</summary>
+        public AdaptiveRangeEngine? RangeEngine { get; set; }
         public long ChunkSize;
         public int NextChunk;
         public long BytesDownloaded;

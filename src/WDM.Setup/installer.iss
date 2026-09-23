@@ -234,9 +234,9 @@ begin
   if RegGetValueNames(Root, SrcKey, Names) then
     for I := 0 to GetArrayLength(Names) - 1 do
       if RegQueryStringValue(Root, SrcKey, Names[I], Val) then
-        { Path-independent footprint match: old installs pointed at
-          %LocalAppData%\WDM, new ones at {app}; matching the current URL
-          would miss exactly the stale entries that shadow the unpacked load. }
+        // Path-independent footprint match: old installs pointed at
+        // %LocalAppData%\WDM, new ones at app directory; matching the current URL
+        // would miss exactly the stale entries that shadow the unpacked load.
         if (Pos('WDM', Val) > 0) and (Pos('BrowserExtension', Val) > 0) then
           RegDeleteValue(Root, SrcKey, Names[I]);
   RemoveOurExtensionSettings(Root, VendorKey);

@@ -205,9 +205,19 @@
 
                         <StackPanel Orientation="Horizontal">
                             <CheckBox x:Name="YtEmbedThumb" Content="Embed thumbnail" IsChecked="True" FontSize="13" Margin="0,0,16,0" />
-                            <CheckBox x:Name="YtEmbedSubs" Content="Embed subtitles" FontSize="13" Margin="0,0,16,0" />
+                            <CheckBox x:Name="YtEmbedSubs" Content="Embed subtitles" IsChecked="True" FontSize="13" Margin="0,0,16,0" />
                             <CheckBox x:Name="YtPlaylist" Content="Download entire playlist" FontSize="13" Visibility="Collapsed" />
                         </StackPanel>
+                    </StackPanel>
+                </Border>
+
+                <!-- HLS quality options -->
+                <Border Grid.Row="4" Grid.Column="0" Grid.ColumnSpan="2" x:Name="HlsPanel"
+                        Background="{DynamicResource Brush.SurfaceAlt}" BorderBrush="{DynamicResource Brush.Border}" BorderThickness="1"
+                        CornerRadius="4" Padding="12,10" Margin="0,0,0,10" Visibility="Collapsed">
+                    <StackPanel Orientation="Horizontal">
+                        <TextBlock Text="Stream quality" FontSize="12" Foreground="{DynamicResource Brush.TextMuted}" VerticalAlignment="Center" Margin="0,0,8,0" />
+                        <ComboBox x:Name="HlsQualityBox" Height="28" Width="220" />
                     </StackPanel>
                 </Border>
 

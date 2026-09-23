@@ -101,6 +101,15 @@ public sealed class AppSettings
         DayOfWeek.Friday, DayOfWeek.Saturday, DayOfWeek.Sunday,
     };
 
+    // Proxy (manual HTTP/HTTPS proxy, IDM-style; .NET has no SOCKS support)
+    public bool ProxyEnabled { get; set; } = false;
+    public string ProxyHost { get; set; } = "";
+    public int ProxyPort { get; set; } = 8080;
+    public string? ProxyUsername { get; set; }
+    /// <summary>Stored in plaintext in settings.json (same tradeoff as IDM —
+    /// a per-user file under %LocalAppData%).</summary>
+    public string? ProxyPassword { get; set; }
+
     // Post-download
     public bool ComputeChecksum { get; set; }
     public string? PostDownloadScript { get; set; }
@@ -414,6 +423,7 @@ public sealed class TaskStore
         s.SchedulerSpeedLimitKbps = Math.Clamp(s.SchedulerSpeedLimitKbps, 0, 1_000_000);
         s.DeleteFinishedLinksAfterDays = Math.Clamp(s.DeleteFinishedLinksAfterDays, 0, 365);
         s.MinCatchSizeBytes = Math.Clamp(s.MinCatchSizeBytes, 0, 10L * 1024 * 1024 * 1024);
+        s.ProxyPort = Math.Clamp(s.ProxyPort, 1, 65535);
         if (s.SchedulerDays is null)
             s.SchedulerDays = new AppSettings().SchedulerDays;
         // An explicitly emptied list is preserved (window never applies); only a

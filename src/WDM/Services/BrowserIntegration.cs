@@ -64,7 +64,13 @@ public static class BrowserIntegration
             try { stale = !File.Exists(tokenPath) || !File.ReadAllText(tokenPath).Contains(CaptureAuth.GetOrCreateToken()); }
             catch { stale = true; }
             if (stale)
-                File.WriteAllText(tokenPath, tokenJson);
+            {
+                // Atomic write: Chrome loads the unpacked extension from this
+                // folder, so it must never observe a half-written file.
+                string tmp = tokenPath + ".wdm-tmp";
+                File.WriteAllText(tmp, tokenJson);
+                File.Move(tmp, tokenPath, overwrite: true);
+            }
         }
         catch { /* token file is best-effort; the server still enforces SSRF/Origin checks */ }
 
@@ -260,7 +266,7 @@ public static class BrowserIntegration
         foreach (string file in Directory.GetFiles(source))
         {
             string target = Path.Combine(destination, Path.GetFileName(file));
-            File.Copy(file, target, overwrite: true);
+            CopyFileIfChanged(file, target);
         }
 
         foreach (string sub in Directory.GetDirectories(source))
@@ -268,5 +274,44 @@ public static class BrowserIntegration
             string target = Path.Combine(destination, Path.GetFileName(sub));
             CopyDirectory(sub, target);
         }
+    }
+
+    /// <summary>Copies only when bytes differ, via temp+rename so a Chrome
+    /// instance starting alongside WDM never reads a half-written manifest or
+    /// background script. After the first deploy, boots touch nothing.</summary>
+    private static void CopyFileIfChanged(string source, string target)
+    {
+        if (File.Exists(target) && FilesEqual(source, target))
+            return;
+        string tmp = target + ".wdm-tmp";
+        File.Copy(source, tmp, overwrite: true);
+        File.Move(tmp, target, overwrite: true);
+    }
+
+    private static bool FilesEqual(string a, string b)
+    {
+        if (new FileInfo(a).Length != new FileInfo(b).Length)
+            return false;
+        const int buf = 8192;
+        using var fa = File.OpenRead(a);
+        using var fb = File.OpenRead(b);
+        var ba = new byte[buf];
+        var bb = new byte[buf];
+        int ra;
+        while ((ra = fa.Read(ba, 0, buf)) > 0)
+        {
+            int rb = 0;
+            while (rb < ra)
+            {
+                int n = fb.Read(bb, rb, ra - rb);
+                if (n == 0)
+                    return false;
+                rb += n;
+            }
+            for (int i = 0; i < ra; i++)
+                if (ba[i] != bb[i])
+                    return false;
+        }
+        return true;
     }
 }

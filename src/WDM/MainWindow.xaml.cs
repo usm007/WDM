@@ -58,7 +58,17 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
         _viewModel.TaskCompleted += task =>
         {
             var s = _viewModel.Settings;
-            if (s.NotifyOnCompletion)
+            if (task.RemuxSkippedNoFfmpeg)
+            {
+                // Conversion wanted but ffmpeg isn't installed: the file stays
+                // .ts. Say so plainly (balloon + log) and point at the download
+                // spot — never silently skip the conversion the user asked for.
+                const string how = "Options > YouTube & Media";
+                ActivityLog.Write("REMUX-SKIP", $"{task.FileName} kept as .TS — FFmpeg is not installed ({how}).");
+                if (s.NotifyOnCompletion)
+                    _tray?.ShowBalloon(task.FileName, $"Kept as .TS — FFmpeg is missing. Get MP4/MKV conversion in {how}.");
+            }
+            else if (s.NotifyOnCompletion)
             {
                 if (s.DetailedNotifications)
                     _tray?.ShowBalloon(task.FileName, "Download complete.");
@@ -115,6 +125,12 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
         _captureServer.OnBatchCapture = items => _dispatcher.BeginInvoke(() => ShowBatchAddDialog(items));
         _captureServer.OnBlobCaptured = result => _dispatcher.BeginInvoke(() => _viewModel.AddCompletedFile(result));
         _captureServer.MinCatchBytesProvider = () => _viewModel.Settings.MinCatchSizeBytes;
+        // Third-party automation (gap 8): Invoke (not BeginInvoke) — the
+        // loopback thread needs results. Safe: the UI thread never blocks on
+        // the server, so this can't deadlock.
+        _captureServer.OnApiListTasks = () => _dispatcher.Invoke(() => _viewModel.ApiListTasks());
+        _captureServer.OnApiAddTask = req => _dispatcher.Invoke(() => _viewModel.ApiAddTask(req));
+        _captureServer.OnApiCommand = (id, cmd) => _dispatcher.Invoke(() => _viewModel.ApiCommand(id, cmd));
         _viewModel.RunStartupMaintenance();
 
         _tray = new TrayIcon();
@@ -298,14 +314,14 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
         {
             if (_activeAddDialog.IsEmpty)
             {
-                _activeAddDialog.UpdatePrefill(prefillUrl, prefillFileName, prefillReferer, prefillHeaders);
+                _activeAddDialog.UpdatePrefill(prefillUrl, initialFileName, prefillReferer, prefillHeaders);
                 _activeAddDialog.Topmost = fromCapture;
                 _activeAddDialog.Activate();
                 return;
             }
         }
 
-        var dialog = new AddDownloadDialog(_viewModel, prefillUrl, prefillFileName, prefillReferer, prefillHeaders)
+        var dialog = new AddDownloadDialog(_viewModel, prefillUrl, initialFileName, prefillReferer, prefillHeaders)
         {
             Topmost = fromCapture,
         };
@@ -356,7 +372,7 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
     {
         if (task is null)
             return;
-        var dialog = new TaskPropertiesDialog(task);
+        var dialog = new TaskPropertiesDialog(task, _viewModel);
         dialog.ShowDialog();
     }
 
@@ -453,8 +469,7 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
     private void TryAddUrl(string text)
     {
         string trimmed = text.Trim();
-        if (Uri.TryCreate(trimmed, UriKind.Absolute, out var uri) &&
-            (uri.Scheme == Uri.UriSchemeHttp || uri.Scheme == Uri.UriSchemeHttps || uri.Scheme == Uri.UriSchemeFtp))
+        if (DownloadEngine.IsHttpUrl(trimmed))
         {
             // Drag-drop path bypasses the Add dialog's duplicate check — apply it here.
             if (_viewModel.ExistingUrl(trimmed))
@@ -878,6 +893,7 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
             about.Show();
         });
     }
+
 
     private void ShowProgressDialog(DownloadTask? task)
     {

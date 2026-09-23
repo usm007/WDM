@@ -75,6 +75,7 @@ public partial class App : Application
                                           string.Equals(a, "--no-single-instance", StringComparison.OrdinalIgnoreCase)) ||
                           !string.IsNullOrEmpty(Environment.GetEnvironmentVariable("WDM_TEST_MODE"));
         IsTestMode = isTestMode;
+        ActivityLog.Start(UpdateChecker.CurrentVersion.ToString(), e.Args, StartMinimized);
 
         // Single instance: if another WDM is already running, surface its window
         // instead of starting a second copy (unless in test mode where isolated instances are required).
@@ -151,6 +152,7 @@ public partial class App : Application
         }
 
         Window mainWindow = new MainWindow();
+        MainWindow = mainWindow;
         _pipeCts = new CancellationTokenSource();
         string pipeName = isTestMode
             ? $"{SingleInstancePipe.PipeNameForCurrentSession()}.{Environment.ProcessId}"
@@ -167,7 +169,15 @@ public partial class App : Application
             mainWindow.Hide();
         }
 
-        if (e.Args.Length > 0)
+        // Forward only a real download URL (browser "Download with WDM"
+        // handoff). Bare flags such as /minimized must not run here:
+        // HandleSecondInstance restores the window, which would pop the
+        // main window back up on every Windows autostart we just hid.
+        bool hasLaunchUrl = e.Args.Any(a =>
+            !string.IsNullOrWhiteSpace(a) &&
+            (a.StartsWith("http://", StringComparison.OrdinalIgnoreCase) ||
+             a.StartsWith("https://", StringComparison.OrdinalIgnoreCase)));
+        if (hasLaunchUrl)
         {
             SecondInstanceHandler?.Invoke(e.Args);
         }
@@ -215,12 +225,14 @@ public partial class App : Application
             catch (Exception) { /* mutex was not owned by this thread or already released */ }
         }
         _singleInstanceMutex?.Dispose();
+        ActivityLog.Stop();
         base.OnExit(e);
     }
 
     public static void LogException(Exception? ex)
     {
         if (ex is null) return;
+        try { ActivityLog.Write("CRASH", ex.Message); } catch { }
         try
         {
             Directory.CreateDirectory(TaskStore.AppDir);

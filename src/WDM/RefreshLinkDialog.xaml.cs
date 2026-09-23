@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.Windows;
 using WDM.Models;
+using WDM.Services;
 
 namespace WDM;
 
@@ -53,8 +54,7 @@ public partial class RefreshLinkDialog : Window
         if (!string.IsNullOrWhiteSpace(task.Referer) && Uri.TryCreate(task.Referer, UriKind.Absolute, out var refererUri) &&
             (refererUri.Scheme == Uri.UriSchemeHttp || refererUri.Scheme == Uri.UriSchemeHttps))
             return task.Referer;
-        if (!string.IsNullOrWhiteSpace(task.Url) && Uri.TryCreate(task.Url, UriKind.Absolute, out var urlUri) &&
-            (urlUri.Scheme == Uri.UriSchemeHttp || urlUri.Scheme == Uri.UriSchemeHttps || urlUri.Scheme == Uri.UriSchemeFtp))
+        if (!string.IsNullOrWhiteSpace(task.Url) && DownloadEngine.IsHttpUrl(task.Url))
             return task.Url;
         return "";
     }
@@ -123,10 +123,12 @@ public partial class RefreshLinkDialog : Window
     private void OkClick(object sender, RoutedEventArgs e)
     {
         string url = UrlBox.Text.Trim();
-        if (!Uri.TryCreate(url, UriKind.Absolute, out var uri) ||
-            (uri.Scheme != Uri.UriSchemeHttp && uri.Scheme != Uri.UriSchemeHttps && uri.Scheme != Uri.UriSchemeFtp))
+        if (!DownloadEngine.IsHttpUrl(url))
         {
-            MessageBox.Show(this, "Enter a valid http(s) or ftp URL.", "Invalid URL", MessageBoxButton.OK, MessageBoxImage.Warning);
+            string msg = DownloadEngine.IsFtpUrl(url)
+                ? "FTP downloads aren't supported yet — paste an http(s) link instead."
+                : "Enter a valid http(s) URL.";
+            MessageBox.Show(this, msg, "Invalid URL", MessageBoxButton.OK, MessageBoxImage.Warning);
             return;
         }
 

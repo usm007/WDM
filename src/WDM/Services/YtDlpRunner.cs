@@ -9,8 +9,14 @@ public sealed class YtDlpException : Exception
     public YtDlpException(string message) : base(message) { }
 }
 
+public sealed record ProcessRunResult(int ExitCode, string Stdout, string Stderr);
+
 public static class YtDlpRunner
 {
+    /// <summary>Test hook: when non-null, invoked instead of Process.Start.
+    /// Static to match WDM's static service pattern. Always reset to null after use.</summary>
+    public static Func<ProcessStartInfo, Task<ProcessRunResult>>? RunnerOverride { get; set; }
+
     public static ProcessStartInfo CreateInfo(IEnumerable<string> args)
     {
         var psi = new ProcessStartInfo
@@ -34,6 +40,12 @@ public static class YtDlpRunner
         }
 
         var s = TaskStore.LoadSettings();
+        string? proxyUrl = DownloadEngine.ProxyUrlFor(s);
+        if (!string.IsNullOrWhiteSpace(proxyUrl))
+        {
+            psi.ArgumentList.Add("--proxy");
+            psi.ArgumentList.Add(proxyUrl);
+        }
         if (!string.IsNullOrWhiteSpace(s.YouTubeBrowserCookies) && s.YouTubeBrowserCookies != "none")
         {
             if (s.YouTubeBrowserCookies == "wdm-native")
@@ -84,6 +96,19 @@ public static class YtDlpRunner
             "--no-color",
             url
         });
+
+        if (RunnerOverride is not null)
+        {
+            var r = await RunnerOverride(psi);
+            if (r.ExitCode != 0)
+            {
+                var tail = string.Join("\n", r.Stderr.Split('\n').Where(l => l.Trim().Length > 0).TakeLast(6));
+                throw new YtDlpException(string.IsNullOrWhiteSpace(tail) ? "yt-dlp failed to analyze this link." : tail.Trim());
+            }
+            if (string.IsNullOrWhiteSpace(r.Stdout))
+                throw new YtDlpException("No metadata returned for this link.");
+            return r.Stdout;
+        }
 
         var output = new StringBuilder();
         var error = new StringBuilder();

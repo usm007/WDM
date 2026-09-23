@@ -231,33 +231,39 @@ public static class FileNameHelper
         foreach (char c in Path.GetInvalidFileNameChars())
             stem = stem.Replace(c, ' ');
 
-        // 4. Tier 1: Browser page title hint if available
-        if (!string.IsNullOrWhiteSpace(pageTitle))
+        // 4. Tier 1 & Tier 2: Browser page title and referer slug hints
+        // CRITICAL: Only use page title or referer when the current stem is generic / uninformative
+        // (manifests, hashes, random tokens, pure numbers, or generic words like "video", "download").
+        // If the stem already has a meaningful, specific filename (e.g. movie, software, document),
+        // we MUST preserve it and NEVER overwrite it with the browser tab's title!
+        if (IsGenericStem(stem))
         {
-            string fromPage = CleanPageTitle(pageTitle);
-            if (!string.IsNullOrWhiteSpace(fromPage) && fromPage.Length >= 4)
+            if (!string.IsNullOrWhiteSpace(pageTitle))
             {
-                string tags = ExtractQualityTags(stem);
-                if (!string.IsNullOrWhiteSpace(tags) && !fromPage.Contains(tags, StringComparison.OrdinalIgnoreCase))
-                    return FinalizeName($"{fromPage} {tags}", ext);
-                return FinalizeName(fromPage, ext);
-            }
-        }
-
-        // 5. Tier 2: Referer URL slug hint if available
-        if (!string.IsNullOrWhiteSpace(referer) && Uri.TryCreate(referer, UriKind.Absolute, out var refUri))
-        {
-            string slug = refUri.AbsolutePath.Trim('/');
-            if (!string.IsNullOrWhiteSpace(slug) && slug.Contains('-'))
-            {
-                string lastPart = slug.Split('/', StringSplitOptions.RemoveEmptyEntries).LastOrDefault() ?? "";
-                string fromSlug = CleanSlug(lastPart);
-                if (!string.IsNullOrWhiteSpace(fromSlug) && fromSlug.Length >= 6 && !fromSlug.Equals("download", StringComparison.OrdinalIgnoreCase))
+                string fromPage = CleanPageTitle(pageTitle);
+                if (!string.IsNullOrWhiteSpace(fromPage) && fromPage.Length >= 4 && !IsGenericPageTitle(fromPage))
                 {
                     string tags = ExtractQualityTags(stem);
-                    if (!string.IsNullOrWhiteSpace(tags) && !fromSlug.Contains(tags, StringComparison.OrdinalIgnoreCase))
-                        return FinalizeName($"{fromSlug} {tags}", ext);
-                    return FinalizeName(fromSlug, ext);
+                    if (!string.IsNullOrWhiteSpace(tags) && !fromPage.Contains(tags, StringComparison.OrdinalIgnoreCase))
+                        return FinalizeName($"{fromPage} {tags}", ext);
+                    return FinalizeName(fromPage, ext);
+                }
+            }
+
+            if (!string.IsNullOrWhiteSpace(referer) && Uri.TryCreate(referer, UriKind.Absolute, out var refUri))
+            {
+                string slug = refUri.AbsolutePath.Trim('/');
+                if (!string.IsNullOrWhiteSpace(slug) && slug.Contains('-'))
+                {
+                    string lastPart = slug.Split('/', StringSplitOptions.RemoveEmptyEntries).LastOrDefault() ?? "";
+                    string fromSlug = CleanSlug(lastPart);
+                    if (!string.IsNullOrWhiteSpace(fromSlug) && fromSlug.Length >= 6 && !fromSlug.Equals("download", StringComparison.OrdinalIgnoreCase))
+                    {
+                        string tags = ExtractQualityTags(stem);
+                        if (!string.IsNullOrWhiteSpace(tags) && !fromSlug.Contains(tags, StringComparison.OrdinalIgnoreCase))
+                            return FinalizeName($"{fromSlug} {tags}", ext);
+                        return FinalizeName(fromSlug, ext);
+                    }
                 }
             }
         }
@@ -405,6 +411,67 @@ public static class FileNameHelper
 
     public static string CleanVideoFileName(string fileName, string? pageTitle = null, string? referer = null) =>
         SmartSanitizeFileName(fileName, pageTitle, referer);
+
+    /// <summary>
+    /// Checks if a file stem is generic/uninformative (e.g. manifest name, random token, pure numbers,
+    /// or generic words like "video", "download", "master", "index", etc.) such that
+    /// a browser page title or referer slug would provide a much better filename.
+    /// Returns false if the stem is already a specific, meaningful title (e.g. "Green Lantern", "ubuntu-22.04", etc.).
+    /// </summary>
+    public static bool IsGenericStem(string? stem)
+    {
+        if (string.IsNullOrWhiteSpace(stem)) return true;
+        string s = stem.Trim();
+        if (IsManifestStem(s)) return true;
+        if (s.StartsWith("download_", StringComparison.OrdinalIgnoreCase)) return true;
+        if (s.Equals("download", StringComparison.OrdinalIgnoreCase) ||
+            s.Equals("file", StringComparison.OrdinalIgnoreCase) ||
+            s.Equals("document", StringComparison.OrdinalIgnoreCase) ||
+            s.Equals("default", StringComparison.OrdinalIgnoreCase) ||
+            s.Equals("videoplayback", StringComparison.OrdinalIgnoreCase) ||
+            s.Equals("get_video", StringComparison.OrdinalIgnoreCase) ||
+            s.Equals("media", StringComparison.OrdinalIgnoreCase) ||
+            s.Equals("stream", StringComparison.OrdinalIgnoreCase) ||
+            s.Equals("source", StringComparison.OrdinalIgnoreCase) ||
+            s.Equals("asset", StringComparison.OrdinalIgnoreCase) ||
+            s.Equals("blob", StringComparison.OrdinalIgnoreCase) ||
+            s.Equals("attachment", StringComparison.OrdinalIgnoreCase) ||
+            s.Equals("content", StringComparison.OrdinalIgnoreCase))
+            return true;
+
+        if (Guid.TryParse(s, out _)) return true;
+
+        // Strip known extension if still attached
+        int dot = s.LastIndexOf('.');
+        if (dot > 0) s = s[..dot];
+
+        // Pure digits or digits with delimiters e.g. "12345678" or "12_34_56"
+        if (s.All(c => char.IsDigit(c) || c is '_' or '-' or '.')) return true;
+
+        // Long hex or alphanumeric random hashes e.g. "2735e051cc694963100cf875399f5b71" or "168095063_480p_h264_init_k5Opf1yJuSMMz3rv"
+        if (s.Length >= 16 && s.All(c => (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F') || c is '_' or '-'))
+            return true;
+
+        // Generic chunk/init segment names or stream init tokens (e.g. 168095063_480p_h264_init_k5Opf1yJuSMMz3rv)
+        if (Regex.IsMatch(s, @"(^|[-_])(init|segment|seg|chunk|part|frag)([-_0-9a-zA-Z]*|$)", RegexOptions.IgnoreCase) ||
+            Regex.IsMatch(s, @"^\d{6,}[-_]", RegexOptions.IgnoreCase))
+            return true;
+
+        return false;
+    }
+
+    /// <summary>
+    /// Checks if a page title is just a cloud storage host branding / tagline rather than a content title.
+    /// </summary>
+    public static bool IsGenericPageTitle(string? title)
+    {
+        if (string.IsNullOrWhiteSpace(title)) return true;
+        string t = title.Trim();
+        if (t.Length < 3) return true;
+        return Regex.IsMatch(t,
+            @"^(Seedr(\s*[:\-–—]?\s*.*)?|Google Drive|OneDrive|Dropbox|MediaFire|Mega|iCloud|Home|Index|Untitled|Welcome|Download|Direct Download)$",
+            RegexOptions.IgnoreCase);
+    }
 
     /// <summary>True for manifest/chunklist basenames that carry no title
     /// ("master", "index", "playlist", "index-v1-a1", "seg-12", ...).</summary>

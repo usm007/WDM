@@ -25,6 +25,7 @@ public partial class AddDownloadDialog : Window
     private CancellationTokenSource? _probeCts;
     private ResolvedQuery? _lastResolved;
     private List<QualityOption> _ytQualityOptions = new();
+    private List<HlsDownloader.HlsVariant> _hlsVariants = new();
 
     public AddDownloadDialog(MainViewModel viewModel, string? prefillUrl = null, string? prefillFileName = null, string? prefillReferer = null, Dictionary<string, string>? prefillHeaders = null)
     {
@@ -58,7 +59,8 @@ public partial class AddDownloadDialog : Window
                 UrlBox.Text = _prefillUrl.Trim();
                 if (!string.IsNullOrWhiteSpace(_prefillFileName))
                 {
-                    NameBox.Text = DownloadEngine.SanitizeFileName(_prefillFileName);
+                    _lastDerivedName = DownloadEngine.SanitizeFileName(_prefillFileName);
+                    NameBox.Text = _lastDerivedName;
                 }
                 UrlBox.SelectAll();
                 UrlBox.Focus();
@@ -79,7 +81,8 @@ public partial class AddDownloadDialog : Window
             UrlBox.Text = url.Trim();
             if (!string.IsNullOrWhiteSpace(fileName))
             {
-                NameBox.Text = DownloadEngine.SanitizeFileName(fileName);
+                _lastDerivedName = DownloadEngine.SanitizeFileName(fileName);
+                NameBox.Text = _lastDerivedName;
             }
             if (headers is not null && headers.Count > 0 && HeadersBox is not null)
             {
@@ -111,8 +114,7 @@ public partial class AddDownloadDialog : Window
             if (Clipboard.ContainsText())
             {
                 string clip = Clipboard.GetText().Trim();
-                if (Uri.TryCreate(clip, UriKind.Absolute, out var uri) &&
-                    (uri.Scheme == Uri.UriSchemeHttp || uri.Scheme == Uri.UriSchemeHttps || uri.Scheme == Uri.UriSchemeFtp))
+                if (DownloadEngine.IsHttpUrl(clip))
                 {
                     UrlBox.Text = clip;
                     UrlBox.SelectAll();
@@ -166,11 +168,13 @@ public partial class AddDownloadDialog : Window
     private void UrlBox_TextChanged(object sender, TextChangedEventArgs e)
     {
         string url = UrlBox.Text.Trim();
-        bool isValid = Uri.TryCreate(url, UriKind.Absolute, out var uri) &&
-                       (uri.Scheme == Uri.UriSchemeHttp || uri.Scheme == Uri.UriSchemeHttps || uri.Scheme == Uri.UriSchemeFtp);
+        bool isValid = DownloadEngine.IsHttpUrl(url);
 
         OkButton.IsEnabled = isValid;
         if (DownloadLaterButton != null) DownloadLaterButton.IsEnabled = isValid;
+        StartHint.Text = DownloadEngine.IsFtpUrl(url)
+            ? "FTP links aren't supported yet — paste an http(s) link instead."
+            : "Enter a valid URL above to continue";
         StartHint.Visibility = isValid ? Visibility.Collapsed : Visibility.Visible;
         // Drop the previous URL's probed size: the verdict below is keystroke-time
         // (size unknown → generic text) and the probe refines it when it lands.
@@ -181,6 +185,8 @@ public partial class AddDownloadDialog : Window
         {
             ProbeBadge.Visibility = Visibility.Collapsed;
             YtSignInButton.Visibility = Visibility.Collapsed;
+            if (HlsPanel != null) HlsPanel.Visibility = Visibility.Collapsed;
+            _hlsVariants = new List<HlsDownloader.HlsVariant>();
             UpdateCategoryBadge();
             return;
         }
@@ -197,6 +203,8 @@ public partial class AddDownloadDialog : Window
         UpdateCategoryBadge();
         if (_viewModel.Settings.EnableYouTubeDownloads && MediaResolver.IsYoutubeUrl(url))
         {
+            if (HlsPanel != null) HlsPanel.Visibility = Visibility.Collapsed;
+            _hlsVariants = new List<HlsDownloader.HlsVariant>();
             ProbeYouTubeUrlAsync(url);
         }
         else
@@ -535,16 +543,19 @@ public partial class AddDownloadDialog : Window
             {
                 ProbeIcon.Symbol = SymbolRegular.CheckmarkCircle24;
                 ProbeText.Text = $"{sizeStr} • HLS stream (downloads as one media file)";
+                LoadHlsVariantsAsync(url, customHeaders, ct);
             }
             else if (supportsRanges)
             {
                 ProbeIcon.Symbol = SymbolRegular.CheckmarkCircle24;
                 ProbeText.Text = $"{sizeStr} • Multi-threaded resume supported";
+                if (HlsPanel != null) HlsPanel.Visibility = Visibility.Collapsed;
             }
             else
             {
                 ProbeIcon.Symbol = SymbolRegular.Info24;
                 ProbeText.Text = $"{sizeStr} • Single-thread download (Server doesn't support resuming)";
+                if (HlsPanel != null) HlsPanel.Visibility = Visibility.Collapsed;
             }
 
             await TryAutoSyncTitleAsync(url, ct);
@@ -563,26 +574,75 @@ public partial class AddDownloadDialog : Window
         }
     }
 
+    /// <summary>HLS rendition picker (gap 4): lists master-playlist variants so
+    /// the user can choose e.g. 720p instead of best-only. "Best available"
+    /// (index 0) keeps today's behavior; panels hide on miss/single variant.</summary>
+    private async void LoadHlsVariantsAsync(string url, Dictionary<string, string> headers, CancellationToken ct)
+    {
+        try
+        {
+            var handler = new SocketsHttpHandler
+            {
+                AllowAutoRedirect = true,
+                UseCookies = false,
+            };
+            // Route the playlist fetch through the manual proxy when set.
+            var proxy = DownloadEngine.BuildProxy(_viewModel.Settings);
+            if (proxy is not null)
+            {
+                handler.Proxy = proxy;
+                handler.UseProxy = true;
+            }
+            using var http = new HttpClient(handler) { Timeout = TimeSpan.FromSeconds(8) };
+            http.DefaultRequestHeaders.UserAgent.ParseAdd("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0 Safari/537.36");
+            string? referer = headers.TryGetValue("Referer", out var rf) ? rf : null;
+            var variants = await HlsDownloader.ListVariantsAsync(http, url, referer, headers, ct);
+            if (ct.IsCancellationRequested || !IsLoaded)
+                return;
+            if (!string.Equals(UrlBox.Text.Trim(), url, StringComparison.Ordinal))
+                return;
+            if (variants.Count > 1 && HlsQualityBox != null && HlsPanel != null)
+            {
+                _hlsVariants = variants;
+                var items = new List<string> { "Best available" };
+                items.AddRange(variants.Select(v => v.Label));
+                HlsQualityBox.ItemsSource = items;
+                HlsQualityBox.SelectedIndex = 0;
+                HlsPanel.Visibility = Visibility.Visible;
+            }
+            else if (HlsPanel != null)
+            {
+                HlsPanel.Visibility = Visibility.Collapsed;
+            }
+        }
+        catch
+        {
+            if (HlsPanel != null && !ct.IsCancellationRequested)
+                HlsPanel.Visibility = Visibility.Collapsed;
+        }
+    }
+
     private static bool IsGenericName(string name) =>
         string.IsNullOrWhiteSpace(name)
-        || FileNameHelper.IsManifestStem(Path.GetFileNameWithoutExtension(name.Trim()))
+        || FileNameHelper.IsGenericStem(Path.GetFileNameWithoutExtension(name.Trim()))
         || name.Trim().StartsWith("download_", StringComparison.OrdinalIgnoreCase)
         || name.Trim().EndsWith(".bin", StringComparison.OrdinalIgnoreCase);
 
     /// <summary>Automatic title sync after probing: only when the name is still
-    /// generic/derived (never touches user edits) and a source page is known.</summary>
+    /// generic (never touches user edits or real filenames) and a source page is known.</summary>
     private async Task TryAutoSyncTitleAsync(string url, CancellationToken ct)
     {
         if (!_viewModel.Settings.EnableTitleSync || ct.IsCancellationRequested)
             return;
         string current = NameBox.Text.Trim();
-        if (!string.IsNullOrWhiteSpace(current) && current != _lastDerivedName && !IsGenericName(current))
+        // NEVER overwrite a real, specific filename with a webpage title!
+        if (!IsGenericName(current))
             return;
         string? synced = await FetchSyncedTitleAsync(ct).ConfigureAwait(true);
         if (ct.IsCancellationRequested || string.IsNullOrWhiteSpace(synced))
             return;
         string live = NameBox.Text.Trim();
-        if (!string.IsNullOrWhiteSpace(live) && live != current && live != _lastDerivedName)
+        if (!string.IsNullOrWhiteSpace(live) && !IsGenericName(live))
             return; // user typed meanwhile
         if (ApplySyncedTitle(synced))
             ProbeText.Text += " • Title synced from the page (toggle in Settings)";
@@ -684,11 +744,23 @@ public partial class AddDownloadDialog : Window
     private void CreateAndAddTask(bool startImmediately)
     {
         string url = UrlBox.Text.Trim();
-        if (!Uri.TryCreate(url, UriKind.Absolute, out var uri) ||
-            (uri.Scheme != Uri.UriSchemeHttp && uri.Scheme != Uri.UriSchemeHttps && uri.Scheme != Uri.UriSchemeFtp))
+        if (!DownloadEngine.IsHttpUrl(url))
         {
-            System.Windows.MessageBox.Show(this, "Enter a valid http(s) or ftp URL.", "Invalid URL", System.Windows.MessageBoxButton.OK, MessageBoxImage.Warning);
+            string msg = DownloadEngine.IsFtpUrl(url)
+                ? "FTP downloads aren't supported yet — paste an http(s) link instead."
+                : "Enter a valid http(s) URL.";
+            System.Windows.MessageBox.Show(this, msg, "Invalid URL", System.Windows.MessageBoxButton.OK, MessageBoxImage.Warning);
             return;
+        }
+
+        // HLS rendition picker: a non-default selection rewrites the master URL
+        // to the chosen variant media playlist; the engine then downloads it
+        // with the normal HLS path (variant is already a media playlist).
+        if (HlsPanel != null && HlsPanel.Visibility == Visibility.Visible &&
+            HlsQualityBox != null && HlsQualityBox.SelectedIndex > 0 &&
+            HlsQualityBox.SelectedIndex - 1 < _hlsVariants.Count)
+        {
+            url = _hlsVariants[HlsQualityBox.SelectedIndex - 1].Url;
         }
 
         int chunks = 0;
@@ -831,8 +903,7 @@ public partial class AddDownloadDialog : Window
         foreach (string line in MirrorsBox.Text.Split(
                      new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
         {
-            if (Uri.TryCreate(line, UriKind.Absolute, out var uri) &&
-                (uri.Scheme == Uri.UriSchemeHttp || uri.Scheme == Uri.UriSchemeHttps || uri.Scheme == Uri.UriSchemeFtp))
+            if (DownloadEngine.IsHttpUrl(line))
             {
                 mirrors.Add(line);
             }

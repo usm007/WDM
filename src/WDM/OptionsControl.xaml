@@ -246,6 +246,45 @@
                             </ui:CardControl.Header>
                             <ui:TextBox x:Name="SpeedBox" Width="180" Height="32" VerticalContentAlignment="Center" FontSize="12" ToolTip="0 = no limit" PlaceholderText="0" />
                         </ui:CardControl>
+
+                        <TextBlock Text="Proxy" FontSize="12.5" FontWeight="SemiBold" Foreground="{DynamicResource Brush.TextDim}" Margin="0,4,0,6" />
+
+                        <ui:CardControl Margin="0,0,0,4">
+                            <ui:CardControl.Header>
+                                <StackPanel>
+                                    <TextBlock Text="Use manual HTTP proxy" FontWeight="Medium" FontSize="13" Foreground="{DynamicResource Brush.Text}" />
+                                    <TextBlock Text="Routes downloads, streams and yt-dlp through the proxy. Off = system proxy as before." FontSize="11.5" Foreground="{DynamicResource Brush.TextMuted}" Margin="0,2,0,0" TextWrapping="Wrap" MaxWidth="260" />
+                                </StackPanel>
+                            </ui:CardControl.Header>
+                            <ui:ToggleSwitch x:Name="ProxyBox" />
+                        </ui:CardControl>
+
+                        <ui:CardControl Margin="0,0,0,4">
+                            <ui:CardControl.Header>
+                                <StackPanel>
+                                    <TextBlock Text="Proxy host / port" FontWeight="Medium" FontSize="13" Foreground="{DynamicResource Brush.Text}" />
+                                    <TextBlock Text="Hostname (or http://host:port) and port, e.g. 127.0.0.1 and 8080." FontSize="11.5" Foreground="{DynamicResource Brush.TextMuted}" Margin="0,2,0,0" TextWrapping="Wrap" MaxWidth="260" />
+                                </StackPanel>
+                            </ui:CardControl.Header>
+                            <StackPanel Orientation="Horizontal">
+                                <ui:TextBox x:Name="ProxyHostBox" Width="180" Height="32" VerticalContentAlignment="Center" FontSize="12" PlaceholderText="127.0.0.1" />
+                                <TextBlock Text=":" VerticalAlignment="Center" Margin="6,0" Foreground="{DynamicResource Brush.TextMuted}" />
+                                <ui:TextBox x:Name="ProxyPortBox" Width="70" Height="32" VerticalContentAlignment="Center" FontSize="12" PlaceholderText="8080" />
+                            </StackPanel>
+                        </ui:CardControl>
+
+                        <ui:CardControl Margin="0,0,0,12">
+                            <ui:CardControl.Header>
+                                <StackPanel>
+                                    <TextBlock Text="Proxy login (optional)" FontWeight="Medium" FontSize="13" Foreground="{DynamicResource Brush.Text}" />
+                                    <TextBlock Text="Stored in plaintext in settings.json under your profile." FontSize="11.5" Foreground="{DynamicResource Brush.TextMuted}" Margin="0,2,0,0" TextWrapping="Wrap" MaxWidth="260" />
+                                </StackPanel>
+                            </ui:CardControl.Header>
+                            <StackPanel Orientation="Horizontal">
+                                <ui:TextBox x:Name="ProxyUserBox" Width="124" Height="32" VerticalContentAlignment="Center" FontSize="12" PlaceholderText="Username" Margin="0,0,6,0" />
+                                <ui:TextBox x:Name="ProxyPassBox" Width="124" Height="32" VerticalContentAlignment="Center" FontSize="12" PlaceholderText="Password" />
+                            </StackPanel>
+                        </ui:CardControl>
                     </StackPanel>
 
                     <!-- 2. PAGE: FOLDERS & ROUTING -->
@@ -370,8 +409,7 @@
                                 </StackPanel>
                             </ui:CardControl.Header>
                             <StackPanel Orientation="Horizontal">
-                                <ui:Button Content="Install Extension Guide…" Appearance="Secondary" Click="OpenExtensionHelper_Click" Height="32" Padding="14,0" Margin="0,0,8,0" />
-                                <ui:Button Content="More Help (Web Guide)" Appearance="Secondary" Click="OpenMoreHelp_Click" Height="32" Padding="14,0" />
+                                <ui:Button Content="Extension Guide" Appearance="Secondary" Click="OpenGuide_Click" Height="32" Padding="14,0" />
                             </StackPanel>
                         </ui:CardControl>
                     </StackPanel>
