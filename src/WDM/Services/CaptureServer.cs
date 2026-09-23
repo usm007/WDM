@@ -37,7 +37,7 @@ public sealed class CaptureServer : IDisposable
     /// <summary>Assembled-blob sink (1DM SaveBlobTask equivalent): invoked when
     /// the final <c>blob-chunk</c> completes. The app imports the staged file as
     /// a finished download. Null answers 503 (chunks are then refused).</summary>
-    public Action<BlobResult>? OnBlobCaptured { get; set; }
+    public Func<BlobResult, bool>? OnBlobCaptured { get; set; }
 
     /// <summary>Live settings provider (wired by the view): the minimum auto-catch
     /// size advertised to the extension via <c>/ping</c>. Null = no gate.</summary>
@@ -805,7 +805,7 @@ public sealed class CaptureServer : IDisposable
 
                 // GET /page-resources — returns the latest page resources snapshot
                 // for all tabs (or a single tab if tabId is specified).
-                if (method == "GET" && path.StartsWith("/page-resources", StringComparison.OrdinalIgnoreCase))
+                if (method == "GET" && path.Equals("/page-resources", StringComparison.OrdinalIgnoreCase))
                 {
                     if (IsBrowserWebOrigin(origin))
                     {
@@ -820,7 +820,9 @@ public sealed class CaptureServer : IDisposable
                     try
                     {
                         string? filterTabId = null;
-                        string qs = path.Contains('?') ? path[(path.IndexOf('?') + 1)..] : "";
+                        // The query was split off the path at request parse time;
+                        // re-parsing `path` here always yielded nothing.
+                        string qs = queryString;
                         foreach (var pair in qs.Split('&'))
                         {
                             var kv = pair.Split('=', 2);
@@ -1131,9 +1133,17 @@ public sealed class CaptureServer : IDisposable
             PageTitle = string.IsNullOrWhiteSpace(session.PageTitle) ? null : session.PageTitle,
             TotalBytes = session.TotalBytes,
         };
-        try { OnBlobCaptured?.Invoke(result); }
-        catch { try { File.Delete(staged); } catch { } throw; }
-        return new BlobChunkResponse { Received = session.TotalBytes, Staged = true, Bytes = session.TotalBytes };
+        bool imported;
+        try { imported = OnBlobCaptured?.Invoke(result) ?? false; }
+        catch { imported = false; }
+        if (!imported)
+        {
+            // Import failed downstream: drop the staged bytes (the extension
+            // will retry the transfer) and report failure truthfully — never
+            // acknowledge a lost blob as landed.
+            try { File.Delete(staged); } catch { }
+        }
+        return new BlobChunkResponse { Received = session.TotalBytes, Staged = imported, Bytes = session.TotalBytes };
     }
 
     private void SweepIdleBlobsLocked()

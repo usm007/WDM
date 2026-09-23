@@ -946,6 +946,29 @@ public static class HlsDownloader
                         await output.WriteAsync(buffer.AsMemory(0, read), ct);
                     }
                 }
+                await output.FlushAsync(ct);
+                if (seg.Length > 0)
+                {
+                    // A ranged part must come back 206 with the exact range.
+                    // Anything else is only salvageable for a part starting at
+                    // 0: a 200 full-resource body then starts with the asked
+                    // bytes, so an oversize file is truncated to that prefix.
+                    // Past offset 0 the slice is unlocatable — fail loudly
+                    // (retried, then fatal) instead of duplicating full files
+                    // into every part sharing the URI.
+                    var cr = response.Content.Headers.ContentRange;
+                    bool exact = response.StatusCode == System.Net.HttpStatusCode.PartialContent &&
+                                 cr?.From == seg.Start && cr?.To == seg.Start + seg.Length - 1;
+                    if (!exact)
+                    {
+                        if (seg.Start != 0)
+                            throw new HttpRequestException(
+                                $"Server returned wrong range for HLS segment (asked {seg.Start}-{seg.Start + seg.Length - 1}).");
+                        bool plainCopy = seg.Key is null || seg.Key.Length == 0;
+                        if (plainCopy && output.Length > seg.Length)
+                            output.SetLength(seg.Length);
+                    }
+                }
                 return output.Length;
             }
             catch (Exception ex) when (attempt < MaxRetries && !ct.IsCancellationRequested &&

@@ -620,7 +620,11 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
     {
         foreach (var record in TaskStore.LoadTasks())
         {
-            if (string.IsNullOrWhiteSpace(record.Url))
+            if (record is null)
+                continue;
+            // Blob-imported rows carry no URL (the bytes never left the page).
+            // Only Completed ones are restorable — anything else could never resume.
+            if (string.IsNullOrWhiteSpace(record.Url) && record.Status != TaskStatus.Completed)
                 continue;
             var task = new DownloadTask(_dispatcher)
             {
@@ -677,13 +681,16 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
 
     /// <summary>Finds the first task for the same normalized URL key
     /// (1DM <c>i.sh6</c> fingerprint key <c>f3164</c>: same link identity ignoring
-    /// fragment case noise). Returns null when no task references the URL.</summary>
+    /// fragment case noise). Matches the player page too: embed tasks restart
+    /// from <c>SourcePageUrl</c>, so a re-captured stream must hit the stored row.
+    /// Returns null when no task references the URL.</summary>
     public DownloadTask? FindByUrl(string url)
     {
         string needle = NormalizeUrlKey(url);
         if (string.IsNullOrEmpty(needle))
             return null;
-        return Tasks.FirstOrDefault(t => NormalizeUrlKey(t.Url) == needle);
+        return Tasks.FirstOrDefault(t => NormalizeUrlKey(t.Url) == needle ||
+            (!string.IsNullOrWhiteSpace(t.SourcePageUrl) && NormalizeUrlKey(t.SourcePageUrl) == needle));
     }
 
     /// <summary>Size-aware duplicate check (1DM <c>i.sh6 m3786</c>: same key +
@@ -883,6 +890,12 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
     {
         if (string.IsNullOrWhiteSpace(url))
             return;
+        // Extension/batch retries of an in-flight download must not fork a
+        // second row. Finished rows (completed/failed/cancelled) stay re-addable;
+        // the manual dialog warns instead of blocking.
+        var dupe = FindByUrl(url);
+        if (dupe is not null && dupe.Status is TaskStatus.Queued or TaskStatus.Downloading or TaskStatus.Paused)
+            return;
         if (!_dispatcher.CheckAccess())
         {
             Dispatch(() => AddTask(url, fileName, referer, chunkCount, mirrors));
@@ -989,20 +1002,25 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
     /// <summary>Imports an assembled blob (1DM SaveBlobTask write → flow 4.1):
     /// moves the staged bytes into the download folder and records a finished
     /// row, then runs the normal completion path (dialog, sound, checksum,
-    /// script, move-on-finish). The blob: URL itself never left the page.</summary>
-    public void AddCompletedFile(CaptureServer.BlobResult blob)
+    /// script, move-on-finish). The blob: URL itself never left the page.
+    /// Returns false when the import failed — the caller must report that
+    /// (not success) and must NOT delete the staged bytes blindly.</summary>
+    public bool AddCompletedFile(CaptureServer.BlobResult blob)
     {
         if (!_dispatcher.CheckAccess())
         {
-            Dispatch(() => AddCompletedFile(blob));
-            return;
+            return _dispatcher.Invoke(() => AddCompletedFile(blob));
         }
+        bool ok = false;
         try
         {
             if (string.IsNullOrWhiteSpace(blob.StagedPath) || !File.Exists(blob.StagedPath))
-                return;
+            {
+                ActivityLog.Write("BLOB", $"Import failed: staged file missing ('{blob.StagedPath}').");
+                return false;
+            }
             string destFolder = Settings.DownloadFolder;
-            try { Directory.CreateDirectory(destFolder); } catch { return; }
+            try { Directory.CreateDirectory(destFolder); } catch (Exception ex) { ActivityLog.Write("BLOB", $"Import failed: cannot create '{destFolder}': {ex.Message}"); return false; }
             var carrier = new DownloadTask
             {
                 Url = "",
@@ -1011,7 +1029,10 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
                 SaveFolder = Path.GetDirectoryName(blob.StagedPath) ?? destFolder,
             };
             if (!PostDownloadActions.TryMoveFinishedFile(carrier, destFolder))
-                return;
+            {
+                ActivityLog.Write("BLOB", $"Import failed: cannot move staged file into '{destFolder}'.");
+                return false;
+            }
             if (!string.IsNullOrWhiteSpace(blob.FileName))
             {
                 string named = DownloadEngine.SanitizeFileName(blob.FileName, referer: blob.Referer);
@@ -1041,11 +1062,23 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
             UpdateStatus();
             TaskCompleted?.Invoke(carrier);
             HandlePostDownload(carrier);
+            ok = true;
+            return true;
         }
-        catch { }
+        catch (Exception ex)
+        {
+            ActivityLog.Write("BLOB", $"Import failed for '{blob.StagedPath}': {ex.Message}");
+            return false;
+        }
         finally
         {
-            try { if (File.Exists(blob.StagedPath)) File.Delete(blob.StagedPath); } catch { }
+            // Delete the staged bytes only on success. On failure the server
+            // cleans up after reporting Staged=false, so a failed transfer
+            // is never silently acknowledged as landed.
+            if (ok)
+            {
+                try { if (File.Exists(blob.StagedPath)) File.Delete(blob.StagedPath); } catch { }
+            }
         }
     }
 
@@ -1063,6 +1096,9 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
         foreach (var item in items)
         {
             if (item is null || string.IsNullOrWhiteSpace(item.Url))
+                continue;
+            var dupe = FindByUrl(item.Url);
+            if (dupe is not null && dupe.Status is TaskStatus.Queued or TaskStatus.Downloading or TaskStatus.Paused)
                 continue;
             var task = new DownloadTask
             {
@@ -1383,6 +1419,11 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
 
     public Guid ApiAddTask(CaptureServer.ApiAddRequest req)
     {
+        // Idempotent for automation retries: an in-flight task for the same
+        // URL returns its id instead of forking a duplicate row.
+        var dupe = FindByUrl(req.Url ?? "");
+        if (dupe is not null && dupe.Status is TaskStatus.Queued or TaskStatus.Downloading or TaskStatus.Paused)
+            return dupe.Id;
         var task = new DownloadTask(_dispatcher)
         {
             Url = req.Url!.Trim(),

@@ -23,6 +23,7 @@ public sealed class Round9Tests : IClassFixture<Round9Tests.BlobFixture>
             Server.OnBlobCaptured = r =>
             {
                 lock (Blobs) Blobs.Add(r);
+                return true;
             };
             Server.Start();
         }

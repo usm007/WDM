@@ -499,14 +499,21 @@ public sealed class TaskStore
 
         if (string.IsNullOrWhiteSpace(text))
         {
-            FailLoad(new InvalidDataException("tasks.json is empty."));
+            // An existing-but-empty file holds zero records, so there is
+            // nothing to protect — start empty with saves enabled.
+            LogNonFatal(new InvalidDataException("tasks.json is empty; starting with an empty list."));
             return new List<TaskRecord>();
         }
 
         // Fast path: the whole file parses.
         try
         {
-            return JsonSerializer.Deserialize<List<TaskRecord>>(text, JsonOptions) ?? new List<TaskRecord>();
+            var parsed = JsonSerializer.Deserialize<List<TaskRecord>>(text, JsonOptions)
+                ?? new List<TaskRecord>();
+            // A [null] element parses into a null entry and would crash the
+            // loader below — a null entry carries no user data, drop it.
+            parsed.RemoveAll(r => r is null);
+            return parsed;
         }
         catch (Exception ex)
         {
@@ -520,9 +527,12 @@ public sealed class TaskStore
             return restored;
 
         var salvaged = SalvageRecords(text);
-        // Any exception during load (or any skipped record) means the file may
-        // hold data we couldn't read — refuse future overwrites this session.
-        TasksLoadFailed = true;
+        // Refuse future overwrites only when records may have been lost
+        // (skipped records, or an unreadable document — the latter flags
+        // itself inside SalvageRecords). A fully-salvaged list is complete,
+        // so saving it is safe.
+        if (TasksLoadSkippedRecords > 0)
+            TasksLoadFailed = true;
         return salvaged;
     }
 
@@ -535,8 +545,18 @@ public sealed class TaskStore
                 return false;
             string text = File.ReadAllText(TasksBackupPath);
             var parsed = JsonSerializer.Deserialize<List<TaskRecord>>(text, JsonOptions);
-            if (parsed is null || parsed.Count == 0)
+            if (parsed is null)
                 return false;
+            parsed.RemoveAll(r => r is null);
+            if (parsed.Count == 0)
+            {
+                // Valid-but-empty backup: zero tasks is a legitimate state,
+                // not corruption. Leave the main file alone (the next save
+                // rewrites it from the live list) and proceed empty.
+                LogNonFatal(new InvalidOperationException(
+                    "tasks.json was unreadable but tasks.json.bak is a valid empty list; starting empty."));
+                return true;
+            }
             string tmp = TasksPath + $".restore-{Guid.NewGuid():N}.tmp";
             File.WriteAllText(tmp, text);
             try
@@ -588,6 +608,8 @@ public sealed class TaskStore
         catch (Exception ex)
         {
             LastTasksLoadError = (LastTasksLoadError ?? "") + " | salvage: " + ex.Message;
+            // The document itself is unreadable — records may have been lost.
+            TasksLoadFailed = true;
             LogNonFatal(ex);
         }
         return salvaged;

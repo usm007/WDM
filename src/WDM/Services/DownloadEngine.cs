@@ -1532,6 +1532,9 @@ public sealed class DownloadEngine
             // Packaged sample encryption (SAMPLE-AES): segments are useless to the
             // segment downloader, but ffmpeg decrypts during mux — same path as DASH.
             session.Token.ThrowIfCancellationRequested();
+            if (!File.Exists(EngineManager.FfmpegPath))
+                throw; // No fallback possible — the outer handler maps this exact
+                       // type to "Error: {Method} needs ffmpeg" (actionable + tested).
             if (!task.FileName.EndsWith(".mp4", StringComparison.OrdinalIgnoreCase))
             {
                 task.FileName = Path.ChangeExtension(task.FileName, ".mp4");

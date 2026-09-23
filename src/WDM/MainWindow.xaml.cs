@@ -124,7 +124,7 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
         // networking can never delay first paint. Callers marshal via dispatcher.
         _ = Task.Run(() => _captureServer.Start());
         _captureServer.OnBatchCapture = items => _dispatcher.BeginInvoke(() => ShowBatchAddDialog(items));
-        _captureServer.OnBlobCaptured = result => _dispatcher.BeginInvoke(() => _viewModel.AddCompletedFile(result));
+        _captureServer.OnBlobCaptured = result => _dispatcher.Invoke(() => _viewModel.AddCompletedFile(result));
         _captureServer.MinCatchBytesProvider = () => _viewModel.Settings.MinCatchSizeBytes;
         // Third-party automation (gap 8): Invoke (not BeginInvoke) — the
         // loopback thread needs results. Safe: the UI thread never blocks on
