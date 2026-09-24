@@ -87,3 +87,10 @@ preparing-states-preview.html
 # AGENTS.md stays tracked (exception to *.md above)
 !AGENTS.md
 
+# Local generated/scratch output (media-intelligence Phase 1 hygiene)
+brag-output/
+new_design/
+logo_designs/
+wdm-tree.txt
+cef-spike/
+
