@@ -108,7 +108,7 @@ public sealed class Round11Tests
     public void EditedXaml_IsWellFormedXml(string file, string expectedRoot)
     {
         string path = Path.GetFullPath(Path.Combine(
-            AppContext.BaseDirectory, "..", "..", "..", "..", "WDM", file));
+            AppContext.BaseDirectory, "..", "..", "..", "..", "WDM.App", file));
         Assert.True(File.Exists(path), path);
         var doc = new XmlDocument();
         doc.Load(path); // throws on malformed markup
@@ -119,7 +119,7 @@ public sealed class Round11Tests
     public void EditedXaml_ContainsNewControls()
     {
         string dir = Path.GetFullPath(Path.Combine(
-            AppContext.BaseDirectory, "..", "..", "..", "..", "WDM"));
+            AppContext.BaseDirectory, "..", "..", "..", "..", "WDM.App"));
         string options = File.ReadAllText(Path.Combine(dir, "OptionsControl.xaml"));
         foreach (string name in new[]
         {

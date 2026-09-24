@@ -1,8 +1,10 @@
+using System;
+using System.Collections.Generic;
 using System.ComponentModel;
+using System.IO;
 using System.Runtime.CompilerServices;
-using System.Windows.Threading;
+using System.Threading;
 using WDM.Services;
-using Wpf.Ui.Controls;
 
 namespace WDM.Models;
 
@@ -34,11 +36,11 @@ public enum DownloadCategory
 
 public sealed class DownloadTask : INotifyPropertyChanged
 {
-    private readonly Dispatcher _ui;
+    private readonly SynchronizationContext _sync;
 
-    public DownloadTask(Dispatcher? ui = null)
+    public DownloadTask(SynchronizationContext? sync = null)
     {
-        _ui = ui ?? Dispatcher.CurrentDispatcher;
+        _sync = sync ?? SynchronizationContext.Current ?? new SynchronizationContext();
     }
 
     public Guid Id { get; internal set; } = Guid.NewGuid();
@@ -105,14 +107,7 @@ public sealed class DownloadTask : INotifyPropertyChanged
     public DownloadCategory Category
     {
         get => _category;
-        set
-        {
-            if (Set(ref _category, value))
-            {
-                Raise(nameof(CategoryBrush));
-                Raise(nameof(TypeSymbol));
-            }
-        }
+        set => Set(ref _category, value);
     }
     public string? Checksum { get; set; }
     public DateTime? CompletedAt { get; set; }
@@ -518,67 +513,6 @@ public sealed class DownloadTask : INotifyPropertyChanged
         }
     }
 
-    public string CategoryColorHex
-    {
-        get
-        {
-            string key = Category switch
-            {
-                DownloadCategory.Video => "Brush.CatVideo",
-                DownloadCategory.Music => "Brush.CatMusic",
-                DownloadCategory.Document => "Brush.CatDocument",
-                DownloadCategory.Compressed => "Brush.CatCompressed",
-                DownloadCategory.Program => "Brush.CatProgram",
-                _ => "Brush.TextMuted",
-            };
-            if (System.Windows.Application.Current?.Resources[key] is System.Windows.Media.SolidColorBrush brush)
-                return brush.Color.ToString();
-            return Category switch
-            {
-                DownloadCategory.Video => "#EF4444",
-                DownloadCategory.Music => "#8B5CF6",
-                DownloadCategory.Document => "#3B82F6",
-                DownloadCategory.Compressed => "#F59E0B",
-                DownloadCategory.Program => "#10B981",
-                _ => "#90939E",
-            };
-        }
-    }
-
-    public System.Windows.Media.Brush CategoryBrush
-    {
-        get
-        {
-            string key = Category switch
-            {
-                DownloadCategory.Video => "Brush.CatVideo",
-                DownloadCategory.Music => "Brush.CatMusic",
-                DownloadCategory.Document => "Brush.CatDocument",
-                DownloadCategory.Compressed => "Brush.CatCompressed",
-                DownloadCategory.Program => "Brush.CatProgram",
-                _ => "Brush.Text",
-            };
-            try
-            {
-                var found = System.Windows.Application.Current?.TryFindResource(key);
-                if (found is System.Windows.Media.Brush brush)
-                    return brush;
-            }
-            catch { }
-            return System.Windows.Media.Brushes.Gray;
-        }
-    }
-
-    public SymbolRegular TypeSymbol => Category switch
-    {
-        DownloadCategory.Video => SymbolRegular.Video24,
-        DownloadCategory.Music => SymbolRegular.MusicNote224,
-        DownloadCategory.Document => SymbolRegular.Document24,
-        DownloadCategory.Compressed => SymbolRegular.FolderZip24,
-        DownloadCategory.Program => SymbolRegular.AppGeneric24,
-        _ => SymbolRegular.DocumentBulletList24,
-    };
-
     public string StatusText => Status switch
     {
         TaskStatus.Downloading => "Running",
@@ -650,21 +584,22 @@ public sealed class DownloadTask : INotifyPropertyChanged
         var handler = PropertyChanged;
         if (handler is null)
             return;
-        if (_ui.CheckAccess())
+        var args = new PropertyChangedEventArgs(name);
+        if (SynchronizationContext.Current == _sync)
         {
-            handler(this, new PropertyChangedEventArgs(name));
+            handler(this, args);
         }
         else
         {
-            if (_ui.HasShutdownStarted || _ui.HasShutdownFinished)
-                return;
             try
             {
-                _ui.BeginInvoke(() => handler(this, new PropertyChangedEventArgs(name)));
+                // UI thread captured at construction: Post == Dispatcher.BeginInvoke.
+                // Falls back to inline Send when no context was captured.
+                _sync.Post(_ => handler(this, args), null);
             }
             catch (Exception)
             {
-                // Dispatcher may have shut down between check and invoke
+                // Target context may have shut down between check and invoke
             }
         }
     }

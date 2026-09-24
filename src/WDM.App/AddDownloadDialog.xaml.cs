@@ -930,7 +930,7 @@ public partial class AddDownloadDialog : Window
             else extraArgs.Add("--no-playlist");
         }
 
-        var task = new DownloadTask(Application.Current.Dispatcher)
+        var task = new DownloadTask()
         {
             Url = url,
             Referer = _prefillReferer,

@@ -204,7 +204,7 @@ public static class ScreenshotGenerator
             // 15. CloudflareChallengeWindow
             try
             {
-                var cfTask = new DownloadTask(Dispatcher.CurrentDispatcher) { Url = "https://protected-site.example/download.zip", FileName = "protected-download.zip" };
+                var cfTask = new DownloadTask() { Url = "https://protected-site.example/download.zip", FileName = "protected-download.zip" };
                 var cfWindow = new CloudflareChallengeWindow(cfTask);
                 SaveWindowScreenshot(cfWindow, Path.Combine(targetDir, "15_CloudflareChallengeWindow.png"));
             }
@@ -253,7 +253,7 @@ public static class ScreenshotGenerator
 
             try
             {
-                var maxCfTask = new DownloadTask(Dispatcher.CurrentDispatcher) { Url = "https://protected-site.example/download.zip", FileName = "protected-download.zip" };
+                var maxCfTask = new DownloadTask() { Url = "https://protected-site.example/download.zip", FileName = "protected-download.zip" };
                 var maxCf = new CloudflareChallengeWindow(maxCfTask) { Width = 1920, Height = 1040 };
                 SaveWindowScreenshot(maxCf, Path.Combine(maxDir, "15_CloudflareChallengeWindow_Maximized.png"));
             }
@@ -450,9 +450,8 @@ public static class ScreenshotGenerator
     private static void PopulateMockTasks(MainViewModel vm)
     {
         vm.Tasks.Clear();
-        var ui = Dispatcher.CurrentDispatcher;
 
-        var t1 = new DownloadTask(ui)
+        var t1 = new DownloadTask()
         {
             Url = "https://releases.ubuntu.com/24.04/ubuntu-24.04-desktop-amd64.iso",
             FileName = "ubuntu-24.04-desktop-amd64.iso",
@@ -466,7 +465,7 @@ public static class ScreenshotGenerator
             AddedAt = DateTime.Now.AddMinutes(-5)
         };
 
-        var t2 = new DownloadTask(ui)
+        var t2 = new DownloadTask()
         {
             Url = "https://download.visualstudio.microsoft.com/download/pr/VisualStudioSetup.exe",
             FileName = "VisualStudioSetup.exe",
@@ -478,7 +477,7 @@ public static class ScreenshotGenerator
             AddedAt = DateTime.Now.AddMinutes(-15)
         };
 
-        var t3 = new DownloadTask(ui)
+        var t3 = new DownloadTask()
         {
             Url = "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4",
             FileName = "BigBuckBunny_4K_HDR.mp4",
@@ -490,7 +489,7 @@ public static class ScreenshotGenerator
             AddedAt = DateTime.Now.AddHours(-1)
         };
 
-        var t4 = new DownloadTask(ui)
+        var t4 = new DownloadTask()
         {
             Url = "https://cdn.example.org/files/financial_report_q3_2026.pdf",
             FileName = "financial_report_q3_2026.pdf",
@@ -501,7 +500,7 @@ public static class ScreenshotGenerator
             AddedAt = DateTime.Now.AddMinutes(-2)
         };
 
-        var t5 = new DownloadTask(ui)
+        var t5 = new DownloadTask()
         {
             Url = "https://files.freemusicarchive.org/track_09_synthwave_sunset.flac",
             FileName = "synthwave_sunset_master.flac",
@@ -513,7 +512,7 @@ public static class ScreenshotGenerator
             AddedAt = DateTime.Now.AddHours(-2)
         };
 
-        var t6 = new DownloadTask(ui)
+        var t6 = new DownloadTask()
         {
             Url = "https://live.stream.example.org/event_stream_live.ts",
             FileName = "event_stream_live.ts",

@@ -42,7 +42,7 @@ public sealed class MediaCaptureTests
     {
         // Contract check: CaptureServer source routes these paths.
         string root = RepoRoot();
-        string src = File.ReadAllText(Path.Combine(root, "src", "WDM", "Services", "CaptureServer.cs"));
+        string src = File.ReadAllText(Path.Combine(root, "src", "WDM.App", "Services", "CaptureServer.cs"));
         return path switch
         {
             "/ping" => src.Contains("/ping"),

@@ -23,6 +23,7 @@
         Background="{DynamicResource Brush.Bg}">
     <ui:FluentWindow.Resources>
         <vm:TaskStatusToColorConverter x:Key="StatusColor" />
+        <vm:CategoryToSymbolConverter x:Key="CategorySymbol" />
         <vm:TaskStatusToBrushConverter x:Key="StatusBrush" />
         <vm:StatusToBrushConverter x:Key="StatusToBrush" />
         <vm:StatusToIconConverter x:Key="StatusToIcon" />
@@ -473,7 +474,7 @@
                                                     Background="{DynamicResource Brush.SurfaceAlt}"
                                                     BorderBrush="{DynamicResource Brush.Border}" BorderThickness="1"
                                                     HorizontalAlignment="Left" VerticalAlignment="Center" Margin="0,0,6,0">
-                                                <ui:SymbolIcon Symbol="{Binding TypeSymbol}" FontSize="15"
+                                                <ui:SymbolIcon Symbol="{Binding Category, Converter={StaticResource CategorySymbol}}" FontSize="15"
                                                                Foreground="{DynamicResource Brush.TextDim}"
                                                                HorizontalAlignment="Center" VerticalAlignment="Center" />
                                             </Border>

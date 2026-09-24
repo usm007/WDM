@@ -624,7 +624,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
             // Only Completed ones are restorable — anything else could never resume.
             if (string.IsNullOrWhiteSpace(record.Url) && record.Status != TaskStatus.Completed)
                 continue;
-            var task = new DownloadTask(_dispatcher)
+            var task = new DownloadTask()
             {
                 Url = record.Url.Trim(),
                 SourcePageUrl = record.SourcePageUrl,
@@ -899,7 +899,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
             Dispatch(() => AddTask(url, fileName, referer, chunkCount, mirrors));
             return;
         }
-        var task = new DownloadTask(_dispatcher)
+        var task = new DownloadTask()
         {
             Url = url.Trim(),
             Referer = referer,
@@ -1411,7 +1411,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
         var dupe = FindByUrl(req.Url ?? "");
         if (dupe is not null && dupe.Status is TaskStatus.Queued or TaskStatus.Downloading or TaskStatus.Paused)
             return dupe.Id;
-        var task = new DownloadTask(_dispatcher)
+        var task = new DownloadTask()
         {
             Url = req.Url!.Trim(),
             Referer = string.IsNullOrWhiteSpace(req.Referer) ? null : req.Referer.Trim(),

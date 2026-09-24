@@ -21,6 +21,7 @@
         RenderOptions.ClearTypeHint="Enabled">
     <Window.Resources>
         <vm:TaskStatusToBrushConverter x:Key="StatusBrush" />
+        <vm:CategoryToSymbolConverter x:Key="CategorySymbol" />
         <vm:TextToVisibilityConverter x:Key="TextVis" />
         <BooleanToVisibilityConverter x:Key="BoolToVis" />
 
@@ -93,7 +94,7 @@
                                 Background="{DynamicResource Brush.SurfaceAlt}"
                                 BorderBrush="{DynamicResource Brush.Border}" BorderThickness="1"
                                 VerticalAlignment="Center" Margin="0,0,8,0">
-                            <ui:SymbolIcon Symbol="{Binding Task.TypeSymbol}"
+                            <ui:SymbolIcon Symbol="{Binding Task.Category, Converter={StaticResource CategorySymbol}}"
                                            FontSize="15" Foreground="{DynamicResource Brush.TextDim}"
                                            HorizontalAlignment="Center" VerticalAlignment="Center" />
                         </Border>
