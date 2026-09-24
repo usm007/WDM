@@ -1,0 +1,87 @@
+using System;
+using System.Buffers.Binary;
+using System.IO.Pipes;
+using System.Threading;
+using WDM.Browser.Sessions;
+
+namespace WDM.Browser.Ipc;
+
+/// <summary>WDM-side pipe client for one BrowserHost connection. One frame at
+/// a time, full duplex via sequential send/receive; the session manager owns
+/// concurrency, not this client.</summary>
+public sealed class BrowserPipeClient : IAsyncDisposable
+{
+    private NamedPipeClientStream? _pipe;
+    private readonly SemaphoreSlim _writeGate = new(1, 1);
+
+    public bool IsConnected => _pipe?.IsConnected == true;
+
+    public async Task ConnectAsync(string pipeName, CancellationToken ct)
+    {
+        var pipe = new NamedPipeClientStream(".", pipeName, PipeDirection.InOut, PipeOptions.Asynchronous);
+        try
+        {
+            await pipe.ConnectAsync(ct).ConfigureAwait(false);
+            _pipe = pipe;
+        }
+        catch
+        {
+            await pipe.DisposeAsync().ConfigureAwait(false);
+            throw;
+        }
+    }
+
+    public async Task SendAsync(string type, string? sessionId, object? payload, CancellationToken ct)
+    {
+        var pipe = _pipe ?? throw new InvalidOperationException("Pipe is not connected.");
+        byte[] frame = BrowserMessage.Encode(type, sessionId, payload);
+        await _writeGate.WaitAsync(ct).ConfigureAwait(false);
+        try
+        {
+            await pipe.WriteAsync(frame, ct).ConfigureAwait(false);
+            await pipe.FlushAsync(ct).ConfigureAwait(false);
+        }
+        finally
+        {
+            _writeGate.Release();
+        }
+    }
+
+    public async Task<BrowserMessage.Envelope> ReceiveAsync(CancellationToken ct)
+    {
+        var pipe = _pipe ?? throw new InvalidOperationException("Pipe is not connected.");
+        var lenBuf = new byte[4];
+        await ReadExactAsync(pipe, lenBuf, ct).ConfigureAwait(false);
+        int len = BinaryPrimitives.ReadInt32LittleEndian(lenBuf);
+        if (len < 2 || len > BrowserMessage.MaxMessageBytes)
+            throw new InvalidOperationException("Browser host sent an over/under-sized frame.");
+        var frame = new byte[4 + len];
+        lenBuf.CopyTo(frame, 0);
+        await ReadExactAsync(pipe, frame.AsMemory(4), ct).ConfigureAwait(false);
+        if (!BrowserMessage.TryDecode(frame, out var msg, out string? error) || msg is null)
+            throw new InvalidOperationException("Browser host sent an invalid message: " + error);
+        return msg;
+    }
+
+    private static async Task ReadExactAsync(PipeStream pipe, Memory<byte> buf, CancellationToken ct)
+    {
+        int done = 0;
+        while (done < buf.Length)
+        {
+            int n = await pipe.ReadAsync(buf[done..], ct).ConfigureAwait(false);
+            if (n == 0)
+                throw new EndOfStreamException("Browser host disconnected mid-frame.");
+        }
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        try
+        {
+            if (_pipe is not null)
+                await _pipe.DisposeAsync().ConfigureAwait(false);
+        }
+        catch { }
+        _writeGate.Dispose();
+    }
+}
