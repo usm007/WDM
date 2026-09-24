@@ -1,0 +1,90 @@
+<Window x:Class="WDM.ExtensionGuideWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
+        Title="Extension Guide — WDM"
+        Icon="Assets/WDM.ico"
+        Width="520"
+        SizeToContent="Height"
+        WindowStartupLocation="CenterOwner"
+        ResizeMode="NoResize"
+        ShowInTaskbar="False"
+        WindowStyle="None"
+        AllowsTransparency="True"
+        Background="Transparent"
+        MouseLeftButtonDown="Window_MouseLeftButtonDown"
+        UseLayoutRounding="True"
+        SnapsToDevicePixels="True"
+        TextOptions.TextFormattingMode="Ideal"
+        TextOptions.TextRenderingMode="Auto"
+        RenderOptions.ClearTypeHint="Enabled">
+    <Border Background="{DynamicResource Brush.Surface}"
+            BorderBrush="{DynamicResource Brush.DialogBorder}"
+            BorderThickness="1"
+            CornerRadius="8" Margin="10"
+            SnapsToDevicePixels="True">
+        <Border.Effect>
+            <DropShadowEffect BlurRadius="16" ShadowDepth="1" Direction="270" Color="#000000" Opacity="0.16" RenderingBias="Quality"/>
+        </Border.Effect>
+        <Grid>
+            <Grid.RowDefinitions>
+                <RowDefinition Height="*" />
+                <RowDefinition Height="Auto" />
+            </Grid.RowDefinitions>
+
+            <!-- Main Body -->
+            <StackPanel Grid.Row="0" Margin="18,16,18,14">
+                <DockPanel Margin="0,0,0,12" LastChildFill="True">
+                    <Button DockPanel.Dock="Right" Style="{StaticResource Button.DialogClose}" Click="CloseClick" VerticalAlignment="Center" Margin="6,-6,-6,0" />
+                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                        <ui:SymbolIcon Symbol="PuzzlePiece24" FontSize="20" Foreground="{DynamicResource Brush.Accent}" Margin="0,0,8,0" VerticalAlignment="Center" />
+                        <TextBlock Text="Extension Guide" FontSize="16" FontWeight="SemiBold" Foreground="{DynamicResource Brush.Text}" VerticalAlignment="Center" />
+                    </StackPanel>
+                </DockPanel>
+
+                <!-- Chromium -->
+                <TextBlock Text="Chrome, Edge, Brave" FontSize="12.5" FontWeight="SemiBold" Foreground="{DynamicResource Brush.TextDim}" Margin="0,0,0,6" />
+                <Border Background="{DynamicResource Brush.SurfaceAlt}" BorderBrush="{DynamicResource Brush.Border}"
+                        BorderThickness="1" CornerRadius="6" Padding="12,10" Margin="0,0,0,10">
+                    <StackPanel>
+                        <DockPanel Margin="0,0,0,6" LastChildFill="True">
+                            <ui:Button DockPanel.Dock="Right" Content="Copy path" Appearance="Secondary"
+                                       Style="{StaticResource Button.SecondaryAction}" Height="28" Padding="12,0" Click="CopyPath_Click" />
+                            <TextBlock Text="1. Copy the extension folder path." FontSize="12.5" Foreground="{DynamicResource Brush.Text}" VerticalAlignment="Center" />
+                        </DockPanel>
+                        <TextBlock x:Name="CopyFeedbackText" FontSize="11.5" Foreground="{DynamicResource Brush.Accent}" Margin="0,0,0,6" Visibility="Collapsed" />
+                        <DockPanel Margin="0,0,0,6" LastChildFill="True">
+                            <ui:Button DockPanel.Dock="Right" Content="Open page" Appearance="Secondary"
+                                       Style="{StaticResource Button.SecondaryAction}" Height="28" Padding="12,0" Click="OpenPage_Click" />
+                            <TextBlock Text="2. Open the extensions page." FontSize="12.5" Foreground="{DynamicResource Brush.Text}" VerticalAlignment="Center" />
+                        </DockPanel>
+                        <TextBlock Text="3. Turn on Developer mode (top-right corner)." FontSize="12.5" Foreground="{DynamicResource Brush.Text}" Margin="0,0,0,6" TextWrapping="Wrap" />
+                        <TextBlock Text="4. Click “Load unpacked” and paste the path." FontSize="12.5" Foreground="{DynamicResource Brush.Text}" TextWrapping="Wrap" />
+                    </StackPanel>
+                </Border>
+
+                <!-- Firefox -->
+                <TextBlock Text="Firefox" FontSize="12.5" FontWeight="SemiBold" Foreground="{DynamicResource Brush.TextDim}" Margin="0,0,0,6" />
+                <Border Background="{DynamicResource Brush.SurfaceAlt}" BorderBrush="{DynamicResource Brush.Border}"
+                        BorderThickness="1" CornerRadius="6" Padding="12,10">
+                    <DockPanel LastChildFill="True">
+                        <ui:Button DockPanel.Dock="Right" Content="Install" Appearance="Secondary"
+                                   Style="{StaticResource Button.SecondaryAction}" Height="28" Padding="12,0" Click="Firefox_Click" />
+                        <TextBlock Text="Install from the Firefox store." FontSize="12.5" Foreground="{DynamicResource Brush.Text}" VerticalAlignment="Center" />
+                    </DockPanel>
+                </Border>
+
+                <TextBlock Text="Keep WDM running while you download — the extension talks to it on this PC." FontSize="11.5" Foreground="{DynamicResource Brush.TextMuted}" Margin="0,10,0,0" TextWrapping="Wrap" />
+            </StackPanel>
+
+            <!-- Bottom Action Strip -->
+            <Border Grid.Row="1" Background="{DynamicResource Brush.SurfaceAlt}" BorderBrush="{DynamicResource Brush.Border}"
+                    BorderThickness="0,1,0,0" CornerRadius="0,0,7,7" Padding="16,10">
+                <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                    <ui:Button Content="Close" Appearance="Primary" IsDefault="True" IsCancel="True"
+                               Style="{StaticResource Button.PrimaryAction}" MinWidth="75" Height="32" Click="CloseClick" />
+                </StackPanel>
+            </Border>
+        </Grid>
+    </Border>
+</Window>

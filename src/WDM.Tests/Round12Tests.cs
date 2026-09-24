@@ -220,4 +220,159 @@ public sealed class Round12Tests
             try { _listener.Close(); } catch { }
         }
     }
+
+    // End-user regression (seedr): a signed hand-off link (/download/archive/<hash>)
+    // 302s to a final URL whose path carries the real filename, while the response
+    // headers carry a bare `Content-Disposition: attachment` (no filename).
+    // The probe must name the file from the redirect target, like IDM does —
+    // previously it kept the generic download_*.bin fallback.
+    [Theory]
+    // Pure offline proof on the reported shapes: hash hand-off → unusable,
+    // redirect target → real filename (IDM parity).
+    [InlineData("https://www.seedr.cc/download/archive/c1c73193235dce6ccc82b3fd7d9f3d56a53956fcdb1469431958baa63727b9ce?token=abc&exp=123", null)]
+    [InlineData("https://nw35.seedr.cc/get_zip_ngen_free/29475024/The%20Strain%20S01%20Season%201%20Complete%20HDTV%20480p%20x264%20AAC%20E-Subs%20[GWC].zip?st=abc&e=123", "Strain")]
+    public void FileNameFromUrlPath_SeedrShapes(string url, string? mustContain)
+    {
+        string? name = DownloadEngine.FileNameFromUrlPath(url);
+        if (mustContain is null)
+            Assert.Null(name);
+        else
+        {
+            Assert.NotNull(name);
+            Assert.Contains(mustContain, name, StringComparison.OrdinalIgnoreCase);
+            Assert.EndsWith(".zip", name, StringComparison.OrdinalIgnoreCase);
+        }
+    }
+
+    [Fact]
+    public async Task Engine_RedirectTargetFilename_RenamesGenericTask()
+    {
+        using var server = new RedirectNameLoopback();
+        var engine = new DownloadEngine();
+        string dir = Path.Combine(Path.GetTempPath(), "wdm_r12c_" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(dir);
+        try
+        {
+            var task = new DownloadTask
+            {
+                Url = server.BaseUrl + "download/archive/c1c73193235dce6ccc82b3fd7d9f3d56a53956fcdb1469431958baa63727b9ce?token=abc&exp=123",
+                FileName = "download_2026-09-24_202332.bin",
+                SaveFolder = dir,
+            };
+            engine.Start(task);
+            var sw = System.Diagnostics.Stopwatch.StartNew();
+            while (sw.Elapsed < TimeSpan.FromSeconds(30))
+            {
+                if (task.Status is TaskStatus.Completed or TaskStatus.Failed or TaskStatus.Paused)
+                    break;
+                await Task.Delay(50);
+            }
+            Assert.Equal(TaskStatus.Completed, task.Status);
+            Assert.Contains("Strain", task.FileName, StringComparison.OrdinalIgnoreCase);
+            Assert.EndsWith(".zip", task.FileName, StringComparison.OrdinalIgnoreCase);
+            Assert.Equal(server.Body, await File.ReadAllBytesAsync(task.FullPath));
+        }
+        finally
+        {
+            try { Directory.Delete(dir, recursive: true); } catch { }
+        }
+    }
+
+    private sealed class RedirectNameLoopback : IDisposable
+    {
+        private readonly HttpListener _listener = new();
+        public string BaseUrl { get; }
+        public byte[] Body { get; } = Encoding.UTF8.GetBytes(
+            "PK\x03\x04fake-zip-payload-for-redirect-name-test\n");
+        private const string FinalPath = "/get_zip_ngen_free/29475082/The%20Strain%20S01%20Complete.zip";
+
+        public RedirectNameLoopback()
+        {
+            int port;
+            using (var tcp = new TcpListener(IPAddress.Loopback, 0))
+            {
+                tcp.Start();
+                port = ((IPEndPoint)tcp.LocalEndpoint).Port;
+            }
+            BaseUrl = $"http://127.0.0.1:{port}/";
+            _listener.Prefixes.Add(BaseUrl);
+            _listener.Start();
+            _ = Task.Run(AcceptLoop);
+        }
+
+        private async Task AcceptLoop()
+        {
+            while (_listener.IsListening)
+            {
+                HttpListenerContext ctx;
+                try { ctx = await _listener.GetContextAsync(); }
+                catch { return; }
+                _ = Task.Run(() => Serve(ctx));
+            }
+        }
+
+        private void Serve(HttpListenerContext ctx)
+        {
+            try
+            {
+                var req = ctx.Request;
+                var resp = ctx.Response;
+                // Signed hand-off: redirect to the real file URL (filename in path).
+                if (req.Url!.AbsolutePath.StartsWith("/download/archive/", StringComparison.OrdinalIgnoreCase))
+                {
+                    resp.StatusCode = 302;
+                    resp.RedirectLocation = FinalPath;
+                    resp.OutputStream.Close();
+                    return;
+                }
+                // Final file: bare `attachment` disposition (no filename), zip type.
+                if (req.HttpMethod == "HEAD")
+                {
+                    resp.StatusCode = 200;
+                    resp.ContentType = "application/zip";
+                    resp.ContentLength64 = Body.Length;
+                    resp.AddHeader("Content-Disposition", "attachment");
+                    resp.AddHeader("Accept-Ranges", "bytes");
+                    resp.OutputStream.Close();
+                    return;
+                }
+                string? range = req.Headers["Range"];
+                if (range is not null && range.StartsWith("bytes=", StringComparison.Ordinal))
+                {
+                    string spec = range["bytes=".Length..];
+                    string[] parts = spec.Split('-');
+                    long start = long.Parse(parts[0]);
+                    long end = parts.Length > 1 && parts[1].Length > 0 ? long.Parse(parts[1]) : Body.Length - 1;
+                    end = Math.Min(end, Body.Length - 1);
+                    byte[] payload = Body[(int)start..((int)end + 1)];
+                    resp.StatusCode = 206;
+                    resp.AddHeader("Content-Range", $"bytes {start}-{end}/{Body.Length}");
+                    resp.ContentType = "application/zip";
+                    resp.AddHeader("Content-Disposition", "attachment");
+                    resp.AddHeader("Accept-Ranges", "bytes");
+                    resp.ContentLength64 = payload.Length;
+                    resp.OutputStream.Write(payload, 0, payload.Length);
+                    resp.OutputStream.Close();
+                    return;
+                }
+                resp.StatusCode = 200;
+                resp.ContentType = "application/zip";
+                resp.AddHeader("Content-Disposition", "attachment");
+                resp.AddHeader("Accept-Ranges", "bytes");
+                resp.ContentLength64 = Body.Length;
+                resp.OutputStream.Write(Body, 0, Body.Length);
+                resp.OutputStream.Close();
+            }
+            catch
+            {
+                try { ctx.Response.Abort(); } catch { }
+            }
+        }
+
+        public void Dispose()
+        {
+            try { _listener.Stop(); } catch { }
+            try { _listener.Close(); } catch { }
+        }
+    }
 }

@@ -1,0 +1,100 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 4 * * 1"  # weekly stress/perf
+
+jobs:
+  build:
+    name: Build
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "8.0.x"
+      - run: dotnet restore WDM.sln
+      - run: dotnet build WDM.sln -c Release --no-restore --nologo
+
+  test-fast:
+    name: Unit + Integration + Range + Security
+    runs-on: windows-latest
+    needs: build
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "8.0.x"
+      - run: dotnet restore WDM.sln
+      - name: Fast tests (exclude Stress/Performance)
+        run: dotnet test WDM.sln -c Release --no-restore --nologo --collect:"XPlat Code Coverage" --filter "Category!=Stress&Category!=Performance" --logger "trx;LogFileName=fast.trx"
+      - name: Upload coverage + logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fast-test-results
+          path: |
+            src/WDM.Tests/TestResults/**/*.trx
+            src/WDM.Tests/TestResults/**/coverage.cobertura.xml
+          if-no-files-found: ignore
+
+  extension-static:
+    name: Extension Static Checks
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: JS syntax (node --check)
+        shell: pwsh
+        run: |
+          $err = 0
+          Get-ChildItem src/WDM.BrowserExtension -Filter *.js -Recurse | ForEach-Object {
+            node --check $_.FullName 2>&1 | Out-Null
+            if ($LASTEXITCODE -ne 0) { Write-Host "::error::JS syntax error in $($_.FullName)"; $err++ }
+          }
+          if ($err -gt 0) { exit 1 }
+      - name: Manifest + endpoint contract tests
+        run: dotnet test src/WDM.Tests/WDM.Tests.csproj -c Release --nologo --filter "Category=Browser|Category=E2E|Category=Media"
+
+  packaging-smoke:
+    name: Packaging Smoke
+    runs-on: windows-latest
+    needs: test-fast
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "8.0.x"
+      - name: Publish self-contained
+        run: dotnet publish src/WDM.App/WDM.csproj -c Release -r win-x64 --self-contained true -o staging
+      - name: Artifact exists
+        shell: pwsh
+        run: |
+          if (!(Test-Path "staging/WDM.exe")) { Write-Host "::error::staging/WDM.exe missing"; exit 1 }
+          $a = Get-Content src/WDM.App/WDM.csproj -Raw
+          $i = Get-Content src/WDM.Setup/installer.iss -Raw
+          if ($a -notmatch "<Version>") { Write-Host "::error::Version missing in csproj"; exit 1 }
+          if ($i -notmatch "MyAppVersion") { Write-Host "::error::MyAppVersion missing in installer.iss"; exit 1 }
+
+  stress-nightly:
+    name: Stress + Perf (nightly)
+    runs-on: windows-latest
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "8.0.x"
+      - run: dotnet restore WDM.sln
+      - run: dotnet test src/WDM.Tests/WDM.Tests.csproj -c Release --nologo --filter "Category=Stress|Category=Performance" --logger "trx;LogFileName=stress.trx"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: stress-results
+          path: src/WDM.Tests/TestResults/*.trx
+          if-no-files-found: ignore

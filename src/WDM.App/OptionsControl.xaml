@@ -1,0 +1,865 @@
+<UserControl x:Class="WDM.OptionsControl"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
+             UseLayoutRounding="True"
+             SnapsToDevicePixels="True"
+             TextOptions.TextFormattingMode="Ideal"
+             TextOptions.TextRenderingMode="Auto"
+             RenderOptions.ClearTypeHint="Enabled"
+             Background="{DynamicResource Brush.Bg}">
+    <Grid>
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="200" />  <!-- Left Navigation Rail -->
+            <ColumnDefinition Width="1" />    <!-- Subtle 1px Divider -->
+            <ColumnDefinition Width="*" />    <!-- Right Settings Inspector -->
+        </Grid.ColumnDefinitions>
+
+        <!-- Left Navigation Rail -->
+        <Border Grid.Column="0" Background="{DynamicResource Brush.Sidebar}" Padding="10,12,10,12">
+            <DockPanel LastChildFill="True">
+                <!-- Top Back Navigation Button -->
+                <ui:Button DockPanel.Dock="Top" Appearance="Secondary" Click="CloseClick" Height="32" Padding="10,0" Margin="0,0,0,14" ToolTip="Return to downloads list (Esc)">
+                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                        <Path Data="M 6,1 L 2,5 L 6,9 M 2,5 L 11,5"
+                              Stroke="{DynamicResource Brush.Accent}"
+                              StrokeThickness="1.5"
+                              StrokeStartLineCap="Round"
+                              StrokeEndLineCap="Round"
+                              VerticalAlignment="Center"
+                              Margin="0,0,8,0"
+                              SnapsToDevicePixels="True" />
+                        <TextBlock Text="Downloads" FontSize="12" FontWeight="SemiBold" VerticalAlignment="Center" Foreground="{DynamicResource Brush.Text}" />
+                    </StackPanel>
+                </ui:Button>
+
+                <!-- Bottom Auto-Save Subtle Indicator -->
+                <Border DockPanel.Dock="Bottom" Margin="2,8,2,0">
+                    <TextBlock Text="Changes apply automatically" FontSize="10.5" Foreground="{DynamicResource Brush.TextMuted}" TextWrapping="Wrap" HorizontalAlignment="Center" TextAlignment="Center" />
+                </Border>
+
+                <!-- Navigation Items List -->
+                <StackPanel>
+                    <!-- 1. Connection -->
+                    <RadioButton Style="{StaticResource Button.SettingsTab}" IsChecked="True" Checked="Tab_Checked" Tag="Connection" Padding="10,7">
+                        <StackPanel Orientation="Horizontal">
+                            <ui:SymbolIcon Symbol="NetworkCheck24" FontSize="16" Margin="0,0,10,0" VerticalAlignment="Center" Foreground="{DynamicResource Brush.TextDim}" />
+                            <TextBlock Text="Connection" FontSize="12" VerticalAlignment="Center" />
+                        </StackPanel>
+                    </RadioButton>
+
+                    <!-- 2. Folders & Routing -->
+                    <RadioButton Style="{StaticResource Button.SettingsTab}" Checked="Tab_Checked" Tag="Folders" Padding="10,7">
+                        <StackPanel Orientation="Horizontal">
+                            <ui:SymbolIcon Symbol="Folder24" FontSize="16" Margin="0,0,10,0" VerticalAlignment="Center" Foreground="{DynamicResource Brush.TextDim}" />
+                            <TextBlock Text="Folders &amp; Routing" FontSize="12" VerticalAlignment="Center" />
+                        </StackPanel>
+                    </RadioButton>
+
+                    <!-- 3. Browser Integration -->
+                    <RadioButton Style="{StaticResource Button.SettingsTab}" Checked="Tab_Checked" Tag="Browser" Padding="10,7">
+                        <StackPanel Orientation="Horizontal">
+                            <ui:SymbolIcon Symbol="WindowApps24" FontSize="16" Margin="0,0,10,0" VerticalAlignment="Center" Foreground="{DynamicResource Brush.TextDim}" />
+                            <TextBlock Text="Browser Integration" FontSize="12" VerticalAlignment="Center" />
+                        </StackPanel>
+                    </RadioButton>
+
+                    <!-- 4. YouTube & Media -->
+                    <RadioButton Style="{StaticResource Button.SettingsTab}" Checked="Tab_Checked" Tag="YouTube" Padding="10,7">
+                        <StackPanel Orientation="Horizontal">
+                            <ui:SymbolIcon Symbol="VideoClip24" FontSize="16" Margin="0,0,10,0" VerticalAlignment="Center" Foreground="{DynamicResource Brush.TextDim}" />
+                            <TextBlock Text="YouTube &amp; Media" FontSize="12" VerticalAlignment="Center" />
+                        </StackPanel>
+                    </RadioButton>
+
+                    <!-- 5. Behavior -->
+                    <RadioButton Style="{StaticResource Button.SettingsTab}" Checked="Tab_Checked" Tag="Behavior" Padding="10,7">
+                        <StackPanel Orientation="Horizontal">
+                            <ui:SymbolIcon Symbol="Window24" FontSize="16" Margin="0,0,10,0" VerticalAlignment="Center" Foreground="{DynamicResource Brush.TextDim}" />
+                            <TextBlock Text="Behavior" FontSize="12" VerticalAlignment="Center" />
+                        </StackPanel>
+                    </RadioButton>
+
+                    <!-- 6. Appearance -->
+                    <RadioButton Style="{StaticResource Button.SettingsTab}" Checked="Tab_Checked" Tag="Appearance" Padding="10,7">
+                        <StackPanel Orientation="Horizontal">
+                            <ui:SymbolIcon Symbol="Color24" FontSize="16" Margin="0,0,10,0" VerticalAlignment="Center" Foreground="{DynamicResource Brush.TextDim}" />
+                            <TextBlock Text="Appearance" FontSize="12" VerticalAlignment="Center" />
+                        </StackPanel>
+                    </RadioButton>
+
+                    <!-- 7. Updates -->
+                    <RadioButton Style="{StaticResource Button.SettingsTab}" Checked="Tab_Checked" Tag="Updates" Padding="10,7">
+                        <StackPanel Orientation="Horizontal">
+                            <ui:SymbolIcon Symbol="ArrowDownload24" FontSize="16" Margin="0,0,10,0" VerticalAlignment="Center" Foreground="{DynamicResource Brush.TextDim}" />
+                            <TextBlock Text="Updates" FontSize="12" VerticalAlignment="Center" />
+                        </StackPanel>
+                    </RadioButton>
+
+                    <!-- 8. Advanced -->
+                    <RadioButton Style="{StaticResource Button.SettingsTab}" Checked="Tab_Checked" Tag="Advanced" Padding="10,7">
+                        <StackPanel Orientation="Horizontal">
+                            <ui:SymbolIcon Symbol="Wrench24" FontSize="16" Margin="0,0,10,0" VerticalAlignment="Center" Foreground="{DynamicResource Brush.TextDim}" />
+                            <TextBlock Text="Advanced" FontSize="12" VerticalAlignment="Center" />
+                        </StackPanel>
+                    </RadioButton>
+                </StackPanel>
+            </DockPanel>
+        </Border>
+
+        <!-- 1px Vertical Divider -->
+        <Border Grid.Column="1" Background="{DynamicResource Brush.Border}" />
+
+        <!-- Right Content Panels Canvas -->
+        <Border Grid.Column="2" Background="{DynamicResource Brush.Bg}">
+            <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" Padding="24,18,28,36">
+                <Grid>
+                    <!-- 1. PAGE: CONNECTION & SPEED -->
+                    <StackPanel x:Name="PanelConnection" Visibility="Visible">
+                        <TextBlock Text="Connection &amp; Speed" FontSize="18" FontWeight="SemiBold" Foreground="{DynamicResource Brush.Text}" />
+                        <TextBlock Text="Tune how downloads connect, allocate segmented threads, and throttle bandwidth." FontSize="12" Foreground="{DynamicResource Brush.TextMuted}" Margin="0,2,0,16" />
+
+                        <TextBlock Text="Concurrency &amp; segments" FontSize="12.5" FontWeight="SemiBold" Foreground="{DynamicResource Brush.TextDim}" Margin="0,0,0,6" />
+
+                        <ui:CardControl Margin="0,0,0,4">
+                            <ui:CardControl.Header>
+                                <StackPanel>
+                                    <TextBlock Text="Connections per download" FontWeight="Medium" FontSize="13" Foreground="{DynamicResource Brush.Text}" />
+                                    <TextBlock Text="Parallel HTTP range chunk streams per task." FontSize="11.5" Foreground="{DynamicResource Brush.TextMuted}" Margin="0,2,0,0" />
+                                </StackPanel>
+                            </ui:CardControl.Header>
+                            <ComboBox x:Name="ChunksBox" Width="180" Height="32">
+                                <ComboBoxItem Content="Auto (recommended)" Tag="0" />
+                                <ComboBoxItem Content="1 thread" Tag="1" />
+                                <ComboBoxItem Content="2 threads" Tag="2" />
+                                <ComboBoxItem Content="4 threads" Tag="4" />
+                                <ComboBoxItem Content="8 threads" Tag="8" />
+                                <ComboBoxItem Content="16 threads" Tag="16" />
+                            </ComboBox>
+                        </ui:CardControl>
+
+                        <ui:CardControl Margin="0,0,0,12">
+                            <ui:CardControl.Header>
+                                <StackPanel>
+                                    <TextBlock Text="Maximum concurrent downloads" FontWeight="Medium" FontSize="13" Foreground="{DynamicResource Brush.Text}" />
+                                    <TextBlock Text="Limit simultaneous downloads before queueing." FontSize="11.5" Foreground="{DynamicResource Brush.TextMuted}" Margin="0,2,0,0" />
+                                </StackPanel>
+                            </ui:CardControl.Header>
+                            <ComboBox x:Name="MaxConcurrentBox" Width="180" Height="32">
+                                <ComboBoxItem Content="1" />
+                                <ComboBoxItem Content="2" />
+                                <ComboBoxItem Content="3" />
+                                <ComboBoxItem Content="5" />
+                                <ComboBoxItem Content="10" />
+                            </ComboBox>
+                        </ui:CardControl>
+
+                        <TextBlock Text="Retry policy &amp; throttling" FontSize="12.5" FontWeight="SemiBold" Foreground="{DynamicResource Brush.TextDim}" Margin="0,4,0,6" />
+
+                        <ui:CardControl Margin="0,0,0,4">
+                            <ui:CardControl.Header>
+                                <StackPanel>
+                                    <TextBlock Text="Failure retries" FontWeight="Medium" FontSize="13" Foreground="{DynamicResource Brush.Text}" />
+                                    <TextBlock Text="Automatic reconnect attempts before failing." FontSize="11.5" Foreground="{DynamicResource Brush.TextMuted}" Margin="0,2,0,0" />
+                                </StackPanel>
+                            </ui:CardControl.Header>
+                            <ComboBox x:Name="RetriesBox" Width="180" Height="32">
+                                <ComboBoxItem Content="0 (No retries)" />
+                                <ComboBoxItem Content="1 retry" />
+                                <ComboBoxItem Content="2 retries" />
+                                <ComboBoxItem Content="3 retries" />
+                                <ComboBoxItem Content="5 retries" />
+                                <ComboBoxItem Content="10 retries" />
+                            </ComboBox>
+                        </ui:CardControl>
+
+                        <ui:CardControl Margin="0,0,0,4">
+                            <ui:CardControl.Header>
+                                <StackPanel>
+                                    <TextBlock Text="Auto-resume failed downloads" FontWeight="Medium" FontSize="13" Foreground="{DynamicResource Brush.Text}" />
+                                    <TextBlock Text="Re-queue failed downloads about once a minute, up to the retry budget above. Manual pause/cancel always wins." FontSize="11.5" Foreground="{DynamicResource Brush.TextMuted}" Margin="0,2,0,0" TextWrapping="Wrap" MaxWidth="260" HorizontalAlignment="Left" TextAlignment="Left" />
+                                </StackPanel>
+                            </ui:CardControl.Header>
+                            <ui:ToggleSwitch x:Name="AutoResumeBox" />
+                        </ui:CardControl>
+
+                        <TextBlock Text="Download schedule" FontSize="12.5" FontWeight="SemiBold" Foreground="{DynamicResource Brush.TextDim}" Margin="0,4,0,6" />
+
+                        <ui:CardControl Margin="0,0,0,4">
+                            <ui:CardControl.Header>
+                                <StackPanel>
+                                    <TextBlock Text="Download only in time window" FontWeight="Medium" FontSize="13" Foreground="{DynamicResource Brush.Text}" />
+                                    <TextBlock Text="Hold the queue outside the window; resume on re-entry. Manual start always wins." FontSize="11.5" Foreground="{DynamicResource Brush.TextMuted}" Margin="0,2,0,0" TextWrapping="Wrap" MaxWidth="260" HorizontalAlignment="Left" TextAlignment="Left" />
+                                </StackPanel>
+                            </ui:CardControl.Header>
+                            <ui:ToggleSwitch x:Name="SchedulerBox" />
+                        </ui:CardControl>
+
+                        <ui:CardControl Margin="0,0,0,4">
+                            <ui:CardControl.Header>
+                                <StackPanel>
+                                    <TextBlock Text="Window start / stop (HH:mm)" FontWeight="Medium" FontSize="13" Foreground="{DynamicResource Brush.Text}" />
+                                    <TextBlock Text="Overnight windows wrap midnight (22:00–07:00). Equal times = all day." FontSize="11.5" Foreground="{DynamicResource Brush.TextMuted}" Margin="0,2,0,0" TextWrapping="Wrap" MaxWidth="260" HorizontalAlignment="Left" TextAlignment="Left" />
+                                </StackPanel>
+                            </ui:CardControl.Header>
+                            <StackPanel Orientation="Horizontal">
+                                <ui:TextBox x:Name="SchedulerStartBox" Width="80" Height="32" VerticalContentAlignment="Center" FontSize="12" PlaceholderText="22:00" />
+                                <TextBlock Text="–" VerticalAlignment="Center" Margin="6,0" Foreground="{DynamicResource Brush.TextMuted}" />
+                                <ui:TextBox x:Name="SchedulerStopBox" Width="80" Height="32" VerticalContentAlignment="Center" FontSize="12" PlaceholderText="07:00" />
+                            </StackPanel>
+                        </ui:CardControl>
+
+                        <ui:CardControl Margin="0,0,0,4">
+                            <ui:CardControl.Header>
+                                <StackPanel>
+                                    <TextBlock Text="Active days" FontWeight="Medium" FontSize="13" Foreground="{DynamicResource Brush.Text}" />
+                                    <TextBlock Text="The window applies only on checked days." FontSize="11.5" Foreground="{DynamicResource Brush.TextMuted}" Margin="0,2,0,10" />
+                                    <WrapPanel Orientation="Horizontal">
+                                        <CheckBox x:Name="SchedulerDayMonday" Content="Mo" Margin="0,0,10,6" />
+                                        <CheckBox x:Name="SchedulerDayTuesday" Content="Tu" Margin="0,0,10,6" />
+                                        <CheckBox x:Name="SchedulerDayWednesday" Content="We" Margin="0,0,10,6" />
+                                        <CheckBox x:Name="SchedulerDayThursday" Content="Th" Margin="0,0,10,6" />
+                                        <CheckBox x:Name="SchedulerDayFriday" Content="Fr" Margin="0,0,10,6" />
+                                        <CheckBox x:Name="SchedulerDaySaturday" Content="Sa" Margin="0,0,10,6" />
+                                        <CheckBox x:Name="SchedulerDaySunday" Content="Su" Margin="0,0,10,6" />
+                                    </WrapPanel>
+                                </StackPanel>
+                            </ui:CardControl.Header>
+                        </ui:CardControl>
+
+                        <ui:CardControl Margin="0,0,0,12">
+                            <ui:CardControl.Header>
+                                <StackPanel>
+                                    <TextBlock Text="Window speed limit (KB/s)" FontWeight="Medium" FontSize="13" Foreground="{DynamicResource Brush.Text}" />
+                                    <TextBlock Text="Extra bandwidth ceiling inside the window (0 = scheduled full speed)." FontSize="11.5" Foreground="{DynamicResource Brush.TextMuted}" Margin="0,2,0,0" TextWrapping="Wrap" MaxWidth="260" HorizontalAlignment="Left" TextAlignment="Left" />
+                                </StackPanel>
+                            </ui:CardControl.Header>
+                            <ui:TextBox x:Name="SchedulerSpeedBox" Width="180" Height="32" VerticalContentAlignment="Center" FontSize="12" ToolTip="0 = no extra limit" PlaceholderText="0" />
+                        </ui:CardControl>
+
+                        <ui:CardControl Margin="0,0,0,12">
+                            <ui:CardControl.Header>
+                                <StackPanel>
+                                    <TextBlock Text="Global speed limit (KB/s)" FontWeight="Medium" FontSize="13" Foreground="{DynamicResource Brush.Text}" />
+                                    <TextBlock Text="Bandwidth ceiling across transfers (0 = unlimited)." FontSize="11.5" Foreground="{DynamicResource Brush.TextMuted}" Margin="0,2,0,0" />
+                                </StackPanel>
+                            </ui:CardControl.Header>
+                            <ui:TextBox x:Name="SpeedBox" Width="180" Height="32" VerticalContentAlignment="Center" FontSize="12" ToolTip="0 = no limit" PlaceholderText="0" />
+                        </ui:CardControl>
+
+                        <TextBlock Text="Proxy" FontSize="12.5" FontWeight="SemiBold" Foreground="{DynamicResource Brush.TextDim}" Margin="0,4,0,6" />
+
+                        <ui:CardControl Margin="0,0,0,4">
+                            <ui:CardControl.Header>
+                                <StackPanel>
+                                    <TextBlock Text="Use manual HTTP proxy" FontWeight="Medium" FontSize="13" Foreground="{DynamicResource Brush.Text}" />
+                                    <TextBlock Text="Routes downloads, streams and yt-dlp through the proxy. Off = system proxy as before." FontSize="11.5" Foreground="{DynamicResource Brush.TextMuted}" Margin="0,2,0,0" TextWrapping="Wrap" MaxWidth="260" />
+                                </StackPanel>
+                            </ui:CardControl.Header>
+                            <ui:ToggleSwitch x:Name="ProxyBox" />
+                        </ui:CardControl>
+
+                        <ui:CardControl Margin="0,0,0,4">
+                            <ui:CardControl.Header>
+                                <StackPanel>
+                                    <TextBlock Text="Proxy host / port" FontWeight="Medium" FontSize="13" Foreground="{DynamicResource Brush.Text}" />
+                                    <TextBlock Text="Hostname (or http://host:port) and port, e.g. 127.0.0.1 and 8080." FontSize="11.5" Foreground="{DynamicResource Brush.TextMuted}" Margin="0,2,0,0" TextWrapping="Wrap" MaxWidth="260" />
+                                </StackPanel>
+                            </ui:CardControl.Header>
+                            <StackPanel Orientation="Horizontal">
+                                <ui:TextBox x:Name="ProxyHostBox" Width="180" Height="32" VerticalContentAlignment="Center" FontSize="12" PlaceholderText="127.0.0.1" />
+                                <TextBlock Text=":" VerticalAlignment="Center" Margin="6,0" Foreground="{DynamicResource Brush.TextMuted}" />
+                                <ui:TextBox x:Name="ProxyPortBox" Width="70" Height="32" VerticalContentAlignment="Center" FontSize="12" PlaceholderText="8080" />
+                            </StackPanel>
+                        </ui:CardControl>
+
+                        <ui:CardControl Margin="0,0,0,12">
+                            <ui:CardControl.Header>
+                                <StackPanel>
+                                    <TextBlock Text="Proxy login (optional)" FontWeight="Medium" FontSize="13" Foreground="{DynamicResource Brush.Text}" />
+                                    <TextBlock Text="Stored in plaintext in settings.json under your profile." FontSize="11.5" Foreground="{DynamicResource Brush.TextMuted}" Margin="0,2,0,0" TextWrapping="Wrap" MaxWidth="260" />
+                                </StackPanel>
+                            </ui:CardControl.Header>
+                            <StackPanel Orientation="Horizontal">
+                                <ui:TextBox x:Name="ProxyUserBox" Width="124" Height="32" VerticalContentAlignment="Center" FontSize="12" PlaceholderText="Username" Margin="0,0,6,0" />
+                                <ui:TextBox x:Name="ProxyPassBox" Width="124" Height="32" VerticalContentAlignment="Center" FontSize="12" PlaceholderText="Password" />
+                            </StackPanel>
+                        </ui:CardControl>
+                    </StackPanel>
+
+                    <!-- 2. PAGE: FOLDERS & ROUTING -->
+                    <StackPanel x:Name="PanelFolders" Visibility="Collapsed">
+                        <TextBlock Text="Folders &amp; Routing" FontSize="18" FontWeight="SemiBold" Foreground="{DynamicResource Brush.Text}" />
+                        <TextBlock Text="Choose where downloaded files are saved and configure automatic category routing." FontSize="12" Foreground="{DynamicResource Brush.TextMuted}" Margin="0,2,0,16" />
+
+                        <TextBlock Text="Default download location" FontSize="12.5" FontWeight="SemiBold" Foreground="{DynamicResource Brush.TextDim}" Margin="0,0,0,6" />
+
+                        <ui:CardControl Margin="0,0,0,12">
+                            <ui:CardControl.Header>
+                                <StackPanel>
+                                    <TextBlock Text="Default folder" FontWeight="Medium" FontSize="13" Foreground="{DynamicResource Brush.Text}" />
+                                    <TextBlock Text="Location where new downloads are stored by default." FontSize="11.5" Foreground="{DynamicResource Brush.TextMuted}" Margin="0,2,0,0" TextWrapping="Wrap" MaxWidth="260" HorizontalAlignment="Left" TextAlignment="Left" />
+                                </StackPanel>
+                            </ui:CardControl.Header>
+                            <StackPanel Orientation="Horizontal">
+                                <ui:TextBox x:Name="FolderBox" Width="180" Height="32" VerticalContentAlignment="Center" FontSize="12" />
+                                <ui:Button Content="Browse…" Appearance="Secondary" Click="BrowseClick" Margin="8,0,0,0" Height="32" Padding="14,0" />
+                            </StackPanel>
+                        </ui:CardControl>
+
+                        <TextBlock Text="Automatic category routing" FontSize="12.5" FontWeight="SemiBold" Foreground="{DynamicResource Brush.TextDim}" Margin="0,4,0,6" />
+
+                        <ui:CardControl Margin="0,0,0,4">
+                            <ui:CardControl.Header>
+                                <StackPanel>
+                                    <TextBlock Text="Route categories into subfolders" FontWeight="Medium" FontSize="13" Foreground="{DynamicResource Brush.Text}" />
+                                    <TextBlock Text="Automatically sort files into dedicated folders based on category." FontSize="11.5" Foreground="{DynamicResource Brush.TextMuted}" Margin="0,2,0,0" />
+                                </StackPanel>
+                            </ui:CardControl.Header>
+                            <ui:ToggleSwitch x:Name="RouteBox" />
+                        </ui:CardControl>
+
+                        <Border Background="{DynamicResource Brush.Surface}" BorderBrush="{DynamicResource Brush.Border}" BorderThickness="1" CornerRadius="8" Padding="16,14" Margin="0,0,0,12">
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="16" />
+                                    <ColumnDefinition Width="*" />
+                                </Grid.ColumnDefinitions>
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="Auto" />
+                                </Grid.RowDefinitions>
+
+                                <StackPanel Grid.Row="0" Grid.Column="0" Margin="0,0,0,10">
+                                    <TextBlock Text="Videos folder" FontSize="11.5" FontWeight="Medium" Foreground="{DynamicResource Brush.Text}" Margin="0,0,0,4" />
+                                    <ui:TextBox x:Name="VideoFolderBox" Height="32" VerticalContentAlignment="Center" FontSize="12" PlaceholderText="Default folder if blank" />
+                                </StackPanel>
+
+                                <StackPanel Grid.Row="0" Grid.Column="2" Margin="0,0,0,10">
+                                    <TextBlock Text="Music folder" FontSize="11.5" FontWeight="Medium" Foreground="{DynamicResource Brush.Text}" Margin="0,0,0,4" />
+                                    <ui:TextBox x:Name="MusicFolderBox" Height="32" VerticalContentAlignment="Center" FontSize="12" PlaceholderText="Default folder if blank" />
+                                </StackPanel>
+
+                                <StackPanel Grid.Row="1" Grid.Column="0" Margin="0,0,0,10">
+                                    <TextBlock Text="Documents folder" FontSize="11.5" FontWeight="Medium" Foreground="{DynamicResource Brush.Text}" Margin="0,0,0,4" />
+                                    <ui:TextBox x:Name="DocumentFolderBox" Height="32" VerticalContentAlignment="Center" FontSize="12" PlaceholderText="Default folder if blank" />
+                                </StackPanel>
+
+                                <StackPanel Grid.Row="1" Grid.Column="2" Margin="0,0,0,10">
+                                    <TextBlock Text="Archives folder" FontSize="11.5" FontWeight="Medium" Foreground="{DynamicResource Brush.Text}" Margin="0,0,0,4" />
+                                    <ui:TextBox x:Name="CompressedFolderBox" Height="32" VerticalContentAlignment="Center" FontSize="12" PlaceholderText="Default folder if blank" />
+                                </StackPanel>
+
+                                <StackPanel Grid.Row="2" Grid.Column="0">
+                                    <TextBlock Text="Programs folder" FontSize="11.5" FontWeight="Medium" Foreground="{DynamicResource Brush.Text}" Margin="0,0,0,4" />
+                                    <ui:TextBox x:Name="ProgramFolderBox" Height="32" VerticalContentAlignment="Center" FontSize="12" PlaceholderText="Default folder if blank" />
+                                </StackPanel>
+                            </Grid>
+                        </Border>
+                    </StackPanel>
+
+                    <!-- 3. PAGE: BROWSER INTEGRATION -->
+                    <StackPanel x:Name="PanelBrowser" Visibility="Collapsed">
+                        <TextBlock Text="Browser Integration" FontSize="18" FontWeight="SemiBold" Foreground="{DynamicResource Brush.Text}" />
+                        <TextBlock Text="Intercept download links automatically from Google Chrome, Edge, Brave, and Chromium browsers." FontSize="12" Foreground="{DynamicResource Brush.TextMuted}" Margin="0,2,0,16" />
+
+                        <TextBlock Text="Native capture service" FontSize="12.5" FontWeight="SemiBold" Foreground="{DynamicResource Brush.TextDim}" Margin="0,0,0,6" />
+
+                        <ui:CardControl Margin="0,0,0,12">
+                            <ui:CardControl.Header>
+                                <StackPanel>
+                                    <StackPanel Orientation="Horizontal" Margin="0,0,0,2">
+                                        <Ellipse Width="7" Height="7" Fill="{DynamicResource Brush.Success}" Margin="0,0,8,0" VerticalAlignment="Center" />
+                                        <TextBlock Text="Local server running" FontWeight="Medium" FontSize="13" Foreground="{DynamicResource Brush.Text}" VerticalAlignment="Center" />
+                                    </StackPanel>
+                                    <TextBlock Text="Listening on http://127.0.0.1:17530 for extension intercept requests." FontSize="11.5" Foreground="{DynamicResource Brush.TextMuted}" Margin="15,2,0,0" />
+                                </StackPanel>
+                            </ui:CardControl.Header>
+                            <Border Background="{DynamicResource Brush.SurfaceHover}" BorderBrush="{DynamicResource Brush.Border}" BorderThickness="1" CornerRadius="4" Padding="10,4">
+                                <TextBlock Text="Port 17530" FontFamily="{StaticResource Font.App}" FontSize="12" FontWeight="SemiBold" Foreground="{DynamicResource Brush.Text}" />
+                            </Border>
+                        </ui:CardControl>
+
+                        <ui:CardControl Margin="0,0,0,12">
+                            <ui:CardControl.Header>
+                                <StackPanel>
+                                    <TextBlock Text="Minimum auto-catch size" FontWeight="Medium" FontSize="13" Foreground="{DynamicResource Brush.Text}" />
+                                    <TextBlock Text="Only hand browser downloads at or above this size to WDM — smaller files stay in the browser. Unknown sizes always pass. 0 disables the gate." FontSize="11.5" Foreground="{DynamicResource Brush.TextMuted}" Margin="0,2,0,0" TextWrapping="Wrap" MaxWidth="260" HorizontalAlignment="Left" TextAlignment="Left" />
+                                </StackPanel>
+                            </ui:CardControl.Header>
+                            <StackPanel>
+                                <ComboBox x:Name="MinCatchBox" Width="180" Height="32" SelectionChanged="MinCatch_Changed">
+                                    <ComboBoxItem Content="None (catch all)" Tag="0" />
+                                    <ComboBoxItem Content="100 MB" Tag="104857600" />
+                                    <ComboBoxItem Content="200 MB (recommended)" Tag="209715200" />
+                                    <ComboBoxItem Content="300 MB" Tag="314572800" />
+                                    <ComboBoxItem Content="400 MB" Tag="419430400" />
+                                    <ComboBoxItem Content="500 MB" Tag="524288000" />
+                                    <ComboBoxItem Content="750 MB" Tag="786432000" />
+                                    <ComboBoxItem Content="1 GB" Tag="1073741824" />
+                                    <ComboBoxItem Content="Custom…" Tag="custom" />
+                                </ComboBox>
+                                <ui:TextBox x:Name="MinCatchCustomBox" Width="180" Height="32" Margin="0,6,0,0" VerticalContentAlignment="Center" FontSize="12" PlaceholderText="Custom MB, e.g. 250 or 1.5 GB" />
+                            </StackPanel>
+                        </ui:CardControl>
+
+                        <TextBlock Text="Extension deployment" FontSize="12.5" FontWeight="SemiBold" Foreground="{DynamicResource Brush.TextDim}" Margin="0,4,0,6" />
+                        <ui:CardControl Margin="0,0,0,12">
+                            <ui:CardControl.Header>
+                                <StackPanel>
+                                    <TextBlock Text="Installed browsers" FontWeight="Medium" FontSize="13" Foreground="{DynamicResource Brush.Text}" />
+                                    <TextBlock x:Name="BrowserStatusText" Text="Detecting browsers…" TextWrapping="Wrap" FontSize="11.5" Foreground="{DynamicResource Brush.TextMuted}" Margin="0,2,0,0" />
+                                </StackPanel>
+                            </ui:CardControl.Header>
+                            <StackPanel Orientation="Horizontal">
+                                <ui:Button Content="Extension Guide" Appearance="Secondary" Click="OpenGuide_Click" Height="32" Padding="14,0" />
+                            </StackPanel>
+                        </ui:CardControl>
+                    </StackPanel>
+
+                    <!-- 4. PAGE: YOUTUBE & MEDIA -->
+                    <StackPanel x:Name="PanelYouTube" Visibility="Collapsed">
+                        <TextBlock Text="YouTube &amp; Media Downloader" FontSize="18" FontWeight="SemiBold" Foreground="{DynamicResource Brush.Text}" />
+                        <TextBlock Text="Extract and download streaming video, audio, and playlists powered by yt-dlp, FFmpeg, and QuickJS." FontSize="12" Foreground="{DynamicResource Brush.TextMuted}" Margin="0,2,0,16" />
+
+                        <TextBlock Text="Engine status &amp; activation" FontSize="12.5" FontWeight="SemiBold" Foreground="{DynamicResource Brush.TextDim}" Margin="0,0,0,6" />
+
+                        <ui:CardControl Margin="0,0,0,6">
+                            <ui:CardControl.Header>
+                                <StackPanel>
+                                    <TextBlock x:Name="YtStatusBadgeTitle" Text="YouTube Downloader Engine" FontWeight="Medium" FontSize="13" Foreground="{DynamicResource Brush.Text}" />
+                                    <TextBlock x:Name="YtStatusBadgeSub" Text="Inactive — Click Activate to download plugins" FontSize="11.5" Foreground="{DynamicResource Brush.TextMuted}" Margin="0,2,0,0" TextWrapping="Wrap" />
+                                </StackPanel>
+                            </ui:CardControl.Header>
+                            <ui:Button x:Name="YtActivateBtn" Content="Activate" Appearance="Primary" Padding="18,0" Height="32" Click="YtActivateBtn_Click" />
+                        </ui:CardControl>
+
+                        <Border x:Name="YtProgressCard" Background="{DynamicResource Brush.Surface}" BorderBrush="{DynamicResource Brush.Border}" BorderThickness="1" CornerRadius="8" Padding="16,12" Margin="0,0,0,8" Visibility="Collapsed">
+                            <StackPanel>
+                                <DockPanel Margin="0,0,0,6">
+                                    <TextBlock x:Name="YtProgressStatusText" Text="Downloading plugins…" FontSize="12" FontWeight="SemiBold" Foreground="{DynamicResource Brush.Text}" DockPanel.Dock="Left" />
+                                    <TextBlock x:Name="YtProgressPctText" Text="0%" FontSize="12" FontFamily="{StaticResource Font.App}" FontWeight="SemiBold" Foreground="{DynamicResource Brush.Accent}" DockPanel.Dock="Right" />
+                                </DockPanel>
+                                <ProgressBar x:Name="YtProgressBar" Style="{StaticResource ProgressBar.Thin}" Height="4" Minimum="0" Maximum="100" Value="0" Foreground="{DynamicResource Brush.Accent}" />
+                            </StackPanel>
+                        </Border>
+
+                        <StackPanel x:Name="YtPluginsCard" Visibility="Collapsed" Margin="0,6,0,0">
+                            <TextBlock Text="Core plugins &amp; runtimes" FontSize="12.5" FontWeight="SemiBold" Foreground="{DynamicResource Brush.TextDim}" Margin="0,4,0,6" />
+
+                            <Border Background="{DynamicResource Brush.Surface}" BorderBrush="{DynamicResource Brush.Border}" BorderThickness="1" CornerRadius="8" Padding="16,12" Margin="0,0,0,8">
+                                <StackPanel>
+                                    <Grid Margin="0,0,0,8">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="150" />
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+                                        <TextBlock Text="yt-dlp Engine" FontSize="12" FontWeight="Medium" Foreground="{DynamicResource Brush.Text}" />
+                                        <TextBlock x:Name="YtDlpVersionText" Grid.Column="1" Text="v2026.01.15" FontSize="12" FontFamily="{StaticResource Font.App}" Foreground="{DynamicResource Brush.TextDim}" />
+                                        <TextBlock Text="Active" Grid.Column="2" FontSize="12" FontWeight="SemiBold" Foreground="{DynamicResource Brush.Success}" />
+                                    </Grid>
+
+                                    <Border Height="1" Background="{DynamicResource Brush.Border}" Margin="0,0,0,8" />
+
+                                    <Grid Margin="0,0,0,8">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="150" />
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+                                        <TextBlock Text="FFmpeg Converter" FontSize="12" FontWeight="Medium" Foreground="{DynamicResource Brush.Text}" />
+                                        <TextBlock Text="Essentials Build" Grid.Column="1" FontSize="12" Foreground="{DynamicResource Brush.TextDim}" />
+                                        <TextBlock Text="Active" Grid.Column="2" FontSize="12" FontWeight="SemiBold" Foreground="{DynamicResource Brush.Success}" />
+                                    </Grid>
+
+                                    <Border Height="1" Background="{DynamicResource Brush.Border}" Margin="0,0,0,8" />
+
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="150" />
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+                                        <TextBlock Text="QuickJS Runtime" FontSize="12" FontWeight="Medium" Foreground="{DynamicResource Brush.Text}" />
+                                        <TextBlock Text="JS Engine" Grid.Column="1" FontSize="12" Foreground="{DynamicResource Brush.TextDim}" />
+                                        <TextBlock Text="Active" Grid.Column="2" FontSize="12" FontWeight="SemiBold" Foreground="{DynamicResource Brush.Success}" />
+                                    </Grid>
+                                </StackPanel>
+                            </Border>
+                        </StackPanel>
+
+                        <StackPanel x:Name="YtAuthCard" Visibility="Collapsed" Margin="0,6,0,0">
+                            <TextBlock Text="Authentication &amp; access" FontSize="12.5" FontWeight="SemiBold" Foreground="{DynamicResource Brush.TextDim}" Margin="0,4,0,6" />
+
+                            <ui:CardControl Margin="0,0,0,8">
+                                <ui:CardControl.Header>
+                                    <StackPanel>
+                                        <TextBlock Text="YouTube account sign-in" FontWeight="Medium" FontSize="13" Foreground="{DynamicResource Brush.Text}" />
+                                        <TextBlock Text="Unlock age-restricted, private, and member-only media." FontSize="11.5" Foreground="{DynamicResource Brush.TextMuted}" Margin="0,2,0,0" TextWrapping="Wrap" />
+                                    </StackPanel>
+                                </ui:CardControl.Header>
+                                <ui:Button x:Name="NativeSignInBtn" Content="Sign in to YouTube…" Appearance="Secondary" Height="32" Padding="14,0" Click="NativeSignInBtn_Click" />
+                            </ui:CardControl>
+                        </StackPanel>
+                    </StackPanel>
+
+                    <!-- 5. PAGE: BEHAVIOR -->
+                    <StackPanel x:Name="PanelBehavior" Visibility="Collapsed">
+                        <TextBlock Text="Behavior &amp; Automation" FontSize="18" FontWeight="SemiBold" Foreground="{DynamicResource Brush.Text}" />
+                        <TextBlock Text="Configure post-download file integrity verification, automation scripts, and system integration." FontSize="12" Foreground="{DynamicResource Brush.TextMuted}" Margin="0,2,0,16" />
+
+                        <TextBlock Text="File integrity &amp; automation" FontSize="12.5" FontWeight="SemiBold" Foreground="{DynamicResource Brush.TextDim}" Margin="0,0,0,6" />
+
+                        <ui:CardControl Margin="0,0,0,4">
+                            <ui:CardControl.Header>
+                                <StackPanel>
+                                    <TextBlock Text="Compute checksums" FontWeight="Medium" FontSize="13" Foreground="{DynamicResource Brush.Text}" />
+                                    <TextBlock Text="Automatically verify SHA-256 integrity upon download completion." FontSize="11.5" Foreground="{DynamicResource Brush.TextMuted}" Margin="0,2,0,0" />
+                                </StackPanel>
+                            </ui:CardControl.Header>
+                            <ui:ToggleSwitch x:Name="ChecksumBox" />
+                        </ui:CardControl>
+
+                        <ui:CardControl Margin="0,0,0,4">
+                            <ui:CardControl.Header>
+                                <StackPanel>
+                                    <TextBlock Text="HLS output container" FontWeight="Medium" FontSize="13" Foreground="{DynamicResource Brush.Text}" />
+                                    <TextBlock Text="After HLS segments are stitched, remux via bundled ffmpeg into MP4 (compatible), MKV (more tracks), or keep the .TS file." FontSize="11.5" Foreground="{DynamicResource Brush.TextMuted}" Margin="0,2,0,0" TextWrapping="Wrap" MaxWidth="260" HorizontalAlignment="Left" TextAlignment="Left" />
+                                </StackPanel>
+                            </ui:CardControl.Header>
+                            <ComboBox x:Name="HlsContainerBox" Width="180" Height="32" SelectionChanged="HlsContainer_Changed">
+                                <ComboBoxItem Content="MP4 (recommended)" Tag="Mp4" />
+                                <ComboBoxItem Content="MKV" Tag="Mkv" />
+                                <ComboBoxItem Content="Keep .TS (no remux)" Tag="KeepTs" />
+                            </ComboBox>
+                        </ui:CardControl>
+
+                        <ui:CardControl Margin="0,0,0,12">
+                            <ui:CardControl.Header>
+                                <StackPanel>
+                                    <TextBlock Text="Run post-download script" FontWeight="Medium" FontSize="13" Foreground="{DynamicResource Brush.Text}" />
+                                    <TextBlock Text="Execute program or script when a download finishes (passes file path as argument)." FontSize="11.5" Foreground="{DynamicResource Brush.TextMuted}" Margin="0,2,0,0" TextWrapping="Wrap" MaxWidth="260" HorizontalAlignment="Left" TextAlignment="Left" />
+                                </StackPanel>
+                            </ui:CardControl.Header>
+                            <StackPanel Orientation="Horizontal">
+                                <ui:TextBox x:Name="ScriptBox" Width="180" Height="32" VerticalContentAlignment="Center" FontSize="12" PlaceholderText="Optional script path…" />
+                                <ui:Button Content="Browse…" Appearance="Secondary" Click="ScriptBrowseClick" Margin="8,0,0,0" Height="32" Padding="14,0" />
+                            </StackPanel>
+                        </ui:CardControl>
+
+                        <TextBlock Text="Finish automation" FontSize="12.5" FontWeight="SemiBold" Foreground="{DynamicResource Brush.TextDim}" Margin="0,4,0,6" />
+
+                        <ui:CardControl Margin="0,0,0,4">
+                            <ui:CardControl.Header>
+                                <StackPanel>
+                                    <TextBlock Text="Move files when finished" FontWeight="Medium" FontSize="13" Foreground="{DynamicResource Brush.Text}" />
+                                    <TextBlock Text="Relocate completed files into this folder (collisions get numbered names)." FontSize="11.5" Foreground="{DynamicResource Brush.TextMuted}" Margin="0,2,0,0" TextWrapping="Wrap" MaxWidth="260" HorizontalAlignment="Left" TextAlignment="Left" />
+                                </StackPanel>
+                            </ui:CardControl.Header>
+                            <StackPanel>
+                                <ui:ToggleSwitch x:Name="MoveOnFinishBox" Margin="0,0,0,6" />
+                                <StackPanel Orientation="Horizontal">
+                                    <ui:TextBox x:Name="MoveFolderBox" Width="180" Height="32" VerticalContentAlignment="Center" FontSize="12" PlaceholderText="Destination folder…" />
+                                    <ui:Button Content="Browse…" Appearance="Secondary" Click="MoveFolderBrowseClick" Margin="8,0,0,0" Height="32" Padding="14,0" />
+                                </StackPanel>
+                            </StackPanel>
+                        </ui:CardControl>
+
+                        <ui:CardControl Margin="0,0,0,4">
+                            <ui:CardControl.Header>
+                                <StackPanel>
+                                    <TextBlock Text="Remove link after finish" FontWeight="Medium" FontSize="13" Foreground="{DynamicResource Brush.Text}" />
+                                    <TextBlock Text="Drop the list entry when a download completes (the file stays on disk)." FontSize="11.5" Foreground="{DynamicResource Brush.TextMuted}" Margin="0,2,0,0" TextWrapping="Wrap" MaxWidth="260" HorizontalAlignment="Left" TextAlignment="Left" />
+                                </StackPanel>
+                            </ui:CardControl.Header>
+                            <ui:ToggleSwitch x:Name="RemoveLinkBox" />
+                        </ui:CardControl>
+
+                        <ui:CardControl Margin="0,0,0,12">
+                            <ui:CardControl.Header>
+                                <StackPanel>
+                                    <TextBlock Text="Delete finished links after N days" FontWeight="Medium" FontSize="13" Foreground="{DynamicResource Brush.Text}" />
+                                    <TextBlock Text="Auto-remove finished entries older than this (0 = keep). Files stay on disk." FontSize="11.5" Foreground="{DynamicResource Brush.TextMuted}" Margin="0,2,0,0" TextWrapping="Wrap" MaxWidth="260" HorizontalAlignment="Left" TextAlignment="Left" />
+                                </StackPanel>
+                            </ui:CardControl.Header>
+                            <ui:TextBox x:Name="DeleteAfterDaysBox" Width="180" Height="32" VerticalContentAlignment="Center" FontSize="12" ToolTip="0 = keep finished links" PlaceholderText="0" />
+                        </ui:CardControl>
+
+                        <TextBlock Text="System integration &amp; tray" FontSize="12.5" FontWeight="SemiBold" Foreground="{DynamicResource Brush.TextDim}" Margin="0,4,0,6" />
+
+                        <ui:CardControl Margin="0,0,0,4">
+                            <ui:CardControl.Header>
+                                <StackPanel>
+                                    <TextBlock Text="Notify on completion" FontWeight="Medium" FontSize="13" Foreground="{DynamicResource Brush.Text}" />
+                                    <TextBlock Text="Show a Windows desktop notification when a download finishes." FontSize="11.5" Foreground="{DynamicResource Brush.TextMuted}" Margin="0,2,0,0" />
+                                </StackPanel>
+                            </ui:CardControl.Header>
+                            <ui:ToggleSwitch x:Name="NotifyBox" />
+                        </ui:CardControl>
+
+                        <ui:CardControl Margin="0,0,0,4">
+                            <ui:CardControl.Header>
+                                <StackPanel>
+                                    <TextBlock Text="Notify when downloads are added" FontWeight="Medium" FontSize="13" Foreground="{DynamicResource Brush.Text}" />
+                                    <TextBlock Text="Toast when a new download is queued." FontSize="11.5" Foreground="{DynamicResource Brush.TextMuted}" Margin="0,2,0,0" />
+                                </StackPanel>
+                            </ui:CardControl.Header>
+                            <ui:ToggleSwitch x:Name="NotifyAddedBox" />
+                        </ui:CardControl>
+
+                        <ui:CardControl Margin="0,0,0,4">
+                            <ui:CardControl.Header>
+                                <StackPanel>
+                                    <TextBlock Text="Notify when downloads start" FontWeight="Medium" FontSize="13" Foreground="{DynamicResource Brush.Text}" />
+                                    <TextBlock Text="Toast when a queued download begins transferring." FontSize="11.5" Foreground="{DynamicResource Brush.TextMuted}" Margin="0,2,0,0" />
+                                </StackPanel>
+                            </ui:CardControl.Header>
+                            <ui:ToggleSwitch x:Name="NotifyStartedBox" />
+                        </ui:CardControl>
+
+                        <ui:CardControl Margin="0,0,0,4">
+                            <ui:CardControl.Header>
+                                <StackPanel>
+                                    <TextBlock Text="Notify on errors" FontWeight="Medium" FontSize="13" Foreground="{DynamicResource Brush.Text}" />
+                                    <TextBlock Text="Toast with the failure reason when a download fails." FontSize="11.5" Foreground="{DynamicResource Brush.TextMuted}" Margin="0,2,0,0" />
+                                </StackPanel>
+                            </ui:CardControl.Header>
+                            <ui:ToggleSwitch x:Name="NotifyErrorBox" />
+                        </ui:CardControl>
+
+                        <ui:CardControl Margin="0,0,0,4">
+                            <ui:CardControl.Header>
+                                <StackPanel>
+                                    <TextBlock Text="Notification sound" FontWeight="Medium" FontSize="13" Foreground="{DynamicResource Brush.Text}" />
+                                    <TextBlock Text="Play a system sound when a download finishes or fails." FontSize="11.5" Foreground="{DynamicResource Brush.TextMuted}" Margin="0,2,0,0" />
+                                </StackPanel>
+                            </ui:CardControl.Header>
+                            <ui:ToggleSwitch x:Name="NotifySoundBox" />
+                        </ui:CardControl>
+
+                        <ui:CardControl Margin="0,0,0,4">
+                            <ui:CardControl.Header>
+                                <StackPanel>
+                                    <TextBlock Text="Detailed notifications" FontWeight="Medium" FontSize="13" Foreground="{DynamicResource Brush.Text}" />
+                                    <TextBlock Text="Put the file name in the notification title." FontSize="11.5" Foreground="{DynamicResource Brush.TextMuted}" Margin="0,2,0,0" />
+                                </StackPanel>
+                            </ui:CardControl.Header>
+                            <ui:ToggleSwitch x:Name="DetailedNotifyBox" />
+                        </ui:CardControl>
+
+                        <ui:CardControl Margin="0,0,0,4">
+                            <ui:CardControl.Header>
+                                <StackPanel>
+                                    <TextBlock Text="Show download speed in tray" FontWeight="Medium" FontSize="13" Foreground="{DynamicResource Brush.Text}" />
+                                    <TextBlock Text="Show real-time transfer rate tooltip on system tray icon." FontSize="11.5" Foreground="{DynamicResource Brush.TextMuted}" Margin="0,2,0,0" />
+                                </StackPanel>
+                            </ui:CardControl.Header>
+                            <ui:ToggleSwitch x:Name="TrayProgressBox" />
+                        </ui:CardControl>
+
+                        <ui:CardControl Margin="0,0,0,4">
+                            <ui:CardControl.Header>
+                                <StackPanel>
+                                    <TextBlock Text="Minimize to system tray on close" FontWeight="Medium" FontSize="13" Foreground="{DynamicResource Brush.Text}" />
+                                    <TextBlock Text="Keep WDM running quietly in the background when the window is closed." FontSize="11.5" Foreground="{DynamicResource Brush.TextMuted}" Margin="0,2,0,0" />
+                                </StackPanel>
+                            </ui:CardControl.Header>
+                            <ui:ToggleSwitch x:Name="MinimizeToTrayBox" />
+                        </ui:CardControl>
+
+                        <ui:CardControl Margin="0,0,0,4">
+                            <ui:CardControl.Header>
+                                <StackPanel>
+                                    <TextBlock Text="Media fetching (streams, embeds, media links)" FontWeight="Medium" FontSize="13" Foreground="{DynamicResource Brush.Text}" />
+                                    <TextBlock Text="Resolve stream/playlist pages and embedded players (YouTube always works). Off = direct file links only; each blocked item says media fetching is disabled." FontSize="11.5" Foreground="{DynamicResource Brush.TextMuted}" Margin="0,2,0,0" TextWrapping="Wrap" />
+                                </StackPanel>
+                            </ui:CardControl.Header>
+                            <ui:ToggleSwitch x:Name="MediaFetchingBox" />
+                        </ui:CardControl>
+
+                        <ui:CardControl Margin="0,0,0,4">
+                            <ui:CardControl.Header>
+                                <StackPanel>
+                                    <TextBlock Text="Sync video titles from the internet" FontWeight="Medium" FontSize="13" Foreground="{DynamicResource Brush.Text}" />
+                                    <TextBlock Text="When a filename carries no title (e.g. master.ts), fetch it from the source page — official info endpoints first, then page metadata — reusing your capture session. The site sees a second visit to an already-opened page." FontSize="11.5" Foreground="{DynamicResource Brush.TextMuted}" Margin="0,2,0,0" TextWrapping="Wrap" />
+                                </StackPanel>
+                            </ui:CardControl.Header>
+                            <ui:ToggleSwitch x:Name="TitleSyncBox" />
+                        </ui:CardControl>
+
+                        <ui:CardControl Margin="0,0,0,12">
+                            <ui:CardControl.Header>
+                                <StackPanel>
+                                    <TextBlock Text="Launch automatically on Windows startup" FontWeight="Medium" FontSize="13" Foreground="{DynamicResource Brush.Text}" />
+                                    <TextBlock Text="Start WDM minimized in the notification area when Windows starts up." FontSize="11.5" Foreground="{DynamicResource Brush.TextMuted}" Margin="0,2,0,0" />
+                                </StackPanel>
+                            </ui:CardControl.Header>
+                            <ui:ToggleSwitch x:Name="RunAtStartupBox" />
+                        </ui:CardControl>
+                    </StackPanel>
+
+                    <!-- 6. PAGE: APPEARANCE -->
+                    <StackPanel x:Name="PanelAppearance" Visibility="Collapsed">
+                        <TextBlock Text="Appearance" FontSize="18" FontWeight="SemiBold" Foreground="{DynamicResource Brush.Text}" />
+                        <TextBlock Text="Customize color themes, visual contrast, and high-DPI font rendering." FontSize="12" Foreground="{DynamicResource Brush.TextMuted}" Margin="0,2,0,16" />
+
+                        <TextBlock Text="Color theme" FontSize="12.5" FontWeight="SemiBold" Foreground="{DynamicResource Brush.TextDim}" Margin="0,0,0,6" />
+
+                        <ui:CardControl Margin="0,0,0,12">
+                            <ui:CardControl.Header>
+                                <StackPanel>
+                                    <TextBlock Text="Dark theme" FontWeight="Medium" FontSize="13" Foreground="{DynamicResource Brush.Text}" />
+                                    <TextBlock Text="Use Windows 11 dark mode across all application surfaces and dialogs." FontSize="11.5" Foreground="{DynamicResource Brush.TextMuted}" Margin="0,2,0,0" />
+                                </StackPanel>
+                            </ui:CardControl.Header>
+                            <ui:ToggleSwitch x:Name="DarkModeBox" Checked="DarkMode_Changed" Unchecked="DarkMode_Changed" />
+                        </ui:CardControl>
+
+                        <TextBlock Text="Typography &amp; rendering" FontSize="12.5" FontWeight="SemiBold" Foreground="{DynamicResource Brush.TextDim}" Margin="0,4,0,6" />
+
+                        <ui:CardControl Margin="0,0,0,4">
+                            <ui:CardControl.Header>
+                                <StackPanel>
+                                    <TextBlock Text="Type system" FontWeight="Medium" FontSize="13" Foreground="{DynamicResource Brush.Text}" />
+                                    <TextBlock Text="Segoe UI Variable with subpixel ClearType rendering." FontSize="11.5" Foreground="{DynamicResource Brush.TextMuted}" Margin="0,2,0,0" />
+                                </StackPanel>
+                            </ui:CardControl.Header>
+                            <TextBlock Text="Subpixel ClearType" FontSize="12" Foreground="{DynamicResource Brush.TextDim}" />
+                        </ui:CardControl>
+
+                        <ui:CardControl Margin="0,0,0,12">
+                            <ui:CardControl.Header>
+                                <StackPanel>
+                                    <TextBlock Text="Surface hierarchy" FontWeight="Medium" FontSize="13" Foreground="{DynamicResource Brush.Text}" />
+                                    <TextBlock Text="Fluent layered surfaces with subtle 1px border dividers." FontSize="11.5" Foreground="{DynamicResource Brush.TextMuted}" Margin="0,2,0,0" />
+                                </StackPanel>
+                            </ui:CardControl.Header>
+                            <TextBlock Text="Fluent Native" FontSize="12" Foreground="{DynamicResource Brush.TextDim}" />
+                        </ui:CardControl>
+                    </StackPanel>
+
+                    <!-- 7. PAGE: UPDATES -->
+                    <StackPanel x:Name="PanelUpdates" Visibility="Collapsed">
+                        <TextBlock Text="Updates" FontSize="18" FontWeight="SemiBold" Foreground="{DynamicResource Brush.Text}" />
+                        <TextBlock Text="Manage automatic update checks and upgrade to the latest stable release of WDM." FontSize="12" Foreground="{DynamicResource Brush.TextMuted}" Margin="0,2,0,16" />
+
+                        <TextBlock Text="Automatic checks" FontSize="12.5" FontWeight="SemiBold" Foreground="{DynamicResource Brush.TextDim}" Margin="0,0,0,6" />
+
+                        <ui:CardControl Margin="0,0,0,12">
+                            <ui:CardControl.Header>
+                                <StackPanel>
+                                    <TextBlock Text="Check for updates automatically" FontWeight="Medium" FontSize="13" Foreground="{DynamicResource Brush.Text}" />
+                                    <TextBlock Text="Query GitHub for new releases when WDM starts." FontSize="11.5" Foreground="{DynamicResource Brush.TextMuted}" Margin="0,2,0,0" />
+                                </StackPanel>
+                            </ui:CardControl.Header>
+                            <ui:ToggleSwitch x:Name="CheckForUpdatesBox" Checked="UpdateOption_Changed" Unchecked="UpdateOption_Changed" />
+                        </ui:CardControl>
+
+                        <ui:CardControl Margin="0,0,0,12">
+                            <ui:CardControl.Header>
+                                <StackPanel>
+                                    <TextBlock Text="Install updates automatically" FontWeight="Medium" FontSize="13" Foreground="{DynamicResource Brush.Text}" />
+                                    <TextBlock Text="1 behind: delta only. 2+ behind: full package (.NET included). Restarts WDM without asking. Setup.exe / portable zip are for new users only." FontSize="11.5" Foreground="{DynamicResource Brush.TextMuted}" Margin="0,2,0,0" TextWrapping="Wrap" />
+                                </StackPanel>
+                            </ui:CardControl.Header>
+                            <ui:ToggleSwitch x:Name="AutoUpdateBox" Checked="UpdateOption_Changed" Unchecked="UpdateOption_Changed" />
+                        </ui:CardControl>
+
+                        <TextBlock Text="Version status" FontSize="12.5" FontWeight="SemiBold" Foreground="{DynamicResource Brush.TextDim}" Margin="0,4,0,6" />
+
+                        <Border Background="{DynamicResource Brush.Surface}" BorderBrush="{DynamicResource Brush.Border}" BorderThickness="1" CornerRadius="8" Padding="16,14" Margin="0,0,0,12">
+                            <StackPanel>
+                                <Grid Margin="0,0,0,8">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="130" />
+                                        <ColumnDefinition Width="*" />
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Text="Current version:" FontSize="12" Foreground="{DynamicResource Brush.TextMuted}" />
+                                    <TextBlock x:Name="CurrentVersionText" Grid.Column="1" FontSize="12" FontFamily="{StaticResource Font.App}" FontWeight="SemiBold" Foreground="{DynamicResource Brush.Text}" />
+                                </Grid>
+
+                                <Grid Margin="0,0,0,10">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="130" />
+                                        <ColumnDefinition Width="*" />
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Text="Latest version:" FontSize="12" Foreground="{DynamicResource Brush.TextMuted}" />
+                                    <TextBlock x:Name="LatestVersionText" Grid.Column="1" FontSize="12" FontFamily="{StaticResource Font.App}" FontWeight="SemiBold" Foreground="{DynamicResource Brush.Accent}" />
+                                </Grid>
+
+                                <TextBlock x:Name="UpdateStatusText" TextWrapping="Wrap" FontSize="11.5" Foreground="{DynamicResource Brush.TextDim}" Margin="0,0,0,12" />
+
+                                <!-- Update progress (hidden until download starts) -->
+                                <Border x:Name="UpdateProgressPanel" Visibility="Collapsed" Background="{DynamicResource Brush.Surface}" BorderBrush="{DynamicResource Brush.Border}" BorderThickness="1" CornerRadius="6" Padding="12,10" Margin="0,0,0,12">
+                                    <StackPanel>
+                                        <Grid Margin="0,0,0,2">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*" />
+                                                <ColumnDefinition Width="Auto" />
+                                            </Grid.ColumnDefinitions>
+                                            <TextBlock x:Name="UpdateProgressStatusText" Grid.Column="0" Text="Downloading update package…" FontSize="11.5" FontWeight="SemiBold" Foreground="{DynamicResource Brush.Text}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
+                                            <TextBlock x:Name="UpdateProgressPctText" Grid.Column="1" Text="0%" FontSize="11.5" FontFamily="{StaticResource Font.App}" FontWeight="SemiBold" Foreground="{DynamicResource Brush.Accent}" VerticalAlignment="Center" TextAlignment="Right" MinWidth="44" Margin="8,0,0,0" />
+                                        </Grid>
+                                        <ProgressBar x:Name="UpdateProgressBar" Style="{StaticResource ProgressBar.Thin}" Height="6" Minimum="0" Maximum="100" Value="0" Margin="0,6,0,2" Foreground="{DynamicResource Brush.Accent}" />
+                                        <TextBlock x:Name="UpdateProgressDetailText" Text="Only the update package is downloaded (delta if 1 behind, full with .NET if 2+ behind). Setup.exe is for new users only." FontSize="10.5" Foreground="{DynamicResource Brush.TextMuted}" Margin="0,4,0,0" TextWrapping="Wrap" />
+                                    </StackPanel>
+                                </Border>
+
+                                <StackPanel Orientation="Horizontal">
+                                    <ui:Button x:Name="CheckNowButton" Content="Check now" Appearance="Secondary" Click="CheckNowClick" Height="32" Padding="16,0" Margin="0,0,8,0" />
+                                    <ui:Button x:Name="OpenReleaseButton" Content="Open release page" Appearance="Secondary" Click="OpenReleaseClick" Height="32" Padding="16,0" Margin="0,0,8,0" Visibility="Collapsed" />
+                                    <ui:Button x:Name="DownloadInstallButton" Content="Download &amp; Install" Appearance="Primary" Click="DownloadInstallClick" Height="32" Padding="16,0" Visibility="Collapsed" />
+                                </StackPanel>
+                            </StackPanel>
+                        </Border>
+                    </StackPanel>
+
+                    <!-- 8. PAGE: ADVANCED -->
+                    <StackPanel x:Name="PanelAdvanced" Visibility="Collapsed">
+                        <TextBlock Text="Advanced" FontSize="18" FontWeight="SemiBold" Foreground="{DynamicResource Brush.Text}" />
+                        <TextBlock Text="Technical system diagnostics, multi-segment engine configuration, and data management." FontSize="12" Foreground="{DynamicResource Brush.TextMuted}" Margin="0,2,0,16" />
+
+                        <TextBlock Text="Engine &amp; runtime diagnostics" FontSize="12.5" FontWeight="SemiBold" Foreground="{DynamicResource Brush.TextDim}" Margin="0,0,0,6" />
+
+                        <ui:CardControl Margin="0,0,0,4">
+                            <ui:CardControl.Header>
+                                <StackPanel>
+                                    <TextBlock Text="Target runtime" FontWeight="Medium" FontSize="13" Foreground="{DynamicResource Brush.Text}" />
+                                    <TextBlock Text=".NET 8.0 Windows Desktop Runtime (x64) with WPF hardware acceleration." FontSize="11.5" Foreground="{DynamicResource Brush.TextMuted}" Margin="0,2,0,0" />
+                                </StackPanel>
+                            </ui:CardControl.Header>
+                            <TextBlock Text=".NET 8.0" FontFamily="{StaticResource Font.App}" FontSize="12" Foreground="{DynamicResource Brush.TextDim}" />
+                        </ui:CardControl>
+
+                        <ui:CardControl Margin="0,0,0,12">
+                            <ui:CardControl.Header>
+                                <StackPanel>
+                                    <TextBlock Text="Download engine architecture" FontWeight="Medium" FontSize="13" Foreground="{DynamicResource Brush.Text}" />
+                                    <TextBlock Text="Asynchronous multi-segment range worker with stream pooling." FontSize="11.5" Foreground="{DynamicResource Brush.TextMuted}" Margin="0,2,0,0" />
+                                </StackPanel>
+                            </ui:CardControl.Header>
+                            <TextBlock Text="HTTP 206 Partial" FontFamily="{StaticResource Font.App}" FontSize="12" FontWeight="SemiBold" Foreground="{DynamicResource Brush.Success}" />
+                        </ui:CardControl>
+
+                        <TextBlock Text="Storage &amp; cache" FontSize="12.5" FontWeight="SemiBold" Foreground="{DynamicResource Brush.TextDim}" Margin="0,4,0,6" />
+
+                        <ui:CardControl Margin="0,0,0,12">
+                            <ui:CardControl.Header>
+                                <StackPanel>
+                                    <TextBlock Text="Settings storage" FontWeight="Medium" FontSize="13" Foreground="{DynamicResource Brush.Text}" />
+                                    <TextBlock Text="Persisted in %LOCALAPPDATA%\WDM-Data\settings.json with atomic flush." FontSize="11.5" Foreground="{DynamicResource Brush.TextMuted}" Margin="0,2,0,0" />
+                                </StackPanel>
+                            </ui:CardControl.Header>
+                            <Border Background="{DynamicResource Brush.SurfaceHover}" BorderBrush="{DynamicResource Brush.Border}" BorderThickness="1" CornerRadius="4" Padding="10,4">
+                                <TextBlock Text="JSON Store" FontFamily="{StaticResource Font.App}" FontSize="12" Foreground="{DynamicResource Brush.TextDim}" />
+                            </Border>
+                        </ui:CardControl>
+                    </StackPanel>
+                </Grid>
+            </ScrollViewer>
+        </Border>
+    </Grid>
+</UserControl>

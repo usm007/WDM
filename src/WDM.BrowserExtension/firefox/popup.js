@@ -154,6 +154,7 @@ function metaText(m) {
     const type = (m && m.type) || "Video";
     const size = (m && (m.sizeText || (m.size ? formatBytes(m.size) : ""))) || "";
     let head = q ? type + " " + q : type;
+    if (m && m.drm) head += " 🔒 DRM";
     if (size) head += " • " + size;
     return head + " • " + ageText(m && m.time);
   } catch { return ageText(m && m.time); }

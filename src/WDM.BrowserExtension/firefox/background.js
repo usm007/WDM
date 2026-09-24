@@ -31,6 +31,10 @@ const tabMediaMap = new Map();
 // Opaque URLs awaiting verification via observed response headers
 // (url -> { tabId, time }). Confirmed video only; everything else is dropped.
 const pendingVerify = new Map();
+// Per-request auth replay (FlowPick onSendHeaders pattern): tokenized CDNs
+// gate on Authorization/Bearer headers that cookies.getAll never sees.
+// url -> { auth, time }. Capped + TTL'd; merged into download headers.
+const pendingAuth = new Map();
 setInterval(() => {
   const now = Date.now();
   for (const [url, exp] of loopGuard.entries()) {
@@ -38,6 +42,13 @@ setInterval(() => {
   }
   for (const [url, p] of pendingVerify.entries()) {
     if (now - p.time > 8000) pendingVerify.delete(url);
+  }
+  for (const [url, p] of pendingAuth.entries()) {
+    if (now - p.time > 60000) pendingAuth.delete(url);
+  }
+  if (pendingAuth.size > 500) {
+    const oldest = pendingAuth.keys().next().value;
+    if (oldest) pendingAuth.delete(oldest);
   }
 }, 15000);
 
@@ -169,6 +180,8 @@ webext.runtime.onMessage.addListener((message, sender, sendResponse) => {
           const e = map.get(s.url);
           if (!e) continue;
           if (s.keyUrl && !e.keyUrl) e.keyUrl = s.keyUrl;
+          if (s.drm && !e.drm) e.drm = true;
+          if (s.reqHeaders && !e.reqHeaders) e.reqHeaders = s.reqHeaders;
           if (s.fileName && !e.fileName) e.fileName = s.fileName;
           if (s.quality && !e.quality) e.quality = s.quality;
           if (s.resolution && !e.resolution) e.resolution = s.resolution;
@@ -218,7 +231,7 @@ webext.runtime.onMessage.addListener((message, sender, sendResponse) => {
         const tabId = tabs && tabs[0] ? tabs[0].id : null;
         const map = tabId != null ? tabMediaMap.get(tabId) : null;
         const media = map
-          ? Array.from(map.values()).map(i => ({ url: i.url, label: i.label, type: i.type, time: i.time, keyUrl: i.keyUrl || null, quality: i.quality || parseQualityFromUrl(i.url) || null, resolution: i.resolution || null, size: i.size || null, sizeText: i.size ? formatBytes(i.size) : null, pageTitle: i.pageTitle || null, fileName: i.fileName || null }))
+          ? Array.from(map.values()).map(i => ({ url: i.url, label: i.label, type: i.type, time: i.time, keyUrl: i.keyUrl || null, quality: i.quality || parseQualityFromUrl(i.url) || null, resolution: i.resolution || null, size: i.size || null, sizeText: i.size ? formatBytes(i.size) : null, pageTitle: i.pageTitle || null, fileName: i.fileName || null, drm: !!i.drm, reqHeaders: i.reqHeaders || null }))
           : [];
         sendResponse({ media, wdmActive: isWdmActive });
       } catch (err) {
@@ -335,6 +348,14 @@ webext.runtime.onMessage.addListener((message, sender, sendResponse) => {
         } catch {}
         p.headers = p.headers || {};
         if (!p.headers["User-Agent"] && !p.headers["user-agent"]) p.headers["User-Agent"] = navigator.userAgent;
+        // Replay per-request Authorization captured by onSendHeaders so
+        // token-gated CDNs accept the desktop request (cookies alone 403).
+        try {
+          const stash = (p.reqHeaders) || ((p.url && pendingAuth.get(p.url)) ? { "Authorization": pendingAuth.get(p.url).auth } : null);
+          if (stash && stash.Authorization && !p.headers["Authorization"] && !p.headers["authorization"]) {
+            p.headers["Authorization"] = stash.Authorization;
+          }
+        } catch {}
         const r = await fetch(`${WDM_HOST}/download`, {
           method: "POST",
           headers: wdmAuthHeaders({ "Content-Type": "application/json" }),
@@ -416,6 +437,15 @@ function isMediaResponse(details) {
   const cdisp = (getHeader(headers, "content-disposition") || "").toLowerCase();
   const clen = parseInt(getHeader(headers, "content-length") || "0", 10);
   const ext = getFileExt(url);
+  // FlowPick-style 206 guard: ranged preview chunks (bytes N-, N>0) are not
+  // downloadable items. Only byte-0 206s pass; manifests are 200 anyway.
+  if (status === 206) {
+    try {
+      const cr = getHeader(headers, "content-range") || "";
+      const m = /bytes\s+(\d+)-/i.exec(cr);
+      if (m && parseInt(m[1], 10) > 0 && !/\.m3u8(\?|$)|\.mpd(\?|$)/i.test(url)) return false;
+    } catch {}
+  }
 
   // Audio is never floating-button media (hard deny beats every other signal).
   if (IDM_AUDIO_RE.test(url)) return false;
@@ -552,6 +582,7 @@ function registerTabMedia(tabId, url, hint, extra) {
   if (known) {
     if (!known.quality && extraQuality) known.quality = extraQuality;
     if (!known.size && extraSize) known.size = extraSize;
+    if (extra && extra.reqHeaders && !known.reqHeaders) known.reqHeaders = extra.reqHeaders;
     if (!known.fileName && cdName) {
       known.fileName = cdName;
       const stem = cdLabelStem(cdName);
@@ -577,7 +608,7 @@ function registerTabMedia(tabId, url, hint, extra) {
   // Bad"); the pageTitle rides along so iframe content scripts can drop their
   // provider-shell title ("Viduki.net Api 1").
   let pageTitle = "";
-  const info = { url, label: label || "Video", type: kind, time: Date.now(), quality, size, pageTitle: "", fileName: cdName || null };
+  const info = { url, label: label || "Video", type: kind, time: Date.now(), quality, size, pageTitle: "", fileName: cdName || null, reqHeaders: (extra && extra.reqHeaders) || null, drm: (extra && extra.drm) || false };
   map.set(url, info);
   updateBadge(tabId);
   // Resolve a display title for generic basenames without blocking registration.
@@ -606,6 +637,35 @@ function registerTabMedia(tabId, url, hint, extra) {
 
 // Hook webRequest for media streams (background side, covers workers/CSP bypass)
 try {
+  // Stash per-request Authorization so token-gated CDNs replay on download.
+  // Cheap filter: media-ish URLs or pending opaque verifications only.
+  if (webext.webRequest && webext.webRequest.onSendHeaders) {
+    try {
+      webext.webRequest.onSendHeaders.addListener((details) => {
+        try {
+          const url = details.url || "";
+          if (!/^https?:\/\//i.test(url) || isYouTubeUrl(url)) return;
+          if (!pendingVerify.has(url) &&
+              !IDM_HLS_RE.test(url) && !IDM_DASH_RE.test(url) && !IDM_VIDEO_RE.test(url)) return;
+          const hdrs = details.requestHeaders || [];
+          let auth = null;
+          for (const h of hdrs) {
+            try {
+              const n = (h.name || "").toLowerCase();
+              if (n === "authorization" && h.value) { auth = h.value; break; }
+            } catch {}
+          }
+          if (auth) {
+            pendingAuth.set(url, { auth, time: Date.now() });
+            if (pendingAuth.size > 500) {
+              const oldest = pendingAuth.keys().next().value;
+              if (oldest) pendingAuth.delete(oldest);
+            }
+          }
+        } catch {}
+      }, { urls: ["<all_urls>"] }, ["requestHeaders"]);
+    } catch {}
+  }
   if (webext.webRequest && webext.webRequest.onHeadersReceived) {
     webext.webRequest.onHeadersReceived.addListener((details) => {
       try {
@@ -620,7 +680,9 @@ try {
         // extra requests, no CORS issues). Video/HLS/DASH confirms, else drop.
         const pend = pendingVerify.get(details.url);
         const cdName = parseCdFileName(getHeader(details.responseHeaders, "content-disposition") || "");
-        const hintExtra = (observedSize || cdName) ? { size: observedSize, fileName: cdName || null } : null;
+        const authHit = pendingAuth.get(details.url);
+        const reqHeaders = authHit && authHit.auth ? { "Authorization": authHit.auth } : null;
+        const hintExtra = (observedSize || cdName || reqHeaders) ? { size: observedSize, fileName: cdName || null, reqHeaders } : null;
         if (pend) {
           pendingVerify.delete(details.url);
           if (pend.tabId === details.tabId) {
@@ -678,6 +740,8 @@ async function pushPageMedia() {
           quality: info.quality || null,
           pageTitle: info.pageTitle || "",
           time: info.time || 0,
+          drm: !!info.drm,
+          reqHeaders: info.reqHeaders || null,
         });
       }
       let tabTitle = "";
@@ -831,6 +895,12 @@ async function sendBatchToWdm(items) {
       if (cookie && !headers["Cookie"] && !headers["cookie"]) headers["Cookie"] = cookie;
     } catch {}
     if (!headers["User-Agent"] && !headers["user-agent"]) headers["User-Agent"] = navigator.userAgent;
+    try {
+      const stash = (it.reqHeaders) || ((it.url && pendingAuth.get(it.url)) ? { "Authorization": pendingAuth.get(it.url).auth } : null);
+      if (stash && stash.Authorization && !headers["Authorization"] && !headers["authorization"]) {
+        headers["Authorization"] = stash.Authorization;
+      }
+    } catch {}
     try {
       if (!headers["Origin"] && !headers["origin"] && it.referer && /^https?:\/\//i.test(it.referer)) {
         headers["Origin"] = new URL(it.referer).origin;

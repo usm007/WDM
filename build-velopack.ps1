@@ -12,7 +12,7 @@ if (-not $PSBoundParameters.ContainsKey('SelfContained')) { $SelfContained = $tr
 $ErrorActionPreference = "Stop"
 
 if (-not $Version) {
-    $csproj = Join-Path $PSScriptRoot "src\WDM\WDM.csproj"
+    $csproj = Join-Path $PSScriptRoot "src\WDM.App\WDM.csproj"
     [xml]$xml = Get-Content $csproj
     $Version = $xml.Project.PropertyGroup.Version
     if (-not $Version) { $Version = "2.7.3" }
@@ -28,9 +28,9 @@ if (-not (Test-Path $outFull)) { New-Item -ItemType Directory -Path $outFull -Fo
 
 Write-Host "Publishing WDM $Version -> $publishFull (SelfContained=$SelfContained Framework=$Framework)"
 if ($SelfContained) {
-    dotnet publish src/WDM/WDM.csproj -c Release -r win-x64 --self-contained true -o $publishFull
+    dotnet publish src/WDM.App/WDM.csproj -c Release -r win-x64 --self-contained true -o $publishFull
 } else {
-    dotnet publish src/WDM/WDM.csproj -c Release -o $publishFull
+    dotnet publish src/WDM.App/WDM.csproj -c Release -o $publishFull
 }
 
 # Ensure vpk is available
@@ -61,8 +61,8 @@ if (Test-Path $releasesLegacy) {
     } catch { }
 }
 
-$iconPath = Join-Path $PSScriptRoot "src\WDM\Assets\WDM.ico"
-$logoPath = Join-Path $PSScriptRoot "src\WDM\Assets\logo.png"
+$iconPath = Join-Path $PSScriptRoot "src\WDM.App\Assets\WDM.ico"
+$logoPath = Join-Path $PSScriptRoot "src\WDM.App\Assets\logo.png"
 
 $packArgs = @("pack", "--packId", "WDM", "--packVersion", $Version, "--packDir", $publishFull, "--mainExe", "WDM.exe", "--outputDir", $outFull)
 if (Test-Path $iconPath) { $packArgs += @("--icon", $iconPath) }

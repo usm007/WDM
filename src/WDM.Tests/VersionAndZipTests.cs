@@ -7,6 +7,22 @@ namespace WDM.Tests;
 public sealed class VersionAndZipTests
 {
     [Fact]
+    public void DisplayVersion_MatchesBakedTagOrNumericFallback()
+    {
+        // What About shows: the baked WdmTestTag when present (test installers),
+        // otherwise M.m.b. This passes under both build flavors.
+        string? tag = null;
+        foreach (var attr in typeof(UpdateChecker).Assembly.GetCustomAttributes(typeof(AssemblyMetadataAttribute), false))
+        {
+            if (attr is AssemblyMetadataAttribute meta && meta.Key == "WdmTestTag" &&
+                !string.IsNullOrWhiteSpace(meta.Value))
+                tag = meta.Value.Trim();
+        }
+        var v = UpdateChecker.CurrentVersion;
+        Assert.Equal(tag ?? $"{v.Major}.{v.Minor}.{v.Build}", UpdateChecker.DisplayVersion);
+    }
+
+    [Fact]
     public void ToSystemVersion_MapsSemVer()
     {
         var sem = NuGet.Versioning.SemanticVersion.Parse("2.7.2");

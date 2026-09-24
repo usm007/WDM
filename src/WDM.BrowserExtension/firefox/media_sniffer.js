@@ -77,6 +77,13 @@
       try { if (new URL(d.url).origin !== location.origin) return; } catch { return; }
       registerMediaStream(d.url, "Video");
     }
+    // MAIN-hook DRM signal (EME encrypted event / setMediaKeys in page world).
+    if (d.type === "WDM_DRM_DETECT") {
+      try {
+        emeDrm = true;
+        markDrmEntries();
+      } catch {}
+    }
     // MAIN-hook MEGA session id (page localStorage is invisible to this world).
     if (d.type === "WDM_MEGA_SID" && typeof d.sid === "string") {
       try {
@@ -131,6 +138,22 @@
   // Live decoded frame height from the playing <video> (e.g. 1080). Used as a
   // last-resort quality signal when URLs are fully tokenized.
   let liveVideoHeight = 0;
+  // EME DRM latch (media-sniffer/flowpick pattern): once any `encrypted`
+  // event or MediaKeys request fires, Widevine/PlayReady protects playback —
+  // blob/HLS entries without a keyUrl are tagged DRM-locked, not silently
+  // listed as downloadable.
+  let emeDrm = false;
+  function markDrmEntries() {
+    try {
+      for (const e of detectedStreams.values()) {
+        if (e && !e.keyUrl) e.drm = true;
+      }
+    } catch {}
+  }
+  // Isolated-world EME fallback (the MAIN hook also notifies via postMessage).
+  try {
+    document.addEventListener("encrypted", () => { try { emeDrm = true; markDrmEntries(); } catch {} }, true);
+  } catch {}
 
   function isProviderTitle(t) {
     try {
@@ -389,7 +412,8 @@
       },
       pageTitle: title,
       streamType: streamType || "auto",
-      keyUrl: (entry && entry.keyUrl) || playlistKeyHints.get(url) || null
+      keyUrl: (entry && entry.keyUrl) || playlistKeyHints.get(url) || null,
+      drm: !!(entry && entry.drm)
     };
 
     try {
@@ -697,6 +721,7 @@
         if (isProviderTitle(rawLabel)) rawLabel = s.pageTitle && !isProviderTitle(s.pageTitle) ? s.pageTitle : (realTitle() || rawLabel);
         let pretty = rawLabel;
         let badge = s.type || "Video";
+        if (s.drm) badge = badge + " \uD83D\uDD12";
         if (q && pretty.toLowerCase().indexOf(q.toLowerCase()) < 0) badge = badge + " " + q;
         // Build DOM with textContent/setAttribute only — never innerHTML with
         // attacker-controlled URLs/labels (XSS via title="..." breakout).
@@ -902,6 +927,7 @@
           }
         }
         if (!existing.quality && existing.type === "HLS") probeHlsQuality(url);
+        if (emeDrm && (url.startsWith("blob:") || existing.type === "HLS" || existing.type === "DASH")) existing.drm = true;
       } catch {}
       return;
     }
@@ -958,7 +984,7 @@
     let resolution = (extra && extra.resolution) || null;
     let size = (extra && extra.size) || null;
     const cdFileName = (extra && extra.fileName) || null;
-    const streamInfo = { url, label, type, time: Date.now(), quality: quality || null, resolution: resolution || null, size: size || null, pageTitle: realTitle() || null, fileName: cdFileName };
+    const streamInfo = { url, label, type, time: Date.now(), quality: quality || null, resolution: resolution || null, size: size || null, pageTitle: realTitle() || null, fileName: cdFileName, drm: !!(emeDrm && (url.startsWith("blob:") || type === "HLS" || type === "DASH")) };
     detectedStreams.set(url, streamInfo);
     // Tokenized HLS masters hide rendition quality in the URL — probe the
     // playlist once for RESOLUTION so the badge can show "HLS 1080p".

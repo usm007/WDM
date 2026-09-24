@@ -9,7 +9,7 @@ $dll = Get-ChildItem (Join-Path $env:USERPROFILE ".nuget\packages\wpf-ui") -Recu
     Where-Object { $_.FullName -match "net8\.0-windows" } | Select-Object -First 1
 if (-not $dll) { throw "WPF-UI net8.0-windows DLL not found in NuGet cache. Run dotnet restore first." }
 $bytes = [IO.File]::ReadAllText($dll.FullName)
-$syms = Get-ChildItem (Join-Path $root "src\WDM") -Filter *.xaml -Recurse |
+$syms = Get-ChildItem (Join-Path $root "src\WDM.App") -Filter *.xaml -Recurse |
     Select-String -Pattern 'Symbol="([A-Za-z0-9]+)"' -AllMatches |
     ForEach-Object { $_.Matches } | ForEach-Object { $_.Groups[1].Value } |
     Sort-Object -Unique

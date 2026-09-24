@@ -1,5 +1,5 @@
 ; WDM installer - per-machine (admin).
-; Delta updates (patch-only, no wizard) are handled by Velopack (src/WDM/Services/VelopackUpdateService.cs)
+; Delta updates (patch-only, no wizard) are handled by Velopack (src/WDM.App/Services/VelopackUpdateService.cs)
 ; via GitHub Releases nupkg/RELEASES. This Inno installer remains for new users and as fallback
 ; for portable/dev builds where Velopack is not active. It installs per-machine to {autopf}\WDM
 ; (admin required) and preserves user data on updates (see CurStepChanged).

@@ -12,7 +12,7 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\WDM\WDM.csproj" />
+    <ProjectReference Include="..\WDM.App\WDM.csproj" />
   </ItemGroup>
 
   <ItemGroup>

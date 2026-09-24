@@ -168,7 +168,7 @@
     var mseStores = new WeakMap();
     function mseStore(ms) {
       var st = mseStores.get(ms);
-      if (!st) { st = { mime: "", parts: [], bytes: 0, url: null, minted: 0, done: false }; mseStores.set(ms, st); }
+      if (!st) { st = { mime: "", parts: [], bytes: 0, url: null, minted: 0, done: false, sigs: {} }; mseStores.set(ms, st); }
       return st;
     }
     function mseMint(ms, st) {
@@ -196,8 +196,27 @@
                 if (data instanceof ArrayBuffer) copy = data.slice(0);
                 else if (data && data.buffer instanceof ArrayBuffer) copy = data.buffer.slice(data.byteOffset || 0, (data.byteOffset || 0) + (data.byteLength || 0));
                 if (copy && copy.byteLength) {
-                  if (st.bytes + copy.byteLength > MSE_CAP) st.done = true;
-                  else { st.parts.push(copy); st.bytes += copy.byteLength; }
+                  // media-sniffer sigOf pattern: init segments (moov) re-append
+                  // identically on seeks/quality switches — dedup small repeats
+                  // so the minted blob isn't mostly duplicate headers.
+                  var dup = false;
+                  try {
+                    if (copy.byteLength < 524288) {
+                      var head = new Uint8Array(copy, 0, Math.min(16, copy.byteLength));
+                      var sig = copy.byteLength + ":";
+                      for (var k = 0; k < head.length; k++) sig += head[k].toString(16);
+                      if (st.sigs[sig]) dup = true;
+                      else {
+                        st.sigs[sig] = 1;
+                        var n = 0; for (var key in st.sigs) n++;
+                        if (n > 200) st.sigs = {};
+                      }
+                    }
+                  } catch (e2) {}
+                  if (!dup) {
+                    if (st.bytes + copy.byteLength > MSE_CAP) st.done = true;
+                    else { st.parts.push(copy); st.bytes += copy.byteLength; }
+                  }
                 }
               }
             } catch (e) {}
@@ -210,6 +229,28 @@
       };
     }
   } catch {}
+
+  // EME DRM signal (media-sniffer/flowpick pattern): an `encrypted` event or
+  // MediaKeys request means Widevine/PlayReady — blob/HLS without a keyUrl
+  // is not downloadable. Notify the isolated world to tag entries DRM-locked.
+  function notifyDrm() {
+    try {
+      var target = (window.location.origin && window.location.origin !== "null") ? window.location.origin : "*";
+      window.postMessage({ type: "WDM_DRM_DETECT" }, target);
+    } catch (e) {}
+  }
+  try {
+    document.addEventListener("encrypted", notifyDrm, true);
+    if (window.HTMLMediaElement && HTMLMediaElement.prototype) {
+      var origSetMK = HTMLMediaElement.prototype.setMediaKeys;
+      if (origSetMK) {
+        HTMLMediaElement.prototype.setMediaKeys = function () {
+          try { notifyDrm(); } catch (e) {}
+          return origSetMK.apply(this, arguments);
+        };
+      }
+    }
+  } catch (e) {}
 
   // MEGA sid: once shortly after install (late login) + every 2 minutes.
   try {
