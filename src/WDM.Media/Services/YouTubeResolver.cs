@@ -28,7 +28,7 @@ public sealed record ResolvedQuery
     public List<QualityOption> QualityOptions { get; init; } = new();
 }
 
-public static class MediaResolver
+public static class YouTubeResolver
 {
     public static readonly (string Label, int Height)[] Tiers =
     {

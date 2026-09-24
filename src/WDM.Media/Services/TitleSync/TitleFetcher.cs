@@ -113,7 +113,7 @@ public static class TitleFetcher
                     target = loc.IsAbsoluteUri ? loc.ToString() : new Uri(new Uri(target), loc).ToString();
                     // Provider open-redirects must not become intranet probes:
                     // stop following when the chain leaves public space.
-                    if (WDM.Services.CaptureServer.IsBlockedResolveTarget(target))
+                    if (WDM.Services.NetworkGuard.IsBlockedResolveTarget(target))
                         return null;
                     continue;
                 }

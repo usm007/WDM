@@ -51,6 +51,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\WDM.Core\WDM.Core.csproj" />
+    <ProjectReference Include="..\WDM.Media\WDM.Media.csproj" />
   </ItemGroup>
 
   <ItemGroup>

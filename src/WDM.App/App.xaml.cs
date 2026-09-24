@@ -4,6 +4,7 @@ using System.Runtime.InteropServices;
 using System.Threading;
 using System.Windows;
 using System.Windows.Threading;
+using WDM.Media;
 using WDM.Services;
 
 namespace WDM;
@@ -164,6 +165,12 @@ public partial class App : Application
         if (!isTestMode)
             TaskStore.EnsureMigrated();
         var settings = TaskStore.LoadSettings();
+        // Wire the UI-free Media subsystem to live settings/engines. Media never
+        // touches TaskStore/EngineManager directly (static providers, test-settable).
+        MediaSettings.Provider = TaskStore.LoadSettings;
+        MediaEnvironment.YtDlpPath = () => EngineManager.YtDlpPath;
+        MediaEnvironment.FfmpegPath = () => EngineManager.FfmpegPath;
+        MediaEnvironment.QuickJsPath = () => EngineManager.QuickJsPath;
         ThemeService.Apply(AppTheme.Default, settings.UseDarkTheme);
 
         // Never show welcome after an update — only on true first-ever run.

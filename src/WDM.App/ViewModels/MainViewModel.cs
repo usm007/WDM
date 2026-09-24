@@ -646,7 +646,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
                 Error = record.Error,
                 AddedAt = record.AddedAt == default ? DateTime.Now : record.AddedAt,
                 CompletedAt = record.CompletedAt,
-                IsYouTube = record.IsYouTube || MediaResolver.IsYoutubeUrl(record.Url),
+                IsYouTube = record.IsYouTube || YouTubeResolver.IsYoutubeUrl(record.Url),
                 YouTubeFormatArg = record.YouTubeFormatArg,
                 YouTubeExtraArgs = record.YouTubeExtraArgs,
                 YouTubeVideoId = record.YouTubeVideoId,

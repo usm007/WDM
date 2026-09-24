@@ -10,12 +10,7 @@ namespace WDM.Tests;
 /// <summary>HTTP protocol edges + expanded capture security (offline).</summary>
 public sealed class ProtocolSecurityTests
 {
-    private static bool IsBlocked(string url)
-    {
-        var m = typeof(CaptureServer).GetMethod("IsBlockedResolveTarget",
-            BindingFlags.NonPublic | BindingFlags.Static)!;
-        return (bool)m.Invoke(null, new object[] { url })!;
-    }
+    private static bool IsBlocked(string url) => NetworkGuard.IsBlockedResolveTarget(url);
 
     [Trait("Category", Cats.Security)][Theory]
     [InlineData("http://127.0.0.1/x")][InlineData("http://localhost/x")]

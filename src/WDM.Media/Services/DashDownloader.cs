@@ -1,6 +1,7 @@
 using System.Net.Http.Headers;
 using System.Text.RegularExpressions;
 using System.Xml.Linq;
+using WDM.Media;
 
 namespace WDM.Services;
 
@@ -428,7 +429,7 @@ public static class DashDownloader
                                        (ex is HttpRequestException || ex is IOException || ex is TaskCanceledException) &&
                                        !(ex is HttpRequestException hre && hre.StatusCode == System.Net.HttpStatusCode.NotFound))
             {
-                if (DownloadEngine.IsFatalDiskError(ex)) throw;
+                if (FatalErrors.IsFatalDiskError(ex)) throw;
                 attempt++;
                 try { if (File.Exists(path)) File.Delete(path); } catch { }
                 await Task.Delay(Math.Min(4000, 500 * attempt), ct);
@@ -438,7 +439,7 @@ public static class DashDownloader
 
     private static async Task MuxAsync(string videoFile, string? audioFile, string outputFile, CancellationToken ct)
     {
-        if (!File.Exists(EngineManager.FfmpegPath))
+        if (!File.Exists(MediaEnvironment.FfmpegPath()))
             throw new InvalidOperationException("ffmpeg is required to mux DASH video/audio. Please install ffmpeg.");
         // Mux to a staging file, then atomically rename — a crash/kill must
         // never leave a truncated file at the final path (same rule as HLS).
@@ -446,7 +447,7 @@ public static class DashDownloader
         try { if (File.Exists(stagingFile)) File.Delete(stagingFile); } catch { }
         var psi = new System.Diagnostics.ProcessStartInfo
         {
-            FileName = EngineManager.FfmpegPath,
+            FileName = MediaEnvironment.FfmpegPath(),
             RedirectStandardOutput = true,
             RedirectStandardError = true,
             UseShellExecute = false,

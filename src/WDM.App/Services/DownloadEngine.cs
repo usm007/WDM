@@ -3,6 +3,7 @@ using System.Net;
 using System.Net.Http;
 using System.Net.Http.Headers;
 using System.Text.Json;
+using WDM.Media;
 using WDM.Models;
 using WDM.Services.Chunking;
 
@@ -141,64 +142,6 @@ public sealed class DownloadEngine
         return client;
     }
 
-    /// <summary>Manual HTTP/HTTPS proxy from settings (IDM-style). Null unless
-    /// enabled with a host. Tolerates a pasted "http://host:port" in the host box.</summary>
-    public static IWebProxy? BuildProxy(AppSettings s)
-    {
-        try
-        {
-            if (s is null || !s.ProxyEnabled || string.IsNullOrWhiteSpace(s.ProxyHost))
-                return null;
-            string host = s.ProxyHost.Trim();
-            int port = Math.Clamp(s.ProxyPort, 1, 65535);
-            if (host.StartsWith("http://", StringComparison.OrdinalIgnoreCase) ||
-                host.StartsWith("https://", StringComparison.OrdinalIgnoreCase))
-            {
-                if (!Uri.TryCreate(host, UriKind.Absolute, out var pu))
-                    return null;
-                host = pu.Host;
-                if (pu.Port > 0)
-                    port = pu.Port;
-            }
-            var proxy = new WebProxy(new Uri($"http://{host}:{port}"))
-            {
-                BypassProxyOnLocal = true,
-            };
-            if (!string.IsNullOrWhiteSpace(s.ProxyUsername))
-                proxy.Credentials = new NetworkCredential(s.ProxyUsername.Trim(), s.ProxyPassword ?? "");
-            return proxy;
-        }
-        catch { return null; }
-    }
-
-    /// <summary>http_proxy-style URL for child processes (yt-dlp --proxy,
-    /// ffmpeg http_proxy env). Null when the proxy is off.</summary>
-    public static string? ProxyUrlFor(AppSettings s)
-    {
-        try
-        {
-            if (s is null || !s.ProxyEnabled || string.IsNullOrWhiteSpace(s.ProxyHost))
-                return null;
-            string host = s.ProxyHost.Trim();
-            int port = Math.Clamp(s.ProxyPort, 1, 65535);
-            if (host.StartsWith("http://", StringComparison.OrdinalIgnoreCase) ||
-                host.StartsWith("https://", StringComparison.OrdinalIgnoreCase))
-            {
-                if (!Uri.TryCreate(host, UriKind.Absolute, out var pu))
-                    return null;
-                host = pu.Host;
-                if (pu.Port > 0)
-                    port = pu.Port;
-            }
-            if (host.Contains('/') || host.Contains(' ') || host.Contains('@'))
-                return null;
-            if (!string.IsNullOrWhiteSpace(s.ProxyUsername))
-                return $"http://{Uri.EscapeDataString(s.ProxyUsername.Trim())}:{Uri.EscapeDataString(s.ProxyPassword ?? "")}@{host}:{port}";
-            return $"http://{host}:{port}";
-        }
-        catch { return null; }
-    }
-
     /// <summary>Applies the settings proxy to the engine client (covers plain
     /// downloads and HLS — HlsDownloader reuses this client) and records the
     /// child-process proxy URL. In-flight requests on the old client fail over
@@ -223,14 +166,14 @@ public sealed class DownloadEngine
             _lastProxyPort = s.ProxyPort;
             _lastProxyUsername = s.ProxyUsername;
             _lastProxyPassword = s.ProxyPassword;
-            _proxyEnv = ProxyUrlFor(s);
+            _proxyEnv = ProxyHelper.ProxyUrlFor(s);
 
             // Recreate HttpClient with the new proxy.
             // CRITICAL: Do NOT call old.Dispose()! In-flight chunk workers or HLS segments
             // currently reading from the old client will complete gracefully without throwing
             // ObjectDisposedException. SocketsHttpHandler has no unmanaged resources and will be
             // garbage collected once all ongoing requests finish.
-            _http = CreateClient(BuildProxy(s));
+            _http = CreateClient(ProxyHelper.BuildProxy(s));
         }
     }
 
@@ -301,7 +244,7 @@ public sealed class DownloadEngine
         {
             if (uri is null)
                 return false;
-            try { return CaptureServer.IsBlockedResolveTarget(uri.ToString()); }
+            try { return NetworkGuard.IsBlockedResolveTarget(uri.ToString()); }
             catch { return false; }
         }
 
@@ -734,24 +677,32 @@ public sealed class DownloadEngine
                 task.PhaseText = "Resolving stream…";
                 try
                 {
-                    var embed = await Embed.EmbedResolver.TryResolveAsync(
-                        pageForResolve, task.Referer, task.Headers, session.Token);
-                    if (embed is not null)
+                    // Single resolution pipeline (direct → static → manifest →
+                    // embed → yt-dlp). The best variant rewrites the task URL;
+                    // anything else falls through to probe the original URL.
+                    var resolution = await ResolutionPipeline.ResolveAsync(
+                        pageForResolve, session.Token, task.Referer, task.Headers);
+                    var best = resolution.Variants.FirstOrDefault();
+                    if (resolution.Status == ResolutionStatus.Resolved && best is not null)
                     {
-                        task.SourcePageUrl = embed.SourcePageUrl;
-                        task.Url = embed.DirectUrl;
-                        if (!string.IsNullOrWhiteSpace(embed.Referer))
-                            task.Referer = embed.Referer;
-                        foreach (var kv in embed.Headers)
+                        var req = ResolutionPipeline.ToDownloadRequest(resolution, best);
+                        task.SourcePageUrl = req.SourcePage;
+                        task.Url = req.MediaUrl;
+                        if (!string.IsNullOrWhiteSpace(req.Referer))
+                            task.Referer = req.Referer;
+                        foreach (var kv in req.Headers)
                             task.Headers[kv.Key] = kv.Value;
                         task.Headers.Remove("X-WDM-StreamType");
-                        if (!string.IsNullOrWhiteSpace(embed.Title) &&
+                        if (!string.IsNullOrWhiteSpace(req.YouTubeFormatArg)
+                            && string.IsNullOrWhiteSpace(task.YouTubeFormatArg))
+                            task.YouTubeFormatArg = req.YouTubeFormatArg;
+                        if (!string.IsNullOrWhiteSpace(req.Title) &&
                             (string.IsNullOrWhiteSpace(task.FileName) ||
                              IsGenericOrPlaceholderName(task.FileName, pageForResolve)))
                         {
-                            string ext = embed.IsHls ? ".ts" : ".mp4";
+                            string ext = req.RequiresHls ? ".ts" : ".mp4";
                             task.FileName = ReserveRenamedFile(task,
-                                SanitizeFileName(embed.Title + ext, referer: task.Referer));
+                                SanitizeFileName(req.Title + ext, referer: task.Referer));
                         }
                         TaskChanged?.Invoke();
                     }
@@ -1884,7 +1835,7 @@ public sealed class DownloadEngine
             }
             catch (Exception ex) when (IsTransient(ex) && !session.Token.IsCancellationRequested)
             {
-                if (IsFatalDiskError(ex))
+                if (FatalErrors.IsFatalDiskError(ex))
                     throw;
                 if (attempt < MaxRetries)
                 {
@@ -2151,22 +2102,6 @@ public sealed class DownloadEngine
         }
         catch { }
         return null;
-    }
-
-    /// <summary>Local disk failures that no retry or mirror rotation will ever
-    /// fix: full disk, ACL denial, over-long path (BUG-025).</summary>
-    internal static bool IsFatalDiskError(Exception ex)
-    {
-        if (ex is UnauthorizedAccessException or PathTooLongException)
-            return true;
-        if (ex is IOException io)
-        {
-            // 0x80070070 ERROR_DISK_FULL, 0x80070027 drive full (FAT), 0x80070070 variants.
-            int code = io.HResult & 0xFFFF;
-            if (code is 0x70 or 0x27)
-                return true;
-        }
-        return false;
     }
 
     private static async Task BackoffAsync(int attempt, CancellationToken ct)

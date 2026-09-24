@@ -325,7 +325,7 @@ public static class RangeTransport
                         {
                             await RandomAccess.WriteAsync(deps.FileHandle, buffer.AsMemory(0, read), fileOffset, ct);
                         }
-                        catch (Exception ex) when (DownloadEngine.IsFatalDiskError(ex))
+                        catch (Exception ex) when (FatalErrors.IsFatalDiskError(ex))
                         {
                             telemetry.RecordOutcome(HttpOutcome.DiskFatal);
                             throw;
@@ -376,7 +376,7 @@ public static class RangeTransport
             }
             catch (LeaseInvalidatedException) { throw; }
             catch (OperationCanceledException) { throw; }
-            catch (Exception ex) when (ex is DownloadEngine.CloudflareBlockedException || DownloadEngine.IsFatalDiskError(ex)) { throw; }
+            catch (Exception ex) when (ex is DownloadEngine.CloudflareBlockedException || FatalErrors.IsFatalDiskError(ex)) { throw; }
             catch (Exception ex) when (ex is InvalidOperationException && ex.Message.Contains("range downloads")) { throw; }
             catch (Exception ex)
             {

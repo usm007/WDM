@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.IO;
 using System.Text;
+using WDM.Media;
 
 namespace WDM.Services;
 
@@ -21,7 +22,7 @@ public static class YtDlpRunner
     {
         var psi = new ProcessStartInfo
         {
-            FileName = EngineManager.YtDlpPath,
+            FileName = MediaEnvironment.YtDlpPath(),
             RedirectStandardOutput = true,
             RedirectStandardError = true,
             UseShellExecute = false,
@@ -33,14 +34,14 @@ public static class YtDlpRunner
         foreach (var arg in args)
             psi.ArgumentList.Add(arg);
 
-        if (File.Exists(EngineManager.QuickJsPath))
+        if (File.Exists(MediaEnvironment.QuickJsPath()))
         {
             psi.ArgumentList.Add("--js-runtimes");
-            psi.ArgumentList.Add($"quickjs:{EngineManager.QuickJsPath}");
+            psi.ArgumentList.Add($"quickjs:{MediaEnvironment.QuickJsPath()}");
         }
 
-        var s = TaskStore.LoadSettings();
-        string? proxyUrl = DownloadEngine.ProxyUrlFor(s);
+        var s = MediaSettings.Current;
+        string? proxyUrl = ProxyHelper.ProxyUrlFor(s);
         if (!string.IsNullOrWhiteSpace(proxyUrl))
         {
             psi.ArgumentList.Add("--proxy");
@@ -50,7 +51,7 @@ public static class YtDlpRunner
         {
             if (s.YouTubeBrowserCookies == "wdm-native")
             {
-                string cookieFile = Path.Combine(TaskStore.AppDir, "youtube_cookies.txt");
+                string cookieFile = Path.Combine(AppPaths.DataDir, "youtube_cookies.txt");
                 if (File.Exists(cookieFile))
                 {
                     psi.ArgumentList.Add("--cookies");

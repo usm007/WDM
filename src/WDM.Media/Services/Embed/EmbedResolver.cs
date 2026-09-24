@@ -88,7 +88,7 @@ public static class EmbedResolver
                 continue;
             // Private hop targets are skipped, not followed: keep resolving
             // from the other pages instead of aborting (BUG-030).
-            if (CaptureServer.IsBlockedResolveTarget(nextUrl))
+            if (NetworkGuard.IsBlockedResolveTarget(nextUrl))
                 continue;
             string pageHtml;
             try
@@ -115,7 +115,7 @@ public static class EmbedResolver
             if (!string.IsNullOrWhiteSpace(redirect) && !SamePage(redirect, nextUrl))
             {
                 string target = AbsoluteUrl(nextUrl, redirect);
-                if (!CaptureServer.IsBlockedResolveTarget(target))
+                if (!NetworkGuard.IsBlockedResolveTarget(target))
                     pageQueue.Enqueue((target, depth));
                 continue;
             }
@@ -256,7 +256,7 @@ public static class EmbedResolver
         // and cookies are re-scoped to the new host before resending.
         for (int i = 0; i < 4; i++)
         {
-            if (CaptureServer.IsBlockedResolveTarget(current))
+            if (NetworkGuard.IsBlockedResolveTarget(current))
                 return "";
             using var req = new HttpRequestMessage(HttpMethod.Get, current);
             req.Headers.TryAddWithoutValidation("User-Agent", ChromeUa);
@@ -275,7 +275,7 @@ public static class EmbedResolver
                     return "";
                 string next = loc.IsAbsoluteUri ? loc.ToString()
                     : new Uri(new Uri(current), loc).ToString();
-                if (CaptureServer.IsBlockedResolveTarget(next))
+                if (NetworkGuard.IsBlockedResolveTarget(next))
                     return "";
                 current = next;
                 continue;
@@ -314,7 +314,7 @@ public static class EmbedResolver
         try
         {
             string url = passPath.StartsWith("http", StringComparison.OrdinalIgnoreCase) ? passPath : origin + passPath;
-            if (CaptureServer.IsBlockedResolveTarget(url))
+            if (NetworkGuard.IsBlockedResolveTarget(url))
                 return null;
             using var req = new HttpRequestMessage(HttpMethod.Get, url);
             req.Headers.TryAddWithoutValidation("User-Agent", ChromeUa);
@@ -472,7 +472,7 @@ public static class EmbedResolver
     {
         // The candidate host is attacker-influenced (page-embedded URL):
         // never probe loopback/intranet/metadata targets (BUG-030).
-        if (CaptureServer.IsBlockedResolveTarget(url))
+        if (NetworkGuard.IsBlockedResolveTarget(url))
             return false;
         try
         {

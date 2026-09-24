@@ -18,7 +18,7 @@ public sealed class Round2Tests
     [InlineData("http://[::ffff:127.0.0.1]/x")]    // IPv4-mapped IPv6 loopback
     public void IPv6Loopback_IsBlocked(string url)
     {
-        Assert.True(CaptureServer.IsBlockedResolveTarget(url), url);
+        Assert.True(NetworkGuard.IsBlockedResolveTarget(url), url);
     }
 
     [Theory]
@@ -26,21 +26,21 @@ public sealed class Round2Tests
     [InlineData("https://example.com/video.mp4")]
     public void IPv6NonPrivate_IsAllowed(string url)
     {
-        Assert.False(CaptureServer.IsBlockedResolveTarget(url), url);
+        Assert.False(NetworkGuard.IsBlockedResolveTarget(url), url);
     }
 
     // ── BUG-025: IsFatalDiskError ────────────────────────────────────────
     [Fact]
     public void IsFatalDiskError_UnauthorizedAccess_ReturnsTrue()
     {
-        Assert.True(DownloadEngine.IsFatalDiskError(
+        Assert.True(FatalErrors.IsFatalDiskError(
             new UnauthorizedAccessException("denied")));
     }
 
     [Fact]
     public void IsFatalDiskError_PathTooLong_ReturnsTrue()
     {
-        Assert.True(DownloadEngine.IsFatalDiskError(
+        Assert.True(FatalErrors.IsFatalDiskError(
             new PathTooLongException("path too long")));
     }
 
@@ -49,7 +49,7 @@ public sealed class Round2Tests
     {
         // HRESULT 0x80070070 → low word 0x70 = ERROR_DISK_FULL
         var ex = new IOException("disk full") { HResult = unchecked((int)0x80070070) };
-        Assert.True(DownloadEngine.IsFatalDiskError(ex));
+        Assert.True(FatalErrors.IsFatalDiskError(ex));
     }
 
     [Fact]
@@ -57,13 +57,13 @@ public sealed class Round2Tests
     {
         // HRESULT 0x80070021 (locked by another process) — retryable
         var ex = new IOException("locked") { HResult = unchecked((int)0x80070021) };
-        Assert.False(DownloadEngine.IsFatalDiskError(ex));
+        Assert.False(FatalErrors.IsFatalDiskError(ex));
     }
 
     [Fact]
     public void IsFatalDiskError_GenericException_ReturnsFalse()
     {
-        Assert.False(DownloadEngine.IsFatalDiskError(
+        Assert.False(FatalErrors.IsFatalDiskError(
             new InvalidOperationException("random")));
     }
 

@@ -207,7 +207,7 @@ public partial class AddDownloadDialog : Window
         }
 
         UpdateCategoryBadge();
-        if (_viewModel.Settings.EnableYouTubeDownloads && MediaResolver.IsYoutubeUrl(url))
+        if (_viewModel.Settings.EnableYouTubeDownloads && YouTubeResolver.IsYoutubeUrl(url))
         {
             if (HlsPanel != null) HlsPanel.Visibility = Visibility.Collapsed;
             _hlsVariants = new List<HlsDownloader.HlsVariantInfo>();
@@ -256,7 +256,7 @@ public partial class AddDownloadDialog : Window
             {
                 YtSignInButton.Visibility = Visibility.Collapsed;
                 var url = UrlBox.Text.Trim();
-                if (!string.IsNullOrWhiteSpace(url) && MediaResolver.IsYoutubeUrl(url))
+                if (!string.IsNullOrWhiteSpace(url) && YouTubeResolver.IsYoutubeUrl(url))
                     ProbeYouTubeUrlAsync(url);
             }
         }
@@ -282,7 +282,7 @@ public partial class AddDownloadDialog : Window
 
         try
         {
-            var res = await MediaResolver.ResolveAsync(url, ct);
+            var res = await YouTubeResolver.ResolveAsync(url, ct);
             if (ct.IsCancellationRequested || !IsLoaded) return;
 
             if (res.Items.Count > 0)
@@ -370,7 +370,7 @@ public partial class AddDownloadDialog : Window
     }
 
     private static List<QualityOption> BuildFallbackQuality() =>
-        MediaResolver.Tiers.Where(t => t.Height >= 0).Select(t => new QualityOption
+        YouTubeResolver.Tiers.Where(t => t.Height >= 0).Select(t => new QualityOption
         {
             Label = t.Label,
             FormatArg = t.Height == 0 ? "bestvideo+bestaudio/best" : $"bestvideo[height<={t.Height}]+bestaudio/best[height<={t.Height}]",
@@ -478,7 +478,7 @@ public partial class AddDownloadDialog : Window
                 UseCookies = false,
             };
             // Route the probe (and the HLS playlist fetch below) through the manual proxy when set.
-            var proxy = DownloadEngine.BuildProxy(_viewModel.Settings);
+            var proxy = ProxyHelper.BuildProxy(_viewModel.Settings);
             if (proxy is not null)
             {
                 handler.Proxy = proxy;
@@ -875,7 +875,7 @@ public partial class AddDownloadDialog : Window
         var mirrors = ParseMirrors();
         var headers = ParseHeaders();
 
-        bool isYouTube = _viewModel.Settings.EnableYouTubeDownloads && MediaResolver.IsYoutubeUrl(url);
+        bool isYouTube = _viewModel.Settings.EnableYouTubeDownloads && YouTubeResolver.IsYoutubeUrl(url);
         string? formatArg = null;
         var extraArgs = new List<string>();
         if (isYouTube)

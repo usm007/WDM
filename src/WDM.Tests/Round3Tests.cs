@@ -28,7 +28,7 @@ public sealed class Round3Tests
     [InlineData("http://2130706433/x")]          // decimal-integer loopback
     public void BlockedSpellings_AreBlocked(string url)
     {
-        Assert.True(CaptureServer.IsBlockedResolveTarget(url), url);
+        Assert.True(NetworkGuard.IsBlockedResolveTarget(url), url);
     }
 
     [Theory]
@@ -37,7 +37,7 @@ public sealed class Round3Tests
     [InlineData("http://[2001:db8::1]/x")]       // public IPv6 doc-range
     public void PublicLiterals_AreAllowed(string url)
     {
-        Assert.False(CaptureServer.IsBlockedResolveTarget(url), url);
+        Assert.False(NetworkGuard.IsBlockedResolveTarget(url), url);
     }
 
     // ── Lenient enum: numeric strings must not bypass IsDefined ──────────

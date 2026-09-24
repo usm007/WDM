@@ -5,12 +5,7 @@ namespace WDM.Tests;
 
 public sealed class CaptureSecurityTests
 {
-    private static bool IsBlocked(string url)
-    {
-        var m = typeof(CaptureServer).GetMethod("IsBlockedResolveTarget",
-            BindingFlags.NonPublic | BindingFlags.Static)!;
-        return (bool)m.Invoke(null, new object[] { url })!;
-    }
+    private static bool IsBlocked(string url) => NetworkGuard.IsBlockedResolveTarget(url);
 
     [Theory]
     [InlineData("http://127.0.0.1/video.mp4")]

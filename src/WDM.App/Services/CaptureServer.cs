@@ -5,6 +5,7 @@ using System.Net.Sockets;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using WDM.Media;
 
 namespace WDM.Services;
 
@@ -542,7 +543,7 @@ public sealed class CaptureServer : IDisposable
                     }
 
                     if (string.IsNullOrWhiteSpace(videoUrl) || videoUrl.Length > 2048 ||
-                        !IsAllowedCaptureUrl(videoUrl.Trim()) || IsBlockedResolveTarget(videoUrl.Trim()))
+                        !IsAllowedCaptureUrl(videoUrl.Trim()) || NetworkGuard.IsBlockedResolveTarget(videoUrl.Trim()))
                     {
                         await WriteResponseAsync(stream, HttpStatusCode.BadRequest, "{\"error\":\"missing url param\"}", origin);
                         return;
@@ -551,61 +552,32 @@ public sealed class CaptureServer : IDisposable
                     try
                     {
                         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+                        string trimmedUrl = videoUrl.Trim();
                         // Media fetching kill-switch: YouTube still resolves,
                         // everything else is refused while the switch is off.
-                        if (!TaskStore.LoadSettings().EnableMediaFetching && !MediaResolver.IsYoutubeUrl(videoUrl.Trim()))
+                        if (!TaskStore.LoadSettings().EnableMediaFetching && !YouTubeResolver.IsYoutubeUrl(trimmedUrl))
                         {
                             await WriteResponseAsync(stream, HttpStatusCode.BadRequest, "{\"error\":\"media fetching is disabled (except YouTube) — enable it in Options\"}", origin);
                             return;
                         }
-                        // Embed/player pages resolve via the generic embed pipeline;
-                        // everything else keeps the yt-dlp path.
-                        if (Embed.EmbedResolver.IsEmbedCandidate(videoUrl) && !MediaResolver.IsYoutubeUrl(videoUrl))
-                        {
-                            var embed = await Embed.EmbedResolver.TryResolveAsync(videoUrl, null, null, cts.Token);
-                            if (embed is null)
-                                throw new InvalidOperationException("Could not resolve an embed stream from this page.");
-                            var embedObj = new ResolveResponse
-                            {
-                                Title = embed.Title ?? DownloadEngine.DeriveName(embed.DirectUrl),
-                                Channel = "",
-                                ThumbnailUrl = "",
-                                IsPlaylist = false,
-                                ItemCount = 1,
-                                DirectUrl = embed.DirectUrl,
-                                StreamType = embed.IsHls ? "HLS" : "Video",
-                                Qualities = new List<QualityResponse>
-                                {
-                                    new() { Label = embed.IsHls ? "HLS stream" : "Best quality (direct)", FormatArg = "direct" },
-                                },
-                            };
-                            string embedJson = JsonSerializer.Serialize(embedObj, JsonWriteOptions);
-                            await WriteResponseAsync(stream, HttpStatusCode.OK, embedJson, origin);
-                            return;
-                        }
-                        var resolved = await MediaResolver.ResolveAsync(videoUrl, cts.Token);
-
-                        var responseObj = new ResolveResponse
-                        {
-                            Title = resolved.Items.FirstOrDefault()?.Title ?? "",
-                            Channel = resolved.Items.FirstOrDefault()?.Channel ?? "",
-                            ThumbnailUrl = resolved.Items.FirstOrDefault()?.ThumbnailUrl ?? "",
-                            IsPlaylist = resolved.IsPlaylist,
-                            PlaylistTitle = resolved.PlaylistTitle,
-                            ItemCount = resolved.Items.Count,
-                            Qualities = resolved.QualityOptions.Select(q => new QualityResponse
-                            {
-                                Label = q.Label,
-                                FormatArg = q.FormatArg,
-                                EstimatedBytes = q.EstimatedBytes,
-                                EstimatedSizeText = q.EstimatedBytes.HasValue
-                                    ? FormatBytes(q.EstimatedBytes.Value)
-                                    : null,
-                            }).ToList(),
-                        };
-
+                        // Single resolution pipeline (direct → static → manifest →
+                        // embed → yt-dlp); shapes mapped to the legacy contract.
+                        var resolution = await ResolutionPipeline.ResolveAsync(trimmedUrl, cts.Token);
+                        var responseObj = MapResolution(trimmedUrl, resolution);
                         string json = JsonSerializer.Serialize(responseObj, JsonWriteOptions);
                         await WriteResponseAsync(stream, HttpStatusCode.OK, json, origin);
+                    }
+                    catch (Embed.EmbedInteractionRequiredException ex)
+                    {
+                        var interactionObj = new ResolveResponse
+                        {
+                            Title = "",
+                            ResolutionStatus = "interaction",
+                            Message = "Open the page in the WDM browser to continue.",
+                            DirectUrl = ex.PageUrl,
+                        };
+                        string interactionJson = JsonSerializer.Serialize(interactionObj, JsonWriteOptions);
+                        await WriteResponseAsync(stream, HttpStatusCode.OK, interactionJson, origin);
                     }
                     catch (Exception)
                     {
@@ -880,7 +852,7 @@ public sealed class CaptureServer : IDisposable
         url = url.Trim();
         if (url.Length > maxLen)
             return null;
-        if (!IsAllowedCaptureUrl(url) || (!allowPrivate && IsBlockedResolveTarget(url)))
+        if (!IsAllowedCaptureUrl(url) || (!allowPrivate && NetworkGuard.IsBlockedResolveTarget(url)))
             return null;
         return url;
     }
@@ -894,7 +866,7 @@ public sealed class CaptureServer : IDisposable
         if (payload is null || string.IsNullOrWhiteSpace(payload.Url))
             return false;
         string url = payload.Url.Trim();
-        if (url.Length > 2048 || !IsAllowedCaptureUrl(url) || (!authed && IsBlockedResolveTarget(url)))
+        if (url.Length > 2048 || !IsAllowedCaptureUrl(url) || (!authed && NetworkGuard.IsBlockedResolveTarget(url)))
             return false;
         string? fileName = SanitizeCaptureFileName(payload.FileName);
         string? referer = SanitizeCaptureUrl(payload.Referer, 2048, authed);
@@ -1135,167 +1107,6 @@ public sealed class CaptureServer : IDisposable
         return output;
     }
 
-    internal static bool IsBlockedResolveTarget(string url)
-    {
-        try
-        {
-            if (!Uri.TryCreate(url, UriKind.Absolute, out var uri) || string.IsNullOrWhiteSpace(uri.Host))
-                return true;
-            if (uri.Scheme != Uri.UriSchemeHttp && uri.Scheme != Uri.UriSchemeHttps)
-                return true;
-            string host = uri.Host.Trim().Trim('.').ToLowerInvariant();
-            if (host == "localhost" || host.EndsWith(".local", StringComparison.Ordinal) ||
-                host.EndsWith(".localhost", StringComparison.Ordinal) || host == "metadata.google.internal")
-                return true;
-            if (IPAddress.TryParse(host.Trim('[', ']'), out var ip))
-            {
-                // IPv4-mapped IPv6 (::ffff:127.0.0.1) must be judged as the
-                // IPv4 it routes to — otherwise the v6 branch misses it.
-                if (ip.IsIPv4MappedToIPv6)
-                {
-                    try { ip = ip.MapToIPv4(); }
-                    catch { return true; }
-                }
-                if (IPAddress.IsLoopback(ip))
-                    return true;
-                if (ip.AddressFamily == AddressFamily.InterNetwork)
-                {
-                    byte[] b = ip.GetAddressBytes();
-                    if (b[0] == 10) return true;
-                    if (b[0] == 172 && b[1] >= 16 && b[1] <= 31) return true;
-                    if (b[0] == 192 && b[1] == 168) return true;
-                    if (b[0] == 169 && b[1] == 254) return true;
-                    if (b[0] == 0 || b[0] >= 224) return true;
-                }
-                else
-                {
-                    byte[] b = ip.GetAddressBytes();
-                    // Unspecified :: (all zeros) is not publicly routable — block.
-                    if (b.Length == 16 && b.All(x => x == 0)) return true;
-                    // Unique-local fc00::/7 (not covered by the obsolete
-                    // SiteLocal flag), link-local fe80::/10, multicast ff00::/8.
-                    if (b.Length == 16 && (b[0] & 0xFE) == 0xFC) return true;
-                    if (ip.IsIPv6SiteLocal || ip.IsIPv6LinkLocal || ip.IsIPv6Multicast)
-                        return true;
-                }
-            }
-            else if (LooksLikeNumericIp(host))
-            {
-                // Non-canonical IPv4 the parser rejects but stacks still route
-                // (0x7f.1, 2130706433, 0177.0.0.1): fail closed. Plain hostnames
-                // contain letters/hyphens and never match this shape.
-                return true;
-            }
-            else if (ResolvesToBlockedAddress(host))
-            {
-                // DNS-rebinding guard: a public hostname that resolves to
-                // loopback/LAN/link-local space is blocked even though the
-                // literal string looks innocent. DNS failures fail open here
-                // (the downstream fetch will fail on its own).
-                return true;
-            }
-            return false;
-        }
-        catch
-        {
-            return true;
-        }
-    }
-
-    /// <summary>True when a hostname resolves to a blocked (non-public) address.
-    /// Best-effort, fails open on DNS errors. Results are cached 5 minutes so
-    /// per-redirect/per-hop checks don't pay a lookup each time.</summary>
-    private static readonly object _dnsCacheLock = new();
-    private static readonly Dictionary<string, (bool blocked, long tick)> _dnsCache = new(StringComparer.OrdinalIgnoreCase);
-    private static bool ResolvesToBlockedAddress(string host)
-    {
-        lock (_dnsCacheLock)
-        {
-            if (_dnsCache.TryGetValue(host, out var e) && Environment.TickCount64 - e.tick < 5 * 60 * 1000)
-                return e.blocked;
-        }
-        bool blocked = ResolvesToBlockedAddressSlow(host);
-        lock (_dnsCacheLock)
-        {
-            if (_dnsCache.Count > 512)
-                _dnsCache.Clear();
-            _dnsCache[host] = (blocked, Environment.TickCount64);
-        }
-        return blocked;
-    }
-
-    private static bool ResolvesToBlockedAddressSlow(string host)
-    {
-        try
-        {
-            var addrs = Dns.GetHostAddresses(host);
-            foreach (var a in addrs)
-            {
-                var ip = a;
-                if (ip.IsIPv4MappedToIPv6)
-                {
-                    try { ip = ip.MapToIPv4(); }
-                    catch { return true; }
-                }
-                if (IPAddress.IsLoopback(ip))
-                    return true;
-                if (ip.AddressFamily == AddressFamily.InterNetwork)
-                {
-                    byte[] b = ip.GetAddressBytes();
-                    if (b[0] == 10) return true;
-                    if (b[0] == 172 && b[1] >= 16 && b[1] <= 31) return true;
-                    if (b[0] == 192 && b[1] == 168) return true;
-                    if (b[0] == 169 && b[1] == 254) return true;
-                    if (b[0] == 0 || b[0] >= 224) return true;
-                }
-                else if (ip.AddressFamily == AddressFamily.InterNetworkV6)
-                {
-                    byte[] b = ip.GetAddressBytes();
-                    if (b.Length == 16 && b.All(x => x == 0)) return true;
-                    if (b.Length == 16 && (b[0] & 0xFE) == 0xFC) return true;
-                    if (ip.IsIPv6SiteLocal || ip.IsIPv6LinkLocal || ip.IsIPv6Multicast)
-                        return true;
-                }
-            }
-            return false;
-        }
-        catch
-        {
-            return false;
-        }
-    }
-
-    /// <summary>True for all-digit/dotted/hex IP spellings: dotted quads (incl.
-    /// leading-zero octal), short forms Windows still routes (127.1, 10.1),
-    /// bare decimal integers, and 0x-hex forms (incl. per-part 0x).</summary>
-    private static bool LooksLikeNumericIp(string host)
-    {
-        string h = host.Trim('[', ']').ToLowerInvariant();
-        if (string.IsNullOrEmpty(h))
-            return false;
-        if (h.StartsWith("0x", StringComparison.Ordinal))
-            return h.Skip(2).All(c => (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || c == '.' || c == ':' || c == 'x');
-        if (h.All(char.IsDigit))
-            return h.Length > 0;
-        string[] parts = h.Split('.');
-        // 1-4 dot-separated numeric-ish parts (decimal, leading-zero octal,
-        // or 0x-hex): stacks route "127.1" and "0xc0.0xa8.1.1" to addresses.
-        // Real hostnames contain letters (beyond a-f-only hex lookalikes with
-        // an explicit 0x prefix) or hyphens and never match this shape.
-        if (parts.Length >= 1 && parts.Length <= 4 && parts.All(IsNumericIpPart))
-            return true;
-        return false;
-    }
-
-    private static bool IsNumericIpPart(string p)
-    {
-        if (string.IsNullOrEmpty(p) || p.Length > 10)
-            return false;
-        if (p.StartsWith("0x", StringComparison.Ordinal))
-            return p.Length > 2 && p.Skip(2).All(c => (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f'));
-        return p.All(char.IsDigit);
-    }
-
     private sealed class CapturePayload
     {
         public string? Url { get; set; }
@@ -1375,6 +1186,10 @@ public sealed class CaptureServer : IDisposable
         // Embed-pipeline extras (absent for yt-dlp responses; ignored by old clients).
         public string? DirectUrl { get; set; }
         public string? StreamType { get; set; }
+        // Resolution outcome ("resolved|notfound|login|drm|disabled|failed|interaction").
+        // Absent on legacy fallback responses; ignored by old clients.
+        public string? ResolutionStatus { get; set; }
+        public string? Message { get; set; }
     }
 
     private sealed class QualityResponse
@@ -1383,5 +1198,37 @@ public sealed class CaptureServer : IDisposable
         public string FormatArg { get; set; } = "";
         public long? EstimatedBytes { get; set; }
         public string? EstimatedSizeText { get; set; }
+    }
+
+    /// <summary>Maps a pipeline resolution onto the legacy /resolve contract
+    /// (extension + youtube_menu.js). Additive fields only — old clients
+    /// ignore ResolutionStatus/Message.</summary>
+    private static ResolveResponse MapResolution(string trimmedUrl, MediaResolution resolution)
+    {
+        var best = resolution.Variants.FirstOrDefault();
+        string streamType = best is null ? "Video"
+            : best.RequiresHls ? "HLS"
+            : best.RequiresDash ? "DASH"
+            : resolution.IsPlaylist ? "Playlist" : "Video";
+        return new ResolveResponse
+        {
+            Title = resolution.Title ?? best?.Label ?? "",
+            ThumbnailUrl = resolution.ThumbnailUrl ?? "",
+            IsPlaylist = resolution.IsPlaylist,
+            ItemCount = resolution.Variants.Count,
+            DirectUrl = best?.MediaUrl,
+            StreamType = streamType,
+            ResolutionStatus = resolution.Status.ToString().ToLowerInvariant(),
+            Message = resolution.Message,
+            Qualities = resolution.Variants.Select(v => new QualityResponse
+            {
+                Label = v.Label,
+                FormatArg = v.FormatArg ?? "direct",
+                EstimatedBytes = v.EstimatedBytes,
+                EstimatedSizeText = v.EstimatedBytes.HasValue
+                    ? FormatBytes(v.EstimatedBytes.Value)
+                    : null,
+            }).ToList(),
+        };
     }
 }

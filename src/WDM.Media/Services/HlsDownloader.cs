@@ -982,7 +982,7 @@ public static class HlsDownloader
                                        ex is not HlsFatalHttpException &&
                                        (ex is HttpRequestException || ex is IOException || ex is TaskCanceledException))
             {
-                if (DownloadEngine.IsFatalDiskError(ex))
+                if (FatalErrors.IsFatalDiskError(ex))
                     throw;
                 attempt++;
                 try { if (File.Exists(tempFile)) File.Delete(tempFile); } catch { }
