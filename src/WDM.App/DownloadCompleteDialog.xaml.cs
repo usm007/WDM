@@ -85,7 +85,7 @@ public partial class DownloadCompleteDialog : Window
             catch (Exception ex)
             {
                 App.LogException(ex);
-                UserFriendlyError.ShowError(this, "Couldn't open file", "The file couldn't be opened. It may have been moved or deleted.");
+                ErrorDialogs.ShowError(this, "Couldn't open file", "The file couldn't be opened. It may have been moved or deleted.");
             }
         }
         else
@@ -118,7 +118,7 @@ public partial class DownloadCompleteDialog : Window
         catch (Exception ex)
         {
             App.LogException(ex);
-            UserFriendlyError.ShowError(this, "Couldn't open folder", "The folder couldn't be opened. It may have been moved or deleted.");
+            ErrorDialogs.ShowError(this, "Couldn't open folder", "The folder couldn't be opened. It may have been moved or deleted.");
         }
     }
 

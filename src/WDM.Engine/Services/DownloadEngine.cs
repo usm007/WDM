@@ -54,6 +54,20 @@ public sealed class DownloadEngine
     /// Failed until retried.</summary>
     public event Action<DownloadTask, string>? EmbedInteractionRequired;
 
+    /// <summary>MEGA session id captured by the browser bridge. The App wires
+    /// this to the capture server; null when no fresh sid is available.
+    /// Static provider so the engine stays free of capture dependencies.</summary>
+    public static Func<string?>? MegaSidProvider { get; set; }
+
+    internal static bool IsMegaHost(string? url)
+    {
+        if (string.IsNullOrWhiteSpace(url) || !Uri.TryCreate(url, UriKind.Absolute, out var uri))
+            return false;
+        string host = uri.Host.ToLowerInvariant();
+        return host == "mega.nz" || host.EndsWith(".mega.nz", StringComparison.Ordinal) ||
+               host == "mega.co.nz" || host.EndsWith(".mega.co.nz", StringComparison.Ordinal);
+    }
+
     public DownloadEngine()
     {
         _http = CreateClient();
@@ -2155,8 +2169,8 @@ public sealed class DownloadEngine
         // MEGA session handoff (1DM ACTION_SET_MEGA_SID): the browser-captured
         // sid rides as the session cookie on mega.nz hosts only, while fresh, and
         // only when the task carries no Cookie of its own. Never logged.
-        if (!cookieApplied && CaptureServer.IsMegaHost(targetUrl) &&
-            CaptureServer.TryGetMegaSid(out string? megaSid) && !string.IsNullOrWhiteSpace(megaSid))
+        if (!cookieApplied && IsMegaHost(targetUrl) &&
+            MegaSidProvider?.Invoke() is string megaSid && !string.IsNullOrWhiteSpace(megaSid))
         {
             request.Headers.TryAddWithoutValidation("Cookie", $"sid={megaSid}");
         }
@@ -2663,11 +2677,11 @@ public sealed class DownloadEngine
     /// on 401s (1DM sid lifetime).</summary>
     private static void ThrowIfMegaSessionMissing(DownloadTask task, ProbeMeta meta)
     {
-        if (!CaptureServer.IsMegaHost(task.Url))
+        if (!IsMegaHost(task.Url))
             return;
         if (meta.TotalBytes > 0 || !string.IsNullOrWhiteSpace(meta.SuggestedName))
             return;
-        if (CaptureServer.TryGetMegaSid(out _))
+        if (!string.IsNullOrWhiteSpace(MegaSidProvider?.Invoke()))
             return;
         meta.ProbeBody?.Dispose();
         throw new InvalidOperationException(

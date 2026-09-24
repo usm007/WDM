@@ -110,7 +110,7 @@ public sealed class TaskStore
 
     private static void LogNonFatal(Exception ex)
     {
-        try { WDM.App.LogException(ex); } catch { }
+        try { ErrorLog.Write(ex); } catch { }
     }
 
     private static void FailLoad(Exception ex)

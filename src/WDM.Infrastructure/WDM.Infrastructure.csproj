@@ -1,0 +1,21 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\WDM.Core\WDM.Core.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="WDM" />
+    <InternalsVisibleTo Include="WDM.Engine" />
+    <InternalsVisibleTo Include="WDM.Media" />
+    <InternalsVisibleTo Include="WDM.Tests" />
+    <InternalsVisibleTo Include="WDM.FunctionalTests" />
+  </ItemGroup>
+
+</Project>

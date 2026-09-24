@@ -39,7 +39,7 @@ public static class IssueReporter
         catch (Exception ex)
         {
             try { App.LogException(ex); } catch { }
-            UserFriendlyError.ShowWarning(owner, "Couldn't copy details",
+            ErrorDialogs.ShowWarning(owner, "Couldn't copy details",
                 "Your details couldn't be copied. Please describe the problem in the issue instead.");
         }
 
@@ -59,7 +59,7 @@ public static class IssueReporter
         catch (Exception ex)
         {
             try { App.LogException(ex); } catch { }
-            UserFriendlyError.ShowWarning(owner, "Couldn't open browser",
+            ErrorDialogs.ShowWarning(owner, "Couldn't open browser",
                 "Your details are copied — please paste them into a new issue at github.com/usm007/WDM.");
             return;
         }

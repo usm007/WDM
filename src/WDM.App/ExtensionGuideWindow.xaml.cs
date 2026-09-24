@@ -52,7 +52,7 @@ public partial class ExtensionGuideWindow : Window
         catch (Exception ex)
         {
             App.LogException(ex);
-            UserFriendlyError.ShowWarning(this, "Couldn't open page",
+            ErrorDialogs.ShowWarning(this, "Couldn't open page",
                 "The extensions page couldn't be opened. Type chrome://extensions (or edge://extensions) by hand in your browser.");
         }
     }
@@ -66,7 +66,7 @@ public partial class ExtensionGuideWindow : Window
         catch (Exception ex)
         {
             App.LogException(ex);
-            UserFriendlyError.ShowWarning(this, "Couldn't open page",
+            ErrorDialogs.ShowWarning(this, "Couldn't open page",
                 "The Firefox store page couldn't be opened. Search for “WDM Download Catcher” by hand.");
         }
     }

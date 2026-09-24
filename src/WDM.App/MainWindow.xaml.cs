@@ -518,7 +518,7 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
         catch (Exception ex)
         {
             App.LogException(ex);
-            UserFriendlyError.ShowError(this, "Settings", "The Settings page couldn't be opened. Please try again.");
+            ErrorDialogs.ShowError(this, "Settings", "The Settings page couldn't be opened. Please try again.");
         }
     }
 

@@ -195,7 +195,7 @@ public partial class OptionsControl : UserControl
         catch (Exception ex)
         {
             App.LogException(ex);
-            UserFriendlyError.ShowError(Window.GetWindow(this), "Couldn't set up YouTube downloads", "The YouTube downloader couldn't be set up. Check your internet connection and try again.");
+            ErrorDialogs.ShowError(Window.GetWindow(this), "Couldn't set up YouTube downloads", "The YouTube downloader couldn't be set up. Check your internet connection and try again.");
             s.EnableYouTubeDownloads = false;
             TaskStore.SaveSettings(s);
         }
@@ -267,7 +267,7 @@ public partial class OptionsControl : UserControl
         catch (Exception ex)
         {
             App.LogException(ex);
-            UserFriendlyError.ShowError(Window.GetWindow(this), "Couldn't open sign-in", "The YouTube sign-in window couldn't be opened. Please try again.");
+            ErrorDialogs.ShowError(Window.GetWindow(this), "Couldn't open sign-in", "The YouTube sign-in window couldn't be opened. Please try again.");
         }
     }
 

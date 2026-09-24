@@ -1724,7 +1724,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
             catch (Exception ex)
             {
                 App.LogException(ex);
-                UserFriendlyError.ShowError(null, "Couldn't open file", "The file couldn't be opened. It may have been moved or deleted.");
+                ErrorDialogs.ShowError(null, "Couldn't open file", "The file couldn't be opened. It may have been moved or deleted.");
             }
         }
         else
@@ -2025,7 +2025,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
         catch (Exception ex)
         {
             App.LogException(ex);
-            UserFriendlyError.ShowWarning(null, "Couldn't shut down", "WDM couldn't shut down the computer. You can shut it down yourself from the Start menu.");
+            ErrorDialogs.ShowWarning(null, "Couldn't shut down", "WDM couldn't shut down the computer. You can shut it down yourself from the Start menu.");
             return false;
         }
     }

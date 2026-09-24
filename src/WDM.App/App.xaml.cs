@@ -171,6 +171,8 @@ public partial class App : Application
         MediaEnvironment.YtDlpPath = () => EngineManager.YtDlpPath;
         MediaEnvironment.FfmpegPath = () => EngineManager.FfmpegPath;
         MediaEnvironment.QuickJsPath = () => EngineManager.QuickJsPath;
+        EngineManager.VersionProvider = () => UpdateChecker.CurrentVersion;
+        DownloadEngine.MegaSidProvider = () => CaptureServer.TryGetMegaSid(out string? sid) ? sid : null;
         ThemeService.Apply(AppTheme.Default, settings.UseDarkTheme);
 
         // Never show welcome after an update — only on true first-ever run.
@@ -272,18 +274,6 @@ public partial class App : Application
     {
         if (ex is null) return;
         try { ActivityLog.Write("ERROR", ex.GetType().Name + ": " + ex.Message); } catch { }
-        try
-        {
-            Directory.CreateDirectory(TaskStore.AppDir);
-            string logPath = Path.Combine(TaskStore.AppDir, "wdm_error.log");
-            string entry = $"[CRASH {DateTime.Now:O}]\n{ex}";
-            if (ex.InnerException is not null)
-                entry += $"\nInner:\n{ex.InnerException}";
-            File.AppendAllText(logPath, entry + "\n\n");
-        }
-        catch
-        {
-            // Never let logging itself take down the crash handler.
-        }
+        ErrorLog.Write(ex);
     }
 }

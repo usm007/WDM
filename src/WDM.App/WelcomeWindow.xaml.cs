@@ -45,7 +45,7 @@ public partial class WelcomeWindow : Wpf.Ui.Controls.FluentWindow
         catch (System.Exception ex)
         {
             App.LogException(ex);
-            Services.UserFriendlyError.ShowWarning(this, "Couldn't open page", "The browser page couldn't be opened. Please try again.");
+            Services.ErrorDialogs.ShowWarning(this, "Couldn't open page", "The browser page couldn't be opened. Please try again.");
         }
     }
 
@@ -113,7 +113,7 @@ public partial class WelcomeWindow : Wpf.Ui.Controls.FluentWindow
         catch (System.Exception ex)
         {
             App.LogException(ex);
-            Services.UserFriendlyError.ShowError(this, "Couldn't open sign-in", "The YouTube sign-in window couldn't be opened. Please try again.");
+            Services.ErrorDialogs.ShowError(this, "Couldn't open sign-in", "The YouTube sign-in window couldn't be opened. Please try again.");
         }
     }
 
@@ -147,7 +147,7 @@ public partial class WelcomeWindow : Wpf.Ui.Controls.FluentWindow
         catch (System.Exception ex)
         {
             App.LogException(ex);
-            Services.UserFriendlyError.ShowError(this, "Couldn't set up YouTube downloads", "The YouTube downloader couldn't be set up. Check your internet connection and try again.");
+            Services.ErrorDialogs.ShowError(this, "Couldn't set up YouTube downloads", "The YouTube downloader couldn't be set up. Check your internet connection and try again.");
             _settings.EnableYouTubeDownloads = false;
             Services.TaskStore.SaveSettings(_settings);
             ActivateBtn.IsEnabled = true;

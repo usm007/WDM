@@ -13,6 +13,12 @@ public sealed class EngineMissingException : Exception
 
 public static class EngineManager
 {
+    /// <summary>App version for the engine-download UA. The App wires this to
+    /// UpdateChecker at startup; the default (entry assembly) is identical in
+    /// production. Static provider, same pattern as the Media subsystem.</summary>
+    public static Func<Version> VersionProvider { get; set; } = () =>
+        System.Reflection.Assembly.GetEntryAssembly()?.GetName().Version ?? new Version(1, 0, 0, 0);
+
     private static readonly HttpClient Http = new()
     {
         Timeout = TimeSpan.FromMinutes(8)
@@ -20,7 +26,7 @@ public static class EngineManager
 
     static EngineManager()
     {
-        Http.DefaultRequestHeaders.UserAgent.ParseAdd($"WDM/{UpdateChecker.CurrentVersion} (+https://github.com/usm007/WDM)");
+        Http.DefaultRequestHeaders.UserAgent.ParseAdd($"WDM/{VersionProvider()} (+https://github.com/usm007/WDM)");
     }
 
     // Downloaded engines live with the rest of the user data (TaskStore.AppDir),

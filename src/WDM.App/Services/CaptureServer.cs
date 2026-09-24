@@ -135,14 +135,7 @@ public sealed class CaptureServer : IDisposable
     // The extension's push (POST /download/page-media-batch) now 404s, which
     // its fire-and-forget sender tolerates silently.
 
-    internal static bool IsMegaHost(string? url)
-    {
-        if (string.IsNullOrWhiteSpace(url) || !Uri.TryCreate(url, UriKind.Absolute, out var uri))
-            return false;
-        string host = uri.Host.ToLowerInvariant();
-        return host == "mega.nz" || host.EndsWith(".mega.nz", StringComparison.Ordinal) ||
-               host == "mega.co.nz" || host.EndsWith(".mega.co.nz", StringComparison.Ordinal);
-    }
+    internal static bool IsMegaHost(string? url) => DownloadEngine.IsMegaHost(url);
 
     public bool IsConnected { get; private set; }
     public event Action? ExtensionConnected;
