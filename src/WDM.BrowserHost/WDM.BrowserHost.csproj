@@ -1,0 +1,24 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <PlatformTarget>x64</PlatformTarget>
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+    <AssemblyName>WDM.BrowserHost</AssemblyName>
+    <RootNamespace>WDM.BrowserHost</RootNamespace>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\WDM.Browser\WDM.Browser.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Pinned to the spike-validated CEF build (see ADR #11). -->
+    <PackageReference Include="CefSharp.OffScreen.NETCore" Version="141.0.110" />
+    <PackageReference Include="Nito.AsyncEx.Context" Version="5.1.2" />
+  </ItemGroup>
+
+</Project>
