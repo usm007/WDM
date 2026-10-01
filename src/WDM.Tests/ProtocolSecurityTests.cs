@@ -34,7 +34,7 @@ public sealed class ProtocolSecurityTests
             async Task<HttpStatusCode> Post(string path, string json)
             {
                 using var req = new HttpRequestMessage(HttpMethod.Post, $"http://127.0.0.1:17611{path}");
-                req.Headers.Add("Origin", "chrome-extension://test");
+                req.Headers.Add("Origin", "chrome-extension://jehagbjolooaohcbmlhegpmjeaakonof");
                 req.Content = new StringContent(json, Encoding.UTF8, "application/json");
                 using var resp = await http.SendAsync(req);
                 return resp.StatusCode;

@@ -195,7 +195,7 @@ public static class ScreenshotGenerator
                 var updStrip = aboutWithUpdate.FindName("UpdateActionStrip") as System.Windows.Controls.Grid;
                 if (panel != null) panel.Visibility = System.Windows.Visibility.Visible;
                 if (verLine != null) verLine.Text = "WDM 2.7.2 is available";
-                if (status != null) status.Text = "Delta (~2-5 MB) • Silent auto-updates — no extra clicks after download";
+                if (status != null) status.Text = "Delta (~2-5 MB). Silent auto-updates: no extra clicks after download";
                 if (defStrip != null) defStrip.Visibility = System.Windows.Visibility.Collapsed;
                 if (updStrip != null) updStrip.Visibility = System.Windows.Visibility.Visible;
             } catch { }
@@ -507,7 +507,7 @@ public static class ScreenshotGenerator
             TotalBytes = 48_500_000,
             DownloadedBytes = 12_000_000,
             Status = TaskStatus.Failed,
-            Error = "Connection timeout — 504 Gateway Error",
+            Error = "Connection timeout: 504 Gateway Error",
             Category = DownloadCategory.Music,
             AddedAt = DateTime.Now.AddHours(-2)
         };

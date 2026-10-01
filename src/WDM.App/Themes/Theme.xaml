@@ -18,7 +18,7 @@
         <Setter Property="Background" Value="{DynamicResource Brush.Bg}" />
         <Setter Property="Foreground" Value="{DynamicResource Brush.Text}" />
         <Setter Property="FontFamily" Value="{StaticResource Font.App}" />
-        <Setter Property="FontSize" Value="12" />
+        <Setter Property="FontSize" Value="11" />
         <Setter Property="TextOptions.TextFormattingMode" Value="Display" />
         <Setter Property="TextOptions.TextRenderingMode" Value="ClearType" />
         <Setter Property="TextOptions.TextHintingMode" Value="Fixed" />
@@ -26,18 +26,24 @@
         <Setter Property="UseLayoutRounding" Value="True" />
     </Style>
 
-    <!-- Empty focus visual to definitively prevent dotted focus lines anywhere -->
-    <Style x:Key="FocusVisual.Empty" TargetType="Control">
+    <!-- Visible keyboard focus indicator (R-32): dashed accent outline so Tab focus is always visible -->
+    <Style x:Key="Focus.HighVisibility" TargetType="Control">
         <Setter Property="Template">
             <Setter.Value>
-                <ControlTemplate />
+                <ControlTemplate TargetType="Control">
+                    <Rectangle Stroke="{DynamicResource Brush.Accent}"
+                               StrokeThickness="1.5"
+                               StrokeDashArray="2 2"
+                               Margin="-2"
+                               SnapsToDevicePixels="True" />
+                </ControlTemplate>
             </Setter.Value>
         </Setter>
     </Style>
 
     <!-- Global Control FocusVisualStyle override -->
     <Style TargetType="Control">
-        <Setter Property="FocusVisualStyle" Value="{StaticResource FocusVisual.Empty}" />
+        <Setter Property="FocusVisualStyle" Value="{StaticResource Focus.HighVisibility}" />
         <Setter Property="TextOptions.TextFormattingMode" Value="Display" />
         <Setter Property="TextOptions.TextRenderingMode" Value="ClearType" />
         <Setter Property="TextOptions.TextHintingMode" Value="Fixed" />
@@ -63,13 +69,13 @@
     <Style x:Key="Text.Brand" TargetType="TextBlock">
         <Setter Property="FontFamily" Value="{StaticResource Font.App}" />
         <Setter Property="FontWeight" Value="SemiBold" />
-        <Setter Property="FontSize" Value="22" />
+        <Setter Property="FontSize" Value="21" />
     </Style>
 
     <Style x:Key="Text.BrandTitle" TargetType="TextBlock">
         <Setter Property="FontFamily" Value="{StaticResource Font.App}" />
         <Setter Property="FontWeight" Value="SemiBold" />
-        <Setter Property="FontSize" Value="20" />
+        <Setter Property="FontSize" Value="19" />
         <Setter Property="Foreground" Value="{DynamicResource Brush.Text}" />
     </Style>
 
@@ -77,7 +83,7 @@
     <Style x:Key="Text.Section" TargetType="TextBlock">
         <Setter Property="FontFamily" Value="{StaticResource Font.App}" />
         <Setter Property="FontWeight" Value="SemiBold" />
-        <Setter Property="FontSize" Value="14" />
+        <Setter Property="FontSize" Value="13" />
         <Setter Property="Foreground" Value="{DynamicResource Brush.Text}" />
     </Style>
 
@@ -88,7 +94,7 @@
         <Setter Property="Foreground" Value="{DynamicResource Brush.Text}" />
         <Setter Property="VerticalAlignment" Value="Center" />
         <Setter Property="FontFamily" Value="Consolas, Segoe UI, monospace" />
-        <Setter Property="FontSize" Value="12" />
+        <Setter Property="FontSize" Value="11" />
     </Style>
 
     <Style x:Key="Cell.RightDim" TargetType="TextBlock">
@@ -97,7 +103,7 @@
         <Setter Property="Foreground" Value="{DynamicResource Brush.TextDim}" />
         <Setter Property="VerticalAlignment" Value="Center" />
         <Setter Property="FontFamily" Value="Consolas, Segoe UI, monospace" />
-        <Setter Property="FontSize" Value="11" />
+        <Setter Property="FontSize" Value="10" />
     </Style>
 
     <Style x:Key="Cell.CenterDim" TargetType="TextBlock">
@@ -106,7 +112,7 @@
         <Setter Property="Foreground" Value="{DynamicResource Brush.TextDim}" />
         <Setter Property="VerticalAlignment" Value="Center" />
         <Setter Property="FontFamily" Value="Consolas, Segoe UI, monospace" />
-        <Setter Property="FontSize" Value="11" />
+        <Setter Property="FontSize" Value="10" />
     </Style>
 
     <Style x:Key="Cell.LeftDim" TargetType="TextBlock">
@@ -115,12 +121,12 @@
         <Setter Property="Foreground" Value="{DynamicResource Brush.TextDim}" />
         <Setter Property="VerticalAlignment" Value="Center" />
         <Setter Property="FontFamily" Value="Consolas, Segoe UI, monospace" />
-        <Setter Property="FontSize" Value="11" />
+        <Setter Property="FontSize" Value="10" />
     </Style>
 
     <Style x:Key="Label.Field" TargetType="TextBlock">
         <Setter Property="Foreground" Value="{DynamicResource Brush.TextMuted}" />
-        <Setter Property="FontSize" Value="11" />
+        <Setter Property="FontSize" Value="10" />
         <Setter Property="FontWeight" Value="Medium" />
         <Setter Property="Margin" Value="0,0,0,6" />
         <Setter Property="TextOptions.TextFormattingMode" Value="Display" />
@@ -130,7 +136,7 @@
     <Style x:Key="Text.DialogTitle" TargetType="TextBlock">
         <Setter Property="FontFamily" Value="{StaticResource Font.App}" />
         <Setter Property="FontWeight" Value="Bold" />
-        <Setter Property="FontSize" Value="16" />
+        <Setter Property="FontSize" Value="15" />
         <Setter Property="Foreground" Value="{DynamicResource Brush.Text}" />
     </Style>
 
@@ -140,7 +146,7 @@
     <!-- Shadow sits on a dedicated background layer (outer only); text/content is a
          sibling so it is never rendered through the effect. -->
     <Style x:Key="Button.Base" TargetType="Button">
-        <Setter Property="FocusVisualStyle" Value="{StaticResource FocusVisual.Empty}" />
+        <Setter Property="FocusVisualStyle" Value="{StaticResource Focus.HighVisibility}" />
         <Setter Property="Foreground" Value="{DynamicResource Brush.Text}" />
         <Setter Property="Background" Value="Transparent" />
         <Setter Property="BorderBrush" Value="Transparent" />
@@ -207,14 +213,14 @@
 
     <!-- WPF-UI Action Button Styles with High-Contrast, Always-Visible Disabled States -->
     <Style x:Key="Button.PrimaryAction" TargetType="{x:Type ui:Button}">
-        <Setter Property="FocusVisualStyle" Value="{StaticResource FocusVisual.Empty}" />
+        <Setter Property="FocusVisualStyle" Value="{StaticResource Focus.HighVisibility}" />
         <Setter Property="Background" Value="{DynamicResource Brush.Accent}" />
         <Setter Property="BorderBrush" Value="{DynamicResource Brush.Accent}" />
         <Setter Property="BorderThickness" Value="1" />
         <Setter Property="Foreground" Value="#FFFFFF" />
         <Setter Property="FontFamily" Value="{StaticResource Font.App}" />
         <Setter Property="FontWeight" Value="SemiBold" />
-        <Setter Property="FontSize" Value="12.5" />
+        <Setter Property="FontSize" Value="11.5" />
         <Setter Property="Height" Value="32" />
         <Setter Property="Padding" Value="16,0" />
         <Setter Property="CornerRadius" Value="6" />
@@ -260,14 +266,14 @@
     </Style>
 
     <Style x:Key="Button.SecondaryAction" TargetType="{x:Type ui:Button}">
-        <Setter Property="FocusVisualStyle" Value="{StaticResource FocusVisual.Empty}" />
+        <Setter Property="FocusVisualStyle" Value="{StaticResource Focus.HighVisibility}" />
         <Setter Property="Background" Value="{DynamicResource Brush.Surface}" />
         <Setter Property="BorderBrush" Value="{DynamicResource Brush.Border}" />
         <Setter Property="BorderThickness" Value="1" />
         <Setter Property="Foreground" Value="{DynamicResource Brush.Text}" />
         <Setter Property="FontFamily" Value="{StaticResource Font.App}" />
         <Setter Property="FontWeight" Value="Medium" />
-        <Setter Property="FontSize" Value="12.5" />
+        <Setter Property="FontSize" Value="11.5" />
         <Setter Property="Height" Value="32" />
         <Setter Property="Padding" Value="14,0" />
         <Setter Property="CornerRadius" Value="6" />
@@ -411,7 +417,7 @@
 
     <!-- PRIMARY CTA — Vibrant gradient fill, white text -->
     <Style x:Key="Button.Accent" TargetType="Button">
-        <Setter Property="FocusVisualStyle" Value="{StaticResource FocusVisual.Empty}" />
+        <Setter Property="FocusVisualStyle" Value="{StaticResource Focus.HighVisibility}" />
         <Setter Property="Background"      Value="{DynamicResource Brush.CtaGradient}" />
         <Setter Property="BorderBrush"     Value="Transparent" />
         <Setter Property="BorderThickness" Value="0" />
@@ -428,7 +434,7 @@
                                 Background="{TemplateBinding Background}"
                                 BorderBrush="{TemplateBinding BorderBrush}"
                                 BorderThickness="{TemplateBinding BorderThickness}"
-                                CornerRadius="10"
+                                CornerRadius="8"
                                 Effect="{DynamicResource Shadow.Button}"
                                 RenderTransformOrigin="0.5,0.5">
                             <Border.RenderTransform>
@@ -469,19 +475,28 @@
         </Setter>
     </Style>
 
+    <!-- ============ FLUENT 2 SHAPE TOKENS — corner radius scale ============ -->
+    <!-- None 0 (edges/bars) · Small 2 (badges) · Medium 4 (buttons, inputs, dropdowns)
+         · Large 8 (cards, flyouts, dialogs) · XLarge 12 (sheets, popovers) · Circle 50% (avatars) -->
+    <CornerRadius x:Key="Radius.None">0</CornerRadius>
+    <CornerRadius x:Key="Radius.Small">2</CornerRadius>
+    <CornerRadius x:Key="Radius.Control">4</CornerRadius>
+    <CornerRadius x:Key="Radius.Card">8</CornerRadius>
+    <CornerRadius x:Key="Radius.Sheet">12</CornerRadius>
+
     <Style x:Key="CardShadow.Base" TargetType="Border">
         <Setter Property="Background"   Value="{DynamicResource Brush.Surface}" />
         <Setter Property="BorderThickness" Value="1" />
-        <Setter Property="BorderBrush"  Value="{DynamicResource Brush.Border}" />
-        <Setter Property="CornerRadius" Value="12" />
+        <Setter Property="BorderBrush"  Value="{DynamicResource Brush.CardStroke}" />
+        <Setter Property="CornerRadius" Value="8" />
         <Setter Property="Effect"       Value="{DynamicResource Shadow.Card}" />
     </Style>
 
     <Style x:Key="CardShadow.Dialog" TargetType="Border">
         <Setter Property="Background"   Value="{DynamicResource Brush.Surface}" />
         <Setter Property="BorderThickness" Value="1" />
-        <Setter Property="BorderBrush"  Value="{DynamicResource Brush.Border}" />
-        <Setter Property="CornerRadius" Value="12" />
+        <Setter Property="BorderBrush"  Value="{DynamicResource Brush.CardStroke}" />
+        <Setter Property="CornerRadius" Value="8" />
         <Setter Property="Effect"       Value="{DynamicResource Shadow.CardDialog}" />
     </Style>
 
@@ -498,10 +513,21 @@
         <Setter Property="CornerRadius" Value="12" />
     </Style>
 
+    <!-- Win11 elevation card (Fluent 2: elevation 8 + 1px contour stroke).
+         Strokes AND shadows together — Windows never uses borderless floating cards.
+         Lines still belong on: inputs, table rows, menus. -->
+    <Style x:Key="Card.Elevated" TargetType="Border">
+        <Setter Property="Background" Value="{DynamicResource Brush.Surface}" />
+        <Setter Property="BorderThickness" Value="1" />
+        <Setter Property="BorderBrush" Value="{DynamicResource Brush.CardStroke}" />
+        <Setter Property="CornerRadius" Value="8" />
+        <Setter Property="Effect" Value="{DynamicResource Shadow.Card}" />
+    </Style>
+
     <!-- Icon glyph inside IDM stacked action buttons (added for WDM-2 MainWindow compatibility) -->
     <Style x:Key="Toolbar.Icon" TargetType="TextBlock">
         <Setter Property="FontFamily" Value="{StaticResource Font.Icon}" />
-        <Setter Property="FontSize" Value="24" />
+        <Setter Property="FontSize" Value="23" />
         <Setter Property="Foreground" Value="{DynamicResource Brush.Text}" />
         <Setter Property="HorizontalAlignment" Value="Center" />
         <Setter Property="Margin" Value="0,0,0,2" />
@@ -514,7 +540,7 @@
 
     <!-- IDM Stacked Action Button (Icon on top, Label underneath) -->
     <Style x:Key="Button.IDMStacked" TargetType="Button">
-        <Setter Property="FocusVisualStyle" Value="{StaticResource FocusVisual.Empty}" />
+        <Setter Property="FocusVisualStyle" Value="{StaticResource Focus.HighVisibility}" />
         <Setter Property="Background" Value="Transparent" />
         <Setter Property="BorderBrush" Value="Transparent" />
         <Setter Property="BorderThickness" Value="0" />
@@ -549,7 +575,7 @@
 
     <!-- Primary stacked action button — solid accent fill, white icon + label -->
     <Style x:Key="Button.PrimaryStacked" TargetType="Button">
-        <Setter Property="FocusVisualStyle" Value="{StaticResource FocusVisual.Empty}" />
+        <Setter Property="FocusVisualStyle" Value="{StaticResource Focus.HighVisibility}" />
         <Setter Property="Background" Value="{DynamicResource Brush.Accent}" />
         <Setter Property="BorderBrush" Value="{DynamicResource Brush.Accent}" />
         <Setter Property="BorderThickness" Value="1" />
@@ -595,14 +621,14 @@
 
     <!-- ============ FLUENT 2 PRIMARY ACTION BUTTON ============ -->
     <Style x:Key="Button.PrimaryFilled" TargetType="Button">
-        <Setter Property="FocusVisualStyle" Value="{StaticResource FocusVisual.Empty}" />
+        <Setter Property="FocusVisualStyle" Value="{StaticResource Focus.HighVisibility}" />
         <Setter Property="Background" Value="{DynamicResource Brush.Accent}" />
         <Setter Property="BorderBrush" Value="{DynamicResource Brush.Accent}" />
         <Setter Property="BorderThickness" Value="1" />
         <Setter Property="Foreground" Value="#FFFFFF" />
         <Setter Property="FontFamily" Value="{StaticResource Font.App}" />
         <Setter Property="FontWeight" Value="SemiBold" />
-        <Setter Property="FontSize" Value="12" />
+        <Setter Property="FontSize" Value="11" />
         <Setter Property="Height" Value="32" />
         <Setter Property="Padding" Value="12,0" />
         <Setter Property="Cursor" Value="Hand" />
@@ -635,7 +661,7 @@
 
     <!-- ============ FLUENT 2 COMMAND BAR ICON BUTTON ============ -->
     <Style x:Key="Button.CommandBarIcon" TargetType="Button">
-        <Setter Property="FocusVisualStyle" Value="{StaticResource FocusVisual.Empty}" />
+        <Setter Property="FocusVisualStyle" Value="{StaticResource Focus.HighVisibility}" />
         <Setter Property="Background" Value="Transparent" />
         <Setter Property="BorderBrush" Value="Transparent" />
         <Setter Property="BorderThickness" Value="0" />
@@ -676,13 +702,13 @@
 
     <!-- ============ TEXTBOX — 36px, 6px radius, flat border ============ -->
     <Style TargetType="TextBox">
-        <Setter Property="FocusVisualStyle" Value="{StaticResource FocusVisual.Empty}" />
+        <Setter Property="FocusVisualStyle" Value="{StaticResource Focus.HighVisibility}" />
         <Setter Property="Foreground" Value="{DynamicResource Brush.Text}" />
         <Setter Property="Background" Value="{DynamicResource Brush.Surface}" />
         <Setter Property="BorderBrush" Value="{DynamicResource Brush.Border}" />
         <Setter Property="BorderThickness" Value="1" />
         <Setter Property="Height" Value="36" />
-        <Setter Property="FontSize" Value="13" />
+        <Setter Property="FontSize" Value="12" />
         <Setter Property="Padding" Value="12,2" />
         <Setter Property="VerticalContentAlignment" Value="Center" />
         <Setter Property="CaretBrush" Value="{DynamicResource Brush.Accent}" />
@@ -716,13 +742,13 @@
 
     <!-- ============ COMBOBOX ============ -->
     <Style TargetType="ComboBox">
-        <Setter Property="FocusVisualStyle" Value="{x:Null}" />
+        <Setter Property="FocusVisualStyle" Value="{StaticResource Focus.HighVisibility}" />
         <Setter Property="Foreground" Value="{DynamicResource Brush.Text}" />
         <Setter Property="Background" Value="{DynamicResource Brush.Surface}" />
         <Setter Property="BorderBrush" Value="{DynamicResource Brush.Border}" />
         <Setter Property="BorderThickness" Value="1" />
         <Setter Property="Height" Value="32" />
-        <Setter Property="FontSize" Value="12.5" />
+        <Setter Property="FontSize" Value="11.5" />
         <Setter Property="Padding" Value="10,0" />
         <Setter Property="VerticalContentAlignment" Value="Center" />
         <Setter Property="HorizontalContentAlignment" Value="Left" />
@@ -849,7 +875,7 @@
     </Style>
 
     <Style TargetType="ComboBoxItem">
-        <Setter Property="FocusVisualStyle" Value="{StaticResource FocusVisual.Empty}" />
+        <Setter Property="FocusVisualStyle" Value="{StaticResource Focus.HighVisibility}" />
         <Setter Property="Foreground" Value="{DynamicResource Brush.Text}" />
         <Setter Property="Padding" Value="10,7" />
         <Setter Property="Cursor" Value="Hand" />
@@ -877,7 +903,7 @@
 
     <!-- ============ EXPANDER — flat header with chevron, themed content ============ -->
     <Style TargetType="Expander">
-        <Setter Property="FocusVisualStyle" Value="{StaticResource FocusVisual.Empty}" />
+        <Setter Property="FocusVisualStyle" Value="{StaticResource Focus.HighVisibility}" />
         <Setter Property="Foreground" Value="{DynamicResource Brush.Text}" />
         <Setter Property="Background" Value="Transparent" />
         <Setter Property="BorderBrush" Value="Transparent" />
@@ -938,7 +964,7 @@
 
     <!-- ============ CHECKBOX / RADIO ============ -->
     <Style TargetType="CheckBox">
-        <Setter Property="FocusVisualStyle" Value="{StaticResource FocusVisual.Empty}" />
+        <Setter Property="FocusVisualStyle" Value="{StaticResource Focus.HighVisibility}" />
         <Setter Property="Foreground" Value="{DynamicResource Brush.Text}" />
         <Setter Property="VerticalContentAlignment" Value="Center" />
         <Setter Property="Margin" Value="0,4" />
@@ -990,7 +1016,7 @@
     </Style>
 
     <Style TargetType="RadioButton">
-        <Setter Property="FocusVisualStyle" Value="{StaticResource FocusVisual.Empty}" />
+        <Setter Property="FocusVisualStyle" Value="{StaticResource Focus.HighVisibility}" />
         <Setter Property="Foreground" Value="{DynamicResource Brush.Text}" />
         <Setter Property="VerticalContentAlignment" Value="Center" />
         <Setter Property="Margin" Value="0,4" />
@@ -1032,8 +1058,8 @@
 
     <!-- ============ SIDEBAR — capsule selection pill ============ -->
     <Style x:Key="ListBoxItem.Sidebar" TargetType="ListBoxItem">
-        <Setter Property="FocusVisualStyle" Value="{StaticResource FocusVisual.Empty}" />
-        <Setter Property="Foreground" Value="{DynamicResource Brush.TextDim}" />
+        <Setter Property="FocusVisualStyle" Value="{StaticResource Focus.HighVisibility}" />
+        <Setter Property="Foreground" Value="{DynamicResource Brush.Text}" />
         <Setter Property="Padding" Value="6,2" />
         <Setter Property="Margin" Value="2,1" />
         <Setter Property="Height" Value="28" />
@@ -1090,7 +1116,7 @@
     </Style>
 
     <Style x:Key="ListBox.Sidebar" TargetType="ListBox">
-        <Setter Property="FocusVisualStyle" Value="{StaticResource FocusVisual.Empty}" />
+        <Setter Property="FocusVisualStyle" Value="{StaticResource Focus.HighVisibility}" />
         <Setter Property="Background" Value="Transparent" />
         <Setter Property="BorderThickness" Value="0" />
         <Setter Property="Padding" Value="0,0" />
@@ -1115,7 +1141,7 @@
 
     <!-- ============ TREEVIEW — Modern flat categories tree without dotted lines ============ -->
     <Style TargetType="TreeView">
-        <Setter Property="FocusVisualStyle" Value="{StaticResource FocusVisual.Empty}" />
+        <Setter Property="FocusVisualStyle" Value="{StaticResource Focus.HighVisibility}" />
         <Setter Property="Background" Value="Transparent" />
         <Setter Property="BorderThickness" Value="0" />
         <Setter Property="Padding" Value="4" />
@@ -1127,7 +1153,7 @@
         <Setter Property="Padding" Value="8,6" />
         <Setter Property="Margin" Value="2,1" />
         <Setter Property="Cursor" Value="Hand" />
-        <Setter Property="FocusVisualStyle" Value="{StaticResource FocusVisual.Empty}" />
+        <Setter Property="FocusVisualStyle" Value="{StaticResource Focus.HighVisibility}" />
         <Setter Property="Template">
             <Setter.Value>
                 <ControlTemplate TargetType="TreeViewItem">
@@ -1194,7 +1220,7 @@
     <Style x:Key="Header.Default" TargetType="DataGridColumnHeader">
         <Setter Property="Background" Value="{DynamicResource Brush.Surface}" />
         <Setter Property="Foreground" Value="{DynamicResource Brush.TextDim}" />
-        <Setter Property="FontSize" Value="11.5" />
+        <Setter Property="FontSize" Value="10.5" />
         <Setter Property="FontWeight" Value="SemiBold" />
         <Setter Property="Padding" Value="8,0" />
         <Setter Property="Height" Value="32" />
@@ -1240,7 +1266,7 @@
 
     <!-- ============ DATAGRID ============ -->
     <Style TargetType="DataGrid">
-        <Setter Property="FocusVisualStyle" Value="{StaticResource FocusVisual.Empty}" />
+        <Setter Property="FocusVisualStyle" Value="{StaticResource Focus.HighVisibility}" />
         <Setter Property="Background" Value="Transparent" />
         <Setter Property="Foreground" Value="{DynamicResource Brush.Text}" />
         <Setter Property="BorderThickness" Value="0" />
@@ -1263,7 +1289,7 @@
         <Setter Property="RowStyle">
             <Setter.Value>
                 <Style TargetType="DataGridRow">
-                    <Setter Property="FocusVisualStyle" Value="{StaticResource FocusVisual.Empty}" />
+                    <Setter Property="FocusVisualStyle" Value="{StaticResource Focus.HighVisibility}" />
                     <Style.Triggers>
                         <Trigger Property="IsMouseOver" Value="True">
                             <Setter Property="Background" Value="{DynamicResource Brush.RowHover}" />
@@ -1278,7 +1304,7 @@
         <Setter Property="CellStyle">
             <Setter.Value>
                 <Style TargetType="DataGridCell">
-                    <Setter Property="FocusVisualStyle" Value="{StaticResource FocusVisual.Empty}" />
+                    <Setter Property="FocusVisualStyle" Value="{StaticResource Focus.HighVisibility}" />
                     <Setter Property="Background" Value="Transparent" />
                     <Setter Property="BorderThickness" Value="0" />
                     <Setter Property="Padding" Value="10,0" />
@@ -1366,7 +1392,7 @@
         <Setter Property="Background" Value="{DynamicResource Brush.Surface}" />
         <Setter Property="Foreground" Value="{DynamicResource Brush.Text}" />
         <Setter Property="FontFamily" Value="{StaticResource Font.App}" />
-        <Setter Property="FontSize" Value="12" />
+        <Setter Property="FontSize" Value="11" />
         <Setter Property="Padding" Value="2,1" />
     </Style>
 
@@ -1395,7 +1421,7 @@
 
     <!-- ============ SETTINGS TAB NAV ============ -->
     <Style x:Key="Button.SettingsTab" TargetType="RadioButton">
-        <Setter Property="FocusVisualStyle" Value="{StaticResource FocusVisual.Empty}" />
+        <Setter Property="FocusVisualStyle" Value="{StaticResource Focus.HighVisibility}" />
         <Setter Property="Foreground"   Value="{DynamicResource Brush.TextDim}" />
         <Setter Property="Background"   Value="Transparent" />
         <Setter Property="Padding"      Value="10,8" />
@@ -1427,7 +1453,7 @@
 
     <!-- Tab bar item — neutral medium-grey selection look -->
     <Style x:Key="Tab.Item" TargetType="RadioButton">
-        <Setter Property="FocusVisualStyle" Value="{StaticResource FocusVisual.Empty}" />
+        <Setter Property="FocusVisualStyle" Value="{StaticResource Focus.HighVisibility}" />
         <Setter Property="Foreground" Value="{DynamicResource Brush.TextDim}" />
         <Setter Property="Background" Value="Transparent" />
         <Setter Property="BorderBrush" Value="Transparent" />
@@ -1546,8 +1572,8 @@
                                     <Thumb.Template>
                                         <ControlTemplate TargetType="Thumb">
                                             <Border x:Name="ThumbBorder"
-                                                    Background="{DynamicResource Brush.TextMuted}"
-                                                    CornerRadius="1.5" Margin="0" Opacity="0.6" />
+                                                    Background="{DynamicResource Brush.ScrollThumb}"
+                                                    CornerRadius="1.5" Margin="0" Opacity="1" />
                                             <ControlTemplate.Triggers>
                                                 <Trigger Property="IsMouseOver" Value="True">
                                                     <Setter TargetName="ThumbBorder" Property="Background" Value="{DynamicResource Brush.Accent}" />
@@ -1618,7 +1644,7 @@
         <Setter Property="BorderThickness" Value="0" />
         <Setter Property="Padding" Value="0,4" />
         <Setter Property="FontFamily" Value="{StaticResource Font.App}" />
-        <Setter Property="FontSize" Value="12" />
+        <Setter Property="FontSize" Value="11" />
         <Setter Property="Template">
             <Setter.Value>
                 <ControlTemplate TargetType="ContextMenu">
@@ -1633,13 +1659,13 @@
     </Style>
 
     <Style TargetType="MenuItem">
-        <Setter Property="FocusVisualStyle" Value="{StaticResource FocusVisual.Empty}" />
+        <Setter Property="FocusVisualStyle" Value="{StaticResource Focus.HighVisibility}" />
         <Setter Property="Foreground" Value="{DynamicResource Brush.Text}" />
         <Setter Property="VerticalAlignment" Value="Center" />
         <Setter Property="Background" Value="Transparent" />
         <Setter Property="Padding" Value="12,6" />
         <Setter Property="FontFamily" Value="{StaticResource Font.App}" />
-        <Setter Property="FontSize" Value="12" />
+        <Setter Property="FontSize" Value="11" />
         <Setter Property="Template">
             <Setter.Value>
                 <ControlTemplate TargetType="MenuItem">
@@ -1665,7 +1691,7 @@
                                   SnapsToDevicePixels="True" />
                             <!-- Shortcut text -->
                             <TextBlock x:Name="InputGestureText" Text="{TemplateBinding InputGestureText}"
-                                       Foreground="{DynamicResource Brush.TextDim}" FontSize="11"
+                                       Foreground="{DynamicResource Brush.TextDim}" FontSize="10"
                                        VerticalAlignment="Center" Margin="16,0,0,0" DockPanel.Dock="Right" />
                         </DockPanel>
                         <!-- Sub-menu popup -->
@@ -1717,7 +1743,7 @@
         <Setter Property="BorderThickness" Value="1" />
         <Setter Property="Padding" Value="9,5" />
         <Setter Property="FontFamily" Value="{StaticResource Font.App}" />
-        <Setter Property="FontSize" Value="12" />
+        <Setter Property="FontSize" Value="11" />
         <Setter Property="UseLayoutRounding" Value="True" />
         <Setter Property="SnapsToDevicePixels" Value="True" />
         <Setter Property="Template">

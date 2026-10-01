@@ -58,6 +58,29 @@ public sealed class DownloadTask : INotifyPropertyChanged
     /// Keys are header names; values are header values.</summary>
     public Dictionary<string, string> Headers { get; set; } = new(StringComparer.OrdinalIgnoreCase);
 
+    /// <summary>Per-download full-session replay (user-approved): Cookie and
+    /// Authorization ride even cross-host (mirrors/CDNs), unlike the default
+    /// same-host-only gating. Persisted so resumes keep working.</summary>
+    public bool FullSessionReplay { get; set; }
+
+    /// <summary>Form POST body replay (IDM Bc equivalent): base64 request body
+    /// captured from the page's own form POST, plus its content type. Replayed
+    /// on probe + single-stream download; such tasks never use ranged/chunked
+    /// requests. Persisted like Headers.</summary>
+    public string? PostData { get; set; }
+    public string? PostContentType { get; set; }
+
+    /// <summary>Browser proxy mirror: effective proxy the browser used when the
+    /// link was captured (host/port/type, never credentials). Honored for probe
+    /// + single-stream via a scoped client; forces single-stream (the shared
+    /// chunk pool has no per-task proxy). Persisted.</summary>
+    public string? ProxyHost { get; set; }
+    public int ProxyPort { get; set; }
+    public string? ProxyType { get; set; }
+
+    public bool HasPostBody() => !string.IsNullOrWhiteSpace(PostData);
+    public bool HasProxyOverride() => !string.IsNullOrWhiteSpace(ProxyHost) && ProxyPort >= 1 && ProxyPort <= 65535;
+
     /// <summary>Alternative URLs for the same file. Used as failover mirrors; the
     /// engine rotates to the next mirror when the current URL keeps failing.</summary>
     public List<string> Mirrors { get; set; } = new();
@@ -77,11 +100,6 @@ public sealed class DownloadTask : INotifyPropertyChanged
     /// always_retry_download, bounded by settings MaxRetries). Transient by design:
     /// reset on manual retry/success/remove, never mapped into TaskRecord.</summary>
     public int AutoResumeAttempts { get; set; }
-
-    /// <summary>Set when the scheduler held this task outside its download window.
-    /// Distinguishes scheduler holds from user pauses so window re-entry resumes
-    /// only what the scheduler paused. Cleared by any manual Start. Transient.</summary>
-    public bool SchedulerPaused { get; set; }
 
     /// <summary>Per-chunk completion snapshot mirrored from the engine's chunk
     /// bitmap at save time (1DM db/ThreadInfo equivalent, coarse). Restores
@@ -297,11 +315,11 @@ public sealed class DownloadTask : INotifyPropertyChanged
         get
         {
             if (Status != TaskStatus.Downloading)
-                return "";
+                return "—";
             if (!string.IsNullOrEmpty(_eta))
                 return _eta;
-            // Preparing gap (resolve/probe): show activity instead of blank.
-            return _isPreparing ? "…" : "";
+            // Preparing gap (resolve/probe) + early 1% stall: never blank.
+            return _isPreparing ? "…" : "—";
         }
         set
         {
@@ -424,11 +442,11 @@ public sealed class DownloadTask : INotifyPropertyChanged
         get
         {
             if (Status != TaskStatus.Downloading)
-                return "";
+                return "—";
             if (SpeedBps >= 1)
                 return $"{FormatBytes((long)SpeedBps)}/s";
-            // Preparing gap: show activity instead of blank.
-            return _isPreparing ? "…" : "";
+            // Preparing gap + 1% stall: never blank so the row never collapses.
+            return _isPreparing ? "…" : "0 B/s";
         }
     }
 

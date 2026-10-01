@@ -2,6 +2,8 @@ using System;
 using System.IO;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Input;
+using System.Windows.Media;
 using WDM.Services;
 
 namespace WDM;
@@ -30,6 +32,50 @@ public partial class BrowserExtensionControl : UserControl
         {
             if (ExtensionPathBox != null)
                 ExtensionPathBox.Text = BrowserIntegration.DeployDir;
+        }
+    }
+
+    private void PillEasy_Click(object sender, RoutedEventArgs e) => SelectMode(easy: true);
+    private void PillManual_Click(object sender, RoutedEventArgs e) => SelectMode(easy: false);
+
+    private void SelectMode(bool easy)
+    {
+        var accentBrush = TryFindResource("Brush.Accent") as SolidColorBrush;
+        var accentColor = accentBrush?.Color ?? Color.FromRgb(0x00, 0x78, 0xD4);
+        var dimBrush = TryFindResource("Brush.TextDim") as System.Windows.Media.Brush;
+
+        PillEasyBg.Color = easy ? accentColor : Colors.Transparent;
+        PillManualBg.Color = easy ? Colors.Transparent : accentColor;
+        PillEasyLabel.Foreground = easy ? Brushes.White : dimBrush;
+        PillManualLabel.Foreground = easy ? dimBrush : Brushes.White;
+
+        EasyPanel.Visibility = easy ? Visibility.Visible : Visibility.Collapsed;
+        ManualPanel.Visibility = easy ? Visibility.Collapsed : Visibility.Visible;
+    }
+
+    private void InstallCrxLoader_Click(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            BrowserIntegration.OpenCrxLoaderStore();
+        }
+        catch (Exception ex)
+        {
+            App.LogException(ex);
+            FeedbackText.Text = "Couldn't open browser: search for 'CRX Loader' in the Chrome Web Store.";
+        }
+    }
+
+    private void OneClickInstall_Click(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            BrowserIntegration.OpenOneClickInstall();
+        }
+        catch (Exception ex)
+        {
+            App.LogException(ex);
+            FeedbackText.Text = "Couldn't open browser: visit https://get-wdm.vercel.app and download the extension manually.";
         }
     }
 
@@ -91,7 +137,7 @@ public partial class BrowserExtensionControl : UserControl
         catch (Exception ex)
         {
             App.LogException(ex);
-            FeedbackText.Text = "Couldn't copy the path — please copy it by hand from the box above.";
+            FeedbackText.Text = "Couldn't copy the path: please copy it by hand from the box above.";
         }
     }
 

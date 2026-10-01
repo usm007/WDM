@@ -24,14 +24,17 @@ public sealed class AuthAndIntegrityTests
         var m = typeof(CaptureServer).GetMethod("IsAuthorized",
             BindingFlags.NonPublic | BindingFlags.Static)!;
         string token = CaptureAuth.GetOrCreateToken();
+        object?[] Auth(string? origin, string? tok, string? ver) => new object?[] { origin, tok, ver };
         // Valid token passes with no Origin (service-worker fetch).
-        Assert.True((bool)m.Invoke(null, new object?[] { null, token })!);
+        Assert.True((bool)m.Invoke(null, Auth(null, token, null))!);
         // Bare curl-like client (no token, no Origin) is rejected.
-        Assert.False((bool)m.Invoke(null, new object?[] { null, null })!);
+        Assert.False((bool)m.Invoke(null, Auth(null, null, null))!);
         // Wrong token never passes, even with an extension Origin.
-        Assert.False((bool)m.Invoke(null, new object?[] { "chrome-extension://abc", "nope" })!);
-        // Migration grace: extension Origin without token still passes.
-        Assert.True((bool)m.Invoke(null, new object?[] { "chrome-extension://abc", null })!);
+        Assert.False((bool)m.Invoke(null, Auth("chrome-extension://abc", "nope", "1.2.8"))!);
+        // Foreign extension IDs never pass without a token (pinned grace).
+        Assert.False((bool)m.Invoke(null, Auth("chrome-extension://abc", null, "1.2.8"))!);
+        // Pinned extension ID passes token-less (same key = same ID, all copies).
+        Assert.True((bool)m.Invoke(null, Auth("chrome-extension://jehagbjolooaohcbmlhegpmjeaakonof", null, "1.2.8"))!);
         // Web pages stay forbidden regardless of token path (checked separately).
         var web = typeof(CaptureServer).GetMethod("IsBrowserWebOrigin",
             BindingFlags.NonPublic | BindingFlags.Static)!;

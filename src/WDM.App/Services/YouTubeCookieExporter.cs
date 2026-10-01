@@ -40,7 +40,9 @@ public static class YouTubeCookieExporter
         }
 
         Directory.CreateDirectory(Path.GetDirectoryName(CookiePath)!);
-        File.WriteAllText(CookiePath, sb.ToString(), new UTF8Encoding(encoderShouldEmitUTF8Identifier: false));
+        // DPAPI at rest (user scope): yt-dlp gets a short-lived plaintext
+        // copy materialized per spawn (see YtDlpRunner), never this file.
+        File.WriteAllText(CookiePath, DataProtector.ProtectToBase64(sb.ToString()), new UTF8Encoding(encoderShouldEmitUTF8Identifier: false));
 
         var signedIn = selected.Any(c => c.Name is "LOGIN_INFO" or "SID" or "SSID" or "__Secure-3PSID");
         return (CookiePath, selected.Count, signedIn);

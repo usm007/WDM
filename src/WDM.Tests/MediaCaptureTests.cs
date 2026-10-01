@@ -29,9 +29,10 @@ public sealed class MediaCaptureTests
         var perms = r.GetProperty("permissions").EnumerateArray().Select(e => e.GetString()).ToHashSet();
         Assert.Contains("downloads", perms);
         Assert.Contains("storage", perms);
-        // Declared popup + background resources exist.
+        // Declared background/content resources exist (no popup: the toolbar
+        // icon itself is the capture toggle via action.onClicked).
         string extDir = Path.Combine(root, "src", "WDM.BrowserExtension");
-        foreach (string f in new[] { "background.js", "popup.html", "popup.js", "media_sniffer.js" })
+        foreach (string f in new[] { "background.js", "media_sniffer.js", "youtube_menu.js", "wdm_hook.js" })
             Assert.True(File.Exists(Path.Combine(extDir, f)), f);
         // Endpoint paths the extension speaks must exist server-side (contract).
         foreach (string ep in new[] { "/ping", "/download", "/download/batch", "/download/blob-chunk", "/download/mega-sid", "/resolve" })
@@ -70,7 +71,7 @@ public sealed class MediaCaptureTests
         {
             using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(10) };
             using var req = new HttpRequestMessage(HttpMethod.Post, "http://127.0.0.1:17621/download");
-            req.Headers.Add("Origin", "chrome-extension://test");
+            req.Headers.Add("Origin", "chrome-extension://jehagbjolooaohcbmlhegpmjeaakonof");
             req.Content = new StringContent(
                 "{\"url\":\"http://origin.test/movie.mp4\",\"fileName\":\"movie.mp4\"}",
                 Encoding.UTF8, "application/json");

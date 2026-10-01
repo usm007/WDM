@@ -34,6 +34,10 @@ public sealed class CaptureServer : IDisposable
     /// hasn't registered a batch handler — the endpoint answers 503 so the
     /// extension can fall back to single posts.</summary>
     public Action<List<BatchCaptureItem>>? OnBatchCapture { get; set; }
+    /// <summary>Structured single-capture event carrying POST replay bodies and
+    /// proxy descriptors. When subscribed it replaces the legacy
+    /// <c>_onCapture</c> delegate (never both — no double dialogs).</summary>
+    public Action<BatchCaptureItem>? OnCaptureItem { get; set; }
 
     /// <summary>Assembled-blob sink (1DM SaveBlobTask equivalent): invoked when
     /// the final <c>blob-chunk</c> completes. The app imports the staged file as
@@ -244,6 +248,7 @@ public sealed class CaptureServer : IDisposable
                 bool expectContinue = false;
                 string? origin = null;
                 string? authToken = null;
+                string? extVersion = null;
                 int headerCount = 0;
                 while (!string.IsNullOrEmpty(line = await reader.ReadLineAsync()))
                 {
@@ -269,6 +274,11 @@ public sealed class CaptureServer : IDisposable
                         expectContinue = value.Contains("100-continue", StringComparison.OrdinalIgnoreCase);
                     else if (name.Equals("Origin", StringComparison.OrdinalIgnoreCase))
                         origin = value;
+                    else if (name.Equals("X-WDM-ExtVersion", StringComparison.OrdinalIgnoreCase))
+                    {
+                        if (!string.IsNullOrWhiteSpace(value) && value.Length <= 32)
+                            extVersion = value.Trim();
+                    }
                     else if (name.Equals(CaptureAuth.HeaderName, StringComparison.OrdinalIgnoreCase) ||
                              name.Equals("Authorization", StringComparison.OrdinalIgnoreCase))
                     {
@@ -345,9 +355,9 @@ public sealed class CaptureServer : IDisposable
                         await WriteResponseAsync(stream, HttpStatusCode.Forbidden, "{\"error\":\"forbidden origin\"}", origin);
                         return;
                     }
-                    if (!IsAuthorized(origin, authToken))
+                    if (!IsAuthorized(origin, authToken, extVersion))
                     {
-                        await WriteResponseAsync(stream, HttpStatusCode.Unauthorized, "{\"error\":\"unauthorized — update the WDM browser extension (Settings > Extension)\"}", origin);
+                        await WriteResponseAsync(stream, HttpStatusCode.Unauthorized, "{\"error\":\"unauthorized: update the WDM browser extension (Settings > Extension)\"}", origin);
                         return;
                     }
                     // A valid install token proves the paired extension is driving
@@ -362,7 +372,16 @@ public sealed class CaptureServer : IDisposable
                         IsConnected = true;
                         ExtensionConnected?.Invoke();
                         ActivityLog.Write("CAPTURE", $"Browser captured: {item.FileName ?? item.Url}");
-                        _onCapture(item.Url, item.FileName, item.Referer, item.Headers, item.PageTitle);
+                        // Structured subscribers get the full item; otherwise the
+                        // legacy tuple delegate (never both — no double dialogs).
+                        if (OnCaptureItem is not null)
+                        {
+                            try { OnCaptureItem(item); } catch { }
+                        }
+                        else
+                        {
+                            _onCapture(item.Url, item.FileName, item.Referer, item.Headers, item.PageTitle);
+                        }
                         ActivityLog.Write("CAPTURE", $"{ActivityLog.HostOf(item.Url)} | {item.FileName} | {item.Url}");
                         await WriteResponseAsync(stream, HttpStatusCode.OK, "{\"accepted\":true}", origin);
                     }
@@ -384,9 +403,9 @@ public sealed class CaptureServer : IDisposable
                         await WriteResponseAsync(stream, HttpStatusCode.Forbidden, "{\"error\":\"forbidden origin\"}", origin);
                         return;
                     }
-                    if (!IsAuthorized(origin, authToken))
+                    if (!IsAuthorized(origin, authToken, extVersion))
                     {
-                        await WriteResponseAsync(stream, HttpStatusCode.Unauthorized, "{\"error\":\"unauthorized — update the WDM browser extension (Settings > Extension)\"}", origin);
+                        await WriteResponseAsync(stream, HttpStatusCode.Unauthorized, "{\"error\":\"unauthorized: update the WDM browser extension (Settings > Extension)\"}", origin);
                         return;
                     }
                     if (OnBatchCapture is null)
@@ -441,9 +460,9 @@ public sealed class CaptureServer : IDisposable
                         await WriteResponseAsync(stream, HttpStatusCode.Forbidden, "{\"error\":\"forbidden origin\"}", origin);
                         return;
                     }
-                    if (!IsAuthorized(origin, authToken))
+                    if (!IsAuthorized(origin, authToken, extVersion))
                     {
-                        await WriteResponseAsync(stream, HttpStatusCode.Unauthorized, "{\"error\":\"unauthorized — update the WDM browser extension (Settings > Extension)\"}", origin);
+                        await WriteResponseAsync(stream, HttpStatusCode.Unauthorized, "{\"error\":\"unauthorized: update the WDM browser extension (Settings > Extension)\"}", origin);
                         return;
                     }
                     if (OnBlobCaptured is null)
@@ -484,9 +503,9 @@ public sealed class CaptureServer : IDisposable
                         await WriteResponseAsync(stream, HttpStatusCode.Forbidden, "{\"error\":\"forbidden origin\"}", origin);
                         return;
                     }
-                    if (!IsAuthorized(origin, authToken))
+                    if (!IsAuthorized(origin, authToken, extVersion))
                     {
-                        await WriteResponseAsync(stream, HttpStatusCode.Unauthorized, "{\"error\":\"unauthorized — update the WDM browser extension (Settings > Extension)\"}", origin);
+                        await WriteResponseAsync(stream, HttpStatusCode.Unauthorized, "{\"error\":\"unauthorized: update the WDM browser extension (Settings > Extension)\"}", origin);
                         return;
                     }
                     try
@@ -515,9 +534,9 @@ public sealed class CaptureServer : IDisposable
                         await WriteResponseAsync(stream, HttpStatusCode.Forbidden, "{\"error\":\"forbidden origin\"}", origin);
                         return;
                     }
-                    if (!IsAuthorized(origin, authToken))
+                    if (!IsAuthorized(origin, authToken, extVersion))
                     {
-                        await WriteResponseAsync(stream, HttpStatusCode.Unauthorized, "{\"error\":\"unauthorized — update the WDM browser extension (Settings > Extension)\"}", origin);
+                        await WriteResponseAsync(stream, HttpStatusCode.Unauthorized, "{\"error\":\"unauthorized: update the WDM browser extension (Settings > Extension)\"}", origin);
                         return;
                     }
                     string? videoUrl = null;
@@ -550,7 +569,7 @@ public sealed class CaptureServer : IDisposable
                         // everything else is refused while the switch is off.
                         if (!TaskStore.LoadSettings().EnableMediaFetching && !YouTubeResolver.IsYoutubeUrl(trimmedUrl))
                         {
-                            await WriteResponseAsync(stream, HttpStatusCode.BadRequest, "{\"error\":\"media fetching is disabled (except YouTube) — enable it in Options\"}", origin);
+                            await WriteResponseAsync(stream, HttpStatusCode.BadRequest, "{\"error\":\"media fetching is disabled (except YouTube): enable it in Options\"}", origin);
                             return;
                         }
                         // Single resolution pipeline (direct → static → manifest →
@@ -814,15 +833,44 @@ public sealed class CaptureServer : IDisposable
     }
 
     /// <summary>Loopback authorization for state-changing capture endpoints.
-    /// A valid install token always passes; a wrong token never does. A missing
-    /// token is accepted only from extension Origins (migration grace for
-    /// extension copies deployed before the token existed). Bare loopback
-    /// clients (curl, scripts — no token, no extension Origin) are rejected.</summary>
-    private static bool IsAuthorized(string? origin, string? authToken)
+    /// A valid install token always passes; a wrong token never does. The
+    /// token-less grace is hardened, not open: our pinned Chrome extension ID
+    /// (same key = same ID for every legit copy, store or unpacked) passes;
+    /// Firefox (per-install UUID origins, unpinnable) passes only with a
+    /// versioned client from the token era. Everything else — curl, scripts,
+    /// foreign extensions, stale clients — is rejected.</summary>
+    private const string WdmChromeExtensionOrigin = "chrome-extension://jehagbjolooaohcbmlhegpmjeaakonof";
+    private const string MinGracedExtVersion = "1.2.8";
+    internal static bool ExtVersionAtLeast(string? version, string floor)
+    {
+        try
+        {
+            if (string.IsNullOrWhiteSpace(version))
+                return false;
+            int[] Xin(string s) => s.Trim().Split('.', StringSplitOptions.RemoveEmptyEntries)
+                .Select(p => int.TryParse(new string(p.TakeWhile(char.IsDigit).ToArray()), out int n) ? n : -1).ToArray();
+            int[] v = Xin(version);
+            int[] f = Xin(floor);
+            for (int i = 0; i < Math.Max(v.Length, f.Length); i++)
+            {
+                int a = i < v.Length ? v[i] : 0;
+                int b = i < f.Length ? f[i] : 0;
+                if (a != b) return a > b;
+            }
+            return true;
+        }
+        catch { return false; }
+    }
+    private static bool IsAuthorized(string? origin, string? authToken, string? extVersion)
     {
         if (!string.IsNullOrWhiteSpace(authToken))
             return CaptureAuth.Validate(authToken);
-        return IsAllowedExtensionOrigin(origin);
+        string? o = origin?.Trim();
+        if (string.Equals(o, WdmChromeExtensionOrigin, StringComparison.OrdinalIgnoreCase))
+            return true;
+        if (o is not null && o.StartsWith("moz-extension://", StringComparison.OrdinalIgnoreCase))
+            return ExtVersionAtLeast(extVersion, MinGracedExtVersion);
+        return false;
     }
 
     private static bool IsAllowedCaptureUrl(string url)
@@ -848,6 +896,85 @@ public sealed class CaptureServer : IDisposable
         if (!IsAllowedCaptureUrl(url) || (!allowPrivate && NetworkGuard.IsBlockedResolveTarget(url)))
             return null;
         return url;
+    }
+
+    // POST replay bodies are loopback-only secrets, but still bounded: base64
+    // ≤ ~350KB chars (≈256KB), decodable, non-empty, content type on the
+    // form-data allow-list. Upload bodies (file bytes) never qualify — the
+    // extension doesn't capture them in the first place.
+    private const int MaxPostDataChars = 350 * 1024;
+    private static bool TrySanitizePostBody(string? data, string? contentType, out string? body, out string? type)
+    {
+        body = null;
+        type = null;
+        if (string.IsNullOrWhiteSpace(data))
+            return false;
+        data = data.Trim();
+        if (data.Length > MaxPostDataChars)
+            return false;
+        byte[] bytes;
+        try { bytes = Convert.FromBase64String(data); }
+        catch { return false; }
+        if (bytes.Length == 0 || bytes.Length > 256 * 1024)
+            return false;
+        string ctFull = (contentType ?? "application/x-www-form-urlencoded").Trim();
+        if (ctFull.Length > 512)
+            return false;
+        string ct = ctFull.Split(';')[0].Trim().ToLowerInvariant();
+        if (ct is not ("application/x-www-form-urlencoded" or "multipart/form-data" or
+                "application/octet-stream" or "text/plain" or "application/json"))
+            return false;
+        body = data;
+        type = ctFull;
+        return true;
+    }
+
+    private static bool IsProxyHost(string host)
+    {
+        // Hostname or IP literal only — no URLs, no credentials, no ports.
+        if (host.Contains('/') || host.Contains('\\') || host.Contains('@') ||
+            host.Contains(' ') || host.Contains(':') || host.Contains(".."))
+            return false;
+        return Uri.CheckHostName(host) != UriHostNameType.Unknown;
+    }
+
+    private static bool IsFullSessionApproved(CapturePayload payload, string? referer)
+    {
+        try
+        {
+            var allowed = TaskStore.LoadSettings().FullSessionReplayHosts;
+            if (allowed is null || allowed.Count == 0)
+                return false;
+            var hosts = new List<string>();
+            foreach (string? candidate in new[] { referer, payload.PageUrl })
+            {
+                try
+                {
+                    if (!string.IsNullOrWhiteSpace(candidate) &&
+                        Uri.TryCreate(candidate, UriKind.Absolute, out var u) &&
+                        (u.Scheme == Uri.UriSchemeHttp || u.Scheme == Uri.UriSchemeHttps))
+                        hosts.Add(u.Host.ToLowerInvariant());
+                }
+                catch { }
+            }
+            foreach (string host in hosts)
+            {
+                foreach (string entry in allowed)
+                {
+                    try
+                    {
+                        string e = (entry ?? "").Trim().ToLowerInvariant();
+                        if (e.Length == 0)
+                            continue;
+                        if (host == e || host.EndsWith("." + e, StringComparison.Ordinal))
+                            return true;
+                    }
+                    catch { }
+                }
+            }
+            return false;
+        }
+        catch { return false; }
     }
 
     /// <summary>Validates + sanitizes one capture payload into a <see cref="BatchCaptureItem"/>    /// (URL gates, filename/path stripping, header allow-list, stream hints, Origin
@@ -908,6 +1035,35 @@ public sealed class CaptureServer : IDisposable
         string? keyHint = SanitizeCaptureUrl(payload.KeyUrl, 2048, authed);
         if (!string.IsNullOrWhiteSpace(keyHint) && !headers.ContainsKey("X-WDM-KeyUrl"))
             headers["X-WDM-KeyUrl"] = keyHint;
+        // Form POST replay (IDM Bc equivalent): base64 body + content type.
+        // Invalid bodies fail the item loudly (a form download without its
+        // body returns server errors downstream — never silently corrupt).
+        string? postData = null;
+        string? postContentType = null;
+        if (!string.IsNullOrWhiteSpace(payload.PostData))
+        {
+            if (!TrySanitizePostBody(payload.PostData, payload.PostContentType, out postData, out postContentType))
+                return false;
+        }
+        // Browser proxy mirror: descriptor only, credentials never cross.
+        string? proxyHost = null;
+        int proxyPort = 0;
+        string? proxyType = null;
+        if (payload.Proxy is not null && !string.IsNullOrWhiteSpace(payload.Proxy.Host))
+        {
+            string ph = payload.Proxy.Host.Trim();
+            int pp = payload.Proxy.Port;
+            if (ph.Length <= 253 && pp >= 1 && pp <= 65535 && IsProxyHost(ph))
+            {
+                proxyHost = ph;
+                proxyPort = pp;
+                proxyType = string.IsNullOrWhiteSpace(payload.Proxy.Type) ? "http" : payload.Proxy.Type.Trim().ToLowerInvariant();
+            }
+        }
+        // Full-session replay: the extension flag is advisory — the server
+        // approves only when the referer/page host (or a parent) sits on the
+        // user's explicit allow-list. Default-deny everywhere else.
+        bool fullSession = payload.FullSession && IsFullSessionApproved(payload, referer);
         item = new BatchCaptureItem
         {
             Url = url,
@@ -915,6 +1071,12 @@ public sealed class CaptureServer : IDisposable
             Referer = referer,
             Headers = headers,
             PageTitle = pageTitle,
+            PostData = postData,
+            PostContentType = postContentType,
+            FullSession = payload.FullSession,
+            ProxyHost = proxyHost,
+            ProxyPort = proxyPort,
+            ProxyType = proxyType,
         };
         // The engine sends task.Referer as the Referer header itself — a
         // Referer/Referrer entry left in Headers would go out twice and strict
@@ -1114,6 +1276,25 @@ public sealed class CaptureServer : IDisposable
         public string? AudioUrl { get; set; }
         public string? PageUrl { get; set; }
         public string? KeyUrl { get; set; }
+        // Form POST replay (IDM Bc equivalent): base64 body + content type,
+        // captured from the page's own form POST. Validated in TryBuildCaptureItem.
+        public string? PostData { get; set; }
+        public string? PostContentType { get; set; }
+        // Full-session replay (per-site user approval): page-host cookies may
+        // ride cross-host. Default-deny; the dialog and engine honor the flag.
+        public bool FullSession { get; set; }
+        // Browser proxy mirror: effective proxy the browser used. Credentials
+        // are never sent; types beyond http/https are recorded, not honored.
+        public ProxyDescriptor? Proxy { get; set; }
+    }
+
+    public sealed class ProxyDescriptor
+    {
+        public string? Mode { get; set; }
+        public string? Host { get; set; }
+        public int Port { get; set; }
+        public string? Type { get; set; }
+        public string? PacUrl { get; set; }
     }
 
     private sealed class BatchPayload
@@ -1129,6 +1310,12 @@ public sealed class CaptureServer : IDisposable
         public string? Referer { get; set; }
         public Dictionary<string, string> Headers { get; set; } = new(StringComparer.OrdinalIgnoreCase);
         public string? PageTitle { get; set; }
+        public string? PostData { get; set; }
+        public string? PostContentType { get; set; }
+        public bool FullSession { get; set; }
+        public string? ProxyHost { get; set; }
+        public int ProxyPort { get; set; }
+        public string? ProxyType { get; set; }
     }
 
     private sealed class BlobChunk

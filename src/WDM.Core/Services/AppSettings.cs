@@ -27,6 +27,9 @@ public sealed class AppSettings
     public int MaxConcurrentDownloads { get; set; } = 3;
     public long GlobalSpeedLimitKbps { get; set; }
     public bool HasPromptedExtensionInstall { get; set; } = false;
+    /// <summary>Second-run Tips window (repurposed WelcomeWindow): shown once on
+    /// the run after first-ever run. First run opens the hosted setup guide.</summary>
+    public bool HasSeenTipsWindow { get; set; } = false;
     public bool MinimizeToTray { get; set; } = true;
     public bool NotifyOnCompletion { get; set; } = true;
     public bool ShowTrayProgress { get; set; } = false;
@@ -73,7 +76,8 @@ public sealed class AppSettings
 
     /// <summary>Minimum auto-catch size (browser extension): files smaller than
     /// this are left to the browser instead of being handed to WDM. 0 disables
-    /// the gate (catch everything). Unknown sizes always pass (can't be judged).</summary>
+    /// the gate (catch everything). Unknown sizes pass unless the file type
+    /// proves it small (images, pages, styles, fonts).</summary>
     public long MinCatchSizeBytes { get; set; } = 200L * 1024 * 1024;    /// <summary>1DM <c>always_retry_download</c> (default OFF), bounded by
     /// <see cref="MaxRetries"/> per task: a timer re-queues Failed tasks until
     /// their per-task budget is spent. User Pause/Cancel/Remove always wins.</summary>
@@ -98,17 +102,6 @@ public sealed class AppSettings
         { "Other",      Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "Downloads") },
     };
 
-    // Scheduler (1DM util/Scheduler, desktop subset: time window + days + speed cap)
-    public bool SchedulerEnabled { get; set; } = false;
-    public TimeSpan SchedulerStart { get; set; } = new TimeSpan(22, 0, 0);
-    public TimeSpan SchedulerStop { get; set; } = new TimeSpan(7, 0, 0);
-    public long SchedulerSpeedLimitKbps { get; set; } = 0;
-    public List<DayOfWeek> SchedulerDays { get; set; } = new()
-    {
-        DayOfWeek.Monday, DayOfWeek.Tuesday, DayOfWeek.Wednesday, DayOfWeek.Thursday,
-        DayOfWeek.Friday, DayOfWeek.Saturday, DayOfWeek.Sunday,
-    };
-
     // Proxy (manual HTTP/HTTPS proxy, IDM-style; .NET has no SOCKS support)
     public bool ProxyEnabled { get; set; } = false;
     public string ProxyHost { get; set; } = "";
@@ -117,6 +110,25 @@ public sealed class AppSettings
     /// <summary>Stored in plaintext in settings.json (same tradeoff as IDM —
     /// a per-user file under %LocalAppData%).</summary>
     public string? ProxyPassword { get; set; }
+
+    /// <summary>Per-site full-session replay approvals (page-host cookies may
+    /// ride to third-party CDNs for these hosts only). Shown with a warning
+    /// wherever edited; default-deny everywhere else.</summary>
+    public List<string> FullSessionReplayHosts { get; set; } = new();
+
+    // Per-host connection policy (IDM per-site exceptions): user caps
+    // (host key "scheme://host:port" → max connections 1..32) plus learned
+    // cooldowns (origin → until + cause) persisted across restarts so a
+    // 429-burned host stays backed off after relaunch. Fragile hosts
+    // auto-degrade to 1 connection on repeated integrity faults.
+    public Dictionary<string, int> HostConnectionLimits { get; set; } = new(StringComparer.OrdinalIgnoreCase);
+    public Dictionary<string, HostCooldown> HostCooldowns { get; set; } = new(StringComparer.OrdinalIgnoreCase);
+
+    public sealed class HostCooldown
+    {
+        public long UntilUnix { get; set; }
+        public string Cause { get; set; } = "";
+    }
 
     // Post-download
     public bool ComputeChecksum { get; set; }

@@ -28,9 +28,54 @@ public static class BrowserIntegration
     public const string WebGuideUrl =
         "https://get-wdm.vercel.app/extension-guide.html";
 
+    // CRX Loader 1-click install (Chromium, no Developer mode). Single source
+    // of truth — BrowserExtensionControl and ExtensionGuideWindow
+    // all launch through the helpers below.
+    public const string CrxLoaderStoreUrl =
+        "https://chromewebstore.google.com/detail/crx-loader/chokhpikgifdgmfipekibjgnhhmkddon";
+
+    public const string CrxLoaderInstallUrl =
+        "https://crxloader.com/install" +
+        "?download_url=https%3A%2F%2Fget-wdm.vercel.app%2Fwdm-extension.zip" +
+        "&name=WDM%20Download%20Catcher" +
+        "&icon_url=https%3A%2F%2Fget-wdm.vercel.app%2Ficon128.png" +
+        "&success_url=https%3A%2F%2Fget-wdm.vercel.app%2F%3Finstalled%3Dtrue" +
+        "&auto=1";
+
     public static string DeployDir => Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
         "WDM", "BrowserExtension");
+
+    /// <summary>Writes the approved full-session-replay host list for the
+    /// extension (<c>wdm-session-hosts.json</c> next to the token file).
+    /// Called during deploy and whenever approvals change mid-run.</summary>
+    public static void DeploySessionHosts()
+    {
+        try
+        {
+            string dir = DeployDir;
+            Directory.CreateDirectory(dir);
+            List<string> hosts;
+            try
+            {
+                hosts = TaskStore.LoadSettings().FullSessionReplayHosts
+                    .Where(h => !string.IsNullOrWhiteSpace(h)).Select(h => h.Trim().ToLowerInvariant())
+                    .Distinct(StringComparer.OrdinalIgnoreCase).Take(200).ToList();
+            }
+            catch { hosts = new List<string>(); }
+            string json = System.Text.Json.JsonSerializer.Serialize(new { hosts });
+            string path = Path.Combine(dir, "wdm-session-hosts.json");
+            string existing = "";
+            try { if (File.Exists(path)) existing = File.ReadAllText(path); } catch { }
+            if (!string.Equals(existing, json, StringComparison.Ordinal))
+            {
+                string tmp = path + ".wdm-tmp";
+                File.WriteAllText(tmp, json);
+                File.Move(tmp, path, overwrite: true);
+            }
+        }
+        catch { }
+    }
 
     /// <summary>
     /// Copies bundled extension files to a stable per-user location for
@@ -50,30 +95,79 @@ public static class BrowserIntegration
         // DeployDir below; in dev layouts source may equal destination, and
         // copying a directory onto itself fails. In that case the extension
         // is already in place, so just ensure the folder exists.
+        bool isCurrent = false;
         if (src is not null && Directory.Exists(src)
             && !string.Equals(Path.GetFullPath(src), Path.GetFullPath(dst), StringComparison.OrdinalIgnoreCase))
         {
-            if (!DeployIsCurrent(src, dst))
+            isCurrent = IsDeployedCurrent(src, dst);
+            if (!isCurrent)
                 CopyUnpackedExtension(src, dst);
         }
         else if (!Directory.Exists(dst))
         {
             Directory.CreateDirectory(dst);
         }
+        else
+        {
+            isCurrent = true;
+        }
 
-        // Belt-and-braces: shipped manifests once carried a dev-machine
-        // update_url (file:///E:/WDM-master/...). Chrome update-checks unpacked
-        // extensions that declare update_url, and a dead URL gets the install
-        // disabled after reboot. The deployed copy must never declare one.
-        try { StripDeployedUpdateUrl(dst); } catch { }
-        WriteExtensionToken(dst);
+        // Only modify deployed files if the deployment wasn't current or token is genuinely missing.
+        // Never touch files or modify timestamps in an already-current unpacked folder on every boot,
+        // as external modifications trigger Chrome's extension tamper/corruption detection.
+        if (!isCurrent || !File.Exists(Path.Combine(dst, CaptureAuth.ExtensionTokenFileName)))
+        {
+            try { StripDeployedUpdateUrl(dst); } catch { }
+            WriteExtensionToken(dst);
+        }
+        // Approved session hosts ride alongside (change-guarded inside, so an
+        // already-current folder is never touched on every boot).
+        try { DeploySessionHosts(); } catch { }
 
         return dst;
     }
 
+    /// <summary>True when the live deployed copy matches the bundled source.
+    /// False when the source can't be located (dev/unknown layout) or the
+    /// copy is stale — the caller should surface the reload notice.</summary>
+    public static bool IsDeployedCurrent()
+    {
+        try
+        {
+            string? src = FindSourceDir();
+            if (src is null || !Directory.Exists(src))
+                return false;
+            string dst = DeployDir;
+            if (!Directory.Exists(dst))
+                return false;
+            return IsDeployedCurrent(src, dst);
+        }
+        catch { return false; }
+    }
+
+    public sealed record ExtensionHealth(bool DeployedCurrent, bool TokenPresent, int BrowsersFound)
+    {
+        public bool Healthy => DeployedCurrent && TokenPresent;
+    }
+
+    /// <summary>Extension health snapshot: deployed copy fresh, loopback token
+    /// present, browsers detected. The one-click repair is the existing setup
+    /// flow (redeploy + open extensions page); this tells the UI when to
+    /// offer it.</summary>
+    public static ExtensionHealth CheckHealth()
+    {
+        bool current = false;
+        bool token = false;
+        int browsers = 0;
+        try { current = IsDeployedCurrent(); } catch { }
+        try { token = File.Exists(Path.Combine(DeployDir, CaptureAuth.ExtensionTokenFileName)); } catch { }
+        try { browsers = DetectInstalledBrowsers().Count; } catch { }
+        return new ExtensionHealth(current, token, browsers);
+    }
+
     /// <summary>True when the deployed unpacked folder matches the bundled
     /// source (same version + key, no update_url, no missing files).</summary>
-    private static bool DeployIsCurrent(string src, string dst)
+    internal static bool IsDeployedCurrent(string src, string dst)
     {
         try
         {
@@ -280,6 +374,16 @@ public static class BrowserIntegration
         return found;
     }
 
+    public static void OpenCrxLoaderStore()
+    {
+        Process.Start(new ProcessStartInfo(CrxLoaderStoreUrl) { UseShellExecute = true });
+    }
+
+    public static void OpenOneClickInstall()
+    {
+        Process.Start(new ProcessStartInfo(CrxLoaderInstallUrl) { UseShellExecute = true });
+    }
+
     public static void OpenExtensionsPage(InstalledBrowser? browser = null)
     {
         try
@@ -360,6 +464,17 @@ public static class BrowserIntegration
         {
             Process.Start(new ProcessStartInfo("explorer.exe", $"\"{dir}\"") { UseShellExecute = true });
         }
+    }
+
+    /// <summary>
+    /// Opens the hosted online browser extension setup guide in the default
+    /// browser. Used on first-ever run (no offline fallback — first run
+    /// implies a fresh install with network). For general help with an
+    /// offline fallback, use <see cref="OpenExtensionGuide"/>.
+    /// </summary>
+    public static void OpenExtensionGuideOnline()
+    {
+        Process.Start(new ProcessStartInfo(WebGuideUrl) { UseShellExecute = true });
     }
 
     /// <summary>

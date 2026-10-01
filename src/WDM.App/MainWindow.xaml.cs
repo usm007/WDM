@@ -65,7 +65,7 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
                 const string how = "Options > YouTube & Media";
                 ActivityLog.Write("REMUX-SKIP", $"{task.FileName} kept as .TS — FFmpeg is not installed ({how}).");
                 if (s.NotifyOnCompletion)
-                    _tray?.ShowBalloon(task.FileName, $"Kept as .TS — FFmpeg is missing. Get MP4/MKV conversion in {how}.");
+                    _tray?.ShowBalloon(task.FileName, $"Kept as .TS: FFmpeg is missing. Get MP4/MKV conversion in {how}.");
             }
             else if (s.NotifyOnCompletion)
             {
@@ -120,6 +120,21 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
                 }
                 ShowAddDialog(url, name, referer, headers, fromCapture: true, pageTitle: pageTitle);
             }));
+        // Structured capture (POST bodies + proxy descriptors) rides alongside
+        // the legacy tuple delegate (kept for compat); the dialog prefers it.
+        _captureServer.OnCaptureItem = item => _dispatcher.BeginInvoke(() =>
+        {
+            if (_activeRefreshDialog != null && _activeRefreshDialog.IsLoaded)
+            {
+                _activeRefreshDialog.OnLinkCaptured(item.Url, item.Headers);
+                return;
+            }
+            ShowAddDialog(item.Url, item.FileName, item.Referer, item.Headers,
+                fromCapture: true, pageTitle: item.PageTitle,
+                postData: item.PostData, postContentType: item.PostContentType,
+                proxyHost: item.ProxyHost, proxyPort: item.ProxyPort, proxyType: item.ProxyType,
+                fullSession: item.FullSession);
+        });
         // Loopback listener bind happens off the UI thread so slow/busy boot
         // networking can never delay first paint. Callers marshal via dispatcher.
         _ = Task.Run(() => _captureServer.Start());
@@ -164,12 +179,12 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
         {
             int pausedCount = _viewModel.Tasks.Count(t => t.Status == Models.TaskStatus.Paused);
             int queuedCount = _viewModel.Engine.QueuedCount;
-            var active = _viewModel.Tasks.FirstOrDefault(t => t.Status == Models.TaskStatus.Downloading);
-            if (active is not null)
+            var downloading = _viewModel.Tasks.Where(t => t.Status == Models.TaskStatus.Downloading).ToList();
+            if (downloading.Count > 0)
             {
-                // The floating pill (docked to the right edge) shows % + speed.
-                string speed = string.IsNullOrEmpty(active.SpeedText) ? "0 B/s" : active.SpeedText;
-                _tray.SetProgress(active.Progress, speed, active.FileName ?? "", queuedCount, pausedCount);
+                var active = downloading[0];
+                int avg = (int)Math.Round(downloading.Average(t => t.Progress));
+                _tray.SetProgress(avg, "", active.FileName ?? "", queuedCount, pausedCount, downloading.Count);
                 UpdateProgressPanel(_viewModel.Settings.ShowTrayProgress ? active : null);
             }
             else
@@ -204,7 +219,17 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
                 string currentVer = UpdateChecker.CurrentVersion.ToString();
                 string? lastVer = _viewModel.Settings.LastRunVersion;
                 bool isUpdate = InstallState.IsUpdate(_viewModel.Settings, currentVer);
-                if (isUpdate)
+                // Stale deployed copy (corrupt/rolled-back deploy dir) needs the
+                // same reload even when the app version didn't change. A missing
+                // copy just means the background deploy hasn't finished — not stale.
+                bool staleDeploy = false;
+                try
+                {
+                    string manifest = System.IO.Path.Combine(BrowserIntegration.DeployDir, "manifest.json");
+                    staleDeploy = System.IO.File.Exists(manifest) && !BrowserIntegration.IsDeployedCurrent();
+                }
+                catch { }
+                if (isUpdate || staleDeploy)
                 {
                     string displayOld = string.IsNullOrWhiteSpace(lastVer) ? "previous" : lastVer;
                     _dispatcher.BeginInvoke(() => ShowExtensionReloadNotice(displayOld, currentVer));
@@ -320,7 +345,8 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
 
     private AddDownloadDialog? _activeAddDialog;
 
-    private void ShowAddDialog(string? prefillUrl = null, string? prefillFileName = null, string? prefillReferer = null, Dictionary<string, string>? prefillHeaders = null, bool fromCapture = false, string? pageTitle = null)
+    private void ShowAddDialog(string? prefillUrl = null, string? prefillFileName = null, string? prefillReferer = null, Dictionary<string, string>? prefillHeaders = null, bool fromCapture = false, string? pageTitle = null,
+        string? postData = null, string? postContentType = null, string? proxyHost = null, int proxyPort = 0, string? proxyType = null, bool fullSession = false)
     {
         string targetFolder = _viewModel.Settings.DownloadFolder;
         string rawName = prefillFileName ?? (!string.IsNullOrWhiteSpace(prefillUrl) ? DownloadEngine.DeriveName(prefillUrl) : "");
@@ -335,14 +361,14 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
         {
             if (_activeAddDialog.IsEmpty)
             {
-                _activeAddDialog.UpdatePrefill(prefillUrl, initialFileName, prefillReferer, prefillHeaders);
+                _activeAddDialog.UpdatePrefill(prefillUrl, initialFileName, prefillReferer, prefillHeaders, postData, postContentType, proxyHost, proxyPort, proxyType, fullSession);
                 _activeAddDialog.Topmost = fromCapture;
                 _activeAddDialog.Activate();
                 return;
             }
         }
 
-        var dialog = new AddDownloadDialog(_viewModel, prefillUrl, initialFileName, prefillReferer, prefillHeaders)
+        var dialog = new AddDownloadDialog(_viewModel, prefillUrl, initialFileName, prefillReferer, prefillHeaders, postData, postContentType, proxyHost, proxyPort, proxyType, fullSession)
         {
             Topmost = fromCapture,
         };
@@ -549,10 +575,7 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
         RestoreWindow();
         try
         {
-            string? url = args?.FirstOrDefault(a =>
-                !string.IsNullOrWhiteSpace(a) &&
-                (a.StartsWith("http://", StringComparison.OrdinalIgnoreCase) ||
-                 a.StartsWith("https://", StringComparison.OrdinalIgnoreCase)));
+            string? url = args?.Select(a => App.FirstDownloadLink(a)).FirstOrDefault(u => !string.IsNullOrWhiteSpace(u));
             if (!string.IsNullOrWhiteSpace(url))
                 ShowAddDialog(prefillUrl: url.Trim());
         }
@@ -588,7 +611,6 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
             };
             _progressPanel = panel;
         }
-        _progressPanel.ShowPanel(active!);
         _progressPanel.ShowPanel(active!);
     }
 
@@ -870,6 +892,23 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
         return null;
     }
 
+    private static T? FindVisualChild<T>(DependencyObject? parent) where T : DependencyObject
+    {
+        if (parent is null)
+            return null;
+        int count = VisualTreeHelper.GetChildrenCount(parent);
+        for (int i = 0; i < count; i++)
+        {
+            DependencyObject child = VisualTreeHelper.GetChild(parent, i);
+            if (child is T match)
+                return match;
+            T? nested = FindVisualChild<T>(child);
+            if (nested is not null)
+                return nested;
+        }
+        return null;
+    }
+
     private void TaskGrid_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
         _viewModel.SetBulkSelection(TaskGrid.SelectedItems.OfType<DownloadTask>());
@@ -1000,6 +1039,144 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
         DownloadsView.Visibility = Visibility.Visible;
         _viewModel.PersistSettings();
         TaskGrid.Focus();
+    }
+
+    private void SearchClear_Click(object sender, RoutedEventArgs e)
+    {
+        SearchBox.Text = "";
+        SearchBox.Focus();
+    }
+
+    private bool _snappingHeight;
+    private bool _snapRetryHooked;
+
+    private void Window_SizeChanged(object sender, SizeChangedEventArgs e)
+    {
+        SnapWindowHeightToWholeRows();
+    }
+
+    private void Window_ContentRendered(object? sender, EventArgs e)
+    {
+        // Layout transients (zero viewports, unrealized rows) make early
+        // passes no-ops; retry once content is rendered and realized.
+        Dispatcher.BeginInvoke(
+            System.Windows.Threading.DispatcherPriority.Loaded,
+            new Action(SnapWindowHeightToWholeRows));
+        if (!_snapRetryHooked && TaskGrid is not null)
+        {
+            _snapRetryHooked = true;
+            TaskGrid.ItemContainerGenerator.StatusChanged += (_, _) =>
+            {
+                if (TaskGrid.ItemContainerGenerator.Status == System.Windows.Controls.Primitives.GeneratorStatus.ContainersGenerated)
+                    Dispatcher.BeginInvoke(
+                        System.Windows.Threading.DispatcherPriority.Background,
+                        new Action(SnapWindowHeightToWholeRows));
+            };
+        }
+    }
+
+    /// <summary>Whole rows by window size: moves the window's bottom edge onto
+    /// a row boundary (shorter or longer, whichever is closer) so no row is
+    /// ever half-shown. Measures the actual row at the cut point, so taller
+    /// error rows are handled exactly. Also nudges a drifted scroll offset
+    /// back onto a boundary so the top row is whole too. Converges in one
+    /// step; maximized windows and MinHeight always win.</summary>
+    private void SnapWindowHeightToWholeRows()
+    {
+        if (_snappingHeight || WindowState != WindowState.Normal || TaskGrid is null)
+            return;
+        if (TaskGrid.Items.Count == 0)
+            return;
+        ScrollViewer? scroller = FindVisualChild<ScrollViewer>(TaskGrid);
+        if (scroller is null || scroller.ExtentHeight <= 0 || scroller.ViewportHeight <= 0)
+            return;
+        if (double.IsNaN(Height) || Height <= 0)
+            return;
+        double offset = scroller.VerticalOffset;
+        double edge = offset + scroller.ViewportHeight;
+        // Locate the row straddling the bottom edge (if any) and the bottom
+        // of the last fully-visible row.
+        DataGridRow? cutRow = null;
+        double cutTop = 0, cutBottom = 0;
+        double lastWholeBottom = double.NaN;
+        foreach (object? item in TaskGrid.Items)
+        {
+            if (TaskGrid.ItemContainerGenerator.ContainerFromItem(item) is not DataGridRow row)
+                continue;
+            double top, bottom;
+            try
+            {
+                top = row.TranslatePoint(new Point(0, 0), scroller).Y + offset;
+                bottom = top + row.ActualHeight;
+            }
+            catch (InvalidOperationException) { continue; }
+            if (top <= edge - 2 && bottom >= edge + 2)
+            {
+                if (cutRow is null || top < cutTop)
+                {
+                    cutRow = row;
+                    cutTop = top;
+                    cutBottom = bottom;
+                }
+            }
+            else if (bottom <= edge + 2 && top >= offset - 2)
+            {
+                if (double.IsNaN(lastWholeBottom) || bottom > lastWholeBottom)
+                    lastWholeBottom = bottom;
+            }
+        }
+        double heightAdjust = 0;
+        if (cutRow is not null)
+        {
+            double shown = edge - cutTop;
+            double hidden = cutBottom - edge;
+            double rowH = Math.Max(1, cutBottom - cutTop);
+            heightAdjust = shown >= rowH / 2 ? hidden : -shown;
+        }
+        else if (!double.IsNaN(lastWholeBottom))
+        {
+            double slack = edge - lastWholeBottom;
+            if (slack >= 2)
+                heightAdjust = -slack; // empty space below the last row: pull up
+        }
+        // Nudge a drifted scroll offset back onto a row boundary.
+        double offAdjust = 0;
+        if (cutRow is null && !double.IsNaN(lastWholeBottom))
+        {
+            double topEdge = offset;
+            foreach (object? item in TaskGrid.Items)
+            {
+                if (TaskGrid.ItemContainerGenerator.ContainerFromItem(item) is not DataGridRow row)
+                    continue;
+                double top;
+                try { top = row.TranslatePoint(new Point(0, 0), scroller).Y + offset; }
+                catch (InvalidOperationException) { continue; }
+                if (top <= topEdge + 2 && topEdge <= top + row.ActualHeight + 2 && topEdge - top >= 2)
+                {
+                    offAdjust = top - topEdge; // negative: scroll slightly up
+                    break;
+                }
+            }
+        }
+        if (Math.Abs(heightAdjust) < 2 && Math.Abs(offAdjust) < 2)
+            return;
+        _snappingHeight = true;
+        try
+        {
+            if (Math.Abs(heightAdjust) >= 2)
+            {
+                double newHeight = Height + heightAdjust;
+                if (newHeight >= MinHeight)
+                    Height = newHeight;
+            }
+            if (Math.Abs(offAdjust) >= 2)
+            {
+                double target = Math.Max(0, offset + offAdjust);
+                if (Math.Abs(target - offset) >= 1)
+                    scroller.ScrollToVerticalOffset(target);
+            }
+        }
+        finally { _snappingHeight = false; }
     }
 
     private void LocationText_MouseDown(object sender, MouseButtonEventArgs e)

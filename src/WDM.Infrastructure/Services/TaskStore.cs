@@ -306,14 +306,54 @@ public sealed class TaskStore
         s.MaxRetries = Math.Clamp(s.MaxRetries, 0, 20);
         s.DefaultChunkCount = Math.Clamp(s.DefaultChunkCount, 0, 32);
         s.GlobalSpeedLimitKbps = Math.Clamp(s.GlobalSpeedLimitKbps, 0, 1_000_000);
-        s.SchedulerSpeedLimitKbps = Math.Clamp(s.SchedulerSpeedLimitKbps, 0, 1_000_000);
         s.DeleteFinishedLinksAfterDays = Math.Clamp(s.DeleteFinishedLinksAfterDays, 0, 365);
         s.MinCatchSizeBytes = Math.Clamp(s.MinCatchSizeBytes, 0, 10L * 1024 * 1024 * 1024);
         s.ProxyPort = Math.Clamp(s.ProxyPort, 1, 65535);
-        if (s.SchedulerDays is null)
-            s.SchedulerDays = new AppSettings().SchedulerDays;
-        // An explicitly emptied list is preserved (window never applies); only a
-        // missing list gets the all-days default.
+        if (s.FullSessionReplayHosts is null)
+            s.FullSessionReplayHosts = new();
+        {
+            var clean = new List<string>();
+            foreach (string h in s.FullSessionReplayHosts)
+            {
+                try
+                {
+                    string v = (h ?? "").Trim().ToLowerInvariant();
+                    if (v.Length == 0 || v.Length > 253 || v.Any(c => !(char.IsLetterOrDigit(c) || c is '.' or '-' or '_')))
+                        continue;
+                    if (!v.Contains('.'))
+                        continue;
+                    if (!clean.Contains(v))
+                        clean.Add(v);
+                    if (clean.Count >= 200)
+                        break;
+                }
+                catch { }
+            }
+            s.FullSessionReplayHosts = clean;
+        }
+        // Per-host policy: drop empties, clamp caps, prune expired cooldowns.
+        if (s.HostConnectionLimits is null)
+            s.HostConnectionLimits = new(StringComparer.OrdinalIgnoreCase);
+        {
+            var clean = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+            foreach (var kv in s.HostConnectionLimits)
+            {
+                if (!string.IsNullOrWhiteSpace(kv.Key))
+                    clean[kv.Key.Trim()] = Math.Clamp(kv.Value, 1, 32);
+            }
+            s.HostConnectionLimits = clean;
+        }
+        if (s.HostCooldowns is null)
+            s.HostCooldowns = new(StringComparer.OrdinalIgnoreCase);
+        {
+            long now = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+            foreach (string key in s.HostCooldowns.Keys.ToList())
+            {
+                var c = s.HostCooldowns[key];
+                if (string.IsNullOrWhiteSpace(key) || c is null || c.UntilUnix <= now)
+                    s.HostCooldowns.Remove(key);
+            }
+        }
         if (!string.IsNullOrWhiteSpace(s.MoveOnFinishFolder))
         {
             string full;
@@ -543,7 +583,13 @@ public sealed class TaskStore
                 SourcePageUrl = t.SourcePageUrl,
                 Referer = t.Referer,
                 Headers = t.Headers,
+                FullSessionReplay = t.FullSessionReplay,
                 Mirrors = t.Mirrors?.ToList() ?? new(),
+                PostData = t.PostData,
+                PostContentType = t.PostContentType,
+                ProxyHost = t.ProxyHost,
+                ProxyPort = t.ProxyPort,
+                ProxyType = t.ProxyType,
                 Etag = t.Etag,
                 LastModified = t.LastModified,
                 FileName = t.FileName,
@@ -583,7 +629,13 @@ public sealed class TaskRecord
     public string? SourcePageUrl { get; set; }
     public string? Referer { get; set; }
     public Dictionary<string, string> Headers { get; set; } = new(StringComparer.OrdinalIgnoreCase);
+    public bool FullSessionReplay { get; set; }
     public List<string> Mirrors { get; set; } = new();
+    public string? PostData { get; set; }
+    public string? PostContentType { get; set; }
+    public string? ProxyHost { get; set; }
+    public int ProxyPort { get; set; }
+    public string? ProxyType { get; set; }
     public string? Etag { get; set; }
     public string? LastModified { get; set; }
     public string FileName { get; set; } = "";

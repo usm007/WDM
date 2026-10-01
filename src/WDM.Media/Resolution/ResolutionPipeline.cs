@@ -138,6 +138,40 @@ public static class ResolutionPipeline
                 return MapYouTube(pageUrl, q);
             }
 
+            // L4 — browser-assisted resolution (misses only, never YouTube).
+            // Runs the page in WDM's isolated runtime and observes traffic.
+            // Positive detections (media, DRM, login) win; soft misses fall
+            // through to earlier candidates.
+            if (!isYoutube)
+            {
+                MediaResolution? browser = null;
+                try
+                {
+                    browser = await BrowserResolver.TryResolveAsync(pageUrl, referer, headers, ct)
+                        .ConfigureAwait(false);
+                }
+                catch (OperationCanceledException)
+                {
+                    throw;
+                }
+                catch
+                {
+                    browser = null;
+                }
+                if (browser is not null
+                    && (browser.Status == ResolutionStatus.DrmProtected
+                        || browser.Status == ResolutionStatus.LoginRequired))
+                    return browser;
+                if (browser is not null && browser.Status == ResolutionStatus.Resolved
+                    && browser.Variants.Count > 0)
+                {
+                    if (string.IsNullOrWhiteSpace(title))
+                        title = browser.Title;
+                    acc.AddRange(browser.Variants);
+                    return Resolved(pageUrl, title, mergedHeaders, resolvedReferer, acc);
+                }
+            }
+
             if (acc.Count > 0)
                 return Resolved(pageUrl, title, mergedHeaders, resolvedReferer, acc);
 
@@ -256,7 +290,7 @@ public static class ResolutionPipeline
             Message = "This media looks DRM-protected — WDM can't download protected streams.",
         };
 
-    private static List<MediaVariant> Rank(List<MediaVariant> variants)
+    internal static List<MediaVariant> Rank(List<MediaVariant> variants)
     {
         var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         var deduped = new List<MediaVariant>();

@@ -53,7 +53,7 @@ public sealed class BlockVisualItem : INotifyPropertyChanged
     public static string GetToolTip(int index, double percent) => percent >= 99.5
         ? $"Block #{index}: complete"
         : percent > 0.5
-            ? $"Block #{index}: downloading — {Math.Round(percent)}%"
+            ? $"Block #{index}: downloading: {Math.Round(percent)}%"
             : $"Block #{index}: pending";
 
     public event PropertyChangedEventHandler? PropertyChanged;
@@ -72,7 +72,7 @@ public partial class DownloadProgressDialog : Window, INotifyPropertyChanged
 
     public ObservableCollection<BlockVisualItem> BlockList { get; } = new();
 
-    /// <summary>e.g. "42 / 64 done" — bound to the file-map header.</summary>
+    /// <summary>e.g. "42 / 64 done": bound to the file-map header.</summary>
     public string BlockSummaryText
     {
         get
@@ -121,7 +121,7 @@ public partial class DownloadProgressDialog : Window, INotifyPropertyChanged
             if (Task.Status == TaskStatus.Completed) return "Completed via yt-dlp";
             if (Task.Status == TaskStatus.Failed) return Task.Error ?? "Failed";
             if (Task.Progress >= 99 && Task.Status == TaskStatus.Downloading) return "Merging streams via ffmpeg…";
-            if (Task.Status == TaskStatus.Downloading) return $"Downloading via yt-dlp — {Task.Progress}%";
+            if (Task.Status == TaskStatus.Downloading) return $"Downloading via yt-dlp: {Task.Progress}%";
             return "YouTube download";
         }
     }
@@ -135,7 +135,7 @@ public partial class DownloadProgressDialog : Window, INotifyPropertyChanged
         if (YouTubeExtraPanel != null) YouTubeExtraPanel.Visibility = isYt ? Visibility.Visible : Visibility.Collapsed;
         if (isYt && ResumeLabel != null) ResumeLabel.Text = "Engine";
         // For YouTube tasks, the ResumeCapabilityText is set by RunYouTubeSessionAsync to
-        // "YouTube — via yt-dlp (single stream)" so the dialog never shows
+        // "YouTube: via yt-dlp (single stream)" so the dialog never shows
         // "Checking server support..." (the bug in the screenshot).
         OnPropertyChanged(nameof(YouTubeEngineText));
         OnPropertyChanged(nameof(YouTubeStatusHint));
@@ -147,19 +147,6 @@ public partial class DownloadProgressDialog : Window, INotifyPropertyChanged
     {
         base.OnSourceInitialized(e);
         WDM.Services.ThemeService.ApplyTitleBar(this);
-    }
-
-    private void Window_MouseLeftButtonDown(object sender, System.Windows.Input.MouseButtonEventArgs e)
-    {
-        if (e.ButtonState == System.Windows.Input.MouseButtonState.Pressed)
-        {
-            DragMove();
-        }
-    }
-
-    private void CloseClick(object sender, RoutedEventArgs e)
-    {
-        Close();
     }
 
     private static bool IsRiskyExecutable(string path)
@@ -307,7 +294,7 @@ public partial class DownloadProgressDialog : Window, INotifyPropertyChanged
 
         // Aggregate the engine's per-segment progress (binary 0/100 over
         // potentially hundreds of file segments) onto the fixed 64-block map.
-        // Block identity is file position, not thread — threads pull from a
+        // Block identity is file position, not thread: threads pull from a
         // shared pool, so per-thread bars were synthetic anyway.
         if (Task.Status == TaskStatus.Completed)
         {
@@ -370,7 +357,7 @@ public partial class DownloadProgressDialog : Window, INotifyPropertyChanged
             {
                 OnPropertyChanged(nameof(ChunkCountText));
                 // Block map is file-fixed (64 blocks), so thread-count changes
-                // don't rebuild it — just refresh from current state.
+                // don't rebuild it: just refresh from current state.
             }
             // Only update block visuals for HTTP tasks; YouTube uses single bar via YouTubeProgress* bindings.
             if (!Task.IsYouTube)
@@ -402,7 +389,7 @@ public partial class DownloadProgressDialog : Window, INotifyPropertyChanged
             if (string.IsNullOrWhiteSpace(fullPath) || !System.IO.File.Exists(fullPath))
                 fullPath = System.IO.Path.Combine(Task.SaveFolder, Task.FileName);
 
-            // Never auto-launch executables on completion — the user can still
+            // Never auto-launch executables on completion: the user can still
             // open them manually from the Complete dialog (with a warning).
             if (System.IO.File.Exists(fullPath) && !IsRiskyExecutable(fullPath))
             {
@@ -502,11 +489,6 @@ public partial class DownloadProgressDialog : Window, INotifyPropertyChanged
     private void SpeedLimit_Changed(object sender, RoutedEventArgs e)
     {
         OnPropertyChanged(nameof(IsSpeedLimitEnabled));
-    }
-
-    private void MinimizeClick(object sender, RoutedEventArgs e)
-    {
-        WindowState = WindowState.Minimized;
     }
 
     private void RevealClick(object sender, RoutedEventArgs e)

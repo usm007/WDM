@@ -18,29 +18,29 @@
         <StackPanel Grid.Row="0" Margin="20,18,20,16">
             <!-- Header with Refresh Icon -->
             <StackPanel Orientation="Horizontal" Margin="0,0,0,6">
-                <ui:SymbolIcon Symbol="ArrowClockwise24" FontSize="20"
+                <ui:SymbolIcon Symbol="ArrowClockwise24" FontSize="19"
                            Foreground="{DynamicResource Brush.Accent}" Margin="0,0,8,0" VerticalAlignment="Center" />
-                <TextBlock x:Name="TitleText" Text="WDM Extension Update" FontSize="18" FontWeight="SemiBold"
+                <TextBlock x:Name="TitleText" Text="WDM Extension Update" FontSize="17" FontWeight="SemiBold"
                            Foreground="{DynamicResource Brush.Text}" VerticalAlignment="Center" />
             </StackPanel>
 
             <TextBlock x:Name="SubtitleText" Text="Please reload your browser extension to apply the latest updates."
-                       FontSize="12.5" Foreground="{DynamicResource Brush.TextMuted}" Margin="0,0,0,8" TextWrapping="Wrap" />
+                       FontSize="11.5" Foreground="{DynamicResource Brush.TextMuted}" Margin="0,0,0,8" TextWrapping="Wrap" />
 
             <!-- Short release notes (very brief) -->
-            <TextBlock x:Name="ReleaseNotesText" Visibility="Collapsed" FontSize="12" Foreground="{DynamicResource Brush.TextDim}" TextWrapping="Wrap" Margin="0,0,0,8" />
+            <TextBlock x:Name="ReleaseNotesText" Visibility="Collapsed" FontSize="11" Foreground="{DynamicResource Brush.TextDim}" TextWrapping="Wrap" Margin="0,0,0,8" />
 
             <!-- Reload warning -->
             <Border Background="{DynamicResource Brush.StatusPausedSoft}" BorderBrush="{DynamicResource Brush.Warning}" BorderThickness="1" CornerRadius="4" Padding="8,6" Margin="0,0,0,10">
                 <DockPanel LastChildFill="True">
-                    <ui:SymbolIcon DockPanel.Dock="Left" Symbol="Warning20" FontSize="16" Foreground="{DynamicResource Brush.Warning}" Margin="0,1,8,0" VerticalAlignment="Top" />
-                    <TextBlock Text="After updating, reload the extension: chrome://extensions (or edge://extensions) → click Reload on WDM Download Catcher." FontSize="12" FontWeight="Medium" Foreground="{DynamicResource Brush.Text}" TextWrapping="Wrap" />
+                    <ui:SymbolIcon DockPanel.Dock="Left" Symbol="Warning20" FontSize="15" Foreground="{DynamicResource Brush.Warning}" Margin="0,1,8,0" VerticalAlignment="Top" />
+                    <TextBlock Text="After updating, reload the extension: chrome://extensions (or edge://extensions) → click Reload on WDM Download Catcher." FontSize="11" FontWeight="Medium" Foreground="{DynamicResource Brush.Text}" TextWrapping="Wrap" />
                 </DockPanel>
             </Border>
 
-            <TextBlock Text="Instructions" FontSize="13" FontWeight="SemiBold" Foreground="{DynamicResource Brush.Text}" Margin="0,0,0,6" />
-            <TextBlock Text="1. Open your browser extensions page (chrome://extensions or edge://extensions)." FontSize="12" Foreground="{DynamicResource Brush.TextDim}" Margin="0,0,0,3" />
-            <TextBlock Text="2. Find 'WDM Download Catcher' and click the Reload button on its card." FontSize="12" Foreground="{DynamicResource Brush.TextDim}" Margin="0,0,0,2" />
+            <TextBlock Text="Instructions" FontSize="12" FontWeight="SemiBold" Foreground="{DynamicResource Brush.Text}" Margin="0,0,0,6" />
+            <TextBlock Text="1. Open your browser extensions page (chrome://extensions or edge://extensions)." FontSize="11" Foreground="{DynamicResource Brush.TextDim}" Margin="0,0,0,3" />
+            <TextBlock Text="2. Find 'WDM Download Catcher' and click the Reload button on its card." FontSize="11" Foreground="{DynamicResource Brush.TextDim}" Margin="0,0,0,2" />
         </StackPanel>
 
         <!-- Bottom Action Strip -->
@@ -51,7 +51,7 @@
                     <ColumnDefinition Width="Auto" />
                 </Grid.ColumnDefinitions>
 
-                <TextBlock x:Name="FeedbackText" Grid.Column="0" Text="" FontSize="12" FontFamily="{StaticResource Font.App}" Foreground="{DynamicResource Brush.Accent}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" Margin="0,0,12,0" />
+                <TextBlock x:Name="FeedbackText" Grid.Column="0" Text="" FontSize="11" FontFamily="{StaticResource Font.App}" Foreground="{DynamicResource Brush.Accent}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" Margin="0,0,12,0" />
 
                 <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
                     <ui:Button Content="Copy Path" Appearance="Secondary" Click="CopyPath_Click" Height="32" Padding="10,0" Margin="0,0,6,0" />

@@ -66,6 +66,80 @@ public static class HlsDownloader
         public string? UnsupportedMethod;
     }
 
+    /// <summary>Segment-granular resume state (IDM keyframe-record equivalent,
+    /// coarse): HLS segments start on keyframes, so a completed segment file
+    /// is never re-downloaded — resume continues at the first missing one.
+    /// Identity (manifest + count + edge URIs) rejects slid live playlists;
+    /// completion is derived from .part files validated against probed sizes.
+    /// Encrypted runs never resume (rotating keys would corrupt the concat).
+    /// </summary>
+    internal sealed class HlsResumeState
+    {
+        public int Version { get; set; } = 1;
+        public string Manifest { get; set; } = "";
+        public int SegmentCount { get; set; }
+        public string FirstUri { get; set; } = "";
+        public string LastUri { get; set; } = "";
+    }
+
+    internal static string ResumeDirFor(string outputFile)
+    {
+        string folder = Path.GetDirectoryName(outputFile) ?? Directory.GetCurrentDirectory();
+        string stem = Path.GetFileNameWithoutExtension(outputFile) ?? "";
+        foreach (char c in Path.GetInvalidFileNameChars()) stem = stem.Replace(c, '_');
+        stem = stem.Trim().Trim('.');
+        if (stem.Length == 0) stem = "media";
+        if (stem.Length > 80) stem = stem[..80];
+        return Path.Combine(folder, ".wdmseg_" + stem);
+    }
+
+    internal static HlsResumeState? ReadResumeState(string tempDir)
+    {
+        try
+        {
+            string path = Path.Combine(tempDir, "done.json");
+            if (!File.Exists(path))
+                return null;
+            var state = System.Text.Json.JsonSerializer.Deserialize<HlsResumeState>(File.ReadAllText(path));
+            if (state is null || state.Version != 1 || string.IsNullOrWhiteSpace(state.Manifest) || state.SegmentCount <= 0)
+                return null;
+            return state;
+        }
+        catch { return null; }
+    }
+
+    internal static void WriteResumeState(string tempDir, string manifestUrl, Playlist playlist)
+    {
+        try
+        {
+            var state = new HlsResumeState
+            {
+                Manifest = manifestUrl,
+                SegmentCount = playlist.Segments.Count,
+                FirstUri = playlist.Segments.Count > 0 ? playlist.Segments[0].Uri : "",
+                LastUri = playlist.Segments.Count > 0 ? playlist.Segments[^1].Uri : "",
+            };
+            File.WriteAllText(Path.Combine(tempDir, "done.json"),
+                System.Text.Json.JsonSerializer.Serialize(state));
+        }
+        catch { }
+    }
+
+    internal static bool ResumeMatches(HlsResumeState state, string manifestUrl, Playlist playlist)
+    {
+        try
+        {
+            if (!string.Equals(state.Manifest, manifestUrl, StringComparison.OrdinalIgnoreCase))
+                return false;
+            if (state.SegmentCount != playlist.Segments.Count || playlist.Segments.Count == 0)
+                return false;
+            if (!string.Equals(state.FirstUri, playlist.Segments[0].Uri, StringComparison.OrdinalIgnoreCase))
+                return false;
+            return string.Equals(state.LastUri, playlist.Segments[^1].Uri, StringComparison.OrdinalIgnoreCase);
+        }
+        catch { return false; }
+    }
+
     /// <summary>One rendition of an HLS master playlist (IDM/XDM-style quality
     /// picker). Url is absolute; Label is "1080p"/"4K"/"720p"/"2.4 Mbps"/"Audio".</summary>
     public sealed class HlsVariant
@@ -163,12 +237,60 @@ public static class HlsDownloader
             addBytes(initSegment.Length);
 
         try { CleanStaleTempDirs(Path.GetDirectoryName(outputFile) ?? Directory.GetCurrentDirectory(), null); } catch { }
-        string tempDir = Path.Combine(
-            Path.GetDirectoryName(outputFile) ?? Directory.GetCurrentDirectory(),
-            $".wdmseg_{Path.GetFileNameWithoutExtension(outputFile)}_{Guid.NewGuid():N}");
+        // Deterministic temp dir (no GUID): completed segments survive an
+        // interrupted run and are picked up below instead of re-downloaded.
+        string tempDir = ResumeDirFor(outputFile);
         Directory.CreateDirectory(tempDir);
         // Now that our own temp dir exists, sweep orphans but never ourselves.
         try { CleanStaleTempDirs(Path.GetDirectoryName(outputFile) ?? Directory.GetCurrentDirectory(), tempDir); } catch { }
+        // Segment resume: adopt completed .part files from an interrupted run
+        // when the re-resolved playlist is identical (VOD). Live/event
+        // playlists slide → identity mismatch → fresh start. Encrypted runs
+        // never resume (rotating keys would corrupt the concat). Unknown-size
+        // segments and length mismatches re-download.
+        var resumedSegments = new HashSet<int>();
+        try
+        {
+            bool hasKeys = playlist.Segments.Any(s => !string.IsNullOrEmpty(s.KeyUri));
+            var prior = ReadResumeState(tempDir);
+            if (!hasKeys && prior is not null && ResumeMatches(prior, effectiveManifestUrl, playlist))
+            {
+                for (int i = 0; i < playlist.Segments.Count; i++)
+                {
+                    try
+                    {
+                        string tempFile = Path.Combine(tempDir, $"seg_{i:D6}.part");
+                        long expected = playlist.Segments[i].Length;
+                        if (expected > 0 && File.Exists(tempFile) && new FileInfo(tempFile).Length == expected)
+                        {
+                            resumedSegments.Add(i);
+                            addBytes(expected);
+                        }
+                        else if (File.Exists(tempFile))
+                        {
+                            try { File.Delete(tempFile); } catch { }
+                        }
+                    }
+                    catch { }
+                }
+                if (resumedSegments.Count > 0)
+                {
+                    try { setPhase?.Invoke($"Resuming {resumedSegments.Count}/{playlist.Segments.Count} segments…"); } catch { }
+                }
+            }
+            else
+            {
+                // Stale identity (different stream in this folder+name, or keys
+                // this run): clear leftovers so they can't poison the concat.
+                try
+                {
+                    foreach (string stale in Directory.GetFiles(tempDir, "seg_*.part")) { try { File.Delete(stale); } catch { } }
+                }
+                catch { }
+            }
+            WriteResumeState(tempDir, effectiveManifestUrl, playlist);
+        }
+        catch { }
         try
         {
             // Use a linked CTS so that any segment failure cancels the remaining
@@ -188,6 +310,9 @@ public static class HlsDownloader
             {
                 await Parallel.ForEachAsync(indexedSegments, parallelOptions, async (item, token) =>
                 {
+                    // Resumed segments are already on disk, validated above.
+                    if (resumedSegments.Contains(item.index))
+                        return;
                     try
                     {
                         string tempFile = Path.Combine(tempDir, $"seg_{item.index:D6}.part");
@@ -285,6 +410,18 @@ public static class HlsDownloader
                             Path.GetFullPath(activeDir.TrimEnd(Path.DirectorySeparatorChar)),
                             StringComparison.OrdinalIgnoreCase))
                         continue;
+                    // Resume dirs carry a fresh identity manifest: a paused task
+                    // resumed days later must find its segments, not a sweep.
+                    // Manifest-less orphans (pre-resume era, crashes) keep the
+                    // 30-minute rule below.
+                    try
+                    {
+                        string manifest = Path.Combine(dir, "done.json");
+                        if (File.Exists(manifest) &&
+                            DateTime.UtcNow - File.GetLastWriteTimeUtc(manifest) < TimeSpan.FromDays(7))
+                            continue;
+                    }
+                    catch { }
                     var info = new DirectoryInfo(dir);
                     if (DateTime.UtcNow - info.LastWriteTimeUtc > TimeSpan.FromMinutes(30))
                         Directory.Delete(dir, true);
@@ -623,9 +760,16 @@ public static class HlsDownloader
     public static async Task<List<HlsVariantInfo>> ParseMasterVariantsAsync(
         HttpClient http, string manifestUrl, string? referer, Dictionary<string, string>? headers, CancellationToken ct)
     {
-        var result = new List<HlsVariantInfo>();
         var (text, effectiveUrl) = await FetchTextAsync(http, manifestUrl, referer, headers, ct);
-        manifestUrl = effectiveUrl;
+        return ParseMasterVariantsText(text, effectiveUrl);
+    }
+
+    /// <summary>Parses already-fetched master playlist text (browser-assisted
+    /// resolution fetches in page context, preserving auth). Same result as
+    /// <see cref="ParseMasterVariantsAsync"/> without the fetch.</summary>
+    internal static List<HlsVariantInfo> ParseMasterVariantsText(string text, string manifestUrl)
+    {
+        var result = new List<HlsVariantInfo>();
         if (!text.Contains("#EXT-X-STREAM-INF:", StringComparison.OrdinalIgnoreCase))
             return result;
 

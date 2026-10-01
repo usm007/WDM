@@ -44,8 +44,8 @@ public partial class UpdateAvailableDialog : Window
             string desc = VelopackUpdateService.DescribeUpdate(velopackUpdate);
             DetailsText.Text = $"Current: {VelopackUpdateService.CurrentVersion}  →  New: {release.Version}{Environment.NewLine}" +
                                (isDelta
-                                   ? $"{desc} update (patch-only, 1 version behind) — no installer needed.{Environment.NewLine}"
-                                   : $"{desc} update (2+ versions behind, .NET included) — no installer needed.{Environment.NewLine}") +
+                                   ? $"{desc} update (patch-only, 1 version behind): no installer needed.{Environment.NewLine}"
+                                   : $"{desc} update (2+ versions behind, .NET included): no installer needed.{Environment.NewLine}") +
                                notesBlock + reloadWarn;
             InstallButton.Content = isDelta ? "Download Delta & Restart" : "Download Full & Restart";
         }
@@ -115,7 +115,7 @@ public partial class UpdateAvailableDialog : Window
             string desc = VelopackUpdateService.DescribeUpdate(_velopackUpdate);
             ProgressPanel.Visibility = Visibility.Visible;
             ProgressStatusText.Text = isDelta ? "Downloading delta package…" : "Downloading full package…";
-            ProgressDetailText.Text = $"Update package for { _release.Version } ({desc}) — no installer needed.";
+            ProgressDetailText.Text = $"Update package for { _release.Version } ({desc}): no installer needed.";
             DownloadProgressBar.Value = 0;
             ProgressPctText.Text = "0%";
             DetailsText.Text = $"Preparing {(isDelta ? "delta" : "full")} update to { _release.Version }…";
@@ -128,13 +128,13 @@ public partial class UpdateAvailableDialog : Window
                         ProgressPctText.Text = $"{pct}%";
                         ProgressStatusText.Text = pct < 100
                             ? (isDelta ? "Downloading delta package…" : "Downloading full package…")
-                            : "Download complete — applying…";
+                            : "Download complete: applying…";
                     }));
                 ProgressStatusText.Text = "Applying update…";
                 ProgressDetailText.Text = "WDM will restart automatically to apply the update.";
                 DownloadProgressBar.Value = 100;
                 ProgressPctText.Text = "100%";
-                DetailsText.Text = "Applying update — WDM will restart…";
+                DetailsText.Text = "Applying update: WDM will restart…";
                 await Task.Delay(600);
                 VelopackUpdateService.ApplyAndRestart(_velopackUpdate.TargetFullRelease);
                 DialogResult = true;
@@ -156,7 +156,7 @@ public partial class UpdateAvailableDialog : Window
         if (string.IsNullOrWhiteSpace(_release.InstallerUrl) && !string.IsNullOrWhiteSpace(_release.UpdatePackageUrl))
         {
             UpdateChecker.OpenReleasesPage(_release.Url);
-            DetailsText.Text = "Opened release page — portable build available there (Setup.exe is for new users).";
+            DetailsText.Text = "Opened release page: portable build available there (Setup.exe is for new users).";
             ProgressPanel.Visibility = Visibility.Collapsed;
             InstallButton.IsEnabled = true;
             LaterButton.IsEnabled = true;

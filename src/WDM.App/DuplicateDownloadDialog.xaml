@@ -2,7 +2,7 @@
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
-        Title="Duplicate Download — WDM"
+        Title="Duplicate Download (WDM)"
         AutomationProperties.AutomationId="DuplicateDownloadDialogWindow"
         Icon="Assets/WDM.ico"
         Width="560"
@@ -23,10 +23,8 @@
             BorderBrush="{DynamicResource Brush.DialogBorder}"
             BorderThickness="1"
             CornerRadius="8" Margin="10"
-            SnapsToDevicePixels="True">
-        <Border.Effect>
-            <DropShadowEffect BlurRadius="16" ShadowDepth="1" Direction="270" Color="#000000" Opacity="0.16" RenderingBias="Quality"/>
-        </Border.Effect>
+            SnapsToDevicePixels="True"
+            Effect="{DynamicResource Shadow.CardDialog}">
         <Grid>
             <Grid.RowDefinitions>
                 <RowDefinition Height="*" />    <!-- Content Body -->
@@ -39,16 +37,16 @@
                 <DockPanel Margin="0,0,0,6" LastChildFill="True">
                     <Button DockPanel.Dock="Right" Style="{StaticResource Button.DialogClose}" Click="Cancel_Click" VerticalAlignment="Center" Margin="6,-6,-6,0" />
                     <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                        <ui:SymbolIcon Symbol="Warning24" FontSize="18"
+                        <ui:SymbolIcon Symbol="Warning24" FontSize="17"
                                        Foreground="{DynamicResource Brush.Warning}" Margin="0,0,8,0" VerticalAlignment="Center" />
-                        <TextBlock Text="Duplicate Download Detected" FontSize="15" FontWeight="SemiBold"
+                        <TextBlock Text="Duplicate Download Detected" FontSize="14" FontWeight="SemiBold"
                                    Foreground="{DynamicResource Brush.Text}" VerticalAlignment="Center" />
                     </StackPanel>
                 </DockPanel>
 
                 <!-- Description -->
                 <TextBlock Text="A file or active download with this name already exists in your destination folder. How would you like to proceed?"
-                           FontSize="11.5" Foreground="{DynamicResource Brush.TextDim}" TextWrapping="Wrap" Margin="0,0,0,12" />
+                           FontSize="10.5" Foreground="{DynamicResource Brush.TextDim}" TextWrapping="Wrap" Margin="0,0,0,12" />
 
                 <!-- Comparison Card -->
                 <Border Background="{DynamicResource Brush.SurfaceAlt}" BorderBrush="{DynamicResource Brush.Border}" BorderThickness="1" CornerRadius="6" Padding="12,10" Margin="0,0,0,4">
@@ -64,14 +62,14 @@
                         </Grid.ColumnDefinitions>
 
                         <!-- Existing Name -->
-                        <TextBlock Grid.Row="0" Grid.Column="0" Text="Existing file:" FontSize="11.5" Foreground="{DynamicResource Brush.TextMuted}" VerticalAlignment="Center" />
-                        <TextBlock x:Name="OriginalFileText" Grid.Row="0" Grid.Column="1" Text="filename.zip" FontSize="12"
+                        <TextBlock Grid.Row="0" Grid.Column="0" Text="Existing file:" FontSize="10.5" Foreground="{DynamicResource Brush.TextMuted}" VerticalAlignment="Center" />
+                        <TextBlock x:Name="OriginalFileText" Grid.Row="0" Grid.Column="1" Text="filename.zip" FontSize="11"
                                    FontFamily="{StaticResource Font.App}" Foreground="{DynamicResource Brush.Text}" FontWeight="Medium"
                                    TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
 
                         <!-- Renamed Target -->
-                        <TextBlock Grid.Row="2" Grid.Column="0" Text="Rename to:" FontSize="11.5" Foreground="{DynamicResource Brush.TextMuted}" VerticalAlignment="Center" />
-                        <TextBlock x:Name="NumberedFileText" Grid.Row="2" Grid.Column="1" Text="filename (1).zip" FontSize="12"
+                        <TextBlock Grid.Row="2" Grid.Column="0" Text="Rename to:" FontSize="10.5" Foreground="{DynamicResource Brush.TextMuted}" VerticalAlignment="Center" />
+                        <TextBlock x:Name="NumberedFileText" Grid.Row="2" Grid.Column="1" Text="filename (1).zip" FontSize="11"
                                    FontFamily="{StaticResource Font.App}" FontWeight="SemiBold"
                                    Foreground="{DynamicResource Brush.Accent}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
                     </Grid>
@@ -99,7 +97,7 @@
                                    Click="Overwrite_Click" Height="32" MinWidth="120" Margin="0,0,8,0"
                                    ToolTip="Replace the existing file on disk with this new download" />
 
-                        <!-- Rename and Download — text trims instead of clipping window edge -->
+                        <!-- Rename and Download - text trims instead of clipping window edge -->
                         <ui:Button x:Name="RenameBtn" Style="{StaticResource Button.PrimaryAction}"
                                    AutomationProperties.AutomationId="BtnDuplicateRename"
                                    Click="RenameAndDownload_Click" Height="32" MinWidth="170" MaxWidth="280" IsDefault="True"

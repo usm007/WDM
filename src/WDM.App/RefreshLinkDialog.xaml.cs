@@ -126,7 +126,7 @@ public partial class RefreshLinkDialog : Window
         if (!DownloadEngine.IsHttpUrl(url))
         {
             string msg = DownloadEngine.IsFtpUrl(url)
-                ? "FTP downloads aren't supported yet — paste an http(s) link instead."
+                ? "FTP downloads aren't supported yet: paste an http(s) link instead."
                 : "Enter a valid http(s) URL.";
             MessageBox.Show(this, msg, "Invalid URL", MessageBoxButton.OK, MessageBoxImage.Warning);
             return;

@@ -44,7 +44,7 @@ public static class UpdateChecker
         }
     }
 
-    /// <summary>Shared HttpClient — creating one per call causes socket exhaustion under
+    /// <summary>Shared HttpClient: creating one per call causes socket exhaustion under
     /// repeated update checks. Headers are set once at construction time.</summary>
     private static readonly HttpClient _http = CreateHttpClient();
 
@@ -289,7 +289,7 @@ public static class UpdateChecker
 
         long total = response.Content.Headers.ContentLength ?? -1;
         if (total > 500 * 1024 * 1024)
-            throw new InvalidOperationException("Installer too large — refusing download.");
+            throw new InvalidOperationException("Installer too large: refusing download.");
         using var source = await response.Content.ReadAsStreamAsync(ct);
         using var file = new FileStream(target, FileMode.CreateNew, FileAccess.Write, FileShare.None, 81920, useAsync: true);
 
@@ -357,7 +357,7 @@ public static class UpdateChecker
     {
         var info = new FileInfo(path);
         if (info.Length < 1024 * 1024)
-            throw new InvalidOperationException($"Downloaded installer is suspiciously small ({info.Length} bytes) — likely corrupt.");
+            throw new InvalidOperationException($"Downloaded installer is suspiciously small ({info.Length} bytes): likely corrupt.");
 
         // Check MZ + PE signature via e_lfanew.
         using var fs = File.OpenRead(path);
@@ -390,7 +390,7 @@ public static class UpdateChecker
             {
                 try { File.Delete(path); } catch { }
                 throw new InvalidOperationException(
-                    "Downloaded installer failed SHA-256 verification — refusing to run it. " +
+                    "Downloaded installer failed SHA-256 verification: refusing to run it. " +
                     "Delete %TEMP%\\WDM_Setup_*.exe and retry the update.");
             }
         }
@@ -399,7 +399,7 @@ public static class UpdateChecker
     /// <summary>Runs the downloaded installer. Every Setup.exe published on the releases
     /// page is a Velopack bundle (clap-style parsing: only -s/--silent). Inno-style
     /// /VERYSILENT tokens break its parsing and drop it back to the interactive
-    /// "WDM is already installed" dialog — so silent launches must pass --silent alone.</summary>
+    /// "WDM is already installed" dialog: so silent launches must pass --silent alone.</summary>
     public static Process? LaunchInstaller(string installerPath, bool silent = false)
     {
         if (string.IsNullOrWhiteSpace(installerPath) || !File.Exists(installerPath) ||
@@ -437,7 +437,7 @@ public static class UpdateChecker
         {
             try
             {
-                // Refresh process info — Process.Start returns immediately but the OS may not
+                // Refresh process info: Process.Start returns immediately but the OS may not
                 // have fully launched the process yet
                 if (!proc.HasExited)
                     return proc;
@@ -448,7 +448,7 @@ public static class UpdateChecker
         return proc;
     }
 
-    /// <summary>Launches installer silently (no wizard) — truly silent, bypasses the "already installed" prompt.</summary>
+    /// <summary>Launches installer silently (no wizard): truly silent, bypasses the "already installed" prompt.</summary>
     public static void LaunchInstallerSilent(string installerPath)
         => LaunchInstaller(installerPath, silent: true);
 

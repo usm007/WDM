@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.IO;
 using System.Windows;
+using System.Windows.Input;
 using WDM.Models;
 using WDM.Services;
 
@@ -20,20 +21,61 @@ public partial class DownloadCompleteDialog : Window
         PathBox.Text = task.FullPath;
         SizeText.Text = task.SizeText;
         DateText.Text = task.CompletedAt?.ToString("g") ?? DateTime.Now.ToString("g");
+
+        FileChipName.Text = task.DisplayFileName;
+        FileChip.ToolTip = $"Drag \"{task.DisplayFileName}\" to a folder to copy it there";
+        if (!File.Exists(task.FullPath))
+            MarkFileMissing();
+    }
+
+    private void MarkFileMissing()
+    {
+        FileChip.IsEnabled = false;
+        FileChip.Cursor = Cursors.Arrow;
+        FileChip.Opacity = 0.45;
+        FileChip.ToolTip = "The downloaded file could not be found.";
+        if (TryFindResource("Brush.TextDim") is System.Windows.Media.Brush muted)
+        {
+            FileChipName.Foreground = muted;
+            FileChipIcon.Foreground = muted;
+        }
+    }
+
+    private void FileChip_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
+    {
+        e.Handled = true;
+        if (!FileChip.IsEnabled)
+            return;
+
+        string path = Task.FullPath;
+        if (!File.Exists(path))
+        {
+            MarkFileMissing();
+            return;
+        }
+
+        try
+        {
+            var data = new DataObject();
+            data.SetData(DataFormats.FileDrop, new[] { path });
+            var effect = DragDrop.DoDragDrop(this, data,
+                DragDropEffects.Copy | DragDropEffects.Move | DragDropEffects.Link);
+
+            // Drop landed somewhere: the hand-off is done, so close the popup.
+            // Cancelling (Esc / dropping nowhere) leaves it open.
+            if (effect != DragDropEffects.None)
+                Close();
+        }
+        catch (Exception ex)
+        {
+            App.LogException(ex);
+        }
     }
 
     protected override void OnSourceInitialized(EventArgs e)
     {
         base.OnSourceInitialized(e);
         WDM.Services.ThemeService.ApplyTitleBar(this);
-    }
-
-    private void Window_MouseLeftButtonDown(object sender, System.Windows.Input.MouseButtonEventArgs e)
-    {
-        if (e.ButtonState == System.Windows.Input.MouseButtonState.Pressed)
-        {
-            DragMove();
-        }
     }
 
     private void CopyUrl_Click(object sender, RoutedEventArgs e)

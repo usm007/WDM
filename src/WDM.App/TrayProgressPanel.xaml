@@ -13,30 +13,47 @@
         Background="Transparent"
         AllowsTransparency="True"
         ShowActivated="False"
-        Focusable="False"
+        Focusable="True"
+        PreviewKeyDown="Panel_PreviewKeyDown"
         MouseLeftButtonDown="Pill_MouseLeftButtonDown"
         MouseMove="Pill_MouseMove"
         MouseLeftButtonUp="Pill_MouseLeftButtonUp">
-    <!-- Unobtrusive, quiet Windows desktop status indicator -->
+    <!-- Compact pill: icon + count badge + short % + short MB/s; MinWidth only,
+         so short text shrinks the pill instead of stretching it -->
     <Border Background="{DynamicResource Brush.Surface}"
             BorderBrush="{DynamicResource Brush.Border}"
             BorderThickness="1"
-            CornerRadius="4"
-            Padding="8,3"
-            SnapsToDevicePixels="True">
+            CornerRadius="6"
+            Padding="6,2"
+            SnapsToDevicePixels="True"
+            Focusable="True"
+            ToolTip="Download progress. Drag to move. Press Esc to hide.">
         <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-            <!-- Small Fluent download/activity icon -->
-            <ui:SymbolIcon Symbol="ArrowDownload24" FontSize="12"
-                           Foreground="{DynamicResource Brush.TextDim}" Margin="0,0,5,0" VerticalAlignment="Center" />
+            <!-- Download arrow with active-count badge -->
+            <Grid Width="20" Height="20" VerticalAlignment="Center" Margin="0,0,4,0">
+                <ui:SymbolIcon Symbol="ArrowDownload24" FontSize="12"
+                               Foreground="{DynamicResource Brush.TextDim}"
+                               HorizontalAlignment="Center" VerticalAlignment="Center" />
+                <Border CornerRadius="7" MinWidth="14" Height="14" Padding="2,0"
+                        Background="{DynamicResource Brush.Accent}"
+                        HorizontalAlignment="Right" VerticalAlignment="Top"
+                        Margin="0,-2,-3,0">
+                    <TextBlock Text="{Binding ActiveCountText}"
+                               FontSize="8" FontWeight="SemiBold"
+                               Foreground="White"
+                               HorizontalAlignment="Center" VerticalAlignment="Center"
+                               Typography.NumeralAlignment="Tabular" />
+                </Border>
+            </Grid>
 
-            <!-- Plain typography: "66% · 17.6 MB/s" (fixed width so the pill never restretches) -->
+            <!-- Short area: "5% · 9.6 MB/s" — grows only as needed, never blank -->
             <TextBlock Text="{Binding StatusText}"
                        FontFamily="{StaticResource Font.App}"
-                       FontSize="12.5"
+                       FontSize="11"
                        FontWeight="Normal"
                        Foreground="{DynamicResource Brush.Text}"
                        VerticalAlignment="Center"
-                       Width="150"
+                       MinWidth="86"
                        TextAlignment="Center"
                        Typography.NumeralAlignment="Tabular" />
         </StackPanel>

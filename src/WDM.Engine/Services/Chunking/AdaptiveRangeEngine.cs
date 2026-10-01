@@ -157,7 +157,7 @@ public sealed class AdaptiveRangeEngine
                 // Adaptive concurrency from aggregate trend + error rate.
                 double aggBps = Telemetry.DrainWindowBps();
                 var snap = Telemetry.Snapshot(totalBytes);
-                long errors = snap.Timeouts + snap.TooManyRequests + snap.ServerErrors + snap.ShortReads + snap.WrongRanges;
+                long errors = snap.Timeouts + snap.TooManyRequests + snap.ServerErrors + snap.ShortReads + snap.WrongRanges + snap.ContentMismatches;
                 long reqs = Math.Max(1, snap.RequestCount - lastRequests);
                 double errRate = Math.Clamp((double)(errors - lastErrors) / reqs, 0, 1);
                 lastRequests = snap.RequestCount;

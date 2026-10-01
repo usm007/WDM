@@ -47,7 +47,7 @@ public sealed class Round9Tests : IClassFixture<Round9Tests.BlobFixture>
     {
         using var http = new HttpClient();
         using var req = new HttpRequestMessage(HttpMethod.Post, $"http://127.0.0.1:{BlobFixture.TestPort}{path}");
-        req.Headers.Add("Origin", "chrome-extension://test");
+        req.Headers.Add("Origin", "chrome-extension://jehagbjolooaohcbmlhegpmjeaakonof");
         req.Content = new StringContent(json, Encoding.UTF8, "application/json");
         using var resp = await http.SendAsync(req);
         return (resp.StatusCode, await resp.Content.ReadAsStringAsync());

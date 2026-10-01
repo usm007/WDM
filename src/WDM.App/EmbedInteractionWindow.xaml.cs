@@ -24,7 +24,7 @@ public partial class EmbedInteractionWindow : Wpf.Ui.Controls.FluentWindow
         _task = task;
         _pageUrl = pageUrl;
         InitializeComponent();
-        Title = $"Browser check — {task.DisplayFileName}";
+        Title = $"Browser check: {task.DisplayFileName}";
         Loaded += OnLoaded;
         Closed += OnClosed;
     }
@@ -90,7 +90,7 @@ public partial class EmbedInteractionWindow : Wpf.Ui.Controls.FluentWindow
         try
         {
             var core = _webView?.CoreWebView2;
-            Title = "WDM — " + (string.IsNullOrWhiteSpace(core?.DocumentTitle) ? "Complete browser check" : core.DocumentTitle);
+            Title = "WDM: " + (string.IsNullOrWhiteSpace(core?.DocumentTitle) ? "Complete browser check" : core.DocumentTitle);
         }
         catch { }
     }
@@ -139,7 +139,7 @@ public partial class EmbedInteractionWindow : Wpf.Ui.Controls.FluentWindow
         }
         catch
         {
-            // Retry anyway — the check may be IP-based rather than cookie-based.
+            // Retry anyway: the check may be IP-based rather than cookie-based.
         }
         DialogResult = true;
     }

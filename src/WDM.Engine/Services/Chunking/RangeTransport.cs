@@ -167,6 +167,116 @@ public static class RangeTransport
 {
     private const int BufferSize = 256 * 1024;
 
+    /// <summary>Overlap window re-fetched from the candidate mirror and
+    /// byte-compared against durable bytes before its body is trusted.</summary>
+    private const int OverlapVerifyBytes = 64 * 1024;
+
+    /// <summary>Repairs a disputed overlap window [wstart, wend) after a content
+    /// mismatch: re-fetches it from an undisputed surviving mirror. Matching
+    /// bytes just re-commit the region; differing bytes are overwritten in
+    /// place (committed stays monotonic — no holes possible) and committed.
+    /// Returns false when no undisputed mirror remains: the caller must fail
+    /// loudly instead of assembling. Transient fetch errors return false too
+    /// (the retry loop re-resolves); only successes decide.
+    /// </summary>
+    private static async Task<bool> RepairDisputedWindowAsync(
+        long wstart, long wend,
+        MirrorSelector mirrors, HashSet<int> disputed, CompletionMap map,
+        DownloadTelemetry telemetry, RangeTransportDeps deps, CancellationToken ct)
+    {
+        int len = (int)(wend - wstart);
+        if (len <= 0)
+            return false;
+        int survIndex = -1;
+        string survUrl = "";
+        for (int k = 0; k < mirrors.UrlCount; k++)
+        {
+            if (!mirrors.TryPick(out int ci, out string cu))
+                break;
+            if (!disputed.Contains(ci))
+            {
+                survIndex = ci;
+                survUrl = cu;
+                break;
+            }
+        }
+        if (survIndex < 0)
+            return false;
+        byte[] disk = new byte[len];
+        byte[] net;
+        try
+        {
+            int got = await RandomAccess.ReadAsync(deps.FileHandle, disk.AsMemory(), wstart, ct);
+            if (got != len)
+                return false;
+            using var req = deps.BuildRequest(HttpMethod.Get, new RangeHeaderValue(wstart, wend - 1), survUrl);
+            using var resp = await deps.Http.SendAsync(req, HttpCompletionOption.ResponseHeadersRead, ct);
+            if (resp.StatusCode != HttpStatusCode.PartialContent)
+                return false;
+            net = await resp.Content.ReadAsByteArrayAsync(ct);
+            if (net.Length != len)
+                return false;
+        }
+        catch { return false; }
+        bool differs = false;
+        for (int i = 0; i < len; i++)
+        {
+            if (net[i] != disk[i]) { differs = true; break; }
+        }
+        try
+        {
+            if (differs)
+            {
+                await RandomAccess.WriteAsync(deps.FileHandle, net.AsMemory(), wstart, ct);
+                telemetry.AddWrittenBytes(len);
+            }
+            map.MarkCommitted(wstart, wend);
+        }
+        catch { return false; }
+        return true;
+    }
+
+    /// <summary>Proves a mirror serves the same bytes already on disk.
+    /// Returns the first differing offset, or null when consistent — or when
+    /// consistency can't be proven (offset 0, short file, odd responses),
+    /// in which case framing validation stays in charge. Never throws
+    /// (except cancellation): verification must not fail healthy downloads.
+    /// </summary>
+    private static async Task<long?> VerifyMirrorContentAsync(
+        string url, long committed, RangeTransportDeps deps, CancellationToken ct)
+    {
+        if (committed <= 0)
+            return null;
+        long wstart = Math.Max(0, committed - OverlapVerifyBytes);
+        int len = (int)(committed - wstart);
+        if (len <= 0)
+            return null;
+        byte[] disk = new byte[len];
+        try
+        {
+            int got = await RandomAccess.ReadAsync(deps.FileHandle, disk.AsMemory(), wstart, ct);
+            if (got != len)
+                return null;
+        }
+        catch { return null; }
+        byte[] net;
+        try
+        {
+            using var req = deps.BuildRequest(HttpMethod.Get, new RangeHeaderValue(wstart, committed - 1), url);
+            using var resp = await deps.Http.SendAsync(req, HttpCompletionOption.ResponseHeadersRead, ct);
+            if (resp.StatusCode != HttpStatusCode.PartialContent)
+                return null;
+            net = await resp.Content.ReadAsByteArrayAsync(ct);
+        }
+        catch { return null; }
+        if (net.Length != len)
+            return null;
+        for (int i = 0; i < len; i++)
+            if (net[i] != disk[i])
+                return wstart + i;
+        return null;
+    }
+
     public static async Task FetchRangeAsync(
         RangeLease lease, int generation,
         RangeScheduler scheduler, CompletionMap map, MirrorSelector mirrors,
@@ -181,6 +291,9 @@ public static class RangeTransport
         int budget = Math.Max(1, urlCount * (deps.MaxRetries + 1));
         int attempts = 0;
         Exception? lastError = null;
+        // Mirrors that disagreed with established bytes this lease. Repair and
+        // survivor-picking exclude them; exhausting them fails loudly.
+        var disputedMirrors = new HashSet<int>();
         var rangeSw = System.Diagnostics.Stopwatch.StartNew();
 
         while (committed <= toInclusive)
@@ -286,6 +399,7 @@ public static class RangeTransport
                 {
                     telemetry.RecordOutcome(HttpOutcome.WrongRange);
                     mirrors.ReportTransient(urlIndex);
+                    OriginController.ReportIntegrityFault(origin, "wrong-range");
                     lastError = new HttpRequestException(
                         $"Server returned wrong range (asked {committed}-{toInclusive}, got {cr?.From}-{cr?.To}).");
                     attempts++;
@@ -299,7 +413,57 @@ public static class RangeTransport
                 if (!mirrors.CheckResponse(urlIndex, response))
                 {
                     telemetry.RecordOutcome(HttpOutcome.WrongRange);
+                    OriginController.ReportIntegrityFault(origin, "identity-mismatch");
                     lastError = new HttpRequestException($"Mirror serves a different object (identity mismatch): {url}");
+                    attempts++;
+                    telemetry.AddRetry();
+                    if (attempts >= budget)
+                        break;
+                    await BackoffAsync(attempts, ct);
+                    continue;
+                }
+
+                // Content verification (overlap probe): framing is valid, but a
+                // well-framed lie (right headers, wrong bytes) would otherwise
+                // assemble silently. Re-fetch the tail of DURABLE bytes from
+                // THIS mirror and byte-compare before streaming its body: fresh
+                // zeros must never convict anyone (IsRangeDurable gate). On
+                // mismatch the reporting mirror is demoted and the window is
+                // repaired from an undisputed survivor (overwritten in place —
+                // committed stays monotonic, no holes possible); when every
+                // mirror is disputed the failure is loud and attributed, never
+                // a silent corrupt file. Known limit: ties go to whatever was
+                // established first (true Byzantine pairs are unknowable).
+                long? firstDiff = null;
+                long wstart = Math.Max(0, committed - OverlapVerifyBytes);
+                bool anchorDurable = false;
+                try { anchorDurable = committed > wstart && map.IsRangeDurable(wstart, committed); }
+                catch { anchorDurable = false; }
+                if (anchorDurable)
+                {
+                    try { firstDiff = await VerifyMirrorContentAsync(url, committed, deps, ct); }
+                    catch (OperationCanceledException) { throw; }
+                    catch { firstDiff = null; }
+                }
+                if (firstDiff is long diffAt)
+                {
+                    telemetry.RecordOutcome(HttpOutcome.ContentMismatch);
+                    OriginController.ReportIntegrityFault(origin, "content-mismatch");
+                    mirrors.ReportWrongObject(urlIndex);
+                    disputedMirrors.Add(urlIndex);
+                    if (!await RepairDisputedWindowAsync(wstart, committed,
+                            mirrors, disputedMirrors, map, telemetry, deps, ct))
+                    {
+                        lastError = new HttpRequestException(
+                            $"Mirror content mismatch at byte {diffAt} (range {committed}-{toInclusive} from {url}): " +
+                            "no undisputed mirror remains — refusing to assemble.");
+                        attempts++;
+                        telemetry.AddRetry();
+                        if (attempts >= budget)
+                            break;
+                        await BackoffAsync(attempts, ct);
+                        continue;
+                    }
                     attempts++;
                     telemetry.AddRetry();
                     if (attempts >= budget)

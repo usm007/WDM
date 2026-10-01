@@ -3,7 +3,7 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:wv2="clr-namespace:Microsoft.Web.WebView2.Wpf;assembly=Microsoft.Web.WebView2.Wpf"
         xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
-        Title="Cloudflare Protection Solver — WDM"
+        Title="Cloudflare Protection Solver (WDM)"
         Icon="Assets/WDM.ico"
         Height="580"
         Width="820"
@@ -38,12 +38,16 @@
         <Border Grid.Row="1" Background="{DynamicResource Brush.Surface}" BorderBrush="{DynamicResource Brush.Border}" BorderThickness="0,0,0,1" Padding="18,14">
             <StackPanel>
                 <StackPanel Orientation="Horizontal" Margin="0,0,0,4">
-                    <ui:SymbolIcon Symbol="ShieldLock24" FontSize="20" Foreground="{DynamicResource Brush.Accent}" Margin="0,0,8,0" VerticalAlignment="Center" />
-                    <TextBlock Text="Cloudflare Verification Required" FontSize="20" FontWeight="SemiBold" Foreground="{DynamicResource Brush.Text}" VerticalAlignment="Center" />
+                    <ui:SymbolIcon Symbol="ShieldLock24" FontSize="19" Foreground="{DynamicResource Brush.Accent}" Margin="0,0,8,0" VerticalAlignment="Center" />
+                    <TextBlock Text="Cloudflare Verification Required" FontSize="19" FontWeight="SemiBold" Foreground="{DynamicResource Brush.Text}" VerticalAlignment="Center" />
                 </StackPanel>
                 <TextBlock x:Name="StatusText"
                            Text="Complete the Cloudflare check below. WDM will automatically capture clearance cookies and resume your download."
-                           FontSize="13" Foreground="{DynamicResource Brush.TextMuted}" TextWrapping="Wrap" />
+                           FontSize="12" Foreground="{DynamicResource Brush.TextMuted}" TextWrapping="Wrap" />
+                <!-- R-27 error state: page load failure (toggled in code-behind) -->
+                <TextBlock x:Name="NavErrorText" Text="Page failed to load. Use Reload."
+                           FontSize="11" Foreground="{DynamicResource Brush.Danger}"
+                           TextWrapping="Wrap" Margin="0,6,0,0" Visibility="Collapsed" />
             </StackPanel>
         </Border>
 
@@ -52,8 +56,8 @@
             <wv2:WebView2 x:Name="WebView" HorizontalAlignment="Stretch" VerticalAlignment="Stretch" />
             <Border x:Name="LoadingOverlay" Background="{DynamicResource Brush.Surface}" Visibility="Visible">
                 <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center">
-                    <ui:SymbolIcon Symbol="ArrowSync24" FontSize="24" Foreground="{DynamicResource Brush.Accent}" HorizontalAlignment="Center" Margin="0,0,0,8" />
-                    <TextBlock Text="Initializing browser session…" FontSize="13" Foreground="{DynamicResource Brush.TextDim}" />
+                    <ui:SymbolIcon Symbol="ArrowSync24" FontSize="23" Foreground="{DynamicResource Brush.Accent}" HorizontalAlignment="Center" Margin="0,0,0,8" />
+                    <TextBlock Text="Initializing browser session…" FontSize="12" Foreground="{DynamicResource Brush.TextDim}" />
                 </StackPanel>
             </Border>
         </Grid>

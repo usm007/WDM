@@ -200,6 +200,11 @@
         if (h) return h >= 2160 && /4k/i.test(url) ? "4K" : h + "p";
       }
       if (/(^|[^a-z])4k([^a-z]|$)/i.test(url)) return "4K";
+      m = url.match(/\b(?:\d{3,4})x(\d{3,4})\b/i);
+      if (m) {
+        const h = snapHeight(m[1]);
+        if (h) return h >= 2160 && /4k/i.test(url) ? "4K" : h + "p";
+      }
       m = url.match(/[/?&=_-](2160|1440|1080|720|480|360|240)(?=[/?&=_\-.#]|$)/);
       if (m) return m[1] === "2160" && /4k/i.test(url) ? "4K" : m[1] + "p";
       m = url.match(/(?:height|res|resolution|quality|q)[=:](2160|1440|1080|720|480|360|240)/i);
@@ -210,6 +215,30 @@
       if (m) {
         const itag = { "22": "720p", "37": "1080p", "46": "1080p", "18": "360p", "59": "480p", "43": "360p", "35": "480p", "44": "480p", "34": "360p" };
         return itag[m[1].toLowerCase()] || "";
+      }
+    } catch {}
+    return "";
+  }
+  // Quality for rendition badges/labels. Priority: probed master playlist /
+  // background observation > live <video> frame height > URL tokens.
+  // Top-level scope: used by sendToWdm, refreshOverlayLabel and the overlay
+  // renderer alike (a nested copy once left the outer callers throwing
+  // "qualityOf is not defined").
+  function qualityOf(s) {
+    try {
+      if (!s) return "";
+      if (typeof s.quality === "string" && s.quality) return s.quality;
+      if (s.resolution && parseInt(s.resolution, 10) > 0) {
+        const h = snapHeight(s.resolution);
+        if (h) return h >= 2160 ? "4K" : h + "p";
+      }
+      if (s.url) {
+        const q = parseQualityFromUrl(s.url);
+        if (q) return q;
+      }
+      if (liveVideoHeight && (s.type === "HLS" || s.type === "DASH")) {
+        const h = snapHeight(liveVideoHeight);
+        if (h) return h >= 2160 ? "4K" : h + "p";
       }
     } catch {}
     return "";
@@ -389,17 +418,96 @@
       return base.slice(0, 180);
     } catch { return (typeof entryOrLabel === "string" ? entryOrLabel : "Video"); }
   }
+  // Compact byte count for overlay badges ("HLS 1080p • 78.9 MB").
+  function formatBytes(n) {
+    try {
+      n = Number(n);
+      if (!n || n <= 0) return "";
+      if (n >= 1024 * 1024 * 1024) return (n / (1024 * 1024 * 1024)).toFixed(2).replace(/\.?0+$/, "") + " GB";
+      if (n >= 1024 * 1024) return (n / (1024 * 1024)).toFixed(1).replace(/\.0$/, "") + " MB";
+      if (n >= 1024) return (n / 1024).toFixed(1).replace(/\.0$/, "") + " KB";
+      return n + " B";
+    } catch { return ""; }
+  }
+
+  // Ask the background worker for header-probed sizes/filenames (HEAD, ranged
+  // GET fallback, cached) and patch the rendered badges in place. Entries
+  // already carrying an observed size keep it; probed filenames only replace
+  // generic labels. Late responses for detached dropdowns are dropped.
+  function enrichWithSizes(items) {
+    try {
+      const targets = (items || []).filter((it) =>
+        it && it.s && typeof it.s.url === "string" && /^https?:\/\//i.test(it.s.url) &&
+        it.badgeSpan && it.badgeSpan.isConnected);
+      if (!targets.length) return;
+      if (!webext || !webext.runtime || !webext.runtime.sendMessage) return;
+      const urls = [];
+      const hints = {};
+      for (const it of targets) {
+        urls.push(it.s.url);
+        if (it.s.reqHeaders && typeof it.s.reqHeaders === "object") hints[it.s.url] = it.s.reqHeaders;
+      }
+      const apply = (res) => {
+        try {
+          const probes = (res && res.probes) || {};
+          for (const it of targets) {
+            if (!it.badgeSpan.isConnected) continue;
+            const p = probes[it.s.url];
+            if (!p) continue;
+            if (p.size && !it.hasObservedSize) {
+              const txt = formatBytes(p.size);
+              if (txt) it.badgeSpan.textContent = it.badgeSpan.textContent + " • " + txt;
+            }
+            if (p.fileName && it.genericLabel && it.labelDiv && it.labelDiv.isConnected) {
+              it.labelDiv.textContent = String(p.fileName);
+              try { it.labelDiv.setAttribute("title", String(p.fileName).slice(0, 2048)); } catch {}
+              try { it.s.label = String(p.fileName); } catch {}
+            }
+          }
+        } catch {}
+      };
+      const ret = webext.runtime.sendMessage({ action: "probeSizes", urls, reqHeaders: hints }, apply);
+      if (ret && typeof ret.then === "function") ret.then(apply, () => {});
+    } catch {}
+  }
+  // Ambient fullscreen hero backgrounds (muted object-fit:cover video covering
+  // most of the viewport) are decor, not user content: no overlay on them.
+  // Listings are unaffected — a hero file stays downloadable, just unbadged.
+  // Plain-object args so this stays unit-testable without a DOM.
+  function isAmbientBackgroundVideo(rect, vpW, vpH, objectFit, muted) {
+    try {
+      if (!rect || !objectFit) return false;
+      if (String(objectFit).toLowerCase() !== "cover") return false;
+      if (!muted) return false;
+      const w = rect.right - rect.left;
+      const h = rect.bottom - rect.top;
+      if (!(w > 0 && h > 0 && vpW > 0 && vpH > 0)) return false;
+      if ((w * h) / (vpW * vpH) < 0.6) return false;
+      return true;
+    } catch { return false; }
+  }
   function sendToWdm(url, label, streamType) {
-    // Entry-object form: sendToWdm(entry).
+    // Entry-object form: sendToWdm(entry). Returns a promise resolving to the
+    // background response ({success, status, error}) so overlay callers can
+    // report the real outcome instead of assuming the click worked.
     let entry = null;
     if (url && typeof url === "object") { entry = url; url = entry.url; label = entry.label; streamType = entry.type; }
     const quality = (entry && entry.quality) || (entry ? qualityOf(entry) : (typeof label === "string" ? "" : ""));
     // Page-local blob: fetch here (only this context can read it) and stream
     // base64 chunks to the desktop app, which imports the bytes as a file.
     if (typeof url === "string" && url.startsWith("blob:")) {
-      try { sendBlobToWdm(url, buildDownloadFileName(entry || label, quality)).catch((e) => console.warn("[WDM] Blob handoff failed:", e)); }
-      catch (e) { console.warn("[WDM] Blob handoff failed:", e); }
-      return;
+      try {
+        return sendBlobToWdm(url, buildDownloadFileName(entry || label, quality)).then(
+          () => ({ success: true }),
+          (e) => {
+            const msg = (e && e.message) || "blob handoff failed";
+            try { console.warn("[WDM] Blob handoff failed:", e); } catch {}
+            return { success: false, error: msg };
+          });
+      } catch (e) {
+        try { console.warn("[WDM] Blob handoff failed:", e); } catch {}
+        return Promise.resolve({ success: false, error: (e && e.message) || "blob handoff failed" });
+      }
     }
     const title = realTitle() || document.title || null;
     const payload = {
@@ -418,13 +526,59 @@
 
     try {
       if (webext && webext.runtime && webext.runtime.sendMessage) {
-        webext.runtime.sendMessage({ action: "download", payload });
-      } else {
-        window.postMessage({ type: "WDM_DOWNLOAD_REQ", payload }, "*");
+        return requestDownload(payload);
       }
+      window.postMessage({ type: "WDM_DOWNLOAD_REQ", payload }, "*");
+      // postMessage relay has no confirmation channel — keep it optimistic.
+      return Promise.resolve({ success: true });
     } catch (e) {
       console.warn("[WDM] Error sending download:", e);
+      return Promise.resolve({ success: false, error: (e && e.message) || "send-failed" });
     }
+  }
+
+  // Promise wrapper around the background "download" RPC: resolves with the
+  // background response ({success, status, error}). Handles both chrome
+  // (callback) and browser (promise) sendMessage shapes, plus a timeout so
+  // a dead worker can never leave the overlay hanging.
+  function requestDownload(payload) {
+    return new Promise((resolve) => {
+      let settled = false;
+      const done = (res) => { if (!settled) { settled = true; resolve(res || {}); } };
+      try {
+        if (!webext || !webext.runtime || !webext.runtime.sendMessage) {
+          done({ success: false, error: "no-messaging" });
+          return;
+        }
+        const ret = webext.runtime.sendMessage({ action: "download", payload }, done);
+        if (ret && typeof ret.then === "function") ret.then(done, () => done({ success: false, error: "no-response" }));
+        setTimeout(() => done({ success: false, error: "timeout" }), 10000);
+      } catch (e) { done({ success: false, error: (e && e.message) || "send-failed" }); }
+    });
+  }
+
+  // Short user-facing reason for a failed handoff (shown on the overlay).
+  function downloadErrorText(res) {
+    if (!res) return "Send failed";
+    if (res.status === 401 || (res.error && /unauthor|token/i.test(String(res.error))))
+      return "Reload the WDM extension to reconnect";
+    if (res.error === "unreachable" || res.error === "timeout" || res.error === "no-response")
+      return "WDM app unreachable: is it running?";
+    if (res.error) return String(res.error).slice(0, 80);
+    if (res.status) return "Rejected (HTTP " + res.status + ")";
+    return "Send failed";
+  }
+
+  // Report the real handoff outcome on the overlay: success flash, or the
+  // failure reason long enough to read (4s) + console detail.
+  function confirmOverlaySent(overlay, res) {
+    if (res && res.success) {
+      flashOverlayLabel(overlay, "Sent to WDM!");
+      return;
+    }
+    const msg = downloadErrorText(res);
+    try { console.warn("[WDM] Download handoff failed:", msg, res); } catch {}
+    flashOverlayLabel(overlay, msg, 4000);
   }
 
   // Blob pipeline (1DM SaveBlobTask equivalent): the page owns its blob: URLs,
@@ -441,6 +595,7 @@
   }
   async function sendBlobToWdm(blobUrl, label) {
     if (!blobUrl || blobInFlight.has(blobUrl)) return;
+    if (!webext || !webext.runtime || !webext.runtime.sendMessage) return;
     blobInFlight.add(blobUrl);
     try {
       const resp = await fetch(blobUrl);
@@ -616,32 +771,13 @@
       e.stopPropagation();
       e.preventDefault();
       videoEl._wdmDismissed = true;
+      if (overlay._wdmInterval) { clearInterval(overlay._wdmInterval); overlay._wdmInterval = null; }
       overlay.remove();
       playerOverlays.delete(videoEl);
       try { if (videoEl._wdmRO) videoEl._wdmRO.disconnect(); } catch {}
       try { if (videoEl._wdmIO) videoEl._wdmIO.disconnect(); } catch {}
     });
-    // Quality for rendition badges. Priority: probed master playlist /
-    // background observation > live <video> frame height > URL tokens.
-    function qualityOf(s) {
-      try {
-        if (!s) return "";
-        if (typeof s.quality === "string" && s.quality) return s.quality;
-        if (s.resolution && parseInt(s.resolution, 10) > 0) {
-          const h = snapHeight(s.resolution);
-          if (h) return h >= 2160 ? "4K" : h + "p";
-        }
-        if (s.url) {
-          const q = parseQualityFromUrl(s.url);
-          if (q) return q;
-        }
-        if (liveVideoHeight && (s.type === "HLS" || s.type === "DASH")) {
-          const h = snapHeight(liveVideoHeight);
-          if (h) return h >= 2160 ? "4K" : h + "p";
-        }
-      } catch {}
-      return "";
-    }
+    // Quality for rendition badges — see top-level qualityOf().
     function renderDropdown() {
       dropdown.innerHTML = "";
       // Group renditions by directory: master manifest first, then highest
@@ -702,8 +838,11 @@
         item.addEventListener("click", (e) => {
           e.stopPropagation();
           dropdown.classList.remove("wdm-open");
-          sendPageToWdm();
-          flashOverlayLabel(overlay, "Sent page to WDM!");
+          flashOverlayLabel(overlay, "Sending…", 10000);
+          Promise.resolve()
+            .then(() => sendPageToWdm())
+            .then((res) => confirmOverlaySent(overlay, res || { success: true }),
+              (err) => confirmOverlaySent(overlay, { success: false, error: (err && err.message) || "send-failed" }));
         });
         dropdown.appendChild(item);
         return;
@@ -712,7 +851,9 @@
       // Show the grouped video entries with quality badges. Labels show the
       // real stream name (top-page title), badges carry type + rendition
       // ("HLS 1080p") so identical provider shells become distinguishable.
+      // Header-probed sizes land asynchronously ("HLS 1080p • 78.9 MB").
       const toShow = streams.slice(0, 6);
+      const sizeTargets = [];
       for (const s of toShow) {
         const item = document.createElement("div");
         item.className = "wdm-dropdown-item";
@@ -723,6 +864,12 @@
         let badge = s.type || "Video";
         if (s.drm) badge = badge + " \uD83D\uDD12";
         if (q && pretty.toLowerCase().indexOf(q.toLowerCase()) < 0) badge = badge + " " + q;
+        // Already-observed size (passive response headers) shows immediately;
+        // probed sizes patch in async via enrichWithSizes below.
+        if (s.size && s.size > 0) {
+          const seen = formatBytes(s.size);
+          if (seen) badge = badge + " • " + seen;
+        }
         // Build DOM with textContent/setAttribute only — never innerHTML with
         // attacker-controlled URLs/labels (XSS via title="..." breakout).
         const labelDiv = document.createElement("div");
@@ -734,15 +881,25 @@
         badgeSpan.textContent = String(badge);
         item.appendChild(labelDiv);
         item.appendChild(badgeSpan);
+        sizeTargets.push({
+          s,
+          badgeSpan,
+          labelDiv,
+          hasObservedSize: !!(s.size && s.size > 0),
+          genericLabel: !pretty || pretty === "Video" || isProviderTitle(rawLabel),
+        });
         item.addEventListener("click", (e) => {
           e.stopPropagation();
           dropdown.classList.remove("wdm-open");
-          sendToWdm(s);
-          const label = overlay.querySelector(".wdm-player-overlay-label");
-          if (label) { label.textContent = "Sent to WDM!"; setTimeout(() => { label.textContent = "Download this video"; }, 2000); }
+          flashOverlayLabel(overlay, "Sending…", 10000);
+          Promise.resolve()
+            .then(() => sendToWdm(s))
+            .then((res) => confirmOverlaySent(overlay, res || { success: true }),
+              (err) => confirmOverlaySent(overlay, { success: false, error: (err && err.message) || "send-failed" }));
         });
         dropdown.appendChild(item);
       }
+      enrichWithSizes(sizeTargets);
     }
 
     overlay.addEventListener("click", (e) => {
@@ -752,14 +909,19 @@
       const streams = Array.from(detectedStreams.values());
       // No captured stream yet: hand the player page to WDM for resolving.
       if (streams.length === 0) {
-        sendPageToWdm();
-        flashOverlayLabel(overlay, "Sent page to WDM!");
+        flashOverlayLabel(overlay, "Sending…", 10000);
+        Promise.resolve()
+          .then(() => sendPageToWdm())
+          .then((res) => confirmOverlaySent(overlay, res || { success: true }),
+            (err) => confirmOverlaySent(overlay, { success: false, error: (err && err.message) || "send-failed" }));
         return;
       }
       if (streams.length === 1) {
-        sendToWdm(streams[0]);
-        const label = overlay.querySelector(".wdm-player-overlay-label");
-        if (label) { label.textContent = "Sent to WDM!"; setTimeout(() => { label.textContent = "Download this video"; }, 2000); }
+        flashOverlayLabel(overlay, "Sending…", 10000);
+        Promise.resolve()
+          .then(() => sendToWdm(streams[0]))
+          .then((res) => confirmOverlaySent(overlay, res || { success: true }),
+            (err) => confirmOverlaySent(overlay, { success: false, error: (err && err.message) || "send-failed" }));
       } else {
         renderDropdown();
         dropdown.classList.toggle("wdm-open");
@@ -773,7 +935,12 @@
       try {
         const cs = window.getComputedStyle(el);
         if (cs.visibility === "hidden" || cs.display === "none" || cs.opacity === "0") return false;
-        if (cs.objectFit === "cover" && el.videoWidth && el.videoHeight) return false;
+        if (cs.objectFit === "cover" && el.autoplay && el.muted && el.loop && !el.controls && (cs.pointerEvents === "none" || parseInt(cs.zIndex || "0", 10) < 0)) return false;
+        // Ambient fullscreen hero background (muted cover filling the viewport):
+        // decor, not user content — no overlay regardless of controls/loop flags.
+        try {
+          if (isAmbientBackgroundVideo(el.getBoundingClientRect(), window.innerWidth, window.innerHeight, cs.objectFit, el.muted)) return false;
+        } catch {}
       } catch {}
       const r = el.getBoundingClientRect();
       if (r.width < 120 || r.height < 90) return false;
@@ -782,8 +949,11 @@
     }
     function positionOverlay() {
       if (!videoEl.isConnected) {
+        if (overlay._wdmInterval) { clearInterval(overlay._wdmInterval); overlay._wdmInterval = null; }
         overlay.remove();
         playerOverlays.delete(videoEl);
+        try { if (videoEl._wdmRO) videoEl._wdmRO.disconnect(); } catch {}
+        try { if (videoEl._wdmIO) videoEl._wdmIO.disconnect(); } catch {}
         return;
       }
       if (!isVisibleVideo(videoEl)) {
@@ -819,7 +989,9 @@
       overlay.style.top = Math.max(8, rect.top + 10) + "px";
       overlay.style.right = Math.max(8, window.innerWidth - rect.right + 10) + "px";
       overlay.style.zIndex = "2147483647";
-      if (overlay.parentElement !== document.body) document.body.appendChild(overlay);
+      const fsElem = document.fullscreenElement || document.webkitFullscreenElement;
+      const targetParent = (fsElem && fsElem.contains(videoEl)) ? fsElem : document.body;
+      if (overlay.parentElement !== targetParent) targetParent.appendChild(overlay);
     }
     // IDM uses ResizeObserver + IntersectionObserver; emulate with both + polling fallback
     try {
@@ -840,6 +1012,7 @@
       videoEl._wdmIO = io;
     } catch {}
     const interval = setInterval(positionOverlay, 400);
+    overlay._wdmInterval = interval;
     videoEl.addEventListener("play", positionOverlay);
     videoEl.addEventListener("loadedmetadata", positionOverlay);
     videoEl.addEventListener("mouseenter", positionOverlay);
@@ -899,6 +1072,16 @@
       if (/(^|\/)init\.mp4(\?|$)/i.test(p)) return; // DASH init — not a video
     } catch {}
     if (/\.(ts|m4s)(\?|$)/i.test(url)) return; // segments are not downloadable items
+    // Curated noise filter — mirrors background.js isNoiseUrl (keep in sync).
+    // Content entries carry no observed headers, so only exact-filename UI
+    // sounds + updater/beacon path segments are dropped here; anything with
+    // real evidence is adopted by the background merge instead.
+    try {
+      const lu = url.toLowerCase();
+      if (/(^|\/)(click|hover|ding|pop|tick|tock|beep|chime|alert|notification|message)-?[a-z0-9]*\.(mp3|wav|ogg|m4a)(\?|$)/.test(lu)) return;
+      const pl = new URL(url, location.href).pathname.toLowerCase();
+      if (/(^|\/)(auto-?update|update-?check|idmupdt|omaha|beacon|heartbeat|telemetry)(\/|$|\?|_|-)/.test(pl)) return;
+    } catch {}
 
     // Resolve relative URLs
     try {
@@ -1156,20 +1339,20 @@
   function sendPageToWdm() {
     try {
       if (webext && webext.runtime && webext.runtime.sendMessage) {
-        webext.runtime.sendMessage({
-          action: "download",
-          payload: {
-            url: location.href,
-            fileName: null,
-            referer: location.href,
-            headers: { "Referer": location.href, "Origin": location.origin },
-            pageTitle: realTitle() || document.title || null,
-            streamType: "page",
-            pageUrl: location.href
-          }
+        return requestDownload({
+          url: location.href,
+          fileName: null,
+          referer: location.href,
+          headers: { "Referer": location.href, "Origin": location.origin },
+          pageTitle: realTitle() || document.title || null,
+          streamType: "page",
+          pageUrl: location.href
         });
       }
-    } catch {}
+    } catch (e) {
+      return Promise.resolve({ success: false, error: (e && e.message) || "send-failed" });
+    }
+    return Promise.resolve({ success: false, error: "no-messaging" });
   }
   // Manual fallback used when a video element exists but no stream was captured
   // (API-hidden manifest, blob/MSE, encrypted payload). The overlay button offers

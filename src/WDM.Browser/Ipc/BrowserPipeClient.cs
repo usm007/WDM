@@ -14,12 +14,17 @@ public sealed class BrowserPipeClient : IAsyncDisposable
 
     public bool IsConnected => _pipe?.IsConnected == true;
 
+    /// <summary>Timeouts race OUTSIDE the pipe calls: timer-armed tokens
+    /// passed to PipeStream async IO hung indefinitely in testing.</summary>
     public async Task ConnectAsync(string pipeName, CancellationToken ct)
     {
         var pipe = new NamedPipeClientStream(".", pipeName, PipeDirection.InOut, PipeOptions.Asynchronous);
         try
         {
-            await pipe.ConnectAsync(ct).ConfigureAwait(false);
+            var connect = pipe.ConnectAsync();
+            if (await Task.WhenAny(connect, Task.Delay(Timeout.InfiniteTimeSpan, ct)).ConfigureAwait(false) != connect)
+                throw new OperationCanceledException(ct);
+            await connect.ConfigureAwait(false);
             _pipe = pipe;
         }
         catch
@@ -36,8 +41,10 @@ public sealed class BrowserPipeClient : IAsyncDisposable
         await _writeGate.WaitAsync(ct).ConfigureAwait(false);
         try
         {
-            await pipe.WriteAsync(frame, ct).ConfigureAwait(false);
-            await pipe.FlushAsync(ct).ConfigureAwait(false);
+            var send = SendFrameAsync(pipe, frame);
+            if (await Task.WhenAny(send, Task.Delay(Timeout.InfiniteTimeSpan, ct)).ConfigureAwait(false) != send)
+                throw new OperationCanceledException(ct);
+            await send.ConfigureAwait(false);
         }
         finally
         {
@@ -45,10 +52,21 @@ public sealed class BrowserPipeClient : IAsyncDisposable
         }
     }
 
+    private static async Task SendFrameAsync(NamedPipeClientStream pipe, byte[] frame)
+    {
+        await pipe.WriteAsync(frame).ConfigureAwait(false);
+        await pipe.FlushAsync().ConfigureAwait(false);
+    }
+
     public async Task<BrowserMessage.Envelope> ReceiveAsync(CancellationToken ct)
     {
         var pipe = _pipe ?? throw new InvalidOperationException("Pipe is not connected.");
-        byte[] frame = await BrowserMessage.ReadFrameAsync(pipe, ct).ConfigureAwait(false);
+        // Async reads on the overlapped handle (proven); sync reads on
+        // overlapped handles hang here. Timeouts race outside the IO call.
+        var read = BrowserMessage.ReadFrameAsync(pipe);
+        if (await Task.WhenAny(read, Task.Delay(Timeout.InfiniteTimeSpan, ct)).ConfigureAwait(false) != read)
+            throw new OperationCanceledException(ct);
+        byte[] frame = await read.ConfigureAwait(false);
         if (!BrowserMessage.TryDecode(frame, out var msg, out string? error) || msg is null)
             throw new InvalidOperationException("Browser host sent an invalid message: " + error);
         return msg;

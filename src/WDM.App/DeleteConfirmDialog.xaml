@@ -1,8 +1,8 @@
-<Window x:Class="WDM.DeleteConfirmDialog"
+﻿<Window x:Class="WDM.DeleteConfirmDialog"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
-        Title="Delete Downloads — WDM"
+        Title="Delete Downloads (WDM)"
         Icon="Assets/WDM.ico"
         Width="400"
         SizeToContent="Height"
@@ -22,10 +22,8 @@
             BorderBrush="{DynamicResource Brush.DialogBorder}"
             BorderThickness="1"
             CornerRadius="8" Margin="10"
-            SnapsToDevicePixels="True">
-        <Border.Effect>
-            <DropShadowEffect BlurRadius="16" ShadowDepth="1" Direction="270" Color="#000000" Opacity="0.16" RenderingBias="Quality"/>
-        </Border.Effect>
+            SnapsToDevicePixels="True"
+            Effect="{DynamicResource Shadow.CardDialog}">
         <Grid>
             <Grid.RowDefinitions>
                 <RowDefinition Height="*" />    <!-- Content Body -->
@@ -38,19 +36,19 @@
                 <DockPanel Margin="0,0,0,6" LastChildFill="True">
                     <Button DockPanel.Dock="Right" Style="{StaticResource Button.DialogClose}" Click="CancelClick" VerticalAlignment="Center" Margin="6,-6,-6,0" />
                     <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                        <ui:SymbolIcon Symbol="Delete24" FontSize="18"
+                        <ui:SymbolIcon Symbol="Delete24" FontSize="17"
                                        Foreground="{DynamicResource Brush.StatusFailed}" Margin="0,0,7,0" VerticalAlignment="Center" />
-                        <TextBlock Text="Delete Downloads" FontSize="15" FontWeight="SemiBold"
+                        <TextBlock Text="Delete Downloads" FontSize="14" FontWeight="SemiBold"
                                    Foreground="{DynamicResource Brush.Text}" VerticalAlignment="Center" />
                     </StackPanel>
                 </DockPanel>
 
                 <!-- Description / Context -->
-                <TextBlock x:Name="MessageText" TextWrapping="Wrap" FontSize="11.5" Foreground="{DynamicResource Brush.TextDim}" Margin="0,0,0,10" />
+                <TextBlock x:Name="MessageText" TextWrapping="Wrap" FontSize="10.5" Foreground="{DynamicResource Brush.TextDim}" Margin="0,0,0,10" />
 
                 <!-- Secondary Option: Delete from disk -->
                 <CheckBox x:Name="DiskCheckBox" Content="Also delete the downloaded file from disk"
-                          FontSize="11.5" Foreground="{DynamicResource Brush.Text}" Margin="0,2,0,2" />
+                          FontSize="10.5" Foreground="{DynamicResource Brush.Text}" Margin="0,2,0,2" />
             </StackPanel>
 
             <!-- Bottom Action Strip -->

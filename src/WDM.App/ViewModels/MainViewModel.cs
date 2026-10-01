@@ -22,9 +22,9 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
     /// <summary>Last status per task used to detect Added/Started/Failed transitions
     /// for notifications (1DM pref_notification toasts). Pruned when tasks leave.</summary>
     private readonly Dictionary<Guid, TaskStatus> _lastNotifiedStatus = new();
-    /// <summary>1DM Scheduler: holds the queue outside the download window and
-    /// applies the window speed cap. 30s tick; user Start always clears the hold.</summary>
-    private readonly DispatcherTimer _schedulerTimer;
+    /// <summary>Finished-link retention sweep (delete-links-after-N-days).
+    /// 5-minute tick; startup maintenance also runs it once.</summary>
+    private readonly DispatcherTimer _pruneTimer;
     private readonly Action _onEngineTaskChanged;
     private readonly Action<DownloadTask> _onEngineTaskCompleted;
     private readonly Action<DownloadTask, DownloadEngine.CloudflareBlockedException> _onCloudflareBlocked;
@@ -42,7 +42,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
     /// popup loop and the download never starts.</summary>
     private readonly HashSet<Guid> _cfAttempted = new();
     private DownloadTask? _selectedTask;
-    private string _statusText = "WDM — ready";
+    private string _statusText = "WDM: ready";
     private string _statusRightText = "";
     private FilterKind _filter = FilterKind.All;
     private string _searchText = "";
@@ -111,6 +111,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
     public RelayCommand RetryAllFailedCommand { get; }
     public RelayCommand DismissFailedBannerCommand { get; }
     public RelayCommand RefreshLinkCommand { get; }
+    public RelayCommand RetryWithPageSessionCommand { get; }
     public RelayCommand OpenFolderCommand { get; }
     public RelayCommand CleanFileNameCommand { get; }
 
@@ -128,6 +129,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
         Engine.GlobalSpeedLimitKbps = Settings.GlobalSpeedLimitKbps;
         Engine.MaxRetries = Settings.MaxRetries;
         Engine.ApplyProxy(Settings);
+        Engine.ApplyHostPolicy(Settings);
         _onEngineTaskChanged = () => Dispatch(OnTasksChanged);
         _onEngineTaskCompleted = task => Dispatch(() =>
         {
@@ -225,6 +227,55 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
             if (SelectedTask is not null)
                 RefreshLinkRequested?.Invoke(SelectedTask);
         }, _ => SelectedTask is { Status: TaskStatus.Failed or TaskStatus.Paused });
+        RetryWithPageSessionCommand = new RelayCommand(_ =>
+        {
+            var task = SelectedTask;
+            if (task is null)
+                return;
+            // One-click full-session replay: approve this site going forward
+            // (page-host cookies may ride cross-host — shown with a warning in
+            // settings), replay credentials on this task, and restart it. The
+            // extension picks up the approval on next launch for re-captures.
+            try
+            {
+                string? host = null;
+                foreach (string? candidate in new[] { task.Referer, task.SourcePageUrl, task.Url })
+                {
+                    try
+                    {
+                        if (!string.IsNullOrWhiteSpace(candidate) &&
+                            Uri.TryCreate(candidate, UriKind.Absolute, out var u) &&
+                            (u.Scheme == Uri.UriSchemeHttp || u.Scheme == Uri.UriSchemeHttps))
+                        {
+                            // Prefer the page host (referer first), not the CDN.
+                            if (candidate == task.Url)
+                            {
+                                host ??= u.Host.ToLowerInvariant();
+                                continue;
+                            }
+                            host = u.Host.ToLowerInvariant();
+                            break;
+                        }
+                    }
+                    catch { }
+                }
+                if (!string.IsNullOrWhiteSpace(host) && !Settings.FullSessionReplayHosts.Contains(host, StringComparer.OrdinalIgnoreCase))
+                {
+                    Settings.FullSessionReplayHosts.Add(host);
+                    if (Settings.FullSessionReplayHosts.Count > 200)
+                        Settings.FullSessionReplayHosts.RemoveAt(0);
+                }
+            }
+            catch { }
+            task.FullSessionReplay = true;
+            task.Error = null;
+            task.Eta = "";
+            try { BrowserIntegration.DeploySessionHosts(); } catch { }
+            PersistSettings();
+            Engine.Start(task);
+            SaveTasksSoon();
+            UpdateStatus();
+        }, _ => SelectedTask is { Status: TaskStatus.Failed or TaskStatus.Paused });
         OpenFolderCommand = new RelayCommand(p => RevealTask(p as DownloadTask ?? SelectedTask));
         CleanFileNameCommand = new RelayCommand(_ => CleanSelectedFileNames(), _ => SelectedTask is not null || SelectedTasks.Count > 0);
 
@@ -264,12 +315,12 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
         _autoResumeTimer.Tick += (_, _) => OnAutoResumeTick();
         _autoResumeTimer.Start();
 
-        _schedulerTimer = new DispatcherTimer
+        _pruneTimer = new DispatcherTimer
         {
-            Interval = TimeSpan.FromSeconds(30),
+            Interval = TimeSpan.FromMinutes(5),
         };
-        _schedulerTimer.Tick += (_, _) => OnSchedulerTick(DateTime.Now);
-        _schedulerTimer.Start();
+        _pruneTimer.Tick += (_, _) => PruneFinishedLinks(DateTime.Now);
+        _pruneTimer.Start();
 
         LoadPersistedTasks();
         // Attach filter + sort once, after the bulk load: a single refresh
@@ -401,7 +452,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
                 AboutCommand.Execute(null);
                 return;
             }
-            if (value == FilterKind.Scheduler || value == FilterKind.SpeedLimits)
+            if (value == FilterKind.SpeedLimits)
             {
                 OptionsCommand.Execute(null);
                 return;
@@ -630,7 +681,13 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
                 SourcePageUrl = record.SourcePageUrl,
                 Referer = record.Referer,
                 Headers = record.Headers ?? new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase),
+                FullSessionReplay = record.FullSessionReplay,
                 Mirrors = record.Mirrors?.Where(m => !string.IsNullOrWhiteSpace(m)).ToList() ?? new(),
+                PostData = record.PostData,
+                PostContentType = record.PostContentType,
+                ProxyHost = record.ProxyHost,
+                ProxyPort = record.ProxyPort,
+                ProxyType = record.ProxyType,
                 Etag = record.Etag,
                 LastModified = record.LastModified,
                 FileName = record.FileName,
@@ -779,7 +836,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
         }
         if (!_cfAttempted.Add(task.Id))
         {
-            task.Error = cfEx.Message + " (Already tried once in the background — get a fresh link, then use Refresh Link.)";
+            task.Error = cfEx.Message + " (Already tried once in the background: get a fresh link, then use Refresh Link.)";
             return;
         }
         if (!_cfSolving.Add(task.Id))
@@ -864,7 +921,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
     {
         if (task.Status != TaskStatus.Failed)
             return;
-        task.Error = $"This page needs a one-time browser check before releasing the stream. Open {pageUrl} in your browser, then Retry — or capture the stream via the WDM extension so session cookies are sent automatically.";
+        task.Error = $"This page needs a one-time browser check before releasing the stream. Open {pageUrl} in your browser, then Retry, or capture the stream via the WDM extension so session cookies are sent automatically.";
     }
 
     private void Dispatch(Action action)
@@ -955,6 +1012,54 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
             CancelPendingShutdownIfAny();
             ShowProgressDialogRequested?.Invoke(task);
         }
+        SelectedFilter = FilterKind.All;
+        SaveTasksSoon();
+        UpdateStatus();
+    }
+
+    /// <summary>Adds a batch of tasks (playlist expansion: one row per video).
+    /// Same per-task handling as <see cref="AddTask"/> but with a single
+    /// progress dialog (for the first started task) and a single save/status
+    /// refresh, so a 17-video playlist doesn't open 17 windows.</summary>
+    public void AddTasks(IEnumerable<DownloadTask> tasks, bool showDialogForFirst = true)
+    {
+        if (!_dispatcher.CheckAccess())
+        {
+            Dispatch(() => AddTasks(tasks, showDialogForFirst));
+            return;
+        }
+        bool dialogShown = false;
+        bool anyStarted = false;
+        foreach (var task in tasks)
+        {
+            if (string.IsNullOrWhiteSpace(task.FileName))
+            {
+                task.FileName = DownloadEngine.DeriveName(task.Url);
+            }
+            else
+            {
+                task.FileName = DownloadEngine.SanitizeFileName(task.FileName, referer: task.Referer);
+            }
+            task.Category = DownloadTask.Categorize(task.FileName);
+            Tasks.Add(task);
+            ActivityLog.Write("ADD", $"{ActivityLog.HostOf(task.Url)} | {task.FileName} | {task.Url}");
+            _lastNotifiedStatus[task.Id] = task.Status;
+            if (Settings.NotifyOnAdded)
+                NotificationRequested?.Invoke(task, NotifyKind.Added);
+            ApplyCategoryRouting(task);
+            if (task.Status != TaskStatus.Paused)
+            {
+                Engine.Start(task);
+                anyStarted = true;
+                if (showDialogForFirst && !dialogShown)
+                {
+                    dialogShown = true;
+                    ShowProgressDialogRequested?.Invoke(task);
+                }
+            }
+        }
+        if (anyStarted)
+            CancelPendingShutdownIfAny();
         SelectedFilter = FilterKind.All;
         SaveTasksSoon();
         UpdateStatus();
@@ -1149,44 +1254,11 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
         UpdateStatus();
     }
 
-    /// <summary>Scheduler + prune tick core (testable): applies the window speed
-    /// cap, holds the queue outside the window (marked, resumable on re-entry),
-    /// and prunes finished links past their retention.</summary>
-    internal void OnSchedulerTick(DateTime now)
+    /// <summary>Finished-link retention sweep core (testable).</summary>
+    internal void OnPruneTick(DateTime now)
     {
         if (_disposed)
             return;
-        bool inWindow = Settings.SchedulerEnabled &&
-            SchedulerPolicy.IsInWindow(now, Settings.SchedulerStart, Settings.SchedulerStop, Settings.SchedulerDays);
-        Engine.SchedulerSpeedLimitKbps = inWindow ? Settings.SchedulerSpeedLimitKbps : 0;
-        if (Settings.SchedulerEnabled)
-        {
-            if (!inWindow)
-            {
-                foreach (var task in Tasks.Where(t => t.Status is TaskStatus.Downloading or TaskStatus.Queued).ToList())
-                {
-                    task.SchedulerPaused = true;
-                    Engine.Pause(task);
-                }
-            }
-            else
-            {
-                bool any = false;
-                foreach (var task in Tasks.Where(t => t.SchedulerPaused && t.Status == TaskStatus.Paused).ToList())
-                {
-                    task.SchedulerPaused = false;
-                    task.Error = null;
-                    task.Eta = "";
-                    Engine.Start(task);
-                    any = true;
-                }
-                if (any)
-                {
-                    SaveTasksSoon();
-                    UpdateStatus();
-                }
-            }
-        }
         PruneFinishedLinks(now);
     }
 
@@ -1868,7 +1940,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
         try { _saveTimer.Tick -= OnSaveTimerTick; } catch { }
         try { _saveTimer.Stop(); } catch { }
         try { _autoResumeTimer.Stop(); } catch { }
-        try { _schedulerTimer.Stop(); } catch { }
+        try { _pruneTimer.Stop(); } catch { }
         try { Engine.TaskChanged -= _onEngineTaskChanged; } catch { }
         try { Engine.TaskCompleted -= _onEngineTaskCompleted; } catch { }
         try { Engine.CloudflareBlocked -= _onCloudflareBlocked; } catch { }
@@ -1897,6 +1969,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
         Engine.GlobalSpeedLimitKbps = Settings.GlobalSpeedLimitKbps;
         Engine.MaxRetries = Settings.MaxRetries;
         Engine.ApplyProxy(Settings);
+        Engine.ApplyHostPolicy(Settings);
         ApplyRunAtStartup();
     }
 
@@ -2138,7 +2211,6 @@ public enum FilterKind
     Other,
 
     // Tools
-    Scheduler,
     SpeedLimits,
     History,
 
@@ -2162,7 +2234,7 @@ public sealed class FilterItem : INotifyPropertyChanged
     public string HeaderText { get; private init; } = "";
     public FilterKind Kind { get; }
     public bool IsCategory => Kind is FilterKind.Video or FilterKind.Music or FilterKind.Document or FilterKind.Compressed or FilterKind.Program or FilterKind.Other;
-    public bool IsToolOrApp => Kind is FilterKind.Scheduler or FilterKind.SpeedLimits or FilterKind.Settings or FilterKind.About;
+    public bool IsToolOrApp => Kind is FilterKind.SpeedLimits or FilterKind.Settings or FilterKind.About;
 
     public string Icon => (IsSeparator || IsHeader) ? "" : Kind switch
     {
@@ -2178,7 +2250,6 @@ public sealed class FilterItem : INotifyPropertyChanged
         FilterKind.Compressed => char.ConvertFromUtf32(0xF05C4),
         FilterKind.Program => char.ConvertFromUtf32(0xF08C6),
         FilterKind.Other => char.ConvertFromUtf32(0xF0168),
-        FilterKind.Scheduler => char.ConvertFromUtf32(0xF0150),
         FilterKind.SpeedLimits => char.ConvertFromUtf32(0xF04F2),
         FilterKind.History => char.ConvertFromUtf32(0xF02DA),
         FilterKind.Settings => char.ConvertFromUtf32(0xF08BB),
@@ -2200,7 +2271,6 @@ public sealed class FilterItem : INotifyPropertyChanged
         FilterKind.Compressed => Wpf.Ui.Controls.SymbolRegular.FolderZip24,
         FilterKind.Program => Wpf.Ui.Controls.SymbolRegular.AppGeneric24,
         FilterKind.Other => Wpf.Ui.Controls.SymbolRegular.DocumentBulletList24,
-        FilterKind.Scheduler => Wpf.Ui.Controls.SymbolRegular.Clock24,
         FilterKind.SpeedLimits => Wpf.Ui.Controls.SymbolRegular.Gauge24,
         FilterKind.History => Wpf.Ui.Controls.SymbolRegular.History24,
         FilterKind.Settings => Wpf.Ui.Controls.SymbolRegular.Settings24,
@@ -2222,7 +2292,6 @@ public sealed class FilterItem : INotifyPropertyChanged
         FilterKind.Compressed => "Compressed",
         FilterKind.Program => "Programs",
         FilterKind.Other => "Other",
-        FilterKind.Scheduler => "Scheduler",
         FilterKind.SpeedLimits => "Speed Limits",
         FilterKind.History => "History",
         FilterKind.Settings => "Settings",
@@ -2327,35 +2396,6 @@ public static class NotificationCenter
         if (current == TaskStatus.Failed && settings.NotifyOnError)
             return NotifyKind.Failed;
         return NotifyKind.None;
-    }
-}
-
-/// <summary>Pure scheduler-window policy (1DM util/Scheduler time part): is
-/// <paramref name="now"/> inside the download window on an enabled day?
-/// Overnight windows (start &gt; stop) wrap midnight; start == stop = all day.
-/// Side-effect free for testing; the tick applies it.</summary>
-public static class SchedulerPolicy
-{
-    public static bool IsInWindow(DateTime now, TimeSpan start, TimeSpan stop, List<DayOfWeek>? days)
-    {
-        if (days is null)
-        {
-            // Legacy/unknown: no day restriction.
-        }
-        else if (days.Count == 0)
-        {
-            return false; // explicitly unchecked every day: window never applies.
-        }
-        else if (!days.Contains(now.DayOfWeek))
-        {
-            return false;
-        }
-        TimeSpan t = now.TimeOfDay;
-        if (start == stop)
-            return true;
-        if (start < stop)
-            return t >= start && t < stop;
-        return t >= start || t < stop;
     }
 }
 

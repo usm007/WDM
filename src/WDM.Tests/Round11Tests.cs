@@ -25,11 +25,6 @@ public sealed class Round11Tests
             NotifyOnError = false,
             NotificationSound = false,
             DetailedNotifications = true,
-            SchedulerEnabled = true,
-            SchedulerStart = new TimeSpan(21, 30, 0),
-            SchedulerStop = new TimeSpan(6, 0, 0),
-            SchedulerSpeedLimitKbps = 512,
-            SchedulerDays = new List<DayOfWeek> { DayOfWeek.Saturday, DayOfWeek.Sunday },
             MoveOnFinish = true,
             MoveOnFinishFolder = "C:\\Done",
             RemoveLinkAfterFinish = true,
@@ -43,11 +38,6 @@ public sealed class Round11Tests
         Assert.False(back.NotifyOnError);
         Assert.False(back.NotificationSound);
         Assert.True(back.DetailedNotifications);
-        Assert.True(back.SchedulerEnabled);
-        Assert.Equal(new TimeSpan(21, 30, 0), back.SchedulerStart);
-        Assert.Equal(new TimeSpan(6, 0, 0), back.SchedulerStop);
-        Assert.Equal(512, back.SchedulerSpeedLimitKbps);
-        Assert.Equal(new List<DayOfWeek> { DayOfWeek.Saturday, DayOfWeek.Sunday }, back.SchedulerDays);
         Assert.True(back.MoveOnFinish);
         Assert.Equal("C:\\Done", back.MoveOnFinishFolder);
         Assert.True(back.RemoveLinkAfterFinish);
@@ -64,9 +54,6 @@ public sealed class Round11Tests
         Assert.False(back.NotifyOnAdded);
         Assert.True(back.NotifyOnError); // new default, not legacy false
         Assert.True(back.NotificationSound);
-        Assert.False(back.SchedulerEnabled);
-        Assert.Equal(new TimeSpan(22, 0, 0), back.SchedulerStart);
-        Assert.Equal(7, back.SchedulerDays.Count);
         Assert.False(back.MoveOnFinish);
         Assert.Equal(0, back.DeleteFinishedLinksAfterDays);
         Assert.Equal(5, back.MaxRetries);
@@ -82,18 +69,11 @@ public sealed class Round11Tests
 
         var s = new AppSettings
         {
-            SchedulerSpeedLimitKbps = 5_000_000,
             DeleteFinishedLinksAfterDays = 999,
-            SchedulerDays = null!,
             MoveOnFinishFolder = "C:\\ok",
         };
         var v = Call(s);
-        Assert.Equal(1_000_000, v.SchedulerSpeedLimitKbps);
         Assert.Equal(365, v.DeleteFinishedLinksAfterDays);
-        Assert.Equal(7, v.SchedulerDays.Count);
-
-        var empty = new AppSettings { SchedulerDays = new List<DayOfWeek>() };
-        Assert.Empty(Call(empty).SchedulerDays); // explicit empty preserved: window never applies
 
         var badPath = new AppSettings { MoveOnFinishFolder = "C:\\a<b" };
         Assert.Null(Call(badPath).MoveOnFinishFolder);
@@ -123,8 +103,7 @@ public sealed class Round11Tests
         string options = File.ReadAllText(Path.Combine(dir, "OptionsControl.xaml"));
         foreach (string name in new[]
         {
-            "AutoResumeBox", "SchedulerBox", "SchedulerStartBox", "SchedulerStopBox",
-            "SchedulerSpeedBox", "SchedulerDayMonday", "SchedulerDaySunday",
+            "AutoResumeBox",
             "NotifyAddedBox", "NotifyStartedBox", "NotifyErrorBox", "NotifySoundBox",
             "DetailedNotifyBox", "MoveOnFinishBox", "MoveFolderBox", "RemoveLinkBox",
             "DeleteAfterDaysBox", "MinCatchBox", "MinCatchCustomBox",

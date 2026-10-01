@@ -3,8 +3,8 @@ using Microsoft.Win32;
 namespace WDM.Services;
 
 /// <summary>
-/// Decides whether this launch is a first-ever run (show onboarding Welcome)
-/// or an update/relaunch (show the extension reload notice instead).
+/// Decides whether this launch is a first-ever run (hosted setup guide)
+/// or an update/relaunch (extension reload notice; Tips window on run 2).
 ///
 /// Earlier logic looked only at data files (tasks.json/settings.json), so an
 /// updater whose data had been wiped was misclassified as a new user: they got

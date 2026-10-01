@@ -28,7 +28,7 @@ public partial class CloudflareChallengeWindow : Wpf.Ui.Controls.FluentWindow
     {
         InitializeComponent();
         _task = task;
-        Title = $"Cloudflare Protection — {task.DisplayFileName}";
+        Title = $"Cloudflare Protection: {task.DisplayFileName}";
 
         Loaded += async (_, _) => await InitWebViewAsync();
         Closed += (_, _) => DetachWebView();
@@ -42,12 +42,12 @@ public partial class CloudflareChallengeWindow : Wpf.Ui.Controls.FluentWindow
 
     private async Task InitWebViewAsync()
     {
-        // Screenshot / test mode: no real browser — show a static placeholder
+        // Screenshot / test mode: no real browser: show a static placeholder
         // instead of failing with E_ABORT + a modal MessageBox.
         if (SuppressBrowserInit)
         {
             LoadingOverlay.Visibility = Visibility.Collapsed;
-            StatusText.Text = "Browser preview disabled in screenshot mode — solve the check in the live app and WDM will capture clearance cookies here.";
+            StatusText.Text = "Browser preview disabled in screenshot mode: solve the check in the live app and WDM will capture clearance cookies here.";
             return;
         }
         try
@@ -74,7 +74,7 @@ public partial class CloudflareChallengeWindow : Wpf.Ui.Controls.FluentWindow
             }
             if (LooksLikeDirectFile(target))
             {
-                StatusText.Text = "This looks like a direct file link (not a page). If it shows \"You have been blocked\", the signed link expired or needs browser cookies/Referer — get a fresh link from the original page instead of solving here.";
+                StatusText.Text = "This looks like a direct file link (not a page). If it shows \"You have been blocked\", the signed link expired or needs browser cookies/Referer: get a fresh link from the original page instead of solving here.";
             }
             WebView.Source = target;
         }
@@ -104,7 +104,7 @@ public partial class CloudflareChallengeWindow : Wpf.Ui.Controls.FluentWindow
 
     private bool TryComplete(bool result)
     {
-        // The user may have closed the window mid-callback — setting
+        // The user may have closed the window mid-callback: setting
         // DialogResult on a closed window throws InvalidOperationException.
         try
         {
@@ -141,10 +141,10 @@ public partial class CloudflareChallengeWindow : Wpf.Ui.Controls.FluentWindow
     {
         // If WebView2 triggers a browser download, cancel the browser download.
         // Only treat it as solved when a cf_clearance cookie was actually
-        // captured — otherwise a direct file hit just requeues the same blocked
+        // captured: otherwise a direct file hit just requeues the same blocked
         // URL and the download never starts (solve loop).
         e.Cancel = true;
-        // e.ResultFilePath is a suggested LOCAL file path, not a URL — swapping the
+        // e.ResultFilePath is a suggested LOCAL file path, not a URL: swapping the
         // task's Url to it would corrupt the download. Use the download's remote URI
         // (the post-redirect direct link) instead.
         string? remoteUri = e.DownloadOperation.Uri;
@@ -154,7 +154,7 @@ public partial class CloudflareChallengeWindow : Wpf.Ui.Controls.FluentWindow
         await CaptureCookiesAsync(WebView.Source.ToString());
         if (!ClearanceCaptured)
         {
-            StatusText.Text = "Browser started the file without Cloudflare clearance — if the download still fails, the link needs a refresh (fresh URL + cookies/Referer from the original page).";
+            StatusText.Text = "Browser started the file without Cloudflare clearance: if the download still fails, the link needs a refresh (fresh URL + cookies/Referer from the original page).";
             FinalRedirectUrl = candidate;
             return;
         }
@@ -194,7 +194,7 @@ public partial class CloudflareChallengeWindow : Wpf.Ui.Controls.FluentWindow
         if (!ClearanceCaptured)
         {
             MessageBox.Show(this,
-                "No Cloudflare clearance cookie (cf_clearance) was found. The page is still blocked (\"You have been blocked\" cannot be solved here). Get a fresh link from the original page in your browser — or capture via the WDM extension so cookies + Referer are sent — then use Refresh Link.",
+                "No Cloudflare clearance cookie (cf_clearance) was found. The page is still blocked (\"You have been blocked\" cannot be solved here). Get a fresh link from the original page in your browser: or capture via the WDM extension so cookies + Referer are sent: then use Refresh Link.",
                 "Still blocked", MessageBoxButton.OK, MessageBoxImage.Warning);
             await FlagHardBlockAsync();
             return;
@@ -239,7 +239,7 @@ public partial class CloudflareChallengeWindow : Wpf.Ui.Controls.FluentWindow
                 || (text.IndexOf("ray id", StringComparison.OrdinalIgnoreCase) >= 0
                     && text.IndexOf("cloudflare", StringComparison.OrdinalIgnoreCase) >= 0))
             {
-                StatusText.Text = "This page shows \"You have been blocked\" — a hard site block, not a solvable check. Close this window and get a fresh link from the original page (or capture via the WDM extension), then use Refresh Link.";
+                StatusText.Text = "This page shows \"You have been blocked\": a hard site block, not a solvable check. Close this window and get a fresh link from the original page (or capture via the WDM extension), then use Refresh Link.";
             }
         }
         catch

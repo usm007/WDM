@@ -7,8 +7,10 @@ namespace WDM.Services;
 /// <c>curl http://127.0.0.1:17530/download</c> with no token is rejected, while
 /// the deployed extension (which ships <c>wdm-token.json</c>, written by
 /// <see cref="BrowserIntegration.DeployExtension"/>) authenticates every call.
-/// A local process can still read the token file — like any loopback secret —
-/// so the SSRF allow-list and Origin checks remain as defense in depth.</summary>
+/// The server-side secret (<c>capture.token</c>) is DPAPI-encrypted to the
+/// Windows user account; the deployed copy stays plaintext because the
+/// extension's JS cannot decrypt DPAPI (both live in the user's own profile,
+/// and Origin/SSRF checks remain as defense in depth).</summary>
 public static class CaptureAuth
 {
     public const string HeaderName = "X-WDM-Token";
@@ -19,7 +21,15 @@ public static class CaptureAuth
 
     private static string? _cached;
 
-    /// <summary>Loads the install token, creating and persisting one on first run.</summary>
+    // Fixed DPAPI entropy (not a key — just binds the blob to this app).
+    // Storage now delegates to the shared WDM.Services.DataProtector.
+    internal static string ProtectToken(string token) => DataProtector.ProtectToBase64(token);
+
+    internal static string? TryUnprotectToken(string stored) =>
+        DataProtector.TryUnprotectFromBase64(stored) is string s && s.Length >= 32 ? s : null;
+
+    /// <summary>Loads the install token, creating and persisting one on first run.
+    /// Legacy plaintext files are migrated to DPAPI on read.</summary>
     public static string GetOrCreateToken()
     {
         if (!string.IsNullOrEmpty(_cached))
@@ -31,18 +41,26 @@ public static class CaptureAuth
             if (File.Exists(path))
             {
                 string existing = File.ReadAllText(path).Trim();
-                if (existing.Length >= 32)
+                string? token = TryUnprotectToken(existing);
+                if (token is null && existing.Length >= 32)
                 {
-                    _cached = existing;
+                    // Legacy plaintext install: adopt, then protect at rest.
+                    token = existing;
+                    try { File.WriteAllText(path, ProtectToken(token)); }
+                    catch { }
+                }
+                if (token is not null)
+                {
+                    _cached = token;
                     return _cached;
                 }
             }
             byte[] bytes = RandomNumberGenerator.GetBytes(32);
-            string token = Convert.ToHexString(bytes).ToLowerInvariant();
-            try { File.WriteAllText(path, token); }
+            string fresh = Convert.ToHexString(bytes).ToLowerInvariant();
+            try { File.WriteAllText(path, ProtectToken(fresh)); }
             catch { /* read-only profile: memory-only token for this session */ }
-            _cached = token;
-            return token;
+            _cached = fresh;
+            return fresh;
         }
         catch
         {

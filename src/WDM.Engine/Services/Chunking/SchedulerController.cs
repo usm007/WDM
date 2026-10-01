@@ -16,7 +16,7 @@ public sealed class SchedulerController
 
     public const int MinWorkers = 1;
     public const int MaxWorkers = 16;
-    public const int InitialWorkers = 4;
+    public const int InitialWorkers = 8;
 
     /// <summary>No-progress time before a lease is a stall candidate.</summary>
     public static readonly TimeSpan StallThreshold = TimeSpan.FromSeconds(5);

@@ -18,8 +18,15 @@ public static class YtDlpRunner
     /// Static to match WDM's static service pattern. Always reset to null after use.</summary>
     public static Func<ProcessStartInfo, Task<ProcessRunResult>>? RunnerOverride { get; set; }
 
-    public static ProcessStartInfo CreateInfo(IEnumerable<string> args)
+    public static ProcessStartInfo CreateInfo(IEnumerable<string> args) => CreateInfo(args, out _);
+
+    /// <summary>Builds the yt-dlp spawn info. When the DPAPI-protected cookie
+    /// store exists, a short-lived plaintext copy is materialized for this
+    /// spawn; invoke <paramref name="cookieCleanup"/> after the child exits
+    /// (both real and <see cref="RunnerOverride"/> paths) to delete it.</summary>
+    public static ProcessStartInfo CreateInfo(IEnumerable<string> args, out Action? cookieCleanup)
     {
+        cookieCleanup = null;
         var psi = new ProcessStartInfo
         {
             FileName = MediaEnvironment.YtDlpPath(),
@@ -51,11 +58,11 @@ public static class YtDlpRunner
         {
             if (s.YouTubeBrowserCookies == "wdm-native")
             {
-                string cookieFile = Path.Combine(AppPaths.DataDir, "youtube_cookies.txt");
-                if (File.Exists(cookieFile))
+                string? materialized = MaterializeCookieFile(out cookieCleanup);
+                if (materialized is not null)
                 {
                     psi.ArgumentList.Add("--cookies");
-                    psi.ArgumentList.Add(cookieFile);
+                    psi.ArgumentList.Add(materialized);
                 }
             }
             else if (IsAllowedBrowserName(s.YouTubeBrowserCookies))
@@ -66,6 +73,50 @@ public static class YtDlpRunner
         }
 
         return psi;
+    }
+
+    /// <summary>Resolves the plaintext cookie file for one yt-dlp spawn.
+    /// DPAPI blobs are decrypted into a temp copy (deleted via the returned
+    /// cleanup); legacy plaintext stores are used as-is (next sign-in
+    /// re-exports them protected). Returns null when there is nothing usable.
+    /// </summary>
+    internal static string? MaterializeCookieFile(out Action? cookieCleanup)
+    {
+        cookieCleanup = null;
+        try
+        {
+            string cookieFile = Path.Combine(AppPaths.DataDir, "youtube_cookies.txt");
+            if (!File.Exists(cookieFile))
+                return null;
+            string stored;
+            try
+            {
+                var info = new FileInfo(cookieFile);
+                if (info.Length <= 0 || info.Length > 2 * 1024 * 1024)
+                    return null;
+                stored = File.ReadAllText(cookieFile);
+            }
+            catch { return null; }
+            string? plain = DataProtector.TryUnprotectFromBase64(stored);
+            if (plain is null)
+            {
+                // Legacy plaintext store (or foreign blob): pass through only
+                // if it parses as a Netscape cookie file.
+                try
+                {
+                    if (stored.Contains("# Netscape HTTP Cookie File", StringComparison.Ordinal))
+                        return cookieFile;
+                }
+                catch { }
+                return null;
+            }
+            string tmp = Path.Combine(Path.GetTempPath(), "wdm-cookies-" + Guid.NewGuid().ToString("N") + ".txt");
+            try { File.WriteAllText(tmp, plain); }
+            catch { return null; }
+            cookieCleanup = () => { try { File.Delete(tmp); } catch { } };
+            return tmp;
+        }
+        catch { return null; }
     }
 
     /// <summary>Allow-list for yt-dlp --cookies-from-browser (settings.json is
@@ -96,7 +147,9 @@ public static class YtDlpRunner
             "--socket-timeout", "20",
             "--no-color",
             url
-        });
+        }, out var cookieCleanup);
+        try
+        {
 
         if (RunnerOverride is not null)
         {
@@ -148,6 +201,11 @@ public static class YtDlpRunner
             throw new YtDlpException("No metadata returned for this link.");
 
         return json;
+        }
+        finally
+        {
+            try { cookieCleanup?.Invoke(); } catch { }
+        }
     }
 
     public static void KillTree(Process proc)

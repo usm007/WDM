@@ -52,7 +52,7 @@ public partial class ExtensionReloadNoticeControl : UserControl
         catch (Exception ex)
         {
             App.LogException(ex);
-            FeedbackText.Text = "Couldn't copy the path — please copy it by hand from the box above.";
+            FeedbackText.Text = "Couldn't copy the path: please copy it by hand from the box above.";
         }
     }
 

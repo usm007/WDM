@@ -1,4 +1,6 @@
 using System.Collections.Generic;
+using System.ComponentModel;
+using System.IO;
 using System.Linq;
 using System.Net.Http;
 using System.Net.Http.Headers;
@@ -22,14 +24,31 @@ public partial class AddDownloadDialog : Window
     private readonly Dictionary<string, string>? _prefillHeaders;
     private string _lastDerivedName = "";
     private long _probeTotalBytes = -1;
+    // True when the current probe target is a stream (HLS): playlist bytes are
+    // not media bytes, so _probeTotalBytes must never seed the task size.
     private CancellationTokenSource? _probeCts;
+    private bool _probeIsStream;
     private ResolvedQuery? _lastResolved;
+    // Form POST replay + proxy mirror carried from a browser capture. No UI
+    // box: replayed silently by the engine at start; the probe badge notes it.
+    private string? _prefillPostData;
+    private string? _prefillPostContentType;
+    private string? _prefillProxyHost;
+    private int _prefillProxyPort;
+    private string? _prefillProxyType;
+    private bool _prefillFullSession;
+    // Normalized URL the stashed POST body belongs to (ctor prefill or
+    // UpdatePrefill). A body is only replayed/shown while the box still
+    // holds exactly this URL — retyping must never send a stale form.
+    private string? _postDataUrl;
     private List<QualityOption> _ytQualityOptions = new();
+    private List<PlaylistPick> _playlistPicks = new();
     private List<HlsDownloader.HlsVariantInfo> _hlsVariants = new();
     private string _originalHlsUrl = "";
     private bool _suppressHlsSelection;
 
-    public AddDownloadDialog(MainViewModel viewModel, string? prefillUrl = null, string? prefillFileName = null, string? prefillReferer = null, Dictionary<string, string>? prefillHeaders = null)
+    public AddDownloadDialog(MainViewModel viewModel, string? prefillUrl = null, string? prefillFileName = null, string? prefillReferer = null, Dictionary<string, string>? prefillHeaders = null,
+        string? postData = null, string? postContentType = null, string? proxyHost = null, int proxyPort = 0, string? proxyType = null, bool fullSession = false)
     {
         _viewModel = viewModel;
         InitializeComponent();
@@ -37,6 +56,14 @@ public partial class AddDownloadDialog : Window
         _prefillFileName = prefillFileName;
         _prefillReferer = prefillReferer;
         _prefillHeaders = prefillHeaders;
+        _prefillPostData = postData;
+        _prefillPostContentType = postContentType;
+        _prefillProxyHost = proxyHost;
+        _prefillProxyPort = proxyPort;
+        _prefillProxyType = proxyType;
+        _prefillFullSession = fullSession;
+        _postDataUrl = !string.IsNullOrWhiteSpace(postData) && !string.IsNullOrWhiteSpace(prefillUrl)
+            ? NormalizePastedUrl(prefillUrl) : null;
         FolderBox.Text = viewModel.Settings.DownloadFolder;
         ChunksBox.SelectedIndex = Math.Clamp(ChunkIndex(viewModel.Settings.DefaultChunkCount), 0, ChunksBox.Items.Count - 1);
         CategoryBox.SelectedIndex = 0;
@@ -58,7 +85,7 @@ public partial class AddDownloadDialog : Window
         {
             if (!string.IsNullOrWhiteSpace(_prefillUrl))
             {
-                UrlBox.Text = _prefillUrl.Trim();
+                UrlBox.Text = NormalizePastedUrl(_prefillUrl);
                 if (!string.IsNullOrWhiteSpace(_prefillFileName))
                 {
                     _lastDerivedName = DownloadEngine.SanitizeFileName(_prefillFileName);
@@ -76,11 +103,22 @@ public partial class AddDownloadDialog : Window
 
     public bool IsEmpty => string.IsNullOrWhiteSpace(UrlBox.Text);
 
-    public void UpdatePrefill(string? url, string? fileName = null, string? referer = null, Dictionary<string, string>? headers = null)
+    public void UpdatePrefill(string? url, string? fileName = null, string? referer = null, Dictionary<string, string>? headers = null,
+        string? postData = null, string? postContentType = null, string? proxyHost = null, int proxyPort = 0, string? proxyType = null, bool fullSession = false)
     {
         if (!string.IsNullOrWhiteSpace(url))
         {
-            UrlBox.Text = url.Trim();
+            // Replay fields first: assigning UrlBox.Text fires TextChanged
+            // synchronously, and the probe reads them.
+            _prefillPostData = postData;
+            _prefillPostContentType = postContentType;
+            _prefillProxyHost = proxyHost;
+            _prefillProxyPort = proxyPort;
+            _prefillProxyType = proxyType;
+            _prefillFullSession = fullSession;
+            _postDataUrl = !string.IsNullOrWhiteSpace(postData) && !string.IsNullOrWhiteSpace(url)
+                ? NormalizePastedUrl(url) : null;
+            UrlBox.Text = NormalizePastedUrl(url);
             if (!string.IsNullOrWhiteSpace(fileName))
             {
                 _lastDerivedName = DownloadEngine.SanitizeFileName(fileName);
@@ -101,22 +139,14 @@ public partial class AddDownloadDialog : Window
         WDM.Services.ThemeService.ApplyTitleBar(this);
     }
 
-    private void Window_MouseLeftButtonDown(object sender, System.Windows.Input.MouseButtonEventArgs e)
-    {
-        if (e.ButtonState == System.Windows.Input.MouseButtonState.Pressed)
-        {
-            DragMove();
-        }
-    }
-
     private void AutoPasteClipboardUrl()
     {
         try
         {
             if (Clipboard.ContainsText())
             {
-                string clip = Clipboard.GetText().Trim();
-                if (DownloadEngine.IsHttpUrl(clip))
+                string clip = NormalizePastedUrl(Clipboard.GetText());
+                if (IsSupportedHttpUrl(clip))
                 {
                     UrlBox.Text = clip;
                     UrlBox.SelectAll();
@@ -127,6 +157,127 @@ public partial class AddDownloadDialog : Window
         {
             // Clipboard access protection
         }
+    }
+
+    // ponytail: naive first-URL extraction, upgrade to full parser if pastes get wilder
+    private static string NormalizePastedUrl(string? input)
+    {
+        if (string.IsNullOrWhiteSpace(input))
+            return "";
+        string text = (input ?? "").Trim();
+        // Pasted blob with extra text / line-breaks: pull the first http(s) link.
+        foreach (string line in text.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries))
+        {
+            string t = line.Trim().Trim('"', '\'', '<', '>', '`', '“', '”', '‘', '’');
+            if (t.Length == 0)
+                continue;
+            int httpIdx = t.IndexOf("https://", StringComparison.OrdinalIgnoreCase);
+            int http2Idx = t.IndexOf("http://", StringComparison.OrdinalIgnoreCase);
+            int idx = -1;
+            if (httpIdx >= 0 && http2Idx >= 0) idx = Math.Min(httpIdx, http2Idx);
+            else if (httpIdx >= 0) idx = httpIdx;
+            else if (http2Idx >= 0) idx = http2Idx;
+            if (idx >= 0)
+            {
+                string sub = t[idx..].Trim();
+                // Cut trailing junk: space, quote, bracket, comma.
+                int end = sub.Length;
+                foreach (char c in new[] { ' ', '\t', '"', '\'', '<', '>', '`', ',', ';', ')' })
+                {
+                    int p = sub.IndexOf(c);
+                    if (p >= 0 && p < end) end = p;
+                }
+                string found = sub[..end].Trim().Trim('"', '\'', '<', '>', '`');
+                if (found.Length > 0)
+                    return found;
+            }
+        }
+        // No embedded http(s): take first non-empty line (magnet/udp/ftp/etc so we can explain it).
+        foreach (string line in text.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries))
+        {
+            string t = line.Trim().Trim('"', '\'', '<', '>', '`', '“', '”', '‘', '’');
+            if (t.Length == 0)
+                continue;
+            // Missing scheme like example.com/file.zip → add https://
+            string withScheme = TryPrependHttps(t);
+            return withScheme;
+        }
+        return "";
+    }
+
+    private static string TryPrependHttps(string t)
+    {
+        string s = t.Trim().Trim('"', '\'', '<', '>', '`');
+        if (s.Length == 0 || s.Contains(' ') || s.Contains('\t'))
+            return s;
+        if (s.Contains("://"))
+            return s;
+        // Looks like domain + path but no scheme: example.com/file.zip, www.site.com/x
+        int dot = s.IndexOf('.');
+        if (dot > 0 && dot < s.Length - 1 && !s.StartsWith("magnet:", StringComparison.OrdinalIgnoreCase))
+        {
+            string hostPart = s.Split('/')[0];
+            if (hostPart.Contains('.') && !hostPart.Contains(':') || hostPart.Contains(':') && hostPart.Split(':')[0].Contains('.'))
+                return "https://" + s;
+        }
+        return s;
+    }
+
+    private static bool IsSupportedHttpUrl(string? url)
+    {
+        try
+        {
+            string t = (url ?? "").Trim();
+            if (Uri.TryCreate(t, UriKind.Absolute, out var u) &&
+                (u.Scheme == Uri.UriSchemeHttp || u.Scheme == Uri.UriSchemeHttps ||
+                 u.Scheme == Uri.UriSchemeFtp))
+                return true;
+            // Explorer verb: an existing local file is a valid source.
+            if (Uri.TryCreate(t, UriKind.Absolute, out var f) && f.Scheme == Uri.UriSchemeFile)
+            {
+                try { return File.Exists(f.LocalPath); } catch { return false; }
+            }
+            return false;
+        }
+        catch { return false; }
+    }
+
+    private static string GetPasteError(string rawBoxText, string normalized)
+    {
+        if (string.IsNullOrWhiteSpace(rawBoxText))
+            return "Paste a link to get started: the box is empty.";
+        string t = normalized.Trim();
+        string lower = t.ToLowerInvariant();
+        if (lower.StartsWith("magnet:", StringComparison.Ordinal))
+            return "Magnet links aren't supported: paste a direct http(s) file link instead.";
+        if (lower.StartsWith("udp://", StringComparison.Ordinal) || lower.StartsWith("wss://", StringComparison.Ordinal) || lower.StartsWith("ws://", StringComparison.Ordinal) ||
+            lower.StartsWith("tracker:", StringComparison.Ordinal) || (lower.Contains("/announce", StringComparison.Ordinal) && !lower.StartsWith("http", StringComparison.Ordinal)))
+            return "Torrent tracker links aren't supported: paste a direct http(s) file link instead.";
+        if (lower.StartsWith("ftp://", StringComparison.Ordinal) || lower.StartsWith("ftps://", StringComparison.Ordinal))
+            return "FTPS (encrypted FTP) isn't supported: use plain ftp:// or http(s) instead.";
+        if (lower.StartsWith("file:", StringComparison.Ordinal))
+            return "That local file can't be found: check the path and try again.";
+        if (lower.StartsWith("data:", StringComparison.Ordinal) || lower.StartsWith("blob:", StringComparison.Ordinal) ||
+            lower.StartsWith("javascript:", StringComparison.Ordinal) || lower.StartsWith("about:", StringComparison.Ordinal))
+            return "That link type isn't downloadable: paste an http(s) file link.";
+        if (t.Contains(' ') || t.Contains('\t') || t.Contains('\n') || t.Contains('\r'))
+            return "That doesn't look like a single link: check for extra spaces or line breaks.";
+        if (t.Length > 0 && !t.Contains("://", StringComparison.Ordinal))
+            return "That doesn't look like a valid http(s) link: check the address and try again.";
+        return "That doesn't look like a valid http(s) link: check the address and try again.";
+    }
+
+    private void ShowPasteError(string message)
+    {
+        try
+        {
+            ProbeBadge.Visibility = Visibility.Visible;
+            try { StopProbeAnimation(); } catch { }
+            ProbeIcon.Symbol = SymbolRegular.Warning24;
+            ProbeText.Text = message;
+            YtSignInButton.Visibility = Visibility.Collapsed;
+        }
+        catch { }
     }
 
     private void ApplyRouting()
@@ -152,7 +303,7 @@ public partial class AddDownloadDialog : Window
             if (Enum.TryParse<DownloadCategory>(tag, out var category))
                 return category;
         }
-        string name = string.IsNullOrWhiteSpace(NameBox.Text) ? DownloadEngine.DeriveName(UrlBox.Text.Trim()) : NameBox.Text;
+        string name = string.IsNullOrWhiteSpace(NameBox.Text) ? DownloadEngine.DeriveName(NormalizePastedUrl(UrlBox.Text)) : NameBox.Text;
         return DownloadTask.Categorize(name);
     }
 
@@ -169,27 +320,39 @@ public partial class AddDownloadDialog : Window
 
     private void UrlBox_TextChanged(object sender, TextChangedEventArgs e)
     {
-        string raw = UrlBox.Text.Trim().Trim('"', '\'', '<', '>', '`');
-        // Common paste artifact: copied with surrounding whitespace/quotes/brackets from chat/email.
-        // Also handle a trailing line-break that Trim already removed, but keep embedded % encoding as-is.
-        string url = raw;
-        bool isValid = Uri.TryCreate(url, UriKind.Absolute, out var uri) &&
-                       (uri.Scheme == Uri.UriSchemeHttp || uri.Scheme == Uri.UriSchemeHttps || uri.Scheme == Uri.UriSchemeFtp);
+        string boxRaw = UrlBox.Text ?? "";
+        // Always check whatever was pasted/typed: clean it, then validate.
+        string url = NormalizePastedUrl(boxRaw);
+        bool isValid = IsSupportedHttpUrl(url);
 
         OkButton.IsEnabled = isValid;
         if (DownloadLaterButton != null) DownloadLaterButton.IsEnabled = isValid;
-        StartHint.Text = DownloadEngine.IsFtpUrl(url)
-            ? "FTP links aren't supported yet — paste an http(s) link instead."
-            : "Enter a valid URL above to continue";
-        StartHint.Visibility = isValid ? Visibility.Collapsed : Visibility.Visible;
+        if (isValid)
+        {
+            StartHint.Visibility = Visibility.Collapsed;
+        }
+        else
+        {
+            string err = GetPasteError(boxRaw, url);
+            StartHint.Text = err;
+            StartHint.Visibility = Visibility.Visible;
+        }
         // Drop the previous URL's probed size: the verdict below is keystroke-time
         // (size unknown → generic text) and the probe refines it when it lands.
         _probeTotalBytes = -1;
-        UpdateDuplicateWarning(url);
+        _probeIsStream = false;
+        UpdateDuplicateWarning(string.IsNullOrWhiteSpace(url) ? boxRaw.Trim() : url);
 
         if (!isValid)
         {
-            ProbeBadge.Visibility = Visibility.Collapsed;
+            if (string.IsNullOrWhiteSpace(boxRaw))
+            {
+                ProbeBadge.Visibility = Visibility.Collapsed;
+            }
+            else
+            {
+                ShowPasteError(GetPasteError(boxRaw, url));
+            }
             YtSignInButton.Visibility = Visibility.Collapsed;
             if (HlsPanel != null) HlsPanel.Visibility = Visibility.Collapsed;
             _hlsVariants = new List<HlsDownloader.HlsVariantInfo>();
@@ -207,7 +370,24 @@ public partial class AddDownloadDialog : Window
         }
 
         UpdateCategoryBadge();
-        if (_viewModel.Settings.EnableYouTubeDownloads && YouTubeResolver.IsYoutubeUrl(url))
+        // Form POST replay: a HEAD probe without the body would return garbage
+        // (405/HTML), so skip probing and say what happens instead. Only while
+        // the box still holds the URL the body was captured for.
+        bool formPost = !string.IsNullOrWhiteSpace(_prefillPostData) && !string.IsNullOrWhiteSpace(_postDataUrl) &&
+            string.Equals(url, _postDataUrl, StringComparison.Ordinal);
+        if (formPost)
+        {
+            if (YouTubePanel != null) YouTubePanel.Visibility = Visibility.Collapsed;
+            if (HlsPanel != null) HlsPanel.Visibility = Visibility.Collapsed;
+            _hlsVariants = new List<HlsDownloader.HlsVariantInfo>();
+            ClearPlaylist();
+            _lastResolved = null;
+            ProbeBadge.Visibility = Visibility.Visible;
+            ProbeIcon.Symbol = SymbolRegular.Info24;
+            ProbeText.Text = "Form data replays at start • single connection" +
+                ((!string.IsNullOrWhiteSpace(_prefillProxyHost) && _prefillProxyPort >= 1) ? " • via browser proxy" : "");
+        }
+        else if (_viewModel.Settings.EnableYouTubeDownloads && YouTubeResolver.IsYoutubeUrl(url))
         {
             if (HlsPanel != null) HlsPanel.Visibility = Visibility.Collapsed;
             _hlsVariants = new List<HlsDownloader.HlsVariantInfo>();
@@ -216,6 +396,8 @@ public partial class AddDownloadDialog : Window
         else
         {
             if (YouTubePanel != null) YouTubePanel.Visibility = Visibility.Collapsed;
+            ClearPlaylist();
+            _lastResolved = null;
             ProbeUrlAsync(url);
         }
     }
@@ -235,7 +417,7 @@ public partial class AddDownloadDialog : Window
         DuplicateWarning.Visibility = Visibility.Visible;
         if (_probeTotalBytes > 0 && existing.TotalBytes > 0 && existing.TotalBytes != _probeTotalBytes)
         {
-            DuplicateWarning.Text = $"Same link, but the file size changed (was {DownloadTask.FormatBytes(existing.TotalBytes)}, now {DownloadTask.FormatBytes(_probeTotalBytes)}) — the link may have been refreshed.";
+            DuplicateWarning.Text = $"Same link, but the file size changed (was {DownloadTask.FormatBytes(existing.TotalBytes)}, now {DownloadTask.FormatBytes(_probeTotalBytes)}): the link may have been refreshed.";
         }
         else if (_probeTotalBytes > 0 && existing.TotalBytes > 0)
         {
@@ -255,7 +437,7 @@ public partial class AddDownloadDialog : Window
             if (win.ShowDialog() == true)
             {
                 YtSignInButton.Visibility = Visibility.Collapsed;
-                var url = UrlBox.Text.Trim();
+                var url = NormalizePastedUrl(UrlBox.Text);
                 if (!string.IsNullOrWhiteSpace(url) && YouTubeResolver.IsYoutubeUrl(url))
                     ProbeYouTubeUrlAsync(url);
             }
@@ -287,14 +469,33 @@ public partial class AddDownloadDialog : Window
 
             if (res.Items.Count > 0)
             {
+                _lastResolved = res;
+                _ytQualityOptions = res.QualityOptions;
+
+                if (res.IsPlaylist)
+                {
+                    PopulatePlaylist(res.Items, res.PlaylistTitle);
+                    string playlistName = string.IsNullOrWhiteSpace(res.PlaylistTitle) ? "Playlist" : res.PlaylistTitle.Trim();
+                    string cleanPlaylist = DownloadEngine.SanitizeFileName(playlistName);
+                    if (string.IsNullOrWhiteSpace(cleanPlaylist)) cleanPlaylist = "YouTube_Playlist";
+                    _lastDerivedName = cleanPlaylist + ".mp4";
+                    NameBox.Text = _lastDerivedName;
+                    ShowYouTubePanel(isPlaylist: true);
+
+                    ProbeIcon.Symbol = SymbolRegular.PlayCircle24;
+                    ProbeText.Text = $"YouTube Playlist • {res.Items.Count} videos • {playlistName}";
+                    CategoryBox.SelectedIndex = 1; // Video
+                    if (YtThumbnail != null) YtThumbnail.Visibility = Visibility.Collapsed;
+                    return;
+                }
+
+                ClearPlaylist();
                 var item = res.Items[0];
                 string cleanTitle = DownloadEngine.SanitizeFileName(item.Title);
                 if (string.IsNullOrWhiteSpace(cleanTitle)) cleanTitle = "YouTube_Video";
                 _lastDerivedName = cleanTitle + ".mp4";
                 NameBox.Text = _lastDerivedName;
 
-                _lastResolved = res;
-                _ytQualityOptions = res.QualityOptions;
                 ShowYouTubePanel(res.IsPlaylist);
 
                 ProbeIcon.Symbol = SymbolRegular.PlayCircle24;
@@ -331,7 +532,7 @@ public partial class AddDownloadDialog : Window
                 ProbeIcon.Symbol = SymbolRegular.Warning24;
                 if (IsYouTubeSignInRequired(ex.Message))
                 {
-                    ProbeText.Text = "Sign in required — YouTube needs you to sign in to confirm you're not a bot.";
+                    ProbeText.Text = "Sign in required: YouTube needs you to sign in to confirm you're not a bot.";
                     YtSignInButton.Visibility = Visibility.Visible;
                 }
                 else
@@ -363,7 +564,11 @@ public partial class AddDownloadDialog : Window
     {
         if (YouTubePanel == null) return;
         YouTubePanel.Visibility = Visibility.Visible;
-        YtPlaylist.Visibility = isPlaylist ? Visibility.Visible : Visibility.Collapsed;
+        if (YtPlaylistPanel != null)
+            YtPlaylistPanel.Visibility = isPlaylist && _playlistPicks.Count > 0
+                ? Visibility.Visible : Visibility.Collapsed;
+        if (!isPlaylist)
+            ClearPlaylist();
         if (_ytQualityOptions.Count == 0 && _lastResolved?.QualityOptions.Count > 0)
             _ytQualityOptions = _lastResolved.QualityOptions;
         PopulateYtQuality();
@@ -463,6 +668,58 @@ public partial class AddDownloadDialog : Window
         ProbeIcon.Symbol = SymbolRegular.ArrowSync24;
         ProbeText.Text = "Checking link…";
         _probeTotalBytes = -1;
+        _probeIsStream = false;
+        // FTP: SIZE probe over a control connection (no download). Anonymous
+        // or URL-embedded credentials; failures fall through to the engine.
+        if (DownloadEngine.IsFtpUrl(url))
+        {
+            try
+            {
+                if (FtpTransport.TryParseUrl(url, out string fhost, out int fport,
+                        out string fuser, out string fpass, out string fpath))
+                {
+                    using var ftpProbe = new FtpTransport(fhost, fport, fuser, fpass);
+                    using var ftpCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+                    ftpCts.CancelAfter(TimeSpan.FromSeconds(8));
+                    await ftpProbe.ConnectAsync(ftpCts.Token);
+                    long fsize = await ftpProbe.GetSizeAsync(fpath, ftpCts.Token);
+                    if (fsize > 0)
+                    {
+                        _probeTotalBytes = fsize;
+                        if (string.Equals(NormalizePastedUrl(UrlBox.Text), url, StringComparison.Ordinal))
+                            UpdateDuplicateWarning(url);
+                        ProbeIcon.Symbol = SymbolRegular.CheckmarkCircle24;
+                        ProbeText.Text = $"{DownloadTask.FormatBytes(fsize)} • FTP download (single connection)";
+                        StopProbeAnimation();
+                        SetButtonsProbing(false);
+                        return;
+                    }
+                }
+            }
+            catch { }
+        }
+        // Local files: size comes from the filesystem, no network probe.
+        if (DownloadEngine.IsFileUrl(url))
+        {
+            try
+            {
+                string local = new Uri(url).LocalPath;
+                if (File.Exists(local))
+                {
+                    long len = new FileInfo(local).Length;
+                    _probeTotalBytes = len;
+                    if (string.Equals(NormalizePastedUrl(UrlBox.Text), url, StringComparison.Ordinal))
+                        UpdateDuplicateWarning(url);
+                    ProbeIcon.Symbol = SymbolRegular.CheckmarkCircle24;
+                    ProbeText.Text = $"{DownloadTask.FormatBytes(len)} • Local file (managed copy)";
+                    StopProbeAnimation();
+                    SetButtonsProbing(false);
+                    await TryAutoSyncTitleAsync(url, ct);
+                    return;
+                }
+            }
+            catch { }
+        }
         StartProbeAnimation();
         SetButtonsProbing(true);
 
@@ -477,6 +734,19 @@ public partial class AddDownloadDialog : Window
                 AllowAutoRedirect = true,
                 UseCookies = false,
             };
+            // Probe through the captured browser proxy when one rides along
+            // (http/https only); otherwise a refused direct connection would
+            // misreport a reachable-behind-proxy link as dead.
+            if (!string.IsNullOrWhiteSpace(_prefillProxyHost) && _prefillProxyPort >= 1 && _prefillProxyPort <= 65535 &&
+                (_prefillProxyType ?? "http").StartsWith("http", StringComparison.OrdinalIgnoreCase))
+            {
+                try
+                {
+                    handler.Proxy = new System.Net.WebProxy($"http://{_prefillProxyHost.Trim()}:{_prefillProxyPort}");
+                    handler.UseProxy = true;
+                }
+                catch { }
+            }
             // Route the probe (and the HLS playlist fetch below) through the manual proxy when set.
             var proxy = ProxyHelper.BuildProxy(_viewModel.Settings);
             if (proxy is not null)
@@ -545,16 +815,21 @@ public partial class AddDownloadDialog : Window
             if (ct.IsCancellationRequested || !IsLoaded)
                 return;
 
+            // Late landing from a superseded keystroke must not poison the
+            // current URL's size (same guard as the duplicate refresh below).
+            if (!string.Equals(NormalizePastedUrl(UrlBox.Text), url, StringComparison.Ordinal))
+                return;
             _probeTotalBytes = totalBytes;
             // The probe learned the size after the keystroke handler ran — refresh the
             // duplicate verdict for the URL that was actually probed.
-            if (string.Equals(UrlBox.Text.Trim(), url, StringComparison.Ordinal))
+            if (string.Equals(NormalizePastedUrl(UrlBox.Text), url, StringComparison.Ordinal))
                 UpdateDuplicateWarning(url);
 
             string sizeStr = totalBytes > 0 ? DownloadTask.FormatBytes(totalBytes) : "Unknown size";
             bool isHls = resp.Content.Headers.ContentType?.MediaType is string mt
                 && (mt.Contains("mpegurl", StringComparison.OrdinalIgnoreCase) || mt.Contains("m3u8", StringComparison.OrdinalIgnoreCase))
                 || url.Contains(".m3u8", StringComparison.OrdinalIgnoreCase);
+            _probeIsStream = isHls;
             if (isHls)
             {
                 ProbeIcon.Symbol = SymbolRegular.CheckmarkCircle24;
@@ -619,7 +894,7 @@ public partial class AddDownloadDialog : Window
         {
             Dispatcher.Invoke(() =>
             {
-                bool urlOk = Uri.TryCreate(UrlBox.Text.Trim().Trim('"', '\'', '<', '>', '`'), UriKind.Absolute, out var u) && (u.Scheme == Uri.UriSchemeHttp || u.Scheme == Uri.UriSchemeHttps || u.Scheme == Uri.UriSchemeFtp);
+                bool urlOk = IsSupportedHttpUrl(NormalizePastedUrl(UrlBox.Text));
                 OkButton.IsEnabled = !probing && urlOk;
                 if (DownloadLaterButton != null) DownloadLaterButton.IsEnabled = !probing && urlOk;
                 OkButton.Content = probing ? "Checking…" : "Start download";
@@ -680,7 +955,7 @@ public partial class AddDownloadDialog : Window
         {
             ProbeIcon.Symbol = SymbolRegular.Warning24;
             ProbeText.Text = string.IsNullOrWhiteSpace(_prefillReferer)
-                ? "No source page — title sync needs a browser capture"
+                ? "No source page: title sync needs a browser capture"
                 : "Could not sync a title from the page";
             return;
         }
@@ -796,18 +1071,81 @@ public partial class AddDownloadDialog : Window
             FolderBox.Text = dialog.FolderName;
     }
 
+    /// <summary>Shared YouTube format/extra-arg computation for single and
+    /// playlist-batch tasks. Always single-item mode: every queue row is
+    /// exactly one video.</summary>
+    private void BuildYouTubeArgs(out string? formatArg, out List<string> extraArgs)
+    {
+        extraArgs = new List<string>();
+        formatArg = null;
+        bool audioOnly = IsAudioOnly;
+        bool videoOnly = IsVideoOnly;
+
+        if (audioOnly)
+        {
+            formatArg = "bestaudio/best";
+            string fmt = YtAudioFormatBox?.SelectedItem is ComboBoxItem ai && ai.Tag is string at ? at : "best";
+            extraArgs.Add("--extract-audio");
+            if (fmt != "best")
+            {
+                extraArgs.Add("--audio-format");
+                extraArgs.Add(fmt);
+            }
+            int qIdx = YtQualityBox?.SelectedIndex ?? 0;
+            if (qIdx > 0)
+            {
+                string[] rates = { "0", "320K", "192K", "128K", "70K" };
+                extraArgs.Add("--audio-quality");
+                extraArgs.Add(rates[Math.Min(qIdx, rates.Length - 1)]);
+            }
+        }
+        else
+        {
+            string? fa = null;
+            if (YtQualityBox?.Tag is List<QualityOption> opts && YtQualityBox.SelectedIndex >= 0 && YtQualityBox.SelectedIndex < opts.Count)
+                fa = opts[YtQualityBox.SelectedIndex].FormatArg;
+            if (string.IsNullOrWhiteSpace(fa))
+                fa = videoOnly ? "bestvideo/best" : "bestvideo+bestaudio/best";
+            if (videoOnly)
+            {
+                int plus = fa.IndexOf("+bestaudio", StringComparison.OrdinalIgnoreCase);
+                if (plus > 0) fa = fa.Substring(0, plus);
+                if (!fa.StartsWith("bestvideo", StringComparison.OrdinalIgnoreCase))
+                    fa = "bestvideo/best";
+            }
+            formatArg = fa;
+
+            if (YtContainerBox?.SelectedItem is ComboBoxItem ci && ci.Tag is string ct && !string.IsNullOrWhiteSpace(ct))
+            {
+                extraArgs.Add("--merge-output-format");
+                extraArgs.Add(ct);
+            }
+        }
+
+        if (YtEmbedThumb?.IsChecked == true) extraArgs.Add("--embed-thumbnail");
+        if (YtEmbedSubs?.IsChecked == true) extraArgs.Add("--embed-subs");
+        extraArgs.Add("--no-playlist");
+    }
+
+    private string AudioExtension()
+    {
+        string fmt = YtAudioFormatBox?.SelectedItem is ComboBoxItem ai && ai.Tag is string at && at != "best" ? at : "mp3";
+        return fmt == "opus" ? ".opus" : "." + fmt;
+    }
+
     private void OkClick(object sender, RoutedEventArgs e) => CreateAndAddTask(startImmediately: true);
 
     private void DownloadLaterClick(object sender, RoutedEventArgs e) => CreateAndAddTask(startImmediately: false);
 
     private void CreateAndAddTask(bool startImmediately)
     {
-        string url = UrlBox.Text.Trim();
-        if (!DownloadEngine.IsHttpUrl(url))
+        string url = NormalizePastedUrl(UrlBox.Text);
+        if (!IsSupportedHttpUrl(url))
         {
-            string msg = DownloadEngine.IsFtpUrl(url)
-                ? "FTP downloads aren't supported yet — paste an http(s) link instead."
-                : "Enter a valid http(s) URL.";
+            string msg = GetPasteError(UrlBox.Text ?? "", url);
+            ShowPasteError(msg);
+            StartHint.Text = msg;
+            StartHint.Visibility = Visibility.Visible;
             System.Windows.MessageBox.Show(this, msg, "Invalid URL", System.Windows.MessageBoxButton.OK, MessageBoxImage.Warning);
             return;
         }
@@ -837,6 +1175,78 @@ public partial class AddDownloadDialog : Window
             finalFileName = derivedName;
 
         string saveFolder = string.IsNullOrWhiteSpace(FolderBox.Text) ? DownloadTask.DefaultSaveFolder : FolderBox.Text;
+
+        // Playlist batch: one queue row per checked video. Each row is a
+        // single video download (own title, own progress) so one bad item
+        // can no longer fail the whole playlist.
+        bool isPlaylistBatch = _viewModel.Settings.EnableYouTubeDownloads
+            && YouTubeResolver.IsYoutubeUrl(url)
+            && _lastResolved?.IsPlaylist == true
+            && YtPlaylistPanel?.Visibility == Visibility.Visible
+            && _playlistPicks.Count > 0;
+        if (isPlaylistBatch)
+        {
+            var picked = _playlistPicks.Where(p => p.IsSelected).Select(p => p.Media).ToList();
+            if (picked.Count == 0)
+            {
+                const string msg = "Select at least one video from the playlist to download.";
+                StartHint.Text = msg;
+                StartHint.Visibility = Visibility.Visible;
+                System.Windows.MessageBox.Show(this, msg, "No videos selected",
+                    System.Windows.MessageBoxButton.OK, MessageBoxImage.Information);
+                return;
+            }
+
+            BuildYouTubeArgs(out string? batchFormat, out List<string> batchExtra);
+            bool batchAudio = IsAudioOnly;
+            string batchExt = batchAudio ? AudioExtension() : ".mp4";
+            DownloadCategory batchCat;
+            if (CategoryBox.SelectedItem is ComboBoxItem catItem && catItem.Tag is string catTag
+                && catTag != "Auto" && Enum.TryParse<DownloadCategory>(catTag, out var parsedCat))
+                batchCat = parsedCat;
+            else
+                batchCat = batchAudio ? DownloadCategory.Music : DownloadCategory.Video;
+
+            var batchHeaders = ParseHeaders();
+            var batch = new List<DownloadTask>();
+            foreach (var media in picked)
+            {
+                string stem = DownloadEngine.SanitizeFileName(media.Title);
+                if (string.IsNullOrWhiteSpace(stem))
+                    stem = $"YouTube_{media.Id}";
+                string candidate = stem + batchExt;
+                int copy = 1;
+                while (_viewModel.IsDuplicateFile(candidate, saveFolder)
+                    || batch.Any(t => string.Equals(t.FileName, candidate, StringComparison.OrdinalIgnoreCase)))
+                {
+                    copy++;
+                    candidate = $"{stem} ({copy}){batchExt}";
+                }
+                batch.Add(new DownloadTask()
+                {
+                    Url = media.Url,
+                    Referer = _prefillReferer,
+                    ProxyHost = _prefillProxyHost,
+                    ProxyPort = _prefillProxyPort,
+                    ProxyType = _prefillProxyType,
+                    TotalBytes = -1,
+                    Headers = new Dictionary<string, string>(batchHeaders, StringComparer.OrdinalIgnoreCase),
+                    SaveFolder = saveFolder,
+                    FileName = candidate,
+                    ChunkCount = Math.Max(0, chunks),
+                    SpeedLimitKbps = speedLimit,
+                    Category = batchCat,
+                    IsYouTube = true,
+                    YouTubeFormatArg = batchFormat,
+                    YouTubeExtraArgs = batchExtra.Count > 0 ? string.Join("\n", batchExtra) : null,
+                    Status = startImmediately ? TaskStatus.Queued : TaskStatus.Paused,
+                });
+            }
+
+            _viewModel.AddTasks(batch, showDialogForFirst: startImmediately);
+            Close();
+            return;
+        }
 
         if (_viewModel.IsDuplicateFile(finalFileName, saveFolder))
         {
@@ -879,61 +1289,32 @@ public partial class AddDownloadDialog : Window
         string? formatArg = null;
         var extraArgs = new List<string>();
         if (isYouTube)
-        {
-            bool audioOnly = IsAudioOnly;
-            bool videoOnly = IsVideoOnly;
-
-            if (audioOnly)
-            {
-                formatArg = "bestaudio/best";
-                string fmt = YtAudioFormatBox?.SelectedItem is ComboBoxItem ai && ai.Tag is string at ? at : "best";
-                extraArgs.Add("--extract-audio");
-                if (fmt != "best")
-                {
-                    extraArgs.Add("--audio-format");
-                    extraArgs.Add(fmt);
-                }
-                int qIdx = YtQualityBox?.SelectedIndex ?? 0;
-                if (qIdx > 0)
-                {
-                    string[] rates = { "0", "320K", "192K", "128K", "70K" };
-                    extraArgs.Add("--audio-quality");
-                    extraArgs.Add(rates[Math.Min(qIdx, rates.Length - 1)]);
-                }
-            }
-            else
-            {
-                string? fa = null;
-                if (YtQualityBox?.Tag is List<QualityOption> opts && YtQualityBox.SelectedIndex >= 0 && YtQualityBox.SelectedIndex < opts.Count)
-                    fa = opts[YtQualityBox.SelectedIndex].FormatArg;
-                if (string.IsNullOrWhiteSpace(fa))
-                    fa = videoOnly ? "bestvideo/best" : "bestvideo+bestaudio/best";
-                if (videoOnly)
-                {
-                    int plus = fa.IndexOf("+bestaudio", StringComparison.OrdinalIgnoreCase);
-                    if (plus > 0) fa = fa.Substring(0, plus);
-                    if (!fa.StartsWith("bestvideo", StringComparison.OrdinalIgnoreCase))
-                        fa = "bestvideo/best";
-                }
-                formatArg = fa;
-
-                if (YtContainerBox?.SelectedItem is ComboBoxItem ci && ci.Tag is string ct && !string.IsNullOrWhiteSpace(ct))
-                {
-                    extraArgs.Add("--merge-output-format");
-                    extraArgs.Add(ct);
-                }
-            }
-
-            if (YtEmbedThumb?.IsChecked == true) extraArgs.Add("--embed-thumbnail");
-            if (YtEmbedSubs?.IsChecked == true) extraArgs.Add("--embed-subs");
-            if (YtPlaylist?.IsChecked == true) extraArgs.Add("--yes-playlist");
-            else extraArgs.Add("--no-playlist");
-        }
+            BuildYouTubeArgs(out formatArg, out extraArgs);
 
         var task = new DownloadTask()
         {
             Url = url,
             Referer = _prefillReferer,
+            // Form POST replay + proxy mirror, guarded to the exact captured
+            // URL (HLS rewrites and retyped URLs drop the body; the proxy is
+            // browser-level and survives retyping).
+            PostData = !string.IsNullOrWhiteSpace(_prefillPostData) && !string.IsNullOrWhiteSpace(_postDataUrl) &&
+                string.Equals(NormalizePastedUrl(url), _postDataUrl, StringComparison.Ordinal)
+                ? _prefillPostData : null,
+            PostContentType = !string.IsNullOrWhiteSpace(_prefillPostData) && !string.IsNullOrWhiteSpace(_postDataUrl) &&
+                string.Equals(NormalizePastedUrl(url), _postDataUrl, StringComparison.Ordinal)
+                ? _prefillPostContentType : null,
+            ProxyHost = _prefillProxyHost,
+            ProxyPort = _prefillProxyPort,
+            ProxyType = _prefillProxyType,
+            FullSessionReplay = _prefillFullSession,
+            // Seed the pre-start size from the dialog probe (e.g. 170 MB shows
+            // in the queue immediately). Streams excluded: playlist bytes are
+            // not media bytes. The engine re-probes authoritatively at start
+            // and overwrites this either way.
+            TotalBytes = _probeTotalBytes > 0 && !_probeIsStream &&
+                string.Equals(NormalizePastedUrl(UrlBox.Text), NormalizePastedUrl(url), StringComparison.Ordinal)
+                ? _probeTotalBytes : -1,
             Mirrors = mirrors,
             Headers = headers,
             SaveFolder = string.IsNullOrWhiteSpace(FolderBox.Text) ? DownloadTask.DefaultSaveFolder : FolderBox.Text,
@@ -994,4 +1375,85 @@ public partial class AddDownloadDialog : Window
         // See note in CreateAndAddTask: modeless window, no DialogResult.
         Close();
     }
+
+    // ── Playlist picker ──────────────────────────────────────────────
+    private void PopulatePlaylist(List<MediaItem> items, string? playlistTitle)
+    {
+        foreach (var old in _playlistPicks)
+            old.PropertyChanged -= PlaylistPick_Changed;
+        _playlistPicks = items.Select((m, i) =>
+        {
+            string dur = m.Duration.HasValue ? $" ({m.Duration.Value:mm\\:ss})" : "";
+            var pick = new PlaylistPick
+            {
+                Media = m,
+                IsSelected = true,
+                Display = $"{i + 1}. {m.Title}{dur}",
+            };
+            pick.PropertyChanged += PlaylistPick_Changed;
+            return pick;
+        }).ToList();
+        if (YtPlaylistBox != null)
+            YtPlaylistBox.ItemsSource = _playlistPicks;
+        UpdatePlaylistCount(playlistTitle);
+    }
+
+    private void ClearPlaylist()
+    {
+        foreach (var old in _playlistPicks)
+            old.PropertyChanged -= PlaylistPick_Changed;
+        _playlistPicks = new List<PlaylistPick>();
+        if (YtPlaylistBox != null)
+            YtPlaylistBox.ItemsSource = null;
+    }
+
+    private void PlaylistPick_Changed(object? sender, PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName == nameof(PlaylistPick.IsSelected))
+            UpdatePlaylistCount(_lastResolved?.PlaylistTitle);
+    }
+
+    private void UpdatePlaylistCount(string? playlistTitle)
+    {
+        if (YtPlaylistCount == null)
+            return;
+        int selected = _playlistPicks.Count(p => p.IsSelected);
+        string name = string.IsNullOrWhiteSpace(playlistTitle) ? "Playlist" : playlistTitle.Trim();
+        YtPlaylistCount.Text = $"{name} • {selected} of {_playlistPicks.Count} selected";
+    }
+
+    private void YtSelectAll_Click(object sender, RoutedEventArgs e)
+    {
+        foreach (var p in _playlistPicks)
+            p.IsSelected = true;
+        UpdatePlaylistCount(_lastResolved?.PlaylistTitle);
+    }
+
+    private void YtSelectNone_Click(object sender, RoutedEventArgs e)
+    {
+        foreach (var p in _playlistPicks)
+            p.IsSelected = false;
+        UpdatePlaylistCount(_lastResolved?.PlaylistTitle);
+    }
+}
+
+/// <summary>One row in the playlist picker. Checked by default; the dialog
+/// queues one download per checked row.</summary>
+internal sealed class PlaylistPick : INotifyPropertyChanged
+{
+    public MediaItem Media { get; init; } = new MediaItem();
+    public string Display { get; init; } = "";
+    private bool _isSelected = true;
+    public bool IsSelected
+    {
+        get => _isSelected;
+        set
+        {
+            if (_isSelected == value)
+                return;
+            _isSelected = value;
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsSelected)));
+        }
+    }
+    public event PropertyChangedEventHandler? PropertyChanged;
 }

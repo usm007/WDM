@@ -8,7 +8,9 @@ using TaskStatus = WDM.Models.TaskStatus;
 namespace WDM.Tests;
 
 /// <summary>Round 14 — reliability audit regressions (WDM-001…WDM-003).
-/// Each test fails on the pre-fix code and passes after.</summary>
+/// Each test fails on the pre-fix code and passes after.
+/// Collection with Round10: both redirect the static TaskStore.AppDir.</summary>
+[Collection("TaskStoreState")]
 public sealed class Round14ReliabilityTests : IDisposable
 {
     private readonly string _appDir = Path.Combine(Path.GetTempPath(), "wdm_r14app_" + Guid.NewGuid().ToString("N"));
@@ -58,7 +60,14 @@ public sealed class Round14ReliabilityTests : IDisposable
     [Fact]
     public async Task CaptureServer_MultibyteBody_Accepted()
     {
-        const int port = 17532;
+        // Dynamic port: Round9Tests owns the fixed :17532 convention and the
+        // two classes run in parallel — a fixed port makes one of them fail.
+        int port;
+        using (var tcp = new System.Net.Sockets.TcpListener(System.Net.IPAddress.Loopback, 0))
+        {
+            tcp.Start();
+            port = ((IPEndPoint)tcp.LocalEndpoint).Port;
+        }
         var captured = new List<string>();
         using var server = new CaptureServer((url, name, referer, headers, title) =>
         {
@@ -69,7 +78,7 @@ public sealed class Round14ReliabilityTests : IDisposable
 
         using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(15) };
         using var req = new HttpRequestMessage(HttpMethod.Post, $"http://127.0.0.1:{port}/download");
-        req.Headers.Add("Origin", "chrome-extension://test");
+        req.Headers.Add("Origin", "chrome-extension://jehagbjolooaohcbmlhegpmjeaakonof");
         string json = "{\"url\":\"https://cdn.example.com/v.mp4\",\"fileName\":\"\u65e5\u672c\u8a9e_\u6f22\u5b57.mp4\",\"pageTitle\":\"\u65e5\u672c\u8a9e\u30bf\u30a4\u30c8\u30eb \U0001F600 \u00e9\u00e8\"}";
         req.Content = new StringContent(json, Encoding.UTF8, "application/json");
         using var resp = await http.SendAsync(req);
@@ -174,6 +183,7 @@ public sealed class Round14ReliabilityTests : IDisposable
     public async Task Engine_HlsStream_FailsFastWhenMediaFetchingOff()
     {
         var settings = TaskStore.LoadSettings();
+        bool wasEnabled = settings.EnableMediaFetching;
         settings.EnableMediaFetching = false;
         TaskStore.SaveSettings(settings);
 
@@ -201,7 +211,13 @@ public sealed class Round14ReliabilityTests : IDisposable
             Assert.Contains("media fetching", detail, StringComparison.OrdinalIgnoreCase);
             Assert.Equal(0, server.SegmentHits);
         }
-        finally { TestFiles.DeleteDir(dir); }
+        finally
+        {
+            TestFiles.DeleteDir(dir);
+            var restore = TaskStore.LoadSettings();
+            restore.EnableMediaFetching = wasEnabled;
+            TaskStore.SaveSettings(restore);
+        }
     }
 
     private sealed class HlsLoopback : IDisposable

@@ -23,10 +23,8 @@
             BorderBrush="{DynamicResource Brush.DialogBorder}"
             BorderThickness="1"
             CornerRadius="8" Margin="10"
-            SnapsToDevicePixels="True">
-        <Border.Effect>
-            <DropShadowEffect BlurRadius="16" ShadowDepth="1" Direction="270" Color="#000000" Opacity="0.16" RenderingBias="Quality"/>
-        </Border.Effect>
+            SnapsToDevicePixels="True"
+            Effect="{DynamicResource Shadow.CardDialog}">
         <Grid>
             <Grid.RowDefinitions>
                 <RowDefinition Height="*" />
@@ -50,31 +48,32 @@
                            HorizontalAlignment="Center" VerticalAlignment="Center" />
                 </Border>
 
-                <TextBlock Text="Windows Download Manager" FontSize="16" FontWeight="SemiBold"
+                <TextBlock Text="Windows Download Manager" FontSize="15" FontWeight="SemiBold"
                            Foreground="{DynamicResource Brush.Text}" HorizontalAlignment="Center" Margin="0,0,0,3" />
 
-                <TextBlock x:Name="VersionText" Text="Version 2.7.3" FontSize="12.5" FontFamily="{StaticResource Font.App}"
+                <!-- Runtime version: replaced in constructor with current version -->
+                <TextBlock x:Name="VersionText" Text="Version 2.7.3" FontSize="11.5" FontFamily="{StaticResource Font.App}"
                            Foreground="{DynamicResource Brush.Accent}" HorizontalAlignment="Center" Margin="0,0,0,6" />
 
-                <TextBlock Text="Native Windows 11 high-throughput download manager."
-                           FontSize="12" Foreground="{DynamicResource Brush.TextMuted}"
+                <TextBlock Text="Native Windows download manager."
+                           FontSize="11" Foreground="{DynamicResource Brush.TextMuted}"
                            TextAlignment="Center" TextWrapping="Wrap" LineHeight="16" Margin="0,0,0,10" />
 
                 <TextBlock HorizontalAlignment="Center" Margin="0,0,0,8">
                     <Hyperlink NavigateUri="https://github.com/usm007/WDM" Click="Link_Click"
-                               Foreground="{DynamicResource Brush.Accent}" FontSize="12">
+                               Foreground="{DynamicResource Brush.Accent}" FontSize="11">
                         <Run Text="github.com/usm007/WDM" />
                     </Hyperlink>
                 </TextBlock>
 
                 <TextBlock HorizontalAlignment="Center" Margin="0,0,0,8">
                     <Hyperlink Click="ReportProblem_Click"
-                               Foreground="{DynamicResource Brush.TextMuted}" FontSize="12">
+                               Foreground="{DynamicResource Brush.TextMuted}" FontSize="11">
                         <Run Text="Report a problem" />
                     </Hyperlink>
                 </TextBlock>
 
-                <!-- Inline Update Available Panel — hidden until Check finds an update -->
+                <!-- Inline Update Available Panel - hidden until Check finds an update -->
                 <Border x:Name="InlineUpdatePanel" Visibility="Collapsed"
                         Background="{DynamicResource Brush.SurfaceAlt}"
                         BorderBrush="{DynamicResource Brush.Border}"
@@ -86,26 +85,26 @@
                             <RowDefinition Height="Auto" />
                         </Grid.RowDefinitions>
 
-                        <!-- Header: icon + title (dismiss via Later / window close — no redundant inner X) -->
+                        <!-- Header: icon + title (dismiss via Later / window close - no redundant inner X) -->
                         <StackPanel Grid.Row="0" Orientation="Horizontal" Margin="14,12,14,0" VerticalAlignment="Center">
-                            <ui:SymbolIcon Symbol="ArrowDownload24" FontSize="18"
+                            <ui:SymbolIcon Symbol="ArrowDownload24" FontSize="17"
                                             Foreground="{DynamicResource Brush.Accent}" Margin="0,0,8,0" VerticalAlignment="Center" />
-                            <TextBlock Text="A New Version is Available" FontSize="15" FontWeight="SemiBold"
+                            <TextBlock Text="A New Version is Available" FontSize="14" FontWeight="SemiBold"
                                         Foreground="{DynamicResource Brush.Text}" VerticalAlignment="Center" />
                         </StackPanel>
 
-                        <!-- Version line -->
+                        <!-- Version line: set in code-behind (ShowInlineUpdate); neutral default avoids version skew -->
                         <TextBlock x:Name="InlineVersionLine" Grid.Row="1" Margin="14,4,14,0"
-                                    FontSize="12.5" FontFamily="{StaticResource Font.App}"
-                                    Foreground="{DynamicResource Brush.Accent}" Text="WDM 2.7.2 is available"/>
+                                    FontSize="11.5" FontFamily="{StaticResource Font.App}"
+                                    Foreground="{DynamicResource Brush.Accent}" Text="Version info pending"/>
 
                         <!-- Status / details -->
                         <TextBlock x:Name="InlineStatusText" Grid.Row="2" Margin="14,6,14,12"
-                                    FontSize="12" Foreground="{DynamicResource Brush.TextMuted}"
+                                    FontSize="11" Foreground="{DynamicResource Brush.TextMuted}"
                                     TextWrapping="Wrap" LineHeight="15"
                                     Text="Downloading the full installer…"/>
 
-                        <!-- Progress area — becomes visible during download, matches screenshot card -->
+                        <!-- Progress area - becomes visible during download, matches screenshot card -->
                         <Border x:Name="InlineProgressPanel" Grid.Row="2" Visibility="Collapsed"
                                  Background="{DynamicResource Brush.Surface}"
                                  BorderBrush="{DynamicResource Brush.Border}"
@@ -118,32 +117,33 @@
                                     </Grid.ColumnDefinitions>
                                     <TextBlock x:Name="InlineProgressStatusText"
                                                 Grid.Column="0"
-                                                Text="Downloading full installer…" FontSize="11.5" FontWeight="SemiBold"
+                                                Text="Downloading full installer…" FontSize="10.5" FontWeight="SemiBold"
                                                 Foreground="{DynamicResource Brush.Text}"
                                                 VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
                                     <TextBlock x:Name="InlineProgressPctText"
                                                 Grid.Column="1"
-                                                Text="27%" FontSize="11.5" FontFamily="{StaticResource Font.App}" FontWeight="SemiBold"
+                                                Text="0%" FontSize="10.5" FontFamily="{StaticResource Font.App}" FontWeight="SemiBold"
                                                 Foreground="{DynamicResource Brush.Accent}"
                                                 VerticalAlignment="Center" TextAlignment="Right" MinWidth="44" Margin="8,0,0,0"/>
                                 </Grid>
+                                <!-- Real progress: Value and pct text are set live in code-behind (start at 0) -->
                                 <ProgressBar x:Name="InlineDownloadProgressBar"
                                               Style="{StaticResource ProgressBar.Thin}"
-                                              Height="6" Minimum="0" Maximum="100" Value="27" Margin="0,6,0,2"
+                                              Height="6" Minimum="0" Maximum="100" Value="0" Margin="0,6,0,2"
                                               Foreground="{DynamicResource Brush.Accent}" />
                                 <TextBlock x:Name="InlineProgressDetailText"
                                             Text="Downloading full installer package for this release."
-                                            FontSize="10.5" Foreground="{DynamicResource Brush.TextMuted}"
+                                            FontSize="9.5" Foreground="{DynamicResource Brush.TextMuted}"
                                             Margin="0,4,0,0" TextWrapping="Wrap"/>
                             </StackPanel>
                         </Border>
 
-                        <!-- When progress is active we swap InlineStatusText for InlineProgressPanel — handled in code -->
+                        <!-- When progress is active we swap InlineStatusText for InlineProgressPanel - handled in code -->
                     </Grid>
                 </Border>
             </StackPanel>
 
-            <!-- Bottom Action Strip — switches content when inline panel is active -->
+            <!-- Bottom Action Strip - switches content when inline panel is active -->
             <Border Grid.Row="1" Background="{DynamicResource Brush.SurfaceAlt}" BorderBrush="{DynamicResource Brush.Border}"
                     BorderThickness="0,1,0,0" CornerRadius="0,0,7,7" Padding="16,10">
                 <Grid>
@@ -153,7 +153,7 @@
                             <ColumnDefinition Width="*" />
                             <ColumnDefinition Width="Auto" />
                         </Grid.ColumnDefinitions>
-                        <TextBlock x:Name="UpdateStatusText" Grid.Column="0" Text="" FontSize="11.5"
+                        <TextBlock x:Name="UpdateStatusText" Grid.Column="0" Text="No updates checked yet." FontSize="10.5"
                                    Foreground="{DynamicResource Brush.Accent}" TextTrimming="CharacterEllipsis"
                                    VerticalAlignment="Center" Margin="0,0,8,0" />
                         <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
@@ -166,7 +166,7 @@
                         </StackPanel>
                     </Grid>
 
-                    <!-- Update-action strip — replaces DefaultStrip when update is available (matches screenshot footer) -->
+                    <!-- Update-action strip - replaces DefaultStrip when update is available (matches screenshot footer) -->
                     <Grid x:Name="UpdateActionStrip" Visibility="Collapsed">
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="*" />

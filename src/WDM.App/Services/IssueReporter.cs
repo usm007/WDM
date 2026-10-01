@@ -10,7 +10,7 @@ namespace WDM.Services;
 /// <summary>User-triggered error reporting (free forever, zero third parties):
 /// copies diagnostics to the clipboard and opens a pre-filled GitHub issue.
 /// Nothing ever leaves the machine unless the user clicks "Report a problem"
-/// and submits the issue themselves — consistent with WDM's no-telemetry stance.</summary>
+/// and submits the issue themselves: consistent with WDM's no-telemetry stance.</summary>
 public static class IssueReporter
 {
     private const string RepoUrl = "https://github.com/usm007/WDM";
@@ -29,7 +29,7 @@ public static class IssueReporter
         catch (Exception ex)
         {
             try { App.LogException(ex); } catch { }
-            diagnostics = $"WDM {UpdateChecker.CurrentVersion} — couldn't read the error log.";
+            diagnostics = $"WDM {UpdateChecker.CurrentVersion}: couldn't read the error log.";
         }
 
         try
@@ -48,7 +48,7 @@ public static class IssueReporter
             "What happened?\n(Describe what you were doing when the problem occurred.)\n\n" +
             $"WDM version: {UpdateChecker.CurrentVersion}\n" +
             $"Windows: {Environment.OSVersion.Version}\n\n" +
-            "Error details (already on your clipboard — paste them below):\n```\n```");
+            "Error details (already on your clipboard: paste them below):\n```\n```");
         try
         {
             Process.Start(new ProcessStartInfo($"{RepoUrl}/issues/new?title={title}&body={body}")
@@ -60,7 +60,7 @@ public static class IssueReporter
         {
             try { App.LogException(ex); } catch { }
             ErrorDialogs.ShowWarning(owner, "Couldn't open browser",
-                "Your details are copied — please paste them into a new issue at github.com/usm007/WDM.");
+                "Your details are copied: please paste them into a new issue at github.com/usm007/WDM.");
             return;
         }
 

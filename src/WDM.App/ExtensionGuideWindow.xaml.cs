@@ -26,19 +26,47 @@ public partial class ExtensionGuideWindow : Window
             DragMove();
     }
 
+    private void CrxLoader_Click(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            BrowserIntegration.OpenCrxLoaderStore();
+        }
+        catch (Exception ex)
+        {
+            App.LogException(ex);
+            ErrorDialogs.ShowWarning(this, "Couldn't open page",
+                "The Chrome Web Store page couldn't be opened. Search for “CRX Loader” by hand.");
+        }
+    }
+
+    private void OneClick_Click(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            BrowserIntegration.OpenOneClickInstall();
+        }
+        catch (Exception ex)
+        {
+            App.LogException(ex);
+            ErrorDialogs.ShowWarning(this, "Couldn't open page",
+                "The install page couldn't be opened. Visit https://get-wdm.vercel.app by hand.");
+        }
+    }
+
     private void CopyPath_Click(object sender, RoutedEventArgs e)
     {
         try
         {
             string path = BrowserIntegration.DeployExtension();
             Clipboard.SetText(path);
-            CopyFeedbackText.Text = "Copied ✓ — paste it into the “Load unpacked” dialog.";
+            CopyFeedbackText.Text = "Copied: paste it into the “Load unpacked” dialog.";
             CopyFeedbackText.Visibility = Visibility.Visible;
         }
         catch (Exception ex)
         {
             App.LogException(ex);
-            CopyFeedbackText.Text = "Couldn't copy the path — please copy it by hand from Settings.";
+            CopyFeedbackText.Text = "Couldn't copy the path: please copy it by hand from Settings.";
             CopyFeedbackText.Visibility = Visibility.Visible;
         }
     }

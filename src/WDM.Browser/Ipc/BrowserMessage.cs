@@ -3,7 +3,6 @@ using System.Buffers.Binary;
 using System.IO.Pipes;
 using System.Text;
 using System.Text.Json;
-using System.Threading;
 
 namespace WDM.Browser.Ipc;
 
@@ -92,34 +91,38 @@ public static class BrowserMessage
     }
 
     /// <summary>Reads one length-prefixed frame from a connected pipe.
-    /// Shared by the WDM-side client and the host-side server.</summary>
-    public static async Task<byte[]> ReadFrameAsync(PipeStream pipe, CancellationToken ct)
+    /// Shared by the WDM-side client and (originally) the host-side server.
+    /// Uses CancellationToken.None internally: timer-armed tokens passed to
+    /// PipeStream async IO hung indefinitely in testing — timeouts are
+    /// applied OUTSIDE via Task.WhenAny races instead.</summary>
+    public static async Task<byte[]> ReadFrameAsync(PipeStream pipe)
     {
         var lenBuf = new byte[4];
-        await ReadExactAsync(pipe, lenBuf, ct).ConfigureAwait(false);
+        await ReadExactAsync(pipe, lenBuf).ConfigureAwait(false);
         int len = BinaryPrimitives.ReadInt32LittleEndian(lenBuf);
         if (len < 2 || len > MaxMessageBytes)
             throw new InvalidOperationException("IPC peer sent an over/under-sized frame.");
         var frame = new byte[4 + len];
         lenBuf.CopyTo(frame, 0);
-        await ReadExactAsync(pipe, frame.AsMemory(4), ct).ConfigureAwait(false);
+        await ReadExactAsync(pipe, frame.AsMemory(4)).ConfigureAwait(false);
         return frame;
     }
 
-    public static async Task WriteFrameAsync(PipeStream pipe, byte[] frame, CancellationToken ct)
+    public static async Task WriteFrameAsync(PipeStream pipe, byte[] frame)
     {
-        await pipe.WriteAsync(frame, ct).ConfigureAwait(false);
-        await pipe.FlushAsync(ct).ConfigureAwait(false);
+        await pipe.WriteAsync(frame).ConfigureAwait(false);
+        await pipe.FlushAsync().ConfigureAwait(false);
     }
 
-    private static async Task ReadExactAsync(PipeStream pipe, Memory<byte> buf, CancellationToken ct)
+    private static async Task ReadExactAsync(PipeStream pipe, Memory<byte> buf)
     {
         int done = 0;
         while (done < buf.Length)
         {
-            int n = await pipe.ReadAsync(buf[done..], ct).ConfigureAwait(false);
+            int n = await pipe.ReadAsync(buf.Slice(done)).ConfigureAwait(false);
             if (n == 0)
                 throw new EndOfStreamException("IPC peer disconnected mid-frame.");
+            done += n;
         }
     }
 

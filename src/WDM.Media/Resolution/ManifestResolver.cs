@@ -29,65 +29,85 @@ internal static class ManifestResolver
                 var parsed = await HlsDownloader.ParseMasterVariantsAsync(http, manifestUrl, referer, headers, ct)
                     .ConfigureAwait(false);
                 foreach (var v in parsed)
-                {
-                    variants.Add(new MediaVariant
-                    {
-                        Label = string.IsNullOrWhiteSpace(v.Label) ? "HLS stream" : v.Label,
-                        MediaUrl = v.VariantUrl,
-                        ManifestUrl = manifestUrl,
-                        RequiresHls = true,
-                        Container = "ts",
-                        Height = v.Height,
-                        Confidence = 0.85,
-                        Evidence = new List<string> { "HLS master playlist: " + parsed.Count + " variant(s)" },
-                    });
-                }
+                    variants.Add(MapHlsVariant(v, manifestUrl, parsed.Count));
                 if (variants.Count > 0)
                     return (variants, false);
 
                 // Not a master playlist: single media playlist or raw segments.
                 string text = await GetCappedTextAsync(http, manifestUrl, referer, headers, ct).ConfigureAwait(false);
-                if (IsSampleAes(text))
-                    return (variants, true);
-                if (text.Contains("#EXTM3U"))
-                {
-                    variants.Add(new MediaVariant
-                    {
-                        Label = "HLS stream",
-                        MediaUrl = manifestUrl,
-                        ManifestUrl = manifestUrl,
-                        RequiresHls = true,
-                        Container = "ts",
-                        Confidence = 0.8,
-                        Evidence = new List<string> { "HLS media playlist" },
-                    });
-                }
-                return (variants, false);
+                return ExpandText(manifestUrl, text, false);
             }
 
             string mpd = await GetCappedTextAsync(http, manifestUrl, referer, headers, ct).ConfigureAwait(false);
-            if (mpd.Contains("<ContentProtection", StringComparison.Ordinal))
-                return (variants, true);
-            if (mpd.Contains("<MPD", StringComparison.Ordinal) || mpd.Contains("<mpd", StringComparison.OrdinalIgnoreCase))
-            {
-                variants.Add(new MediaVariant
-                {
-                    Label = "DASH stream",
-                    MediaUrl = manifestUrl,
-                    ManifestUrl = manifestUrl,
-                    RequiresDash = true,
-                    Container = "mpd",
-                    Confidence = 0.7,
-                    Evidence = new List<string> { "DASH manifest" },
-                });
-            }
-            return (variants, false);
+            return ExpandText(manifestUrl, mpd, true);
         }
         catch
         {
             return (variants, false);
         }
     }
+
+    /// <summary>Same classification over an already-fetched manifest body
+    /// (browser-assisted resolution fetches in page context, preserving auth).</summary>
+    internal static (List<MediaVariant> Variants, bool DrmProtected) ExpandText(
+        string manifestUrl, string text, bool dash)
+    {
+        var variants = new List<MediaVariant>();
+        if (!dash)
+        {
+            var parsed = HlsDownloader.ParseMasterVariantsText(text, manifestUrl);
+            foreach (var v in parsed)
+                variants.Add(MapHlsVariant(v, manifestUrl, parsed.Count));
+            if (variants.Count > 0)
+                return (variants, false);
+            if (IsSampleAes(text))
+                return (variants, true);
+            if (text.Contains("#EXTM3U"))
+            {
+                variants.Add(new MediaVariant
+                {
+                    Label = "HLS stream",
+                    MediaUrl = manifestUrl,
+                    ManifestUrl = manifestUrl,
+                    RequiresHls = true,
+                    Container = "ts",
+                    Confidence = 0.8,
+                    Evidence = new List<string> { "HLS media playlist" },
+                });
+            }
+            return (variants, false);
+        }
+
+        if (text.Contains("<ContentProtection", StringComparison.Ordinal))
+            return (variants, true);
+        if (text.Contains("<MPD", StringComparison.Ordinal) || text.Contains("<mpd", StringComparison.OrdinalIgnoreCase))
+        {
+            variants.Add(new MediaVariant
+            {
+                Label = "DASH stream",
+                MediaUrl = manifestUrl,
+                ManifestUrl = manifestUrl,
+                RequiresDash = true,
+                Container = "mpd",
+                Confidence = 0.7,
+                Evidence = new List<string> { "DASH manifest" },
+            });
+        }
+        return (variants, false);
+    }
+
+    private static MediaVariant MapHlsVariant(HlsDownloader.HlsVariantInfo v, string manifestUrl, int count) =>
+        new()
+        {
+            Label = string.IsNullOrWhiteSpace(v.Label) ? "HLS stream" : v.Label,
+            MediaUrl = v.VariantUrl,
+            ManifestUrl = manifestUrl,
+            RequiresHls = true,
+            Container = "ts",
+            Height = v.Height,
+            Confidence = 0.85,
+            Evidence = new List<string> { "HLS master playlist: " + count + " variant(s)" },
+        };
 
     private static bool IsSampleAes(string text) =>
         text.Contains("SAMPLE-AES", StringComparison.Ordinal);

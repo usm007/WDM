@@ -37,11 +37,6 @@ public partial class OptionsControl : UserControl
         RetriesBox.SelectedIndex = Math.Clamp(RetryIndex(s.MaxRetries), 0, Math.Max(0, RetriesBox.Items.Count - 1));
         SpeedBox.Text = s.GlobalSpeedLimitKbps.ToString();
         if (AutoResumeBox != null) AutoResumeBox.IsChecked = s.AutoResumeFailed;
-        if (SchedulerBox != null) SchedulerBox.IsChecked = s.SchedulerEnabled;
-        if (SchedulerStartBox != null) SchedulerStartBox.Text = s.SchedulerStart.ToString(@"hh\:mm");
-        if (SchedulerStopBox != null) SchedulerStopBox.Text = s.SchedulerStop.ToString(@"hh\:mm");
-        if (SchedulerSpeedBox != null) SchedulerSpeedBox.Text = s.SchedulerSpeedLimitKbps.ToString();
-        SetSchedulerDays(s.SchedulerDays);
         if (ProxyBox != null) ProxyBox.IsChecked = s.ProxyEnabled;
         if (ProxyHostBox != null) ProxyHostBox.Text = s.ProxyHost ?? "";
         if (ProxyPortBox != null) ProxyPortBox.Text = s.ProxyPort.ToString();
@@ -81,17 +76,17 @@ public partial class OptionsControl : UserControl
         if (NativeSignInBtn != null)
         {
             NativeSignInBtn.Content = s.YouTubeBrowserCookies == "wdm-native" 
-                ? "Signed in — Click to re-authenticate..." 
+                ? "Signed in: Click to re-authenticate..." 
                 : "Sign in to YouTube...";
         }
 
         CheckForUpdatesBox.IsChecked = s.CheckForUpdates;
         if (AutoUpdateBox != null) AutoUpdateBox.IsChecked = s.AutoDownloadUpdates;
         CurrentVersionText.Text = UpdateChecker.CurrentVersion.ToString();
-        LatestVersionText.Text = "—";
+        LatestVersionText.Text = "-";
         UpdateStatusText.Text = "Click “Check now” to look for a new release on GitHub.";
 
-        // Appearance — dark mode
+        // Appearance: dark mode
         DarkModeBox.IsChecked = s.UseDarkTheme;
         _isInitializingAppearance = false;
 
@@ -216,7 +211,7 @@ public partial class OptionsControl : UserControl
         if (active)
         {
             if (YtStatusBadgeTitle != null) YtStatusBadgeTitle.Text = "YouTube Downloader Active";
-            if (YtStatusBadgeSub != null) YtStatusBadgeSub.Text = "Engine ready — yt-dlp & FFmpeg plugins loaded";
+            if (YtStatusBadgeSub != null) YtStatusBadgeSub.Text = "Engine ready: yt-dlp & FFmpeg plugins loaded";
             if (YtActivateBtn != null) YtActivateBtn.Content = "Deactivate";
             if (YtPluginsCard != null) YtPluginsCard.Visibility = Visibility.Visible;
             if (YtAuthCard != null) YtAuthCard.Visibility = Visibility.Visible;
@@ -233,7 +228,7 @@ public partial class OptionsControl : UserControl
                     versionLabel.Text = "version unknown";
                     App.LogException(ex);
                     if (YtStatusBadgeSub != null)
-                        YtStatusBadgeSub.Text = "Engine ready — version check didn't go through.";
+                        YtStatusBadgeSub.Text = "Engine ready: version check didn't go through.";
                 }
             }
         }
@@ -259,7 +254,7 @@ public partial class OptionsControl : UserControl
             {
                 if (NativeSignInBtn != null)
                 {
-                    NativeSignInBtn.Content = "Signed in — Click to re-authenticate...";
+                    NativeSignInBtn.Content = "Signed in: Click to re-authenticate...";
                 }
                 MessageBox.Show("Successfully signed in to YouTube natively and exported your session. Private and age-restricted videos should now download normally.", "Sign-In Complete", MessageBoxButton.OK, MessageBoxImage.Information);
             }
@@ -282,14 +277,6 @@ public partial class OptionsControl : UserControl
         s.MaxConcurrentDownloads = MaxConcurrentBox?.SelectedItem is ComboBoxItem mc && int.TryParse(mc.Content?.ToString(), out int m) ? m : 3;
         s.MaxRetries = RetriesBox?.SelectedItem is ComboBoxItem r && int.TryParse(ExtractFirstDigit(r.Content?.ToString()!), out int retries) ? retries : 3;
         if (AutoResumeBox != null) s.AutoResumeFailed = AutoResumeBox.IsChecked == true;
-        if (SchedulerBox != null) s.SchedulerEnabled = SchedulerBox.IsChecked == true;
-        if (SchedulerStartBox != null && TimeSpan.TryParse(SchedulerStartBox.Text?.Trim(), out var sstart))
-            s.SchedulerStart = new TimeSpan(sstart.Hours, sstart.Minutes, 0);
-        if (SchedulerStopBox != null && TimeSpan.TryParse(SchedulerStopBox.Text?.Trim(), out var sstop))
-            s.SchedulerStop = new TimeSpan(sstop.Hours, sstop.Minutes, 0);
-        if (SchedulerSpeedBox != null && long.TryParse(SchedulerSpeedBox.Text?.Trim(), out long sspeed) && sspeed >= 0)
-            s.SchedulerSpeedLimitKbps = Math.Min(sspeed, 1_000_000);
-        s.SchedulerDays = GetSchedulerDays();
         s.GlobalSpeedLimitKbps = long.TryParse(SpeedBox?.Text?.Trim(), out long speed) && speed >= 0 ? speed : 0;
         if (ProxyBox != null) s.ProxyEnabled = ProxyBox.IsChecked == true;
         if (ProxyHostBox != null) s.ProxyHost = ProxyHostBox.Text?.Trim() ?? "";
@@ -382,8 +369,8 @@ public partial class OptionsControl : UserControl
                     DownloadInstallButton.Visibility = Visibility.Visible;
                     DownloadInstallButton.Content = isDelta ? "Download Delta & Restart" : "Download Full & Restart";
                     UpdateStatusText.Text = isDelta
-                        ? $"{desc} update available: v{target} — patch-only, auto-restart."
-                        : $"{desc} update available: v{target} — 2+ versions behind, full package (.NET included), auto-restart.";
+                        ? $"{desc} update available: v{target}: patch-only, auto-restart."
+                        : $"{desc} update available: v{target}: 2+ versions behind, full package (.NET included), auto-restart.";
                     return;
                 }
             }
@@ -397,7 +384,7 @@ public partial class OptionsControl : UserControl
             {
                 LatestVersionText.Text = _latestRelease.TagName;
                 DownloadInstallButton.Visibility = Visibility.Visible;
-                // Handle delta-only releases (no .exe yet) — try Velopack as fallback.
+                // Handle delta-only releases (no .exe yet): try Velopack as fallback.
                 // Setup.exe / portable zip are for new users only; existing Velopack installs use nupkg.
                 if (string.IsNullOrWhiteSpace(_latestRelease.InstallerUrl) && !string.IsNullOrWhiteSpace(_latestRelease.UpdatePackageUrl))
                 {
@@ -407,22 +394,22 @@ public partial class OptionsControl : UserControl
                         _velopackUpdate = anyUpdate;
                         bool isDelta = VelopackUpdateService.IsDeltaUpdate(anyUpdate);
                         string desc = VelopackUpdateService.DescribeUpdate(anyUpdate);
-                        // Single primary action — hide the secondary button to avoid duplicate "Open Release Page".
+                        // Single primary action: hide the secondary button to avoid duplicate "Open Release Page".
                         OpenReleaseButton.Visibility = Visibility.Collapsed;
                         DownloadInstallButton.Content = isDelta ? "Download Delta & Restart" : "Download Full & Restart";
                         UpdateStatusText.Text = isDelta
-                            ? $"{desc} update available: {version} — patch-only, auto-restart (no installer needed)."
-                            : $"{desc} update available: {version} — full package (.NET included), auto-restart (no installer needed).";
+                            ? $"{desc} update available: {version}: patch-only, auto-restart (no installer needed)."
+                            : $"{desc} update available: {version}: full package (.NET included), auto-restart (no installer needed).";
                     }
                     else
                     {
-                        // Non-Velopack (portable/dev) can't apply nupkg deltas — single button to the release page.
+                        // Non-Velopack (portable/dev) can't apply nupkg deltas: single button to the release page.
                         // Dedupe: hide secondary button since the primary already opens the page.
                         OpenReleaseButton.Visibility = Visibility.Collapsed;
                         DownloadInstallButton.Content = "Open Release Page";
                         UpdateStatusText.Text = VelopackUpdateService.IsVelopackInstalled
-                            ? $"A new version is available: {_latestRelease.TagName} — update feed unreachable, open release page (Setup.exe / portable are for new users)."
-                            : $"A new version is available: {_latestRelease.TagName} — portable install can't apply delta packages. Open release page for the new portable zip (Setup.exe is for new users).";
+                            ? $"A new version is available: {_latestRelease.TagName}: update feed unreachable, open release page (Setup.exe / portable are for new users)."
+                            : $"A new version is available: {_latestRelease.TagName}: portable install can't apply delta packages. Open release page for the new portable zip (Setup.exe is for new users).";
                     }
                 }
                 else
@@ -443,7 +430,7 @@ public partial class OptionsControl : UserControl
         {
             _latestRelease = null;
             _velopackUpdate = null;
-            LatestVersionText.Text = "—";
+            LatestVersionText.Text = "-";
             App.LogException(ex);
             UpdateStatusText.Text = "Couldn't check for updates. Check your internet connection and try again.";
         }
@@ -461,7 +448,7 @@ public partial class OptionsControl : UserControl
     private async void DownloadInstallClick(object sender, RoutedEventArgs e)
     {
         // Velopack path: nupkg ONLY (delta if 1 behind, self-contained full if 2+ behind).
-        // Setup.exe / portable zip are for new users only — never downloaded here.
+        // Setup.exe / portable zip are for new users only: never downloaded here.
         if (_velopackUpdate is not null)
         {
             bool isDelta = VelopackUpdateService.IsDeltaUpdate(_velopackUpdate);
@@ -474,8 +461,8 @@ public partial class OptionsControl : UserControl
             UpdateProgressPctText.Text = "0%";
             UpdateProgressStatusText.Text = isDelta ? "Downloading delta package…" : "Downloading full package…";
             UpdateProgressDetailText.Text = isDelta
-                ? $"Only the {desc} is being downloaded — no installer needed."
-                : $"Downloading the {desc} — 2+ versions behind, full package required (no installer needed).";
+                ? $"Only the {desc} is being downloaded: no installer needed."
+                : $"Downloading the {desc}: 2+ versions behind, full package required (no installer needed).";
             UpdateStatusText.Text = isDelta ? "Downloading delta package…" : "Downloading full package…";
             try
             {
@@ -487,7 +474,7 @@ public partial class OptionsControl : UserControl
                         UpdateProgressPctText.Text = $"{pct}%";
                         UpdateProgressStatusText.Text = pct < 100
                             ? (isDelta ? "Downloading delta package…" : "Downloading full package…")
-                            : "Download complete — applying…";
+                            : "Download complete: applying…";
                         UpdateStatusText.Text = $"{(isDelta ? "Downloading delta package…" : "Downloading full package…")} {pct}%";
                     });
                 });
@@ -495,7 +482,7 @@ public partial class OptionsControl : UserControl
                 UpdateProgressDetailText.Text = "WDM will restart automatically to apply the update.";
                 UpdateProgressBar.Value = 100;
                 UpdateProgressPctText.Text = "100%";
-                UpdateStatusText.Text = "Update downloaded — applying and restarting…";
+                UpdateStatusText.Text = "Update downloaded: applying and restarting…";
                 await Task.Delay(600);
                 VelopackUpdateService.ApplyAndRestart(_velopackUpdate.TargetFullRelease);
             }
@@ -515,11 +502,11 @@ public partial class OptionsControl : UserControl
             return;
 
         // No trusted installer asset (delta-only release, or portable install that can't
-        // apply nupkg) — the primary button acts as "Open Release Page" in this state.
+        // apply nupkg): the primary button acts as "Open Release Page" in this state.
         if (string.IsNullOrWhiteSpace(_latestRelease.InstallerUrl))
         {
             UpdateChecker.OpenReleasesPage(_latestRelease.Url);
-            UpdateStatusText.Text = "Opened release page — portable build available there (Setup.exe is for new users).";
+            UpdateStatusText.Text = "Opened release page: portable build available there (Setup.exe is for new users).";
             return;
         }
 
@@ -547,7 +534,7 @@ public partial class OptionsControl : UserControl
             UpdateProgressBar.Value = 100;
             UpdateProgressPctText.Text = "100%";
             UpdateChecker.LaunchInstaller(installer, silent: true);
-            UpdateStatusText.Text = "Installer downloaded — WDM will close and restart to complete the update.";
+            UpdateStatusText.Text = "Installer downloaded: WDM will close and restart to complete the update.";
             await Task.Delay(500);
             Application.Current.Shutdown();
         }
@@ -716,32 +703,6 @@ public partial class OptionsControl : UserControl
             MoveFolderBox.Text = dialog.FolderName;
             SaveCurrentSettings();
         }
-    }
-
-    private void SetSchedulerDays(List<DayOfWeek> days)
-    {
-        var set = days is null ? new HashSet<DayOfWeek>() : new HashSet<DayOfWeek>(days);
-        if (SchedulerDayMonday != null) SchedulerDayMonday.IsChecked = set.Contains(DayOfWeek.Monday);
-        if (SchedulerDayTuesday != null) SchedulerDayTuesday.IsChecked = set.Contains(DayOfWeek.Tuesday);
-        if (SchedulerDayWednesday != null) SchedulerDayWednesday.IsChecked = set.Contains(DayOfWeek.Wednesday);
-        if (SchedulerDayThursday != null) SchedulerDayThursday.IsChecked = set.Contains(DayOfWeek.Thursday);
-        if (SchedulerDayFriday != null) SchedulerDayFriday.IsChecked = set.Contains(DayOfWeek.Friday);
-        if (SchedulerDaySaturday != null) SchedulerDaySaturday.IsChecked = set.Contains(DayOfWeek.Saturday);
-        if (SchedulerDaySunday != null) SchedulerDaySunday.IsChecked = set.Contains(DayOfWeek.Sunday);
-    }
-
-    private List<DayOfWeek> GetSchedulerDays()
-    {
-        var days = new List<DayOfWeek>();
-        if (SchedulerDayMonday?.IsChecked == true) days.Add(DayOfWeek.Monday);
-        if (SchedulerDayTuesday?.IsChecked == true) days.Add(DayOfWeek.Tuesday);
-        if (SchedulerDayWednesday?.IsChecked == true) days.Add(DayOfWeek.Wednesday);
-        if (SchedulerDayThursday?.IsChecked == true) days.Add(DayOfWeek.Thursday);
-        if (SchedulerDayFriday?.IsChecked == true) days.Add(DayOfWeek.Friday);
-        if (SchedulerDaySaturday?.IsChecked == true) days.Add(DayOfWeek.Saturday);
-        if (SchedulerDaySunday?.IsChecked == true) days.Add(DayOfWeek.Sunday);
-        // No day checked = window never applies; keep the empty list as-is (explicit).
-        return days;
     }
 
     private void ScriptBrowseClick(object sender, RoutedEventArgs e)

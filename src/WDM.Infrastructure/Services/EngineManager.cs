@@ -96,6 +96,26 @@ public static class EngineManager
     {
         Directory.CreateDirectory(BinDir);
 
+        // Startup re-verification: pinned binaries that changed on disk are
+        // discarded and re-downloaded (tamper or bit-rot can never persist).
+        foreach (string exe in new[] { YtDlpPath, QuickJsPath, FfmpegPath, FfprobePath })
+        {
+            try
+            {
+                if (File.Exists(exe) && !VerifyInstalledHash(exe))
+                {
+                    try { ActivityLog.Write("ENGINE", $"{Path.GetFileName(exe)}: installed hash mismatch — re-downloading"); } catch { }
+                    try { File.Delete(exe); } catch { }
+                    try { File.Delete(exe + ".sha256"); } catch { }
+                }
+                else if (File.Exists(exe))
+                {
+                    PinInstalledHash(exe);
+                }
+            }
+            catch { }
+        }
+
         if (!File.Exists(YtDlpPath) && !TrySeed("yt-dlp.exe"))
             await DownloadYtDlpAsync(progress, 0, 0.20, ct);
 
@@ -113,7 +133,7 @@ public static class EngineManager
         }
 
         var version = await GetVersionAsync(ct);
-        progress?.Report(new EngineProgress($"Engine ready — yt-dlp {version} · ffmpeg", 1.0));
+        progress?.Report(new EngineProgress($"Engine ready: yt-dlp {version} + ffmpeg", 1.0));
     }
 
     private static bool TrySeed(string fileName)
@@ -124,6 +144,7 @@ public static class EngineManager
             if (!File.Exists(src))
                 return false;
             File.Copy(src, Path.Combine(BinDir, fileName), overwrite: true);
+            PinInstalledHash(Path.Combine(BinDir, fileName));
             return true;
         }
         catch
@@ -199,7 +220,9 @@ public static class EngineManager
         {
             await DownloadToFileAsync(url, tmp, progress, "Downloading yt-dlp…", start, span, ct, maxBytes: 100 * 1024 * 1024);
             VerifyDownloadedBinary(tmp, minBytes: 5 * 1024 * 1024);
+            VerifySha256OrWarn(tmp, await TryFetchExpectedHashAsync("yt-dlp", url, ct), "yt-dlp");
             File.Move(tmp, YtDlpPath, overwrite: true);
+            PinInstalledHash(YtDlpPath);
         }
         finally
         {
@@ -228,7 +251,9 @@ public static class EngineManager
             await DownloadToFileAsync(url, tmp, progress, "Downloading QuickJS (JS runtime)…", start, start + span, ct, maxBytes: 50 * 1024 * 1024);
 
             VerifyDownloadedBinary(tmp, minBytes: 100 * 1024);
+            VerifySha256OrWarn(tmp, await TryFetchExpectedHashAsync("qjs", url, ct), "QuickJS");
             File.Move(tmp, QuickJsPath, overwrite: true);
+            PinInstalledHash(QuickJsPath);
         }
         finally
         {
@@ -249,6 +274,7 @@ public static class EngineManager
 
         progress?.Report(new EngineProgress("Downloading FFmpeg (essentials build)…", start));
 
+        string usedUrl = primaryUrl;
         try
         {
             await DownloadToFileAsync(primaryUrl, tmp, progress, "Downloading FFmpeg…", start, start + span * 0.9, ct, maxBytes: 300 * 1024 * 1024);
@@ -256,8 +282,11 @@ public static class EngineManager
         catch
         {
             try { if (File.Exists(tmp)) File.Delete(tmp); } catch { }
+            usedUrl = fallbackUrl;
             await DownloadToFileAsync(fallbackUrl, tmp, progress, "Downloading FFmpeg (fallback)…", start, start + span * 0.9, ct, maxBytes: 300 * 1024 * 1024);
         }
+        // Hash the archive before extraction (fail-closed on mismatch).
+        VerifySha256OrWarn(tmp, await TryFetchExpectedHashAsync("ffmpeg", usedUrl, ct), "FFmpeg archive");
 
         progress?.Report(new EngineProgress("Extracting ffmpeg…", start + span * 0.92));
         var extractDir = Path.Combine(BinDir, $"ffmpeg-extract-{Guid.NewGuid():N}");
@@ -288,6 +317,8 @@ public static class EngineManager
             VerifyDownloadedBinary(ffmpeg, minBytes: 5 * 1024 * 1024);
             File.Move(ffmpeg, FfmpegPath, overwrite: true);
             File.Move(ffprobe, Path.Combine(BinDir, "ffprobe.exe"), overwrite: true);
+            PinInstalledHash(FfmpegPath);
+            PinInstalledHash(Path.Combine(BinDir, "ffprobe.exe"));
         }
         finally
         {
@@ -421,4 +452,120 @@ public static class EngineManager
             throw;
         }
     }
+
+    /// <summary>Supply-chain hash pinning (fail-closed on mismatch, warn-open
+    /// on unknown): yt-dlp and gyan ffmpeg publish checksums; quickjs-ng and
+    /// the BtbN fallback publish none, so those keep MZ+size validation only
+    /// (documented, not silent).</summary>
+    internal static async Task<string?> TryFetchExpectedHashAsync(string kind, string downloadUrl, CancellationToken ct)
+    {
+        try
+        {
+            using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            timeout.CancelAfter(TimeSpan.FromSeconds(15));
+            var tct = timeout.Token;
+            if (kind == "yt-dlp")
+            {
+                const string sums = "https://github.com/yt-dlp/yt-dlp/releases/latest/download/SHA2-256SUMS";
+                string text = await Http.GetStringAsync(sums, tct);
+                return ExtractSumsHash(text, "yt-dlp.exe");
+            }
+            if (kind == "ffmpeg" && downloadUrl.StartsWith("https://www.gyan.dev/ffmpeg/builds/", StringComparison.OrdinalIgnoreCase))
+            {
+                string text = (await Http.GetStringAsync(downloadUrl + ".sha256", tct)).Trim();
+                string bare = text.Split(new[] { ' ', '\t', '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries).FirstOrDefault() ?? "";
+                return IsHexHash(bare) ? bare.ToLowerInvariant() : null;
+            }
+            return null;
+        }
+        catch { return null; }
+    }
+
+    internal static string? ExtractSumsHash(string text, string fileName)
+    {
+        try
+        {
+            foreach (string rawLine in text.Split('\n'))
+            {
+                string line = rawLine.Trim().TrimEnd('\r');
+                if (line.Length < 66)
+                    continue;
+                // "<hash>  <name>" and "<hash> *<name>" (binary-marker) forms.
+                string hash = line[..64];
+                string rest = line[64..].Trim().TrimStart('*').Trim();
+                if (!IsHexHash(hash))
+                    continue;
+                string name = rest.Split(new[] { ' ', '\t' }, StringSplitOptions.RemoveEmptyEntries).FirstOrDefault() ?? "";
+                if (string.Equals(name, fileName, StringComparison.OrdinalIgnoreCase))
+                    return hash.ToLowerInvariant();
+            }
+            return null;
+        }
+        catch { return null; }
+    }
+
+    internal static bool IsHexHash(string? s) =>
+        !string.IsNullOrWhiteSpace(s) && s!.Length == 64 &&
+        s.All(c => (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F'));
+
+    internal static string ComputeSha256(string path)
+    {
+        using var sha = System.Security.Cryptography.SHA256.Create();
+        using var fs = File.OpenRead(path);
+        return Convert.ToHexString(sha.ComputeHash(fs)).ToLowerInvariant();
+    }
+
+    /// <summary>Enforces a published hash (mismatch = delete + hard fail).
+    /// Null expectation means "no published hash": warn-open, never silent.</summary>
+    internal static void VerifySha256OrWarn(string path, string? expected, string display)
+    {
+        if (string.IsNullOrWhiteSpace(expected))
+        {
+            try { ActivityLog.Write("ENGINE", $"{display}: no published checksum — MZ+size validation only"); } catch { }
+            return;
+        }
+        string actual;
+        try { actual = ComputeSha256(path); }
+        catch (Exception ex) { throw new EngineMissingException($"Could not hash downloaded engine ({ex.Message})."); }
+        if (!string.Equals(actual, expected.Trim(), StringComparison.OrdinalIgnoreCase))
+        {
+            try { File.Delete(path); } catch { }
+            throw new EngineMissingException(
+                $"{display} failed SHA-256 verification (possible tampering or CDN corruption) — refusing to install.");
+        }
+    }
+
+    /// <summary>Sidecar pinning: records the hash of an installed binary so
+    /// later startups detect modification. Trust-on-first-use for legacy and
+    /// seed binaries (pins current bytes + logs); enforced thereafter.</summary>
+    internal static void PinInstalledHash(string installedPath)
+    {
+        try
+        {
+            string sidecar = installedPath + ".sha256";
+            if (File.Exists(sidecar))
+                return;
+            if (!File.Exists(installedPath))
+                return;
+            File.WriteAllText(sidecar, ComputeSha256(installedPath));
+            try { ActivityLog.Write("ENGINE", $"{Path.GetFileName(installedPath)}: pinned current hash (trust-on-first-use)"); } catch { }
+        }
+        catch { }
+    }
+
+    internal static bool VerifyInstalledHash(string installedPath)
+    {
+        try
+        {
+            string sidecar = installedPath + ".sha256";
+            if (!File.Exists(installedPath) || !File.Exists(sidecar))
+                return true; // nothing pinned yet — caller pins after download
+            string expected = File.ReadAllText(sidecar).Trim();
+            if (!IsHexHash(expected))
+                return true;
+            return string.Equals(ComputeSha256(installedPath), expected, StringComparison.OrdinalIgnoreCase);
+        }
+        catch { return true; }
+    }
+
 }

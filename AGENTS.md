@@ -1,7 +1,7 @@
 # AGENTS.md — WDM
 
 WDM = IDM-inspired download manager, Windows-only, C#/WPF/.NET 8 (`net8.0-windows`).
-App project: `src/WDM.App/WDM.csproj` (assembly `WDM`, v2.8.1; branch `media-intelligence`
+App project: `src/WDM.App/WDM.csproj` (assembly `WDM`, v2.8.2; branch `media-intelligence`
 splits Core/Engine/Media/Browser out of it). `src/WDM.Core/` holds the UI-free domain
 model (`DownloadTask` on `SynchronizationContext`, `SegmentRecord`, `FileNameHelper`,
 `AtomicFile`; namespaces `WDM.Models`/`WDM.Services` unchanged). `src/WDM.Media/` holds

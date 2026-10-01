@@ -1,15 +1,17 @@
 <!doctype html>
-<!-- catch_page.html — minimal fixture for the future real-browser run.
+<!-- catch_page.html - minimal fixture for the future real-browser run.
      Serve this dir over HTTP (e.g. `node -e "require('http')..."` or any static
      server), load the unpacked extension (src/WDM.BrowserExtension) in
      Chromium with --load-extension, navigate here, and assert a POST with the
      .m3u8 URL lands on the CaptureServer test port. No browser ships on the
      CI/dev machine today, so BrowserCatchTests proves the same path with the
      Node JS-half probe + HttpClient server leg instead. -->
-<html>
+<html lang="en">
 <head><meta charset="utf-8"><title>Watch My Film - SomeSite</title></head>
 <body>
-<video id="v" controls width="640" src="/media/movie-720p.mp4"></video>
+<main>
+<video id="v" controls width="640" src="/media/movie-720p.mp4" aria-label="Test video fixture"></video>
+</main>
 <script>
   // Same signal the sniffer hooks: a page-world fetch of an HLS manifest.
   fetch('/hls/master.m3u8').then(r => r.text()).then(() => { document.title = 'fetched'; }).catch(() => {});

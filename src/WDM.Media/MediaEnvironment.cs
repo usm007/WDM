@@ -1,4 +1,6 @@
 using System;
+using WDM.Browser.Contracts;
+using WDM.Browser.Sessions;
 
 namespace WDM.Media;
 
@@ -10,4 +12,8 @@ public static class MediaEnvironment
     public static Func<string> YtDlpPath { get; set; } = () => "yt-dlp.exe";
     public static Func<string> FfmpegPath { get; set; } = () => "ffmpeg.exe";
     public static Func<string> QuickJsPath { get; set; } = () => "qjs.exe";
+
+    /// <summary>Browser host factory for Level-4 resolution. Defaults to the
+    /// real session manager; tests substitute fakes. No App reference.</summary>
+    public static Func<IBrowserHost> BrowserHostFactory { get; set; } = () => new BrowserSessionManager();
 }

@@ -132,6 +132,57 @@ public sealed class CompletionMap
         }
     }
 
+    /// <summary>
+    /// Invalidates bytes [from, toExclusive): clears durable bits for
+    /// intersecting blocks and drops intersecting memory runs so the region
+    /// is re-fetched. Used when content verification proves bytes suspect —
+    /// never silently assembled.
+    /// </summary>
+    public void InvalidateRange(long from, long toExclusive)
+    {
+        if (toExclusive <= from)
+            return;
+        lock (_lock)
+        {
+            int first = (int)(from / BlockSize);
+            int last = (int)((toExclusive - 1) / BlockSize);
+            for (int b = first; b <= last && b < BlockCount; b++)
+            {
+                if (b >= 0)
+                    _bits[b >> 3] &= (byte)~(1 << (b & 7));
+            }
+            var drop = new List<long>();
+            foreach (var kv in _runs)
+            {
+                if (kv.Value <= from || kv.Key >= toExclusive)
+                    continue;
+                drop.Add(kv.Key);
+            }
+            foreach (long k in drop)
+                _runs.Remove(k);
+        }
+    }
+
+    /// <summary>True when every block intersecting [from, toExclusive) is
+    /// durably committed. Only durable bytes are trustworthy verification
+    /// anchors — fresh zeros must never convict a mirror.</summary>
+    public bool IsRangeDurable(long from, long toExclusive)
+    {
+        if (toExclusive <= from)
+            return false;
+        lock (_lock)
+        {
+            int first = (int)(from / BlockSize);
+            int last = (int)((toExclusive - 1) / BlockSize);
+            for (int b = first; b <= last; b++)
+            {
+                if (b < 0 || b >= BlockCount || !IsBitSet(b))
+                    return false;
+            }
+            return true;
+        }
+    }
+
     private void MergeRun(long from, long to)
     {
         long ns = from, ne = to;

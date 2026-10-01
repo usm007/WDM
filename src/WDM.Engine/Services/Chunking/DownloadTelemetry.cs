@@ -20,6 +20,7 @@ public enum HttpOutcome
     TlsFailure,
     ShortRead,
     WrongRange,
+    ContentMismatch,
     DiskFatal,
     CloudflareBlocked,
 }
@@ -40,6 +41,7 @@ public sealed class DownloadTelemetry
     private long _serverErrorCount;
     private long _shortReadCount;
     private long _wrongRangeCount;
+    private long _contentMismatchCount;
     private int _activeWorkers;
     private long _rangeTicksSum;
     private long _rangeSamples;
@@ -73,6 +75,7 @@ public sealed class DownloadTelemetry
             case HttpOutcome.ServerError: Interlocked.Increment(ref _serverErrorCount); break;
             case HttpOutcome.ShortRead: Interlocked.Increment(ref _shortReadCount); break;
             case HttpOutcome.WrongRange: Interlocked.Increment(ref _wrongRangeCount); break;
+            case HttpOutcome.ContentMismatch: Interlocked.Increment(ref _contentMismatchCount); break;
         }
     }
 
@@ -127,6 +130,7 @@ public sealed class DownloadTelemetry
             ServerErrors = Interlocked.Read(ref _serverErrorCount),
             ShortReads = Interlocked.Read(ref _shortReadCount),
             WrongRanges = Interlocked.Read(ref _wrongRangeCount),
+            ContentMismatches = Interlocked.Read(ref _contentMismatchCount),
             ActiveWorkers = Volatile.Read(ref _activeWorkers),
             EwmaBps = bps,
             AverageRangeSeconds = Interlocked.Read(ref _rangeSamples) > 0
@@ -151,6 +155,7 @@ public sealed class TelemetrySnapshot
     public long ServerErrors { get; set; }
     public long ShortReads { get; set; }
     public long WrongRanges { get; set; }
+    public long ContentMismatches { get; set; }
     public int ActiveWorkers { get; set; }
     public double EwmaBps { get; set; }
     public double AverageRangeSeconds { get; set; }

@@ -93,7 +93,7 @@ public sealed class BrowserCatchTests
         {
             using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(10) };
             using var req = new HttpRequestMessage(HttpMethod.Post, $"http://127.0.0.1:{SnifferPort}/download");
-            req.Headers.Add("Origin", "chrome-extension://test");
+            req.Headers.Add("Origin", "chrome-extension://jehagbjolooaohcbmlhegpmjeaakonof");
             req.Content = new StringContent(
                 "{\"url\":\"http://origin.test/hls/master.m3u8\",\"fileName\":\"My Film\"," +
                 "\"referer\":\"https://videos.test/watch/1\"," +
@@ -150,7 +150,7 @@ public sealed class BrowserCatchTests
         {
             using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(10) };
             using var req = new HttpRequestMessage(HttpMethod.Post, $"http://127.0.0.1:{EnginePort}/download");
-            req.Headers.Add("Origin", "chrome-extension://test");
+            req.Headers.Add("Origin", "chrome-extension://jehagbjolooaohcbmlhegpmjeaakonof");
             req.Content = new StringContent(
                 "{\"url\":\"http://origin.test/movie.mp4\",\"fileName\":\"movie.mp4\"}",
                 Encoding.UTF8, "application/json");

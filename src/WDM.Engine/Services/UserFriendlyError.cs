@@ -101,8 +101,8 @@ public static class UserFriendlyError
     public static string ForStatusCode(int statusCode) => statusCode switch
     {
         400 => "The server rejected the request. The link may be broken.",
-        401 or 403 => "The server refused access. The link may need sign-in or has expired.",
-        404 => "The file couldn't be found on the server. The link may have expired — try refreshing it.",
+        401 or 403 => "The server refused access. The link may need sign-in or has expired. Right-click → 'Retry with page session'.",
+        404 => "The file couldn't be found on the server. The link may have expired: try refreshing it.",
         408 or 504 => "The connection timed out. Check your internet connection and try again.",
         410 => "The file is no longer on the server. The link has expired.",
         416 => "The server can't resume this download. Try restarting it from the beginning.",
@@ -130,8 +130,18 @@ public static class UserFriendlyError
             return "Error: media fetching is off";
         if (ex is DownloadEngine.CloudflareBlockedException)
             return "Error: Cloudflare blocked";
-        if (ex is DownloadEngine.FileChangedException)
-            return "Error: file changed on server";
+        if (ex is DownloadEngine.DiskFullPausedException)
+            return "Paused: disk full — free space, then resume";
+        if (ex is DownloadEngine.FileChangedException fce)
+            return fce.Reason switch
+            {
+                "session-expired" => "Paused: session expired — Refresh the link to continue",
+                "range-unsupported" => "Paused: server dropped resume support — Refresh the link or restart",
+                "etag-changed" => "Paused: file replaced on server (ETag) — Refresh the link or restart",
+                "mtime-changed" => "Paused: file replaced on server (date) — Refresh the link or restart",
+                "size-changed" => "Paused: file size changed — Refresh the link or restart",
+                _ => "Error: file changed on server",
+            };
         if (ex is HlsDownloader.HlsPackagedStreamException packEx)
             return $"Error: {packEx.Method} needs ffmpeg";
         if (ex is TimeoutException)

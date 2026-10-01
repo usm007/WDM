@@ -31,9 +31,6 @@ public sealed class DownloadEngine
     private int _maxConcurrent = 3;
     private int _maxRetries = 3;
     private long _baseLimitKbps;
-    /// <summary>Scheduler window cap (1DM time/speed schedule): when positive it
-    /// tightens the effective limit; 0 = no scheduler cap.</summary>
-    private long _schedulerLimitKbps;
 
     public event Action? TaskChanged;
     public event Action<DownloadTask>? TaskCompleted;
@@ -94,16 +91,6 @@ public sealed class DownloadEngine
         set
         {
             lock (_lock) _baseLimitKbps = Math.Max(0, value);
-            ApplySpeedLimit();
-        }
-    }
-
-    public long SchedulerSpeedLimitKbps
-    {
-        get { lock (_lock) return _schedulerLimitKbps; }
-        set
-        {
-            lock (_lock) _schedulerLimitKbps = Math.Max(0, value);
             ApplySpeedLimit();
         }
     }
@@ -189,6 +176,31 @@ public sealed class DownloadEngine
             // garbage collected once all ongoing requests finish.
             _http = CreateClient(ProxyHelper.BuildProxy(s));
         }
+    }
+
+    /// <summary>Applies persisted per-host policy to the origin controller and
+    /// wires learned cooldowns back into settings (saved throttled: only when
+    /// extending an existing verdict). Call on startup and settings save,
+    /// alongside <see cref="ApplyProxy"/>.</summary>
+    public void ApplyHostPolicy(AppSettings s)
+    {
+        try
+        {
+            OriginController.ApplyPolicy(s.HostConnectionLimits, s.HostCooldowns);
+            OriginController.CooldownPersisted = (origin, untilUnix, cause) =>
+            {
+                try
+                {
+                    var cur = TaskStore.LoadSettings();
+                    if (cur.HostCooldowns.TryGetValue(origin, out var have) && have.UntilUnix >= untilUnix)
+                        return;
+                    cur.HostCooldowns[origin] = new AppSettings.HostCooldown { UntilUnix = untilUnix, Cause = cause };
+                    TaskStore.SaveSettings(cur);
+                }
+                catch { }
+            };
+        }
+        catch { }
     }
 
     /// <summary>Delegating handler that follows HTTP redirects but refuses
@@ -286,9 +298,6 @@ public sealed class DownloadEngine
         bool startNow;
         lock (_lock)
         {
-            // A manual (re)start always clears the scheduler hold: user intent wins
-            // over the download window (see MainViewModel scheduler tick).
-            task.SchedulerPaused = false;
             if (_sessions.ContainsKey(task.Id))
             {
                 // Pause->Start race: old session still unwinding. Queue a restart
@@ -659,19 +668,35 @@ public sealed class DownloadEngine
 
         bool linkRefreshed = task.LinkRefreshed;
         task.LinkRefreshed = false;
-        // No FTP stack (HttpClient-only engine): fail fast with guidance
-        // instead of dying inside the probe with a transport error.
-        if (IsFtpUrl(task.Url))
-        {
-            task.Error = "FTP downloads aren't supported yet — paste an http(s) link instead.";
-            task.Status = TaskStatus.Failed;
-            task.IsPreparing = false;
-            task.PhaseText = "";
-            TaskChanged?.Invoke();
-            return;
-        }
+        bool isFtp = IsFtpUrl(task.Url);
         try
         {
+            // FTP (PASV file downloads with resume; FTPS/active unsupported).
+            // Shares this try's catch/finally (pause mapping, state flush).
+            if (isFtp)
+            {
+                await RunFtpSessionAsync(session);
+                return;
+            }
+            // Local files (Explorer "Download with WDM" verb): fast managed
+            // copy with progress/throttle/pause instead of an HTTP session.
+            // Shares this try's catch/finally (pause mapping, state flush).
+            if (IsFileUrl(task.Url))
+            {
+                await RunLocalCopyAsync(session);
+                if (task.Status == TaskStatus.Failed)
+                    return; // FailTask already reported (missing source, same file…)
+                session.Token.ThrowIfCancellationRequested();
+                task.Status = TaskStatus.Completed;
+                task.CompletedAt = DateTime.Now;
+                task.Progress = 100;
+                task.SpeedBps = 0;
+                task.Eta = "";
+                task.IsPreparing = false;
+                task.PhaseText = "";
+                TaskCompleted?.Invoke(task);
+                return;
+            }
             // Embed/player pages (/e/, /embed/) resolve to a direct stream first.
             // A stored SourcePageUrl always re-resolves so expiring signed links
             // (firestream/dood/voe/byse) are refreshed on every start/resume.
@@ -781,6 +806,7 @@ public sealed class DownloadEngine
             ThrowIfUnsupportedContent(task, meta);
             ThrowIfMegaSessionMissing(task, meta);
             task.TotalBytes = meta.TotalBytes;
+            ThrowIfNoRoomFor(task);
             session.CurrentUrlIndex = meta.UrlIndex;
             ApplyResumeCapability(task, meta);
             // Auto-upgrade filename if task has no name OR has a generic/un-probed placeholder name (e.g. .bin, download_*)
@@ -874,6 +900,20 @@ public sealed class DownloadEngine
                     "Media fetching is turned off (except YouTube), so this stream won't start. " +
                     "Turn it back on in Options to download streams, or use a direct file link instead.");
             }
+            // Form POST replay and per-task proxy overrides always run
+            // single-stream: POST isn't rangeable, and the shared chunk pool
+            // has no per-task proxy. Correctness over speed — without this,
+            // proxied/form-gated files fail outright.
+            bool forceSingleStream = task.HasPostBody() || task.HasProxyOverride();
+            if (forceSingleStream)
+            {
+                try
+                {
+                    ActivityLog.Write("SESSION",
+                        $"'{task.FileName}' runs single-stream ({(task.HasPostBody() ? "form replay" : "browser proxy")})");
+                }
+                catch { }
+            }
             if (meta.IsHls)
             {
                 meta.ProbeBody?.Dispose();
@@ -886,7 +926,7 @@ public sealed class DownloadEngine
                 meta = meta with { ProbeBody = null };
                 await RunDashAsync(session, meta.ContentType);
             }
-            else if (meta.TotalBytes > 0 && meta.SupportsRanges)
+            else if (meta.TotalBytes > 0 && meta.SupportsRanges && !forceSingleStream)
             {
                 meta.ProbeBody?.Dispose();
                 meta = meta with { ProbeBody = null };
@@ -947,15 +987,26 @@ public sealed class DownloadEngine
             }
             else
             {
-                task.Status = ex is FileChangedException ? TaskStatus.Paused : TaskStatus.Failed;
-                task.Error = UserFriendlyError.ForDownload(ex);
-                task.ErrorDetail = UserFriendlyError.For(ex);
+                // Session expiry masquerading as refusal: 401/403 after bytes
+                // already flowed means the login/token died mid-download, not
+                // a dead link. Pause with the refresh action instead of failing;
+                // a fresh 403 with zero bytes stays a plain access failure.
+                Exception mapped = ex;
+                if (task.DownloadedBytes > 0 && HasAuthStatus(ex))
+                    mapped = new FileChangedException(
+                        "The site session expired (signed out or token revoked). Refresh the link to continue.", "session-expired");
+                else if (FatalErrors.IsDiskFullError(ex))
+                    mapped = new DiskFullPausedException(
+                        "Disk full — paused. Free space (or move the folder), then resume.");
+                task.Status = mapped is FileChangedException or DiskFullPausedException ? TaskStatus.Paused : TaskStatus.Failed;
+                task.Error = UserFriendlyError.ForDownload(mapped);
+                task.ErrorDetail = UserFriendlyError.For(mapped);
                 task.IsPreparing = false;
                 task.PhaseText = "";
                 if (task.Status == TaskStatus.Failed)
                     ActivityLog.Write("FAIL", $"Failed: '{task.FileName}' | {task.Error} | progress {ActivityLog.ProgressOf(task.DownloadedBytes, task.TotalBytes)} | detail: {task.ErrorDetail}");
                 else
-                    ActivityLog.Write("PAUSE", $"Paused: '{task.FileName}' (file changed on server) | progress {ActivityLog.ProgressOf(task.DownloadedBytes, task.TotalBytes)}");
+                    ActivityLog.Write("PAUSE", $"Paused: '{task.FileName}' | {task.Error} | progress {ActivityLog.ProgressOf(task.DownloadedBytes, task.TotalBytes)}");
             }
         }
         finally
@@ -1047,14 +1098,52 @@ public sealed class DownloadEngine
         bool supportsRanges = false;
         HttpResponseMessage? probeBody = null;
 
+        // 0) Form POST replay (IDM Bc): re-issue the page's own POST when the
+        // task carries its body. No ranges — POST isn't rangeable — and bodies
+        // stay on the exact captured URL only (mirrors get normal probing).
+        bool postProbed = false;
+        if (string.Equals(url, task.Url, StringComparison.OrdinalIgnoreCase) && task.HasPostBody() &&
+            TryDecodePostBody(task, out var postBody, out var postCt) && postBody is not null && postCt is not null)
+        {
+            try
+            {
+                HttpClient? postClient = ClientFor(task);
+                var post = await SendWithRetryAsync(() =>
+                {
+                    var r = BuildRequest(HttpMethod.Post, task, null, url);
+                    AttachPostBody(r, postBody, postCt);
+                    return r;
+                }, ct, postClient);
+                using (post)
+                {
+                    finalUrl = post.RequestMessage?.RequestUri?.ToString() ?? finalUrl;
+                    if (post.IsSuccessStatusCode)
+                    {
+                        long total = post.Content.Headers.ContentLength ?? -1;
+                        if (total > 0)
+                            totalBytes = total;
+                        contentType = post.Content.Headers.ContentType?.ToString();
+                        suggestedName = NameFromDisposition(post.Content.Headers.ContentDisposition);
+                        etag = post.Headers.ETag?.ToString();
+                        lastModified = post.Content.Headers.LastModified?.ToString("R");
+                        postProbed = totalBytes > 0 || !string.IsNullOrWhiteSpace(suggestedName);
+                    }
+                }
+            }
+            catch
+            {
+                ct.ThrowIfCancellationRequested();
+            }
+        }
+
         // 1) HEAD probe - cheap, gives size + range support + disposition.
         try
         {
-            var head = await SendWithRetryAsync(() => BuildRequest(HttpMethod.Head, task, null, url), ct);
+            var head = await SendWithRetryAsync(() => BuildRequest(HttpMethod.Head, task, null, url), ct, ClientFor(task));
             using (head)
             {
                 finalUrl = head.RequestMessage?.RequestUri?.ToString() ?? finalUrl;
-                if (head.IsSuccessStatusCode)
+                if (head.IsSuccessStatusCode && !postProbed)
                 {
                     supportsRanges = head.Headers.AcceptRanges.Any(r => r.Equals("bytes", StringComparison.OrdinalIgnoreCase));
                     long total = head.Content.Headers.ContentLength ?? -1;
@@ -1077,11 +1166,12 @@ public sealed class DownloadEngine
         // 2) Ranged GET probe (bytes=0-0) - authoritative for size via Content-Range
         //    and proves range support. Sends Accept-Encoding: identity so Content-Length
         //    reflects the real size (a compressed body would corrupt chunk math).
-        if (totalBytes <= 0 || !supportsRanges)
+        //    Skipped after a successful POST replay (bodies must not be re-sent).
+        if (!postProbed && (totalBytes <= 0 || !supportsRanges))
         {
             try
             {
-                var get = await SendWithRetryAsync(() => BuildRequest(HttpMethod.Get, task, new RangeHeaderValue(0, 0), url), ct);
+                var get = await SendWithRetryAsync(() => BuildRequest(HttpMethod.Get, task, new RangeHeaderValue(0, 0), url), ct, ClientFor(task));
                 finalUrl = get.RequestMessage?.RequestUri?.ToString() ?? finalUrl;
                 if (IsCloudflareChallenge(get))
                 {
@@ -1184,6 +1274,30 @@ public sealed class DownloadEngine
         return File.Exists(task.FullPath) && new FileInfo(task.FullPath).Length > 0;
     }
 
+    /// <summary>Pre-flight free-space check: pauses (never fails or starts)
+    /// when the target volume cannot hold the remaining bytes plus a 64MB
+    /// margin. Unknown size or unreadable volumes never block a start.</summary>
+    private static void ThrowIfNoRoomFor(DownloadTask task)
+    {
+        try
+        {
+            if (task.TotalBytes <= 0)
+                return;
+            long remaining = Math.Max(0, task.TotalBytes - task.DownloadedBytes);
+            if (remaining <= 0)
+                return;
+            long? free = FatalErrors.GetFreeBytesForPath(task.FullPath);
+            if (free is null)
+                return;
+            const long margin = 64L * 1024 * 1024;
+            if (free < remaining + margin)
+                throw new DiskFullPausedException(
+                    $"Disk full — paused. Need {DownloadTask.FormatBytes(remaining)} free, found {DownloadTask.FormatBytes(free.Value)}. Free space (or move the folder), then resume.");
+        }
+        catch (DiskFullPausedException) { throw; }
+        catch { }
+    }
+
     /// <summary>True when the on-disk file already holds every byte the server
     /// promised (used to distinguish "cancelled before finishing" from "cancelled
     /// right after the last byte landed").</summary>
@@ -1229,7 +1343,7 @@ public sealed class DownloadEngine
         if (!string.IsNullOrWhiteSpace(task.Etag) && !string.IsNullOrWhiteSpace(etag) &&
             !string.Equals(task.Etag, etag, StringComparison.Ordinal))
         {
-            throw new FileChangedException("The file changed on the server (ETag mismatch). Paused to avoid a corrupt file.");
+            throw new FileChangedException("The file changed on the server (ETag mismatch). Paused to avoid a corrupt file.", "etag-changed");
         }
         // Last-Modified is checked whenever the ETags don't positively agree
         // (BUG-032): the old code skipped it whenever the task had an ETag,
@@ -1241,11 +1355,11 @@ public sealed class DownloadEngine
             !string.IsNullOrWhiteSpace(lastModified) &&
             !string.Equals(task.LastModified, lastModified, StringComparison.OrdinalIgnoreCase))
         {
-            throw new FileChangedException("The file changed on the server (Last-Modified mismatch). Paused to avoid a corrupt file.");
+            throw new FileChangedException("The file changed on the server (Last-Modified mismatch). Paused to avoid a corrupt file.", "mtime-changed");
         }
         if (previousTotalBytes > 0 && task.TotalBytes > 0 && previousTotalBytes != task.TotalBytes)
         {
-            throw new FileChangedException("The file size changed on the server. Paused to avoid a corrupt file.");
+            throw new FileChangedException("The file size changed on the server. Paused to avoid a corrupt file.", "size-changed");
         }
     }
 
@@ -1912,7 +2026,33 @@ public sealed class DownloadEngine
         }
 
         RangeHeaderValue? range = existingLength > 0 ? new RangeHeaderValue(existingLength, null) : null;
-        var response = await SendWithRetryAsync(() => BuildRequest(HttpMethod.Get, task, range, session.CurrentUrl(task)), session.Token);
+        // Form replay: re-POST the captured body against the exact captured
+        // URL only (never mirrors). No ranges — a partial POST can't resume,
+        // so stale partials are discarded and the full body is re-sent.
+        byte[]? postBytes = null;
+        string? postCt = null;
+        HttpMethod method = HttpMethod.Get;
+        if (task.HasPostBody() && string.Equals(session.CurrentUrl(task), task.Url, StringComparison.OrdinalIgnoreCase) &&
+            TryDecodePostBody(task, out postBytes, out postCt) && postBytes is not null && postCt is not null)
+        {
+            method = HttpMethod.Post;
+            range = null;
+            existingLength = 0;
+            try { if (File.Exists(task.FullPath)) File.Delete(task.FullPath); } catch { }
+        }
+        else
+        {
+            postBytes = null;
+            postCt = null;
+        }
+        HttpClient? scoped = ClientFor(task);
+        var response = await SendWithRetryAsync(() =>
+        {
+            var req = BuildRequest(method, task, range, session.CurrentUrl(task));
+            if (postBytes is not null && postCt is not null)
+                AttachPostBody(req, postBytes, postCt);
+            return req;
+        }, session.Token, scoped);
         using (response)
         {
             if (IsCloudflareChallenge(response))
@@ -1926,12 +2066,12 @@ public sealed class DownloadEngine
                 if (response.Content.Headers.ContentRange?.Length is long len && len > 0)
                 {
                     if (existingLength != len)
-                        throw new FileChangedException($"The file size changed on the server (local {existingLength} vs remote {len}). Paused to avoid a corrupt file.");
+                        throw new FileChangedException($"The file size changed on the server (local {existingLength} vs remote {len}). Paused to avoid a corrupt file.", "size-changed");
                     task.TotalBytes = len;
                 }
                 else if (task.TotalBytes > 0 && existingLength != task.TotalBytes)
                 {
-                    throw new FileChangedException("The server rejected the resume range and the local size does not match. Paused to avoid a corrupt file.");
+                    throw new FileChangedException("The server rejected the resume range and the local size does not match. Paused to avoid a corrupt file.", "range-unsupported");
                 }
                 Interlocked.Exchange(ref session.BytesDownloaded, existingLength);
                 Interlocked.Exchange(ref session.LastBytes, existingLength);
@@ -2014,10 +2154,29 @@ public sealed class DownloadEngine
 
             // First real bytes flowing: leave the preparing state so the dialog
             // swaps the status line + marquee for live speed/ETA/percent.
+            // ponytail: hold preparing through the 1% ramp so it reads as Starting, not stuck
             if (session.Task.IsPreparing && speed > 1)
             {
-                session.Task.IsPreparing = false;
-                session.Task.PhaseText = "";
+                bool warmedUp = true;
+                if (session.Task.TotalBytes > 0)
+                {
+                    double pct = (double)now * 100.0 / session.Task.TotalBytes;
+                    if (pct < 2.0 && now < 4L * 1024 * 1024)
+                        warmedUp = false;
+                }
+                else if (now < 1L * 1024 * 1024)
+                {
+                    warmedUp = false;
+                }
+                if (warmedUp)
+                {
+                    session.Task.IsPreparing = false;
+                    session.Task.PhaseText = "";
+                }
+                else
+                {
+                    session.Task.PhaseText = "Starting download…";
+                }
             }
 
             if (session.Task.TotalBytes > 0)
@@ -2025,7 +2184,7 @@ public sealed class DownloadEngine
                 double percent = (double)now * 100.0 / session.Task.TotalBytes;
                 session.Task.Progress = Math.Clamp((int)percent, 0, 100);
                 double remaining = session.Task.TotalBytes - now;
-                session.Task.Eta = speed > 1 ? FormatEta(remaining / speed) : "";
+                session.Task.Eta = speed > 1 ? FormatEta(remaining / speed) : "-";
             }
 
             if (session.RangeEngine is { } rangeEngine)
@@ -2040,9 +2199,7 @@ public sealed class DownloadEngine
     {
         lock (_lock)
         {
-            if (_baseLimitKbps > 0 && _schedulerLimitKbps > 0)
-                return Math.Min(_baseLimitKbps, _schedulerLimitKbps);
-            return Math.Max(_baseLimitKbps, _schedulerLimitKbps);
+            return _baseLimitKbps;
         }
     }
 
@@ -2051,16 +2208,17 @@ public sealed class DownloadEngine
         _governor.LimitKbps = EffectiveLimitKbps();
     }
 
-    private async Task<HttpResponseMessage> SendWithRetryAsync(Func<HttpRequestMessage> build, CancellationToken ct)
+    private async Task<HttpResponseMessage> SendWithRetryAsync(Func<HttpRequestMessage> build, CancellationToken ct, HttpClient? clientOverride = null)
     {
         int attempt = 0;
+        HttpClient client = clientOverride ?? _http;
         while (true)
         {
             using var request = build();
             HttpResponseMessage response;
             try
             {
-                response = await _http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, ct);
+                response = await client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, ct);
             }
             catch (Exception ex) when (IsTransient(ex) && !ct.IsCancellationRequested && attempt < MaxRetries)
             {
@@ -2127,6 +2285,70 @@ public sealed class DownloadEngine
         await Task.Delay(ms, ct);
     }
 
+    /// <summary>Validates a task's captured form POST body for replay: base64,
+    /// ≤256KB decoded, content type on the form-data allow-list (full value,
+    /// boundary included). Mirrors the capture-server gates.</summary>
+    internal static bool TryDecodePostBody(DownloadTask task, out byte[]? body, out string? contentType)
+    {
+        body = null;
+        contentType = null;
+        if (string.IsNullOrWhiteSpace(task.PostData))
+            return false;
+        string data = task.PostData.Trim();
+        if (data.Length > 350 * 1024)
+            return false;
+        byte[] bytes;
+        try { bytes = Convert.FromBase64String(data); }
+        catch { return false; }
+        if (bytes.Length == 0 || bytes.Length > 256 * 1024)
+            return false;
+        string ctFull = (task.PostContentType ?? "application/x-www-form-urlencoded").Trim();
+        if (ctFull.Length == 0 || ctFull.Length > 512)
+            return false;
+        string ct = ctFull.Split(';')[0].Trim().ToLowerInvariant();
+        if (ct is not ("application/x-www-form-urlencoded" or "multipart/form-data" or
+                "application/octet-stream" or "text/plain" or "application/json"))
+            return false;
+        body = bytes;
+        contentType = ctFull;
+        return true;
+    }
+
+    internal static void AttachPostBody(HttpRequestMessage request, byte[] body, string contentType)
+    {
+        var content = new ByteArrayContent(body);
+        try { content.Headers.ContentType = System.Net.Http.Headers.MediaTypeHeaderValue.Parse(contentType); }
+        catch { content.Headers.TryAddWithoutValidation("Content-Type", contentType); }
+        request.Content = content;
+    }
+
+    // Per-task proxy clients (browser mirror): http/https only — .NET has no
+    // SOCKS support, and PAC scripts can't run on the desktop. Cached per
+    // endpoint, never disposed (same pattern as the shared client rotation).
+    private readonly object _proxyLock = new();
+    private readonly Dictionary<string, HttpClient> _proxyClients = new(StringComparer.OrdinalIgnoreCase);
+    private HttpClient? ClientFor(DownloadTask task)
+    {
+        try
+        {
+            if (!task.HasProxyOverride())
+                return null;
+            if (!(task.ProxyType ?? "http").StartsWith("http", StringComparison.OrdinalIgnoreCase))
+                return null;
+            string key = $"{task.ProxyHost}:{task.ProxyPort}";
+            lock (_proxyLock)
+            {
+                if (!_proxyClients.TryGetValue(key, out var client))
+                {
+                    client = CreateClient(new System.Net.WebProxy($"http://{task.ProxyHost}:{task.ProxyPort}"));
+                    _proxyClients[key] = client;
+                }
+                return client;
+            }
+        }
+        catch { return null; }
+    }
+
     internal static HttpRequestMessage BuildRequest(HttpMethod method, DownloadTask task, RangeHeaderValue? range, string? url = null)
     {
         string targetUrl = url ?? task.Url;
@@ -2157,8 +2379,11 @@ public sealed class DownloadEngine
             if (kv.Key.StartsWith("X-WDM-", StringComparison.OrdinalIgnoreCase))
                 continue;
             // Session credentials belong to the original host — never forward
-            // them to a mirror CDN on a different host.
-            if (!sameHost && (kv.Key.Equals("Cookie", StringComparison.OrdinalIgnoreCase) ||
+            // them to a mirror CDN on a different host. Per-download
+            // full-session replay (explicit user approval) lifts this gate:
+            // page-gated CDNs 403 without it.
+            bool fullReplay = task.FullSessionReplay;
+            if (!sameHost && !fullReplay && (kv.Key.Equals("Cookie", StringComparison.OrdinalIgnoreCase) ||
                                kv.Key.Equals("Authorization", StringComparison.OrdinalIgnoreCase) ||
                                kv.Key.Equals("Proxy-Authorization", StringComparison.OrdinalIgnoreCase)))
                 continue;
@@ -2191,6 +2416,19 @@ public sealed class DownloadEngine
             request.Headers.TryAddWithoutValidation("Referer", $"{targetUri.Scheme}://{host}/");
         }
         return request;
+    }
+
+    /// <summary>True when the failure chain carries a 401/403 status (auth
+    /// wall, not a dead link).</summary>
+    private static bool HasAuthStatus(Exception? ex)
+    {
+        while (ex is not null)
+        {
+            if (ex is HttpRequestException hre && hre.StatusCode is HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden)
+                return true;
+            ex = ex.InnerException;
+        }
+        return false;
     }
 
     private static bool IsSameHost(string a, string b)
@@ -2275,7 +2513,7 @@ public sealed class DownloadEngine
         $"Cloudflare blocked this download (403). The server flagged WDM as a bot. Try: 1) Open {url} in your browser and let it download once, then paste the final direct link (copy link address) into WDM, or 2) install the WDM browser extension (Options → Browser Integration) and capture the download from the page.";
 
     private static string HardBlockMessage(string url) =>
-        $"The site rejected this link (Cloudflare 403 — \"You have been blocked\"). This is not a solvable check: the signed link likely expired or is missing browser context (cookies/Referer). Get a fresh link from the original page in your browser (or capture via the WDM extension so cookies + Referer are sent), then use Refresh Link. URL: {url}";
+        $"The site rejected this link (Cloudflare 403: \"You have been blocked\"). This is not a solvable check: the signed link likely expired or is missing browser context (cookies/Referer). Get a fresh link from the original page in your browser (or capture via the WDM extension so cookies + Referer are sent), then use Refresh Link. URL: {url}";
 
     public sealed class CloudflareBlockedException : Exception
     {
@@ -2587,10 +2825,25 @@ public sealed class DownloadEngine
     public static RemuxInfo? LastRemux { get; private set; }
 
     /// <summary>Raised when the file's identity (ETag/Last-Modified/size) changed on the
-    /// server between download runs, so resuming would produce a corrupt file.</summary>
+    /// server between download runs, so resuming would produce a corrupt file.
+    /// <see cref="Reason"/> names the cause for the resume-refused UX
+    /// (etag-changed, mtime-changed, size-changed, range-unsupported,
+    /// session-expired); the UI offers Refresh Link for all of them.</summary>
     public sealed class FileChangedException : Exception
     {
-        public FileChangedException(string message) : base(message) { }
+        public string Reason { get; }
+        public FileChangedException(string message, string reason = "file-changed") : base(message)
+        {
+            Reason = reason;
+        }
+    }
+
+    /// <summary>Disk filled mid-download (or pre-flight found no room): always
+    /// Paused, never Failed — freeing space and resuming revalidates via the
+    /// normal identity checks.</summary>
+    public sealed class DiskFullPausedException : Exception
+    {
+        public DiskFullPausedException(string message) : base(message) { }
     }
 
     /// <summary>Raised when the probe shows the URL serves a web page, not a file
@@ -2639,6 +2892,149 @@ public sealed class DownloadEngine
                 u.Scheme == Uri.UriSchemeFtp;
         }
         catch { return false; }
+    }
+
+    internal static bool IsFileUrl(string? url)
+    {
+        try
+        {
+            return Uri.TryCreate((url ?? "").Trim().Trim('"', '\'', '<', '>', '`'), UriKind.Absolute, out var u) &&
+                u.Scheme == Uri.UriSchemeFile;
+        }
+        catch { return false; }
+    }
+
+    /// <summary>Copies a local file into the managed folder with progress,
+    /// throttle and pause support (Explorer verb). Resume appends when the
+    /// source is unchanged; a replaced source restarts from zero.</summary>
+    private async Task RunLocalCopyAsync(Session session)
+    {
+        var task = session.Task;
+        task.IsPreparing = true;
+        string src;
+        try { src = new Uri(task.Url).LocalPath; }
+        catch
+        {
+            FailTask(task, "Error: not a valid local file path.");
+            return;
+        }
+        if (!File.Exists(src))
+        {
+            FailTask(task, "Error: source file not found.");
+            return;
+        }
+        string dst = task.FullPath;
+        try
+        {
+            if (string.Equals(Path.GetFullPath(src), Path.GetFullPath(dst), StringComparison.OrdinalIgnoreCase))
+            {
+                FailTask(task, "Error: source and destination are the same file.");
+                return;
+            }
+        }
+        catch { }
+        var info = new FileInfo(src);
+        task.TotalBytes = info.Length;
+        ThrowIfNoRoomFor(task);
+        task.PhaseText = "Copying local file…";
+        try { Directory.CreateDirectory(task.SaveFolder); } catch { }
+        long existing = 0;
+        try { existing = File.Exists(dst) ? new FileInfo(dst).Length : 0; } catch { }
+        if (existing > info.Length)
+            existing = 0; // source replaced while paused: restart
+        FileMode mode = existing > 0 ? FileMode.Append : FileMode.Create;
+        try
+        {
+            await using var input = new FileStream(src, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
+            if (existing > 0)
+                input.Seek(existing, SeekOrigin.Begin);
+            await using var output = new FileStream(dst, mode, FileAccess.Write, FileShare.Read);
+            var buffer = new byte[256 * 1024];
+            long done = existing;
+            Interlocked.Exchange(ref session.BytesDownloaded, done);
+            int read;
+            while ((read = await input.ReadAsync(buffer, session.Token)) > 0)
+            {
+                await _governor.ThrottleAsync(EffectiveLimitKbps(), read, session.Token);
+                await session.Governor.ThrottleAsync(task.SpeedLimitKbps, read, session.Token);
+                await output.WriteAsync(buffer.AsMemory(0, read), session.Token);
+                done += read;
+                Interlocked.Add(ref session.BytesDownloaded, read);
+                session.Token.ThrowIfCancellationRequested();
+            }
+        }
+        catch (OperationCanceledException) { throw; }
+        catch (Exception ex) when (FatalErrors.IsDiskFullError(ex))
+        {
+            throw new DiskFullPausedException("Disk full — paused. Free space (or move the folder), then resume.");
+        }
+    }
+
+    private void FailTask(DownloadTask task, string error)
+    {
+        task.Error = error;
+        task.Status = TaskStatus.Failed;
+        task.IsPreparing = false;
+        task.PhaseText = "";
+        TaskChanged?.Invoke();
+    }
+
+    /// <summary>FTP session (PASV only, single connection): SIZE probe, REST
+    /// resume, RETR streaming with throttle/pause. Shares the session
+    /// catch/finally (disk-full pause, state flush) via thrown exceptions.</summary>
+    private async Task RunFtpSessionAsync(Session session)
+    {
+        var task = session.Task;
+        task.IsPreparing = true;
+        if (!FtpTransport.TryParseUrl(task.Url, out string host, out int port,
+                out string user, out string pass, out string path))
+        {
+            FailTask(task, "Error: not a valid FTP file link.");
+            return;
+        }
+        task.PhaseText = "Connecting to FTP server…";
+        using var ftp = new FtpTransport(host, port, user, pass);
+        try
+        {
+            await ftp.ConnectAsync(session.Token);
+            long size = await ftp.GetSizeAsync(path, session.Token);
+            task.TotalBytes = size;
+            ThrowIfNoRoomFor(task);
+            try { Directory.CreateDirectory(task.SaveFolder); } catch { }
+            long existing = 0;
+            try { existing = File.Exists(task.FullPath) ? new FileInfo(task.FullPath).Length : 0; } catch { }
+            if (existing > 0 && (size < 0 || existing > size))
+                existing = 0; // remote replaced or unknown: restart
+            task.PhaseText = "Downloading from FTP…";
+            await using var output = new FileStream(task.FullPath,
+                existing > 0 ? FileMode.Append : FileMode.Create, FileAccess.Write, FileShare.Read);
+            Interlocked.Exchange(ref session.BytesDownloaded, existing);
+            await ftp.DownloadRangeAsync(path, existing, output, async (read, token) =>
+            {
+                await _governor.ThrottleAsync(EffectiveLimitKbps(), read, token);
+                await session.Governor.ThrottleAsync(task.SpeedLimitKbps, read, token);
+                Interlocked.Add(ref session.BytesDownloaded, read);
+            }, session.Token);
+            session.Token.ThrowIfCancellationRequested();
+            task.Status = TaskStatus.Completed;
+            task.CompletedAt = DateTime.Now;
+            task.Progress = 100;
+            task.SpeedBps = 0;
+            task.Eta = "";
+            task.IsPreparing = false;
+            task.PhaseText = "";
+            TaskCompleted?.Invoke(task);
+        }
+        catch (OperationCanceledException) { throw; }
+        catch (UnauthorizedAccessException ex)
+        {
+            FailTask(task, "Error: FTP login rejected. Check the username/password in the link.");
+            task.ErrorDetail = ex.Message;
+        }
+        catch (Exception ex) when (FatalErrors.IsDiskFullError(ex))
+        {
+            throw new DiskFullPausedException("Disk full — paused. Free space (or move the folder), then resume.");
+        }
     }
 
     /// <summary>1DM-style probe triage on the collected headers (runs after mirrors,
@@ -2718,7 +3114,8 @@ public sealed class DownloadEngine
 
     /// <summary>Records whether the current source can be resumed mid-transfer. Mirrors
     /// the branch taken in <see cref="RunSessionAsync"/>: chunked only when the size is
-    /// known and the server honors Range requests.</summary>
+    /// known and the server honors Range requests. Form replays and proxy
+    /// overrides force single-stream (never resumable).</summary>
     private static void ApplyResumeCapability(DownloadTask task, ProbeMeta meta)
     {
         task.IsResumable = false;
@@ -2726,6 +3123,10 @@ public sealed class DownloadEngine
             task.ResumeCapabilityText = "No — HLS segment stream";
         else if (meta.IsDash)
             task.ResumeCapabilityText = "No — DASH stream";
+        else if (task.HasPostBody())
+            task.ResumeCapabilityText = "No — form replay (single connection)";
+        else if (task.HasProxyOverride())
+            task.ResumeCapabilityText = "No — browser proxy (single connection)";
         else if (meta.TotalBytes > 0 && meta.SupportsRanges)
         {
             task.IsResumable = true;

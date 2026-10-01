@@ -33,19 +33,19 @@
                           Stroke="{DynamicResource Brush.Accent}" StrokeThickness="1.5"
                           StrokeStartLineCap="Round" StrokeEndLineCap="Round"
                           VerticalAlignment="Center" Margin="0,0,7,0" SnapsToDevicePixels="True" />
-                    <TextBlock Text="Back to Downloads" FontSize="12.5" FontWeight="SemiBold" VerticalAlignment="Center" Foreground="{DynamicResource Brush.Text}" />
+                    <TextBlock Text="Back to Downloads" FontSize="11.5" FontWeight="SemiBold" VerticalAlignment="Center" Foreground="{DynamicResource Brush.Text}" />
                 </StackPanel>
             </ui:Button>
 
             <!-- Header -->
             <StackPanel Orientation="Horizontal" Margin="0,0,0,6">
-                <ui:SymbolIcon Symbol="PuzzlePiece24" FontSize="22" Foreground="{DynamicResource Brush.Accent}" Margin="0,0,10,0" VerticalAlignment="Center" />
-                <TextBlock Text="Browser Extension Setup" FontSize="18" FontWeight="SemiBold" Foreground="{DynamicResource Brush.Text}" VerticalAlignment="Center" />
+                <ui:SymbolIcon Symbol="PuzzlePiece24" FontSize="21" Foreground="{DynamicResource Brush.Accent}" Margin="0,0,10,0" VerticalAlignment="Center" />
+                <TextBlock Text="Browser Extension Setup" FontSize="17" FontWeight="SemiBold" Foreground="{DynamicResource Brush.Text}" VerticalAlignment="Center" />
             </StackPanel>
-            <TextBlock Text="Catch downloads automatically from Chrome, Edge, Brave, Opera or Firefox." FontSize="12.5" Foreground="{DynamicResource Brush.TextMuted}" Margin="0,0,0,4" TextWrapping="Wrap" />
-            <TextBlock Text="One-time setup — about 20 seconds. Works for all Chromium browsers the same way." FontSize="12" Foreground="{DynamicResource Brush.TextDim}" Margin="0,0,0,14" TextWrapping="Wrap" />
+            <TextBlock Text="Catch downloads automatically from Chrome, Edge, Brave, Opera or Firefox." FontSize="11.5" Foreground="{DynamicResource Brush.TextMuted}" Margin="0,0,0,4" TextWrapping="Wrap" />
+            <TextBlock Text="One-time setup. Works for all Chromium browsers the same way." FontSize="11" Foreground="{DynamicResource Brush.TextDim}" Margin="0,0,0,14" TextWrapping="Wrap" />
 
-            <!-- Info banner — single pathway -->
+            <!-- Info banner - single pathway -->
             <Border Background="{DynamicResource Brush.AccentSoft}" BorderBrush="{DynamicResource Brush.AccentSoftStrong}" BorderThickness="1" CornerRadius="8" Padding="12,10" Margin="0,0,0,16">
                 <Grid>
                     <Grid.ColumnDefinitions>
@@ -53,19 +53,19 @@
                         <ColumnDefinition Width="*" />
                     </Grid.ColumnDefinitions>
                     <Border Grid.Column="0" Width="28" Height="28" CornerRadius="14" Background="White" BorderBrush="{DynamicResource Brush.AccentSoftStrong}" BorderThickness="1" VerticalAlignment="Top" Margin="0,1,10,0">
-                        <ui:SymbolIcon Symbol="Info24" FontSize="14" Foreground="{DynamicResource Brush.Accent}" HorizontalAlignment="Center" VerticalAlignment="Center" />
+                        <ui:SymbolIcon Symbol="Info24" FontSize="13" Foreground="{DynamicResource Brush.Accent}" HorizontalAlignment="Center" VerticalAlignment="Center" />
                     </Border>
                     <StackPanel Grid.Column="1">
-                        <TextBlock Text="One setup for every PC — Load unpacked" FontWeight="SemiBold" FontSize="12.5" Foreground="{DynamicResource Brush.Text}" TextWrapping="Wrap" />
-                        <TextBlock FontSize="12" Foreground="{DynamicResource Brush.TextDim}" TextWrapping="Wrap" Margin="0,3,0,0">
-                            <Run Text="The 3 steps below install the extension from a stable folder on your PC. It stays installed across reboots and updates — just click Reload on its card after a WDM update." />
+                        <TextBlock Text="One setup for every PC: Load unpacked" FontWeight="SemiBold" FontSize="11.5" Foreground="{DynamicResource Brush.Text}" TextWrapping="Wrap" />
+                        <TextBlock FontSize="11" Foreground="{DynamicResource Brush.TextDim}" TextWrapping="Wrap" Margin="0,3,0,0">
+                            <Run Text="The 3 steps below install the extension from a stable folder on your PC. It stays installed across reboots and updates: just click Reload on its card after a WDM update." />
                         </TextBlock>
                     </StackPanel>
                 </Grid>
             </Border>
 
             <!-- ========================================================= -->
-            <!-- CHROME / EDGE / CHROMIUM CARD — 3-step stepper           -->
+            <!-- CHROME / EDGE / CHROMIUM CARD - 3-step stepper           -->
             <!-- ========================================================= -->
             <Border Background="{DynamicResource Brush.Surface}" BorderBrush="{DynamicResource Brush.Border}" BorderThickness="1" CornerRadius="10" Padding="0" Margin="0,0,0,14">
                 <Border.Effect>
@@ -76,12 +76,12 @@
                     <Border Background="{DynamicResource Brush.SurfaceAlt}" CornerRadius="10,10,0,0" Padding="14,12" BorderBrush="{DynamicResource Brush.Border}" BorderThickness="0,0,0,1">
                         <DockPanel LastChildFill="True">
                             <Border DockPanel.Dock="Right" Background="{DynamicResource Brush.AccentSoft}" CornerRadius="4" Padding="7,3" VerticalAlignment="Center">
-                                <TextBlock Text="RECOMMENDED" FontSize="9" FontWeight="Bold" Foreground="{DynamicResource Brush.Accent}" />
+                                <TextBlock Text="RECOMMENDED" FontSize="8" FontWeight="Bold" Foreground="{DynamicResource Brush.Accent}" />
                             </Border>
                             <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                                <ui:SymbolIcon Symbol="Globe24" FontSize="16" Foreground="{DynamicResource Brush.Accent}" Margin="0,0,8,0" VerticalAlignment="Center" />
-                                <TextBlock Text="Chrome, Edge, Brave &amp; Opera" FontSize="13.5" FontWeight="SemiBold" Foreground="{DynamicResource Brush.Text}" VerticalAlignment="Center" />
-                                <TextBlock Text="·  3 steps · 20 sec" FontSize="11.5" Foreground="{DynamicResource Brush.TextMuted}" VerticalAlignment="Center" Margin="8,0,0,0" />
+                                <ui:SymbolIcon Symbol="Globe24" FontSize="15" Foreground="{DynamicResource Brush.Accent}" Margin="0,0,8,0" VerticalAlignment="Center" />
+                                <TextBlock Text="Chrome, Edge, Brave &amp; Opera" FontSize="12.5" FontWeight="SemiBold" Foreground="{DynamicResource Brush.Text}" VerticalAlignment="Center" />
+                                <TextBlock Text="·  3 steps" FontSize="10.5" Foreground="{DynamicResource Brush.TextMuted}" VerticalAlignment="Center" Margin="8,0,0,0" />
                             </StackPanel>
                         </DockPanel>
                     </Border>
@@ -89,6 +89,97 @@
                     <!-- Stepper body -->
                     <StackPanel Margin="16,14,16,16">
 
+                        <!-- Method toggle pills (same two ways as the setup guide) -->
+                        <!-- Method toggle pills: real radio buttons (Tab/arrow/Enter/Space operable);
+                             transparent template keeps the exact pill visuals; Click reuses the mode handlers. -->
+                        <Border Background="{DynamicResource Brush.SurfaceAlt}" BorderBrush="{DynamicResource Brush.Border}" BorderThickness="1" CornerRadius="20" Padding="3" Margin="0,0,0,14" HorizontalAlignment="Left">
+                            <StackPanel Orientation="Horizontal">
+                                <RadioButton x:Name="PillEasyBtn" GroupName="SetupMode" IsChecked="True"
+                                             Click="PillEasy_Click" Cursor="Hand"
+                                             ToolTip="1-Click (Easy) setup. Activate with Enter or Space."
+                                             AutomationProperties.Name="1-Click (Easy) setup">
+                                    <RadioButton.Template>
+                                        <ControlTemplate TargetType="RadioButton">
+                                            <ContentPresenter />
+                                        </ControlTemplate>
+                                    </RadioButton.Template>
+                                    <Border x:Name="PillEasy" CornerRadius="18" Padding="14,5">
+                                    <Border.Background>
+                                        <SolidColorBrush x:Name="PillEasyBg" Color="{StaticResource Color.Accent}" />
+                                    </Border.Background>
+                                    <StackPanel Orientation="Horizontal">
+                                        <TextBlock x:Name="PillEasyLabel" Text="1-Click (Easy)" FontSize="11" FontWeight="SemiBold" Foreground="White" VerticalAlignment="Center" />
+                                    </StackPanel>
+                                    </Border>
+                                </RadioButton>
+                                <RadioButton x:Name="PillManualBtn" GroupName="SetupMode" IsChecked="False"
+                                             Click="PillManual_Click" Cursor="Hand"
+                                             ToolTip="Manual setup. Activate with Enter or Space."
+                                             AutomationProperties.Name="Manual setup">
+                                    <RadioButton.Template>
+                                        <ControlTemplate TargetType="RadioButton">
+                                            <ContentPresenter />
+                                        </ControlTemplate>
+                                    </RadioButton.Template>
+                                    <Border x:Name="PillManual" CornerRadius="18" Padding="14,5">
+                                    <Border.Background>
+                                        <SolidColorBrush x:Name="PillManualBg" Color="Transparent" />
+                                    </Border.Background>
+                                    <StackPanel Orientation="Horizontal">
+                                        <TextBlock x:Name="PillManualLabel" Text="Manual" FontSize="11" FontWeight="SemiBold" Foreground="{DynamicResource Brush.TextDim}" VerticalAlignment="Center" />
+                                    </StackPanel>
+                                    </Border>
+                                </RadioButton>
+                            </StackPanel>
+                        </Border>
+
+                        <!-- ===== EASY PANEL (CRX Loader, no Developer mode) ===== -->
+                        <StackPanel x:Name="EasyPanel" Visibility="Visible" Margin="0,0,0,4">
+                            <Border Background="{DynamicResource Brush.AccentSoft}" BorderBrush="{DynamicResource Brush.AccentSoftStrong}" BorderThickness="1" CornerRadius="5" Padding="10,7" Margin="0,0,0,12">
+                                <StackPanel Orientation="Horizontal">
+                                    <TextBlock Text="✓" Foreground="{DynamicResource Brush.Accent}" FontWeight="Bold" FontSize="11" VerticalAlignment="Center" Margin="0,0,6,0" />
+                                    <TextBlock FontSize="11" Foreground="{DynamicResource Brush.Text}" TextWrapping="Wrap" VerticalAlignment="Center">
+                                        <Run FontWeight="SemiBold">No developer mode needed.</Run>
+                                        <Run>Uses CRX Loader: a Chrome Web Store extension that installs WDM in one click.</Run>
+                                    </TextBlock>
+                                </StackPanel>
+                            </Border>
+                            <Grid Margin="0,0,0,10">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="22" />
+                                    <ColumnDefinition Width="*" />
+                                </Grid.ColumnDefinitions>
+                                <Border Grid.Column="0" Width="18" Height="18" CornerRadius="9" Background="{DynamicResource Brush.Accent}" VerticalAlignment="Top" Margin="0,1,0,0">
+                                    <TextBlock Text="1" Foreground="White" FontSize="9" FontWeight="Bold" HorizontalAlignment="Center" VerticalAlignment="Center" Margin="0,-1,0,0" />
+                                </Border>
+                                <StackPanel Grid.Column="1" Margin="6,0,0,0">
+                                    <TextBlock Text="Install CRX Loader from Chrome Web Store" FontWeight="SemiBold" FontSize="11" Foreground="{DynamicResource Brush.Text}" />
+                                    <TextBlock Text="A lightweight helper extension that enables sideloading." FontSize="10" Foreground="{DynamicResource Brush.TextDim}" Margin="0,1,0,6" />
+                                    <ui:Button Content="Get CRX Loader  →" Appearance="Secondary" Height="30" Padding="14,0" HorizontalAlignment="Left" Click="InstallCrxLoader_Click" ToolTip="Opens the CRX Loader page on the Chrome Web Store" />
+                                </StackPanel>
+                            </Grid>
+                            <Grid Margin="0,0,0,4">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="22" />
+                                    <ColumnDefinition Width="*" />
+                                </Grid.ColumnDefinitions>
+                                <Border Grid.Column="0" Width="18" Height="18" CornerRadius="9" Background="{DynamicResource Brush.Success}" VerticalAlignment="Top" Margin="0,1,0,0">
+                                    <TextBlock Text="2" Foreground="White" FontSize="9" FontWeight="Bold" HorizontalAlignment="Center" VerticalAlignment="Center" Margin="0,-1,0,0" />
+                                </Border>
+                                <StackPanel Grid.Column="1" Margin="6,0,0,0">
+                                    <TextBlock Text="Install WDM Extension with 1 click" FontWeight="SemiBold" FontSize="11" Foreground="{DynamicResource Brush.Text}" />
+                                    <TextBlock Text="Click the button below: CRX Loader will install WDM automatically." FontSize="10" Foreground="{DynamicResource Brush.TextDim}" Margin="0,1,0,6" />
+                                    <ui:Button Appearance="Primary" Height="30" Padding="14,0" HorizontalAlignment="Left" Click="OneClickInstall_Click" ToolTip="Opens CRX Loader's install page with WDM pre-loaded">
+                                        <StackPanel Orientation="Horizontal">
+                                            <TextBlock Text="Install WDM Extension Now" FontSize="11" VerticalAlignment="Center" />
+                                        </StackPanel>
+                                    </ui:Button>
+                                </StackPanel>
+                            </Grid>
+                        </StackPanel>
+
+                        <!-- ===== MANUAL PANEL (Load unpacked) ===== -->
+                        <StackPanel x:Name="ManualPanel" Visibility="Collapsed">
                         <!-- STEP 1 -->
                         <Grid>
                             <Grid.ColumnDefinitions>
@@ -98,14 +189,14 @@
                             <!-- left rail -->
                             <StackPanel Grid.Column="0" HorizontalAlignment="Center">
                                 <Border Style="{StaticResource StepNumber}">
-                                    <TextBlock Text="1" Foreground="White" FontSize="12" FontWeight="Bold" HorizontalAlignment="Center" VerticalAlignment="Center" />
+                                    <TextBlock Text="1" Foreground="White" FontSize="11" FontWeight="Bold" HorizontalAlignment="Center" VerticalAlignment="Center" />
                                 </Border>
                                 <Rectangle Width="2" Height="18" Fill="{DynamicResource Brush.Border}" Margin="0,4,0,0" RadiusX="1" RadiusY="1" />
                             </StackPanel>
                             <!-- content -->
                             <StackPanel Grid.Column="1" Margin="0,0,0,0">
-                                <TextBlock Text="Open the Extensions page" FontWeight="SemiBold" FontSize="12.5" Foreground="{DynamicResource Brush.Text}" />
-                                <TextBlock Text="We'll open it in your default Chromium browser. Or type the address manually:" FontSize="12" Foreground="{DynamicResource Brush.TextDim}" TextWrapping="Wrap" Margin="0,2,0,8" />
+                                <TextBlock Text="Open the Extensions page" FontWeight="SemiBold" FontSize="11.5" Foreground="{DynamicResource Brush.Text}" />
+                                <TextBlock Text="We'll open it in your default Chromium browser. Or type the address manually:" FontSize="11" Foreground="{DynamicResource Brush.TextDim}" TextWrapping="Wrap" Margin="0,2,0,8" />
                                 <WrapPanel>
                                     <ui:Button x:Name="SetupChromeBtn"
                                                Appearance="Primary"
@@ -114,17 +205,17 @@
                                                ToolTip="Copies the extension path and opens the extensions page"
                                                Margin="0,0,8,6">
                                         <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                                            <ui:SymbolIcon Symbol="Open24" FontSize="13" Foreground="White" Margin="0,0,6,0" VerticalAlignment="Center" />
-                                            <TextBlock x:Name="ChromeBtnLabel" Text="Open Extensions Page" Foreground="White" FontSize="12" FontWeight="SemiBold" VerticalAlignment="Center" />
-                                            <TextBlock Text="  →" Foreground="White" FontSize="12" VerticalAlignment="Center" Margin="2,0,0,0" />
+                                            <ui:SymbolIcon Symbol="Open24" FontSize="12" Foreground="White" Margin="0,0,6,0" VerticalAlignment="Center" />
+                                            <TextBlock x:Name="ChromeBtnLabel" Text="Open Extensions Page" Foreground="White" FontSize="11" FontWeight="SemiBold" VerticalAlignment="Center" />
+                                            <TextBlock Text="  →" Foreground="White" FontSize="11" VerticalAlignment="Center" Margin="2,0,0,0" />
                                         </StackPanel>
                                     </ui:Button>
                                     <Border Background="{DynamicResource Brush.SurfaceAlt}" BorderBrush="{DynamicResource Brush.Border}" BorderThickness="1" CornerRadius="6" Padding="8,5" VerticalAlignment="Center" Margin="0,0,0,6">
                                         <StackPanel Orientation="Horizontal">
-                                            <TextBlock Text="or type:" FontSize="11" Foreground="{DynamicResource Brush.TextMuted}" VerticalAlignment="Center" Margin="0,0,6,0" />
-                                            <TextBlock Text="chrome://extensions" FontFamily="{StaticResource Font.Code}" FontSize="11" FontWeight="SemiBold" Foreground="{DynamicResource Brush.Text}" VerticalAlignment="Center" />
-                                            <TextBlock Text="  ·  " FontSize="11" Foreground="{DynamicResource Brush.TextMuted}" VerticalAlignment="Center" />
-                                            <TextBlock Text="edge://extensions" FontFamily="{StaticResource Font.Code}" FontSize="11" Foreground="{DynamicResource Brush.Text}" VerticalAlignment="Center" />
+                                            <TextBlock Text="or type:" FontSize="10" Foreground="{DynamicResource Brush.TextMuted}" VerticalAlignment="Center" Margin="0,0,6,0" />
+                                            <TextBlock Text="chrome://extensions" FontFamily="{StaticResource Font.Code}" FontSize="10" FontWeight="SemiBold" Foreground="{DynamicResource Brush.Text}" VerticalAlignment="Center" />
+                                            <TextBlock Text="  ·  " FontSize="10" Foreground="{DynamicResource Brush.TextMuted}" VerticalAlignment="Center" />
+                                            <TextBlock Text="edge://extensions" FontFamily="{StaticResource Font.Code}" FontSize="10" Foreground="{DynamicResource Brush.Text}" VerticalAlignment="Center" />
                                         </StackPanel>
                                     </Border>
                                 </WrapPanel>
@@ -139,22 +230,22 @@
                             </Grid.ColumnDefinitions>
                             <StackPanel Grid.Column="0" HorizontalAlignment="Center">
                                 <Border Style="{StaticResource StepNumber}">
-                                    <TextBlock Text="2" Foreground="White" FontSize="12" FontWeight="Bold" HorizontalAlignment="Center" VerticalAlignment="Center" />
+                                    <TextBlock Text="2" Foreground="White" FontSize="11" FontWeight="Bold" HorizontalAlignment="Center" VerticalAlignment="Center" />
                                 </Border>
                                 <Rectangle Width="2" Height="18" Fill="{DynamicResource Brush.Border}" Margin="0,4,0,0" RadiusX="1" RadiusY="1" />
                             </StackPanel>
                             <StackPanel Grid.Column="1">
-                                <TextBlock Text="Turn on Developer mode" FontWeight="SemiBold" FontSize="12.5" Foreground="{DynamicResource Brush.Text}" />
-                                <TextBlock Text="Top-right corner of the Extensions page — flip the toggle ON. This reveals the 'Load unpacked' button." FontSize="12" Foreground="{DynamicResource Brush.TextDim}" TextWrapping="Wrap" Margin="0,2,0,8" />
+                                <TextBlock Text="Turn on Developer mode" FontWeight="SemiBold" FontSize="11.5" Foreground="{DynamicResource Brush.Text}" />
+                                <TextBlock Text="Top-right corner of the Extensions page: flip the toggle ON. This reveals the 'Load unpacked' button." FontSize="11" Foreground="{DynamicResource Brush.TextDim}" TextWrapping="Wrap" Margin="0,2,0,8" />
                                 <!-- mini visual hint -->
                                 <Border Background="{DynamicResource Brush.SurfaceAlt}" BorderBrush="{DynamicResource Brush.Border}" BorderThickness="1" CornerRadius="6" Padding="10,8" HorizontalAlignment="Left">
                                     <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                                        <TextBlock Text="Developer mode" FontSize="11.5" Foreground="{DynamicResource Brush.Text}" VerticalAlignment="Center" Margin="0,0,10,0" />
+                                        <TextBlock Text="Developer mode" FontSize="10.5" Foreground="{DynamicResource Brush.Text}" VerticalAlignment="Center" Margin="0,0,10,0" />
                                         <Border Width="34" Height="18" CornerRadius="9" Background="{DynamicResource Brush.Accent}" VerticalAlignment="Center" Padding="1">
                                             <Ellipse Width="14" Height="14" Fill="White" HorizontalAlignment="Right" />
                                         </Border>
-                                        <TextBlock Text="ON" FontSize="10" FontWeight="Bold" Foreground="{DynamicResource Brush.Accent}" VerticalAlignment="Center" Margin="6,0,0,0" />
-                                        <TextBlock Text="↗  top-right" FontSize="10.5" Foreground="{DynamicResource Brush.TextMuted}" VerticalAlignment="Center" Margin="10,0,0,0" FontStyle="Italic" />
+                                        <TextBlock Text="ON" FontSize="9" FontWeight="Bold" Foreground="{DynamicResource Brush.Accent}" VerticalAlignment="Center" Margin="6,0,0,0" />
+                                        <TextBlock Text="↗  top-right" FontSize="9.5" Foreground="{DynamicResource Brush.TextMuted}" VerticalAlignment="Center" Margin="10,0,0,0" FontStyle="Italic" />
                                     </StackPanel>
                                 </Border>
                             </StackPanel>
@@ -168,12 +259,12 @@
                             </Grid.ColumnDefinitions>
                             <StackPanel Grid.Column="0" HorizontalAlignment="Center">
                                 <Border Style="{StaticResource StepNumberSuccess}">
-                                    <TextBlock Text="3" Foreground="White" FontSize="12" FontWeight="Bold" HorizontalAlignment="Center" VerticalAlignment="Center" />
+                                    <TextBlock Text="3" Foreground="White" FontSize="11" FontWeight="Bold" HorizontalAlignment="Center" VerticalAlignment="Center" />
                                 </Border>
                             </StackPanel>
                             <StackPanel Grid.Column="1">
-                                <TextBlock Text="Click 'Load unpacked' and select the WDM folder" FontWeight="SemiBold" FontSize="12.5" Foreground="{DynamicResource Brush.Text}" TextWrapping="Wrap" />
-                                <TextBlock Text="Click Load unpacked (top-left), paste the path below, then click Select Folder." FontSize="12" Foreground="{DynamicResource Brush.TextDim}" TextWrapping="Wrap" Margin="0,2,0,10" />
+                                <TextBlock Text="Click 'Load unpacked' and select the WDM folder" FontWeight="SemiBold" FontSize="11.5" Foreground="{DynamicResource Brush.Text}" TextWrapping="Wrap" />
+                                <TextBlock Text="Click Load unpacked (top-left), paste the path below, then click Select Folder." FontSize="11" Foreground="{DynamicResource Brush.TextDim}" TextWrapping="Wrap" Margin="0,2,0,10" />
 
                                 <!-- Path field -->
                                 <Border BorderBrush="{DynamicResource Brush.Border}" BorderThickness="1" CornerRadius="6" Background="{DynamicResource Brush.SurfaceAlt}" Padding="0" Margin="0,0,0,8">
@@ -186,22 +277,22 @@
                                         <TextBox x:Name="ExtensionPathBox" Grid.Column="0"
                                                  IsReadOnly="True"
                                                  BorderThickness="0" Background="Transparent"
-                                                 FontFamily="{StaticResource Font.Code}" FontSize="11.5"
+                                                 FontFamily="{StaticResource Font.Code}" FontSize="10.5"
                                                  Foreground="{DynamicResource Brush.Text}"
                                                  Padding="10,8"
                                                  VerticalContentAlignment="Center"
                                                  Text="%LOCALAPPDATA%\WDM\BrowserExtension"
-                                                 ToolTip="Extension folder path — click Copy to copy it" />
+                                                 ToolTip="Extension folder path: click Copy to copy it" />
                                         <Border Grid.Column="1" Width="1" Background="{DynamicResource Brush.Border}" Margin="0,6" />
                                         <StackPanel Grid.Column="2" Orientation="Horizontal" Margin="6,4">
                                             <ui:Button x:Name="CopyPathBtn" Appearance="Secondary" Height="26" Padding="10,0" Click="CopyPath_Click" ToolTip="Copy folder path to clipboard" Margin="0,0,6,0">
                                                 <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                                                    <ui:SymbolIcon Symbol="Copy24" FontSize="12" Foreground="{DynamicResource Brush.TextDim}" Margin="0,0,5,0" VerticalAlignment="Center" />
-                                                    <TextBlock x:Name="CopyPathLabel" Text="Copy" FontSize="11.5" FontWeight="SemiBold" VerticalAlignment="Center" />
+                                                    <ui:SymbolIcon Symbol="Copy24" FontSize="11" Foreground="{DynamicResource Brush.TextDim}" Margin="0,0,5,0" VerticalAlignment="Center" />
+                                                    <TextBlock x:Name="CopyPathLabel" Text="Copy" FontSize="10.5" FontWeight="SemiBold" VerticalAlignment="Center" />
                                                 </StackPanel>
                                             </ui:Button>
                                             <ui:Button Height="26" Padding="8,0" Appearance="Secondary" Click="OpenFolder_Click" ToolTip="Open extension folder in File Explorer">
-                                                <ui:SymbolIcon Symbol="FolderOpen24" FontSize="12" Foreground="{DynamicResource Brush.TextDim}" />
+                                                <ui:SymbolIcon Symbol="FolderOpen24" FontSize="11" Foreground="{DynamicResource Brush.TextDim}" />
                                             </ui:Button>
                                         </StackPanel>
                                     </Grid>
@@ -211,15 +302,15 @@
                                 <StackPanel>
                                     <StackPanel x:Name="ChromeStepsPanel" Visibility="Collapsed" Orientation="Horizontal" Margin="0,0,0,6">
                                         <Border Width="16" Height="16" CornerRadius="8" Background="{DynamicResource Brush.Success}" VerticalAlignment="Center" Margin="0,0,6,0">
-                                            <TextBlock Text="✓" Foreground="White" FontSize="10" FontWeight="Bold" HorizontalAlignment="Center" VerticalAlignment="Center" Margin="0,-1,0,0" />
+                                            <TextBlock Text="✓" Foreground="White" FontSize="9" FontWeight="Bold" HorizontalAlignment="Center" VerticalAlignment="Center" Margin="0,-1,0,0" />
                                         </Border>
-                                        <TextBlock Text="Path copied to clipboard — ready to paste in the folder picker." FontSize="11.5" Foreground="{DynamicResource Brush.Success}" FontWeight="SemiBold" VerticalAlignment="Center" TextWrapping="Wrap" />
+                                        <TextBlock Text="Path copied to clipboard: ready to paste in the folder picker." FontSize="10.5" Foreground="{DynamicResource Brush.Success}" FontWeight="SemiBold" VerticalAlignment="Center" TextWrapping="Wrap" />
                                     </StackPanel>
-                                    <TextBlock x:Name="FeedbackText" Text="" FontSize="11" Foreground="{DynamicResource Brush.TextMuted}" TextWrapping="Wrap" Margin="0,0,0,2" />
+                                    <TextBlock x:Name="FeedbackText" Text="" FontSize="10" Foreground="{DynamicResource Brush.TextMuted}" TextWrapping="Wrap" Margin="0,0,0,2" />
                                     <Border Background="#F0FDF4" BorderBrush="#BBF7D0" BorderThickness="1" CornerRadius="6" Padding="9,7" Margin="0,4,0,0">
                                         <StackPanel Orientation="Horizontal">
-                                            <TextBlock Text="💡" FontSize="11" VerticalAlignment="Center" Margin="0,0,6,0" />
-                                            <TextBlock FontSize="11" Foreground="#166534" TextWrapping="Wrap">
+                                            <TextBlock Text="💡" FontSize="10" VerticalAlignment="Center" Margin="0,0,6,0" />
+                                            <TextBlock FontSize="10" Foreground="#166534" TextWrapping="Wrap">
                                                 <Run Text="Tip:" FontWeight="SemiBold" />
                                                 <Run Text=" In the folder picker, click the address bar (or press Ctrl+L), paste the path, press Enter, then click Select Folder." />
                                             </TextBlock>
@@ -233,14 +324,15 @@
                         <Border Background="#F0FDF4" BorderBrush="#BBF7D0" BorderThickness="1" CornerRadius="6" Padding="10,8" Margin="36,14,0,0">
                             <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
                                 <Border Width="20" Height="20" CornerRadius="10" Background="{DynamicResource Brush.Success}" VerticalAlignment="Center" Margin="0,0,8,0">
-                                    <ui:SymbolIcon Symbol="Checkmark24" FontSize="11" Foreground="White" HorizontalAlignment="Center" VerticalAlignment="Center" />
+                                    <ui:SymbolIcon Symbol="Checkmark24" FontSize="10" Foreground="White" HorizontalAlignment="Center" VerticalAlignment="Center" />
                                 </Border>
                                 <StackPanel>
-                                    <TextBlock Text="How to know it worked?" FontWeight="SemiBold" FontSize="11.5" Foreground="#166534" />
-                                    <TextBlock Text="A new card 'WDM Download Catcher' appears on the Extensions page — make sure its toggle is ON (blue)." FontSize="11" Foreground="#15803D" TextWrapping="Wrap" Margin="0,1,0,0" />
+                                    <TextBlock Text="How to know it worked?" FontWeight="SemiBold" FontSize="10.5" Foreground="#166534" />
+                                    <TextBlock Text="A new card 'WDM Download Catcher' appears on the Extensions page: make sure its toggle is ON (blue)." FontSize="10" Foreground="#15803D" TextWrapping="Wrap" Margin="0,1,0,0" />
                                 </StackPanel>
                             </StackPanel>
                         </Border>
+                        </StackPanel><!-- ManualPanel -->
                     </StackPanel>
                 </StackPanel>
             </Border>
@@ -255,27 +347,27 @@
                 <StackPanel>
                     <Border Background="{DynamicResource Brush.SurfaceAlt}" CornerRadius="10,10,0,0" Padding="14,12" BorderBrush="{DynamicResource Brush.Border}" BorderThickness="0,0,0,1">
                         <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                            <ui:SymbolIcon Symbol="PuzzlePiece24" FontSize="16" Foreground="#FF6A00" Margin="0,0,8,0" VerticalAlignment="Center" />
-                            <TextBlock Text="Firefox" FontSize="13.5" FontWeight="SemiBold" Foreground="{DynamicResource Brush.Text}" VerticalAlignment="Center" />
-                            <TextBlock Text="·  1 click · signed by Mozilla" FontSize="11.5" Foreground="{DynamicResource Brush.TextMuted}" VerticalAlignment="Center" Margin="8,0,0,0" />
+                            <ui:SymbolIcon Symbol="PuzzlePiece24" FontSize="15" Foreground="#FF6A00" Margin="0,0,8,0" VerticalAlignment="Center" />
+                            <TextBlock Text="Firefox" FontSize="12.5" FontWeight="SemiBold" Foreground="{DynamicResource Brush.Text}" VerticalAlignment="Center" />
+                            <TextBlock Text="·  1 click · signed by Mozilla" FontSize="10.5" Foreground="{DynamicResource Brush.TextMuted}" VerticalAlignment="Center" Margin="8,0,0,0" />
                             <Border Background="#FFF7ED" BorderBrush="#FDBA74" BorderThickness="1" CornerRadius="4" Padding="6,2" Margin="10,0,0,0" VerticalAlignment="Center">
-                                <TextBlock Text="AMO" FontSize="9" FontWeight="Bold" Foreground="#C2410C" />
+                                <TextBlock Text="AMO" FontSize="8" FontWeight="Bold" Foreground="#C2410C" />
                             </Border>
                         </StackPanel>
                     </Border>
                     <StackPanel Margin="16,14,16,16">
-                        <TextBlock Text="No developer mode needed — install directly from Mozilla Add-ons." FontSize="12" Foreground="{DynamicResource Brush.TextDim}" TextWrapping="Wrap" Margin="0,0,0,10" />
+                        <TextBlock Text="No developer mode needed: install directly from Mozilla Add-ons." FontSize="11" Foreground="{DynamicResource Brush.TextDim}" TextWrapping="Wrap" Margin="0,0,0,10" />
                         <StackPanel Orientation="Horizontal">
                             <ui:Button Appearance="Primary" Height="32" Padding="14,0" Click="OpenFirefoxAddonPage_Click" ToolTip="Opens the official Mozilla Add-ons page">
                                 <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                                    <ui:SymbolIcon Symbol="ArrowDownload24" FontSize="13" Foreground="White" Margin="0,0,6,0" VerticalAlignment="Center" />
-                                    <TextBlock Text="Install Firefox Extension" Foreground="White" FontSize="12" FontWeight="SemiBold" VerticalAlignment="Center" />
-                                    <TextBlock Text="  →" Foreground="White" FontSize="12" VerticalAlignment="Center" Margin="2,0,0,0" />
+                                    <ui:SymbolIcon Symbol="ArrowDownload24" FontSize="12" Foreground="White" Margin="0,0,6,0" VerticalAlignment="Center" />
+                                    <TextBlock Text="Install Firefox Extension" Foreground="White" FontSize="11" FontWeight="SemiBold" VerticalAlignment="Center" />
+                                    <TextBlock Text="  →" Foreground="White" FontSize="11" VerticalAlignment="Center" Margin="2,0,0,0" />
                                 </StackPanel>
                             </ui:Button>
-                            <TextBlock Text="→  Add to Firefox  →  Add" FontSize="11.5" Foreground="{DynamicResource Brush.TextMuted}" VerticalAlignment="Center" Margin="12,0,0,0" FontStyle="Italic" />
+                            <TextBlock Text="→  Add to Firefox  →  Add" FontSize="10.5" Foreground="{DynamicResource Brush.TextMuted}" VerticalAlignment="Center" Margin="12,0,0,0" FontStyle="Italic" />
                         </StackPanel>
-                        <TextBlock Text="After installing, pin WDM for quick access via the puzzle icon → gear → Pin to toolbar." FontSize="11" Foreground="{DynamicResource Brush.TextMuted}" TextWrapping="Wrap" Margin="0,10,0,0" />
+                        <TextBlock Text="After installing, pin WDM for quick access via the puzzle icon → gear → Pin to toolbar." FontSize="10" Foreground="{DynamicResource Brush.TextMuted}" TextWrapping="Wrap" Margin="0,10,0,0" />
                     </StackPanel>
                 </StackPanel>
             </Border>
@@ -287,13 +379,13 @@
                 <DockPanel LastChildFill="True">
                     <ui:Button DockPanel.Dock="Right" Appearance="Secondary" Click="OpenMoreHelp_Click" Height="32" Padding="14,0" VerticalAlignment="Center">
                         <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                            <TextBlock Text="More Help" FontSize="12" FontWeight="SemiBold" VerticalAlignment="Center" Margin="0,0,5,0" />
-                            <TextBlock Text="↗" FontSize="12" FontWeight="Bold" Foreground="{DynamicResource Brush.Accent}" VerticalAlignment="Center" />
+                            <TextBlock Text="More Help" FontSize="11" FontWeight="SemiBold" VerticalAlignment="Center" Margin="0,0,5,0" />
+                            <TextBlock Text="↗" FontSize="11" FontWeight="Bold" Foreground="{DynamicResource Brush.Accent}" VerticalAlignment="Center" />
                         </StackPanel>
                     </ui:Button>
                     <StackPanel VerticalAlignment="Center" Margin="0,0,12,0">
-                        <TextBlock Text="Still stuck?  Illustrated guide with screenshots" FontWeight="SemiBold" FontSize="12.5" Foreground="{DynamicResource Brush.Text}" />
-                        <TextBlock Text="Browser security sandboxes, troubleshooting, and uninstall steps — opens offline if you're offline." FontSize="11.5" Foreground="{DynamicResource Brush.TextMuted}" Margin="0,1,0,0" TextWrapping="Wrap" />
+                        <TextBlock Text="Still stuck?  Illustrated guide with screenshots" FontWeight="SemiBold" FontSize="11.5" Foreground="{DynamicResource Brush.Text}" />
+                        <TextBlock Text="Browser security sandboxes, troubleshooting, and uninstall steps: opens offline if you're offline." FontSize="10.5" Foreground="{DynamicResource Brush.TextMuted}" Margin="0,1,0,0" TextWrapping="Wrap" />
                     </StackPanel>
                 </DockPanel>
             </Border>

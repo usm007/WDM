@@ -30,10 +30,22 @@ internal static class Program
         }
 
         int exit = 0;
-        AsyncContext.Run(async delegate
+        try
         {
-            exit = await RunAsync(pipeName, profileDir);
-        });
+            AsyncContext.Run(async delegate
+            {
+                exit = await RunAsync(pipeName, profileDir);
+            });
+        }
+        catch (Exception ex)
+        {
+            Log($"FATAL: Main unhandled exception: {ex}");
+            exit = 3;
+        }
+        finally
+        {
+            Environment.Exit(exit);
+        }
         return exit;
     }
 
@@ -83,25 +95,45 @@ internal static class Program
         catch (Exception ex)
         {
             Log($"FATAL: no WDM connection: {ex.GetType().Name}");
-            Cef.Shutdown();
+            try { Cef.Shutdown(); } catch { }
+            Environment.Exit(3);
             return 3;
         }
 
         var host = new HostSession(server, profileDir);
+        int exitCode = 0;
         try
         {
-            return await host.ServeAsync();
+            exitCode = await host.ServeAsync();
+            return exitCode;
         }
         catch (Exception ex)
         {
             Log($"FATAL: serve loop died: {ex}");
-            return 3;
+            exitCode = 3;
+            return exitCode;
         }
         finally
         {
             try { host.Dispose(); } catch { }
-            Cef.Shutdown();
+            // Backstop: if Cef.Shutdown hangs or deadlocks, forcefully exit after 5s.
+            var watchdog = new Thread(() =>
+            {
+                Thread.Sleep(5000);
+                Log("watchdog forcing exit after Cef.Shutdown timeout");
+                try { Process.GetCurrentProcess().Kill(); } catch { }
+                Environment.Exit(exitCode);
+            })
+            {
+                IsBackground = true,
+                Name = "ShutdownWatchdog"
+            };
+            watchdog.Start();
+
+            try { Cef.Shutdown(); } catch { }
             Log("shutdown complete");
+            try { Process.GetCurrentProcess().Kill(); } catch { }
+            Environment.Exit(exitCode);
         }
     }
 
@@ -177,8 +209,8 @@ internal static class Program
                         new { state = _browser is null ? "Idle" : _crashed ? "Crashed" : "Open" });
                     return false;
                 case BrowserProtocol.Shutdown:
-                    CloseBrowser();
                     await SendAsync(BrowserProtocol.Bye, null, new { reason = "shutdown" });
+                    CloseBrowser();
                     return true;
                 default:
                     await SendAsync(BrowserProtocol.Error, msg.SessionId,
@@ -206,6 +238,7 @@ internal static class Program
             int navTimeoutSec = PayloadInt(msg, "navigationTimeoutSec", 20);
             int discoverySec = PayloadInt(msg, "discoveryTimeoutSec", 25);
             int maxEvents = PayloadInt(msg, "maxEvents", 10_000);
+            bool triggerAutoplay = PayloadBool(msg, "triggerAutoplay", true);
 
             await SendAsync(BrowserProtocol.PageState, _sessionId, new { state = "Navigating", url });
 
@@ -269,9 +302,15 @@ internal static class Program
 
             // Discovery window: stream event batches until the budget expires.
             var deadline = DateTimeOffset.UtcNow.AddSeconds(Math.Clamp(discoverySec, 5, 120));
+            int tick = 0;
             while (DateTimeOffset.UtcNow < deadline && !_crashed)
             {
                 await Task.Delay(500);
+                if (triggerAutoplay && (tick == 2 || tick == 6 || tick == 12))
+                {
+                    TriggerAutoplayAcrossFrames();
+                }
+                tick++;
                 await FlushEventsAsync();
             }
             await FlushEventsAsync();
@@ -474,7 +513,18 @@ internal static class Program
                 Log($"encode failed for {type}: {ex.Message}");
                 return Task.CompletedTask;
             }
-            return BrowserMessage.WriteFrameAsync(_pipe, frame, CancellationToken.None);
+            // Sync write on the sync-opened handle (matches read side).
+            try
+            {
+                _pipe.Write(frame, 0, frame.Length);
+                _pipe.Flush();
+            }
+            catch (Exception ex)
+            {
+                Log($"send {type} failed: {ex.GetType().Name}");
+                throw;
+            }
+            return Task.CompletedTask;
         }
 
         private static string? PayloadString(BrowserMessage.Envelope msg, string name)
@@ -499,6 +549,106 @@ internal static class Program
             }
             catch { }
             return fallback;
+        }
+
+        private static bool PayloadBool(BrowserMessage.Envelope msg, string name, bool fallback)
+        {
+            try
+            {
+                if (msg.Payload is JsonElement p && p.TryGetProperty(name, out var v))
+                {
+                    if (v.ValueKind == JsonValueKind.True) return true;
+                    if (v.ValueKind == JsonValueKind.False) return false;
+                }
+            }
+            catch { }
+            return fallback;
+        }
+
+        private const string AutoplayScript = @"
+(function() {
+    try {
+        // 1. Unmute and play all <video> elements
+        var videos = document.querySelectorAll('video');
+        for (var i = 0; i < videos.length; i++) {
+            try {
+                videos[i].muted = true;
+                var p = videos[i].play();
+                if (p && typeof p.catch === 'function') p.catch(function(){});
+            } catch(e) {}
+        }
+
+        // 2. Vidstack & custom elements support
+        var players = document.querySelectorAll('media-player, [data-media-player]');
+        for (var i = 0; i < players.length; i++) {
+            try {
+                if (typeof players[i].play === 'function') players[i].play();
+                var btn = players[i].querySelector('media-play-button, .vds-play-button');
+                if (btn) btn.click();
+                if (players[i].shadowRoot) {
+                    var sbtn = players[i].shadowRoot.querySelector('media-play-button, .vds-play-button, button');
+                    if (sbtn) sbtn.click();
+                }
+            } catch(e) {}
+        }
+
+        // 3. Click common play buttons and overlays
+        var selectors = [
+            'button[aria-label*=""Play"" i]',
+            'button[title*=""Play"" i]',
+            '.vds-play-button',
+            '.play-button',
+            '.play-btn',
+            '.jw-display-icon-display',
+            '.jw-icon-playback',
+            '.vjs-big-play-button',
+            '.plyr__control--overlaid',
+            '[class*=""play-button"" i]',
+            '[class*=""big-play"" i]',
+            '[class*=""play_icon"" i]',
+            '[class*=""playBtn"" i]'
+        ];
+        for (var i = 0; i < selectors.length; i++) {
+            var el = document.querySelector(selectors[i]);
+            if (el && el.offsetParent !== null) {
+                try { el.click(); } catch(e) {}
+            }
+        }
+
+        // 4. Click video player container only if it contains a player or video
+        var containers = document.querySelectorAll('#player, [data-player], .player-container');
+        for (var i = 0; i < containers.length; i++) {
+            if (containers[i].querySelector('video, media-player, iframe')) {
+                try { containers[i].click(); } catch(e) {}
+            }
+        }
+    } catch(e) {}
+})();";
+
+        private void TriggerAutoplayAcrossFrames()
+        {
+            if (_browser is null || _crashed)
+                return;
+            try
+            {
+                var browser = _browser.GetBrowser();
+                if (browser is null)
+                    return;
+                var frameIds = browser.GetFrameIdentifiers();
+                foreach (string id in frameIds)
+                {
+                    try
+                    {
+                        var frame = browser.GetFrameByIdentifier(id);
+                        if (frame != null && frame.IsValid)
+                        {
+                            frame.ExecuteJavaScriptAsync(AutoplayScript);
+                        }
+                    }
+                    catch { }
+                }
+            }
+            catch { }
         }
     }
 }

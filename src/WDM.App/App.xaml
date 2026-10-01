@@ -9,6 +9,7 @@
                 <ui:ControlsDictionary />
                 <ResourceDictionary x:Name="PaletteDictionary" Source="Themes/Palette.Light.xaml" />
                 <ResourceDictionary x:Name="ThemeDictionary" Source="Themes/Theme.xaml" />
+                <ResourceDictionary Source="Themes/LinkPlus.xaml" />
             </ResourceDictionary.MergedDictionaries>
         </ResourceDictionary>
     </Application.Resources>

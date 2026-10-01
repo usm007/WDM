@@ -32,12 +32,29 @@ public partial class App : Application
         SilentFlags.Any(f => string.Equals(f, arg.Trim(), StringComparison.OrdinalIgnoreCase));
 
     /// <summary>True when the args carry an actionable URL (browser "download with WDM"
-    /// handoff). Bare-flag launches (e.g. boot /minimized) must stay silent.</summary>
+    /// handoff) or an existing local file (Explorer verb). Bare-flag launches
+    /// (e.g. boot /minimized) must stay silent.</summary>
     public static bool ArgsContainUrl(string[]? args) =>
-        args is not null && args.Any(a =>
-            !string.IsNullOrWhiteSpace(a) &&
-            (a.StartsWith("http://", StringComparison.OrdinalIgnoreCase) ||
-             a.StartsWith("https://", StringComparison.OrdinalIgnoreCase)));
+        args is not null && args.Any(a => FirstDownloadLink(a) is not null);
+
+    /// <summary>First actionable link in args: http(s) URL as-is, or an
+    /// existing local file as a file:// URL. Null when none.</summary>
+    public static string? FirstDownloadLink(string? arg)
+    {
+        if (string.IsNullOrWhiteSpace(arg))
+            return null;
+        string a = arg.Trim().Trim('"');
+        if (a.StartsWith("http://", StringComparison.OrdinalIgnoreCase) ||
+            a.StartsWith("https://", StringComparison.OrdinalIgnoreCase))
+            return a;
+        try
+        {
+            if (File.Exists(a))
+                return new Uri(Path.GetFullPath(a)).AbsoluteUri;
+        }
+        catch { }
+        return null;
+    }
 
     private static Mutex? _singleInstanceMutex;
     private static bool _ownsMutex;
@@ -175,17 +192,24 @@ public partial class App : Application
         DownloadEngine.MegaSidProvider = () => CaptureServer.TryGetMegaSid(out string? sid) ? sid : null;
         ThemeService.Apply(AppTheme.Default, settings.UseDarkTheme);
 
-        // Never show welcome after an update — only on true first-ever run.
-        // In test mode, suppress modal welcome unless --welcome argument is passed.
+        // Run 1 (true first-ever run): open the hosted extension setup guide
+        // in the default browser. Run 2: show the in-app Tips window
+        // (repurposed WelcomeWindow: YouTube engine + usage tips, no browser
+        // integration). Never launch a browser in test mode.
         bool isFirstEverRun = InstallState.IsFirstEverRun(settings);
         bool shouldShowWelcome = isFirstEverRun && !StartMinimized && (!isTestMode || e.Args.Contains("--welcome"));
+        // Second-run tips: anyone past first run who hasn't seen the tips yet.
+        // Computed up-front so the first-run save below can't re-trigger it.
+        bool shouldShowTips = !isFirstEverRun && !settings.HasSeenTipsWindow && !StartMinimized && (!isTestMode || e.Args.Contains("--welcome"));
         if (shouldShowWelcome)
         {
-            ShutdownMode = ShutdownMode.OnExplicitShutdown;
-            var welcome = new WelcomeWindow(settings);
-            welcome.ShowDialog();
+            if (!isTestMode)
+            {
+                try { BrowserIntegration.OpenExtensionGuideOnline(); }
+                catch (Exception ex) { LogException(ex); }
+            }
+            settings.HasPromptedExtensionInstall = true;
             TaskStore.SaveSettings(settings);
-            ShutdownMode = ShutdownMode.OnLastWindowClose;
         }
         else if (!settings.HasPromptedExtensionInstall && !isFirstEverRun)
         {
@@ -207,6 +231,15 @@ public partial class App : Application
         if (!StartMinimized)
         {
             mainWindow.Show();
+            if (shouldShowTips)
+            {
+                try
+                {
+                    var tips = new WelcomeWindow(settings) { Owner = mainWindow };
+                    tips.ShowDialog();
+                }
+                catch (Exception ex) { LogException(ex); }
+            }
         }
         else
         {

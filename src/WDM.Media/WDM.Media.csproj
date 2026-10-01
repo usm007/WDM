@@ -8,6 +8,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\WDM.Core\WDM.Core.csproj" />
+    <ProjectReference Include="..\WDM.Browser\WDM.Browser.csproj" />
   </ItemGroup>
 
   <ItemGroup>

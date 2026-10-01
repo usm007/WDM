@@ -52,7 +52,7 @@ public sealed class Round6Tests : IClassFixture<Round6Tests.BatchFixture>, IDisp
     {
         using var http = new HttpClient();
         using var req = new HttpRequestMessage(HttpMethod.Post, $"http://127.0.0.1:{BatchFixture.TestPort}{path}");
-        req.Headers.Add("Origin", "chrome-extension://test");
+        req.Headers.Add("Origin", "chrome-extension://jehagbjolooaohcbmlhegpmjeaakonof");
         req.Content = new StringContent(json, Encoding.UTF8, "application/json");
         using var resp = await http.SendAsync(req);
         return (resp.StatusCode, await resp.Content.ReadAsStringAsync());

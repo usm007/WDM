@@ -1,4 +1,3 @@
-using System.Diagnostics;
 using System.Windows;
 
 namespace WDM;
@@ -21,13 +20,8 @@ public partial class WelcomeWindow : Wpf.Ui.Controls.FluentWindow
 
         if (_settings.YouTubeBrowserCookies == "wdm-native")
         {
-            YouTubeBtn.Content = "Signed in — Click to re-authenticate...";
+            YouTubeBtn.Content = "Signed in: Click to re-authenticate...";
         }
-
-        Loaded += (_, __) =>
-        {
-            try { string p = Services.BrowserIntegration.DeployExtension(); if (ExtensionPathBox != null) ExtensionPathBox.Text = p; } catch { }
-        };
     }
 
     protected override void OnSourceInitialized(System.EventArgs e)
@@ -36,67 +30,7 @@ public partial class WelcomeWindow : Wpf.Ui.Controls.FluentWindow
         WDM.Services.ThemeService.ApplyTitleBar(this);
     }
 
-    private void FirefoxBtn_Click(object sender, RoutedEventArgs e)
-    {
-        try
-        {
-            Services.BrowserIntegration.OpenFirefoxAddonPage();
-        }
-        catch (System.Exception ex)
-        {
-            App.LogException(ex);
-            Services.ErrorDialogs.ShowWarning(this, "Couldn't open page", "The browser page couldn't be opened. Please try again.");
-        }
-    }
-
-    private void SetupChrome_Click(object sender, RoutedEventArgs e)
-    {
-        string path;
-        try
-        {
-            path = Services.BrowserIntegration.DeployExtension();
-            Clipboard.SetText(path);
-            if (ExtensionPathBox != null) ExtensionPathBox.Text = path;
-        }
-        catch (Exception ex)
-        {
-            App.LogException(ex);
-            CopyFeedbackText.Text = "The extension folder couldn't be prepared. Please try again.";
-            return;
-        }
-
-        try { Services.BrowserIntegration.OpenExtensionsPage(); }
-        catch (Exception ex)
-        {
-            App.LogException(ex);
-            CopyFeedbackText.Text = "The extensions page couldn't be opened. Please open it by hand in your browser.";
-        }
-
-        ChromeStepsPanel.Visibility = System.Windows.Visibility.Visible;
-        if (CopyPathLabel != null) CopyPathLabel.Text = "Copied ✓";
-        SetupChromeBtn.Content = "Open Extensions Page Again  →";
-    }
-
-    private void CopyPath_Click(object sender, RoutedEventArgs e)
-    {
-        string path;
-        try { path = Services.BrowserIntegration.DeployExtension(); if (ExtensionPathBox != null) ExtensionPathBox.Text = path; }
-        catch { path = Services.BrowserIntegration.DeployDir; }
-        try
-        {
-            Clipboard.SetText(path);
-            ChromeStepsPanel.Visibility = System.Windows.Visibility.Visible;
-            if (CopyPathLabel != null) CopyPathLabel.Text = "Copied ✓";
-            var timer = new System.Windows.Threading.DispatcherTimer { Interval = TimeSpan.FromSeconds(2.5) };
-            timer.Tick += (_, __) => { timer.Stop(); if (CopyPathLabel != null) CopyPathLabel.Text = "Copy"; };
-            timer.Start();
-        }
-        catch (Exception ex)
-        {
-            App.LogException(ex);
-            CopyFeedbackText.Text = "Couldn't copy the path — please copy it by hand from the box above.";
-        }
-    }
+    // ─── YouTube / Media Engine ─────────────────────────────────────────────
 
     private void YouTubeBtn_Click(object sender, RoutedEventArgs e)
     {
@@ -105,7 +39,7 @@ public partial class WelcomeWindow : Wpf.Ui.Controls.FluentWindow
             var window = new YouTubeSignInWindow { Owner = this };
             if (window.ShowDialog() == true)
             {
-                YouTubeBtn.Content = "Signed in — Click to re-authenticate...";
+                YouTubeBtn.Content = "Signed in: Click to re-authenticate...";
                 _settings.YouTubeBrowserCookies = "wdm-native";
                 MessageBox.Show(this, "Successfully signed in to YouTube natively and exported your session. Private and age-restricted videos should now download normally.", "Sign-In Complete", MessageBoxButton.OK, MessageBoxImage.Information);
             }
@@ -158,9 +92,25 @@ public partial class WelcomeWindow : Wpf.Ui.Controls.FluentWindow
         }
     }
 
+    protected override void OnClosed(System.EventArgs e)
+    {
+        // X-close / Alt+F4 counts as seen too: tips show exactly once.
+        try
+        {
+            if (!_settings.HasSeenTipsWindow)
+            {
+                _settings.HasSeenTipsWindow = true;
+                Services.TaskStore.SaveSettings(_settings);
+            }
+        }
+        catch { }
+        base.OnClosed(e);
+    }
+
     private void FinishBtn_Click(object sender, RoutedEventArgs e)
     {
-        _settings.HasPromptedExtensionInstall = true;
+        _settings.HasSeenTipsWindow = true;
+        Services.TaskStore.SaveSettings(_settings);
         Close();
     }
 }

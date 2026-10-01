@@ -85,7 +85,7 @@ public partial class YouTubeSignInWindow : Wpf.Ui.Controls.FluentWindow
         try
         {
             var core = _webView?.CoreWebView2;
-            Title = "WDM — " + (string.IsNullOrWhiteSpace(core?.DocumentTitle) ? "Sign in with YouTube" : core.DocumentTitle);
+            Title = "WDM: " + (string.IsNullOrWhiteSpace(core?.DocumentTitle) ? "Sign in with YouTube" : core.DocumentTitle);
         }
         catch { }
     }
@@ -137,7 +137,7 @@ public partial class YouTubeSignInWindow : Wpf.Ui.Controls.FluentWindow
             var (path, count, signedIn) = await YouTubeCookieExporter.ExportAsync(_webView.CoreWebView2.CookieManager);
             if (!signedIn)
             {
-                StatusText.Text = "You're not signed in yet — sign in with your Google account inside this window first.";
+                StatusText.Text = "You're not signed in yet: sign in with your Google account inside this window first.";
                 return;
             }
 

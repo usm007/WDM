@@ -127,22 +127,44 @@
       if (!vid) return;
 
       const url = `https://www.youtube.com/watch?v=${vid}`;
-      webext.runtime.sendMessage({
-        action: "download",
-        payload: {
-          url,
-          fileName: null,
-          referer: location.href,
-          headers: { Referer: location.href },
+      const restore = () => {
+        span.textContent = "WDM Download";
+        btn.style.opacity = "1";
+      };
+      const report = (res) => {
+        if (res && res.success) {
+          span.textContent = "Sent to WDM!";
+        } else if (res && (res.status === 401 || (res.error && /unauthor|token/i.test(String(res.error))))) {
+          span.textContent = "Reload extension to reconnect";
+        } else if (res && (res.error === "unreachable" || res.error === "timeout" || res.error === "no-response")) {
+          span.textContent = "WDM app unreachable?";
+        } else {
+          span.textContent = "Send failed";
         }
-      });
+        try { if (!res || !res.success) console.warn("[WDM] YouTube handoff failed:", res); } catch {}
+        btn.style.opacity = "0.7";
+        setTimeout(restore, 3000);
+      };
 
       span.textContent = "Opening in WDM…";
       btn.style.opacity = "0.7";
-      setTimeout(() => {
-        span.textContent = "WDM Download";
-        btn.style.opacity = "1";
-      }, 2000);
+      try {
+        let settled = false;
+        const done = (res) => { if (!settled) { settled = true; report(res || {}); } };
+        const ret = webext.runtime.sendMessage({
+          action: "download",
+          payload: {
+            url,
+            fileName: null,
+            referer: location.href,
+            headers: { Referer: location.href },
+          }
+        }, done);
+        if (ret && typeof ret.then === "function") ret.then(done, () => done({ success: false, error: "no-response" }));
+        setTimeout(() => done({ success: false, error: "timeout" }), 10000);
+      } catch (err) {
+        report({ success: false, error: (err && err.message) || "send-failed" });
+      }
     });
 
     bar.appendChild(btn);

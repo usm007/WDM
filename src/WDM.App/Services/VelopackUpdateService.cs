@@ -63,7 +63,7 @@ public static class VelopackUpdateService
 
     /// <summary>True when the running copy bundles the .NET runtime (self-contained
     /// publish). Framework-dependent copies have no coreclr/System.Private.CoreLib
-    /// next to the exe — those come from the shared runtime instead.</summary>
+    /// next to the exe: those come from the shared runtime instead.</summary>
     public static bool IsSelfContainedInstall
     {
         get
@@ -94,7 +94,7 @@ public static class VelopackUpdateService
             throw new InvalidOperationException(
                 $"Update feed mismatch: installed WDM is self-contained (.NET bundled) but the feed " +
                 $"offers '{full.FileName}' ({full.Size / 1048576} MB, framework-only, no .NET). " +
-                $"Refusing to apply — download the full setup from the release page instead. " +
+                $"Refusing to apply: download the full setup from the release page instead. " +
                 $"See wdm_error.log for details.");
         }
     }
@@ -125,7 +125,7 @@ public static class VelopackUpdateService
         private static readonly HttpClient _http = new HttpClient { Timeout = TimeSpan.FromSeconds(30) };
         // File payloads (full nupkg ~70MB) must not share the 30s metadata
         // timeout: a slow link reliably exceeded it mid-download. No global
-        // timeout here — cancellation comes from the per-call token below.
+        // timeout here: cancellation comes from the per-call token below.
         private static readonly HttpClient _fileHttp = new HttpClient { Timeout = Timeout.InfiniteTimeSpan };
         static SharedHttpDownloader()
         {
@@ -135,7 +135,7 @@ public static class VelopackUpdateService
             _fileHttp.DefaultRequestHeaders.Accept.ParseAdd("application/octet-stream");
         }
         // Velopack feed packages are tens of MB; anything past this is a
-        // malicious/oversized feed — abort instead of filling the disk.
+        // malicious/oversized feed: abort instead of filling the disk.
         private const long MaxPackageBytes = 500L * 1024 * 1024;
         public async Task DownloadFile(string url, string targetFile, Action<int> progress, IDictionary<string, string>? headers, double timeout, CancellationToken cancelToken)
         {
@@ -150,7 +150,7 @@ public static class VelopackUpdateService
             resp.EnsureSuccessStatusCode();
             long total = resp.Content.Headers.ContentLength ?? -1;
             if (total > MaxPackageBytes)
-                throw new InvalidOperationException($"Update package too large ({total} bytes) — refusing download.");
+                throw new InvalidOperationException($"Update package too large ({total} bytes): refusing download.");
             using var src = await resp.Content.ReadAsStreamAsync(ct).ConfigureAwait(false);
             Directory.CreateDirectory(Path.GetDirectoryName(targetFile)!);
             using var dst = System.IO.File.Create(targetFile);
@@ -162,7 +162,7 @@ public static class VelopackUpdateService
                 if (n <= 0) break;
                 read += n;
                 if (read > MaxPackageBytes)
-                    throw new InvalidOperationException("Update package exceeded size limit — refusing download.");
+                    throw new InvalidOperationException("Update package exceeded size limit: refusing download.");
                 await dst.WriteAsync(buf.AsMemory(0, n), ct).ConfigureAwait(false);
                 if (total > 0) progress?.Invoke((int)(read * 100 / total));
             }
@@ -183,7 +183,7 @@ public static class VelopackUpdateService
             while ((n = await src.ReadAsync(buf, timeoutCts.Token).ConfigureAwait(false)) > 0)
             {
                 if (ms.Length + n > MaxFeedBytes)
-                    throw new InvalidOperationException("Update feed response too large — refusing download.");
+                    throw new InvalidOperationException("Update feed response too large: refusing download.");
                 ms.Write(buf, 0, n);
             }
             return ms.ToArray();
@@ -224,7 +224,7 @@ public static class VelopackUpdateService
     public static string FormatSizeMb(long bytes) => $"{bytes / 1048576.0:F2} MB";
 
     /// <summary>Short label for UI: "Delta (~X MB)" or "Full (~Y MB, .NET included)".
-    /// Full nupkg is self-contained (bundles .NET) — never the small framework-only package.</summary>
+    /// Full nupkg is self-contained (bundles .NET): never the small framework-only package.</summary>
     public static string DescribeUpdate(UpdateInfo update)
     {
         try
@@ -265,7 +265,7 @@ public static class VelopackUpdateService
             if (!mgr.IsInstalled)
                 return null;
 
-            // Velopack's check has no CancellationToken overload — run it on
+            // Velopack's check has no CancellationToken overload: run it on
             // the pool so the caller's token can at least abort the wait
             // instead of hanging the UI shutdown path.
             ct.ThrowIfCancellationRequested();
@@ -281,7 +281,7 @@ public static class VelopackUpdateService
     }
 
     /// <summary>
-    /// Fallback check that works even when IsInstalled check is flaky — uses TestVelopackLocator to query GitHub directly.
+    /// Fallback check that works even when IsInstalled check is flaky: uses TestVelopackLocator to query GitHub directly.
     /// Allows Velopack-installed users to find delta even if local locator fails.
     /// </summary>
     public static async Task<UpdateInfo?> CheckForUpdatesAnyAsync(CancellationToken ct = default)
@@ -291,7 +291,7 @@ public static class VelopackUpdateService
         if (normal != null) return normal;
 
         // Fallback: use Test locator with current assembly version to query GitHub feed directly.
-        // Velopack versions are 3-part (2.7.2) while the assembly is 4-part (2.7.2.0) — normalize.
+        // Velopack versions are 3-part (2.7.2) while the assembly is 4-part (2.7.2.0): normalize.
         // Build can be -1 (undefined) for 2-part versions; Revision is dropped (feed is 3-part).
         var asm = UpdateChecker.CurrentVersion;
         int build = asm.Build < 0 ? 0 : asm.Build;
@@ -327,7 +327,7 @@ public static class VelopackUpdateService
     {
         var mgr = CreateManager();
         if (!mgr.IsInstalled)
-            throw new InvalidOperationException("Velopack is not installed — cannot download delta updates. Use full installer fallback.");
+            throw new InvalidOperationException("Velopack is not installed: cannot download delta updates. Use full installer fallback.");
 
         ThrowIfFeedFlavorMismatch(update);
         await mgr.DownloadUpdatesAsync(update, onProgress, ct).ConfigureAwait(false);

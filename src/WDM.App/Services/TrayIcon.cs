@@ -1,11 +1,8 @@
-using WDM.Models;
-
 namespace WDM.Services;
 
 /// <summary>
 /// Thin wrapper around the WinForms NotifyIcon so the rest of the app stays WPF-only.
-/// The tray icon stays the normal WDM icon; while a download runs the tooltip shows
-/// download percentage and network speed.
+/// Idle tooltip is just "WDM"; while downloads run it shows count + average percent.
 /// </summary>
 public sealed class TrayIcon : IDisposable
 {
@@ -34,7 +31,7 @@ public sealed class TrayIcon : IDisposable
         _icon = new System.Windows.Forms.NotifyIcon
         {
             Icon = AppIcon.Tray ?? RuntimeFallbackIcon(),
-            Text = "WDM — Download Manager",
+            Text = "WDM",
             Visible = true,
             ContextMenuStrip = _menu,
         };
@@ -58,31 +55,20 @@ public sealed class TrayIcon : IDisposable
     public event Action? ResumeAllRequested;
     public event Action? ExitRequested;
 
-    /// <summary>
-    /// Active download state: the floating pill (docked to the right edge) is the progress
-    /// indicator, so the native tooltip is suppressed during the download.
-    /// </summary>
-    public void SetProgress(int percent, string speedText, string fileName, int queued = 0, int paused = 0)
+    /// <summary>Active downloads: "1 download – 42%" or "N downloads – 42%" (average).</summary>
+    public void SetProgress(int percent, string speedText, string fileName, int queued = 0, int paused = 0, int activeCount = 1)
     {
-        _icon.Text = "";
+        percent = Math.Clamp(percent, 0, 100);
+        if (activeCount < 1)
+            activeCount = 1;
+        _icon.Text = activeCount == 1 ? $"1 download – {percent}%" : $"{activeCount} downloads – {percent}%";
         _resumeAllItem.Enabled = queued > 0 || paused > 0;
     }
 
-    /// <summary>Idle state: plain tooltip (optionally with counts/speed).</summary>
+    /// <summary>Idle state: just "WDM".</summary>
     public void SetActiveCount(int active, int queued, long speedBps = 0, int paused = 0)
     {
-        bool hasWork = active > 0 || queued > 0;
-        string label;
-        if (hasWork)
-        {
-            string speed = speedBps > 0 ? $"{DownloadTask.FormatBytes(speedBps)}/s" : "0 B/s";
-            label = $"Downloading: {active} · Queued: {queued} · {speed}";
-        }
-        else
-        {
-            label = "WDM — Download Manager";
-        }
-        _icon.Text = label.Length <= 63 ? label : label[..63];
+        _icon.Text = "WDM";
         _resumeAllItem.Enabled = queued > 0 || paused > 0;
     }
 

@@ -2,10 +2,16 @@
 ; Delta updates (patch-only, no wizard) are handled by Velopack (src/WDM.App/Services/VelopackUpdateService.cs)
 ; via GitHub Releases nupkg/RELEASES. This Inno installer remains for new users and as fallback
 ; for portable/dev builds where Velopack is not active. It installs per-machine to {autopf}\WDM
-; (admin required) and preserves user data on updates (see CurStepChanged).
-; USER DATA SAFETY: since the data-home move, tasks.json / settings.json / cookies /
+; (admin required).
+; INSTALL preserves user data (see CurStepChanged): tasks.json / settings.json / cookies /
 ; downloaded engines / WebView2 profile live in %LOCALAPPDATA%\WDM-Data (TaskStore.AppDir),
-; OUTSIDE {app}. Uninstall wipes {app} only and must never touch WDM-Data.
+; OUTSIDE {app}, so updates never take the download list with them.
+; UNINSTALL IS A FULL WIPE: uninstall deletes {app} AND every WDM trace on the machine —
+; %LOCALAPPDATA%\WDM + %LOCALAPPDATA%\WDM-Data (+ roaming counterparts) for EVERY local
+; profile (uninstall runs elevated, so {localappdata} alone would miss the real user),
+; per-user temp artifacts, all WDM registry values (Run, App Paths, Software\WDM,
+; tracing keys, uninstall entries) across HKCU/HKLM/32-bit views and every user hive,
+; plus our own browser policy entries. There is no opt-out: uninstall means gone.
 ; BROWSER POLICY (retired): the CRX force-install policy
 ; (ExtensionInstallForcelist + ExtensionInstallSources) is no longer written.
 ; The file:// policy install fought the manual Load unpacked install (same
@@ -27,11 +33,11 @@
 ; Command-line /dMyAppVersion=... (build-test-install.ps1) overrides this;
 ; script-level default stays for plain ISCC.exe runs.
 #ifndef MyAppVersion
-#define MyAppVersion "2.8.1.0"
+#define MyAppVersion "2.8.2.0"
 #endif
 #define MyAppPublisher "WDM Team"
 #define MyAppExeName "WDM.exe"
-#define MyAppIcon "..\WDM\Assets\WDM.ico"
+#define MyAppIcon "..\WDM.App\Assets\WDM.ico"
 #define StagingDir "..\..\staging"
 
 [Setup]
@@ -103,6 +109,14 @@ Root: HKLM; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueType: 
 Name: "{group}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"
 Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; Tasks: desktopicon
 
+; Explorer verb (registry command, no COM): right-click any file →
+; "Download with WDM" imports it as a managed local copy. Removed on
+; uninstall (uninsdeletekey + CleanRegistryKeys belt-and-suspenders).
+[Registry]
+Root: HKCR; Subkey: "*\shell\WDM.Download"; ValueType: string; ValueName: ""; ValueData: "Download with WDM"; Flags: uninsdeletekey
+Root: HKCR; Subkey: "*\shell\WDM.Download"; ValueType: string; ValueName: "Icon"; ValueData: "{app}\{#MyAppExeName},0"; Flags: uninsdeletekey
+Root: HKCR; Subkey: "*\shell\WDM.Download\command"; ValueType: string; ValueName: ""; ValueData: """{app}\{#MyAppExeName}"" ""%1"""; Flags: uninsdeletekey
+
 [Run]
 Filename: "{app}\{#MyAppExeName}"; Description: "{cm:LaunchProgram,{#StringChange(MyAppName, '&', '&&')}}"; Flags: nowait postinstall skipifsilent
 
@@ -122,10 +136,124 @@ end;
 procedure KillAllProcesses;
 begin
   KillProcess('WDM.exe');
+  KillProcess('WDM.BrowserHost.exe');
+  KillProcess('CefSharp.BrowserSubprocess.exe');
   KillProcess('yt-dlp.exe');
   KillProcess('ffmpeg.exe');
   KillProcess('ffprobe.exe');
   KillProcess('qjs.exe');
+end;
+
+{ Best-effort recursive delete: clear R/H/S attributes first (engines, WebView2
+  and CEF profiles ship read-only files that DelTree would otherwise leave). }
+procedure WipeDir(const Dir: String);
+var
+  ResultCode: Integer;
+begin
+  if (Dir = '') or (not DirExists(Dir)) then
+    Exit;
+  Exec('attrib.exe', '-r -h -s "' + Dir + '\*.*" /s /d', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+  DelTree(Dir, True, True, True);
+  RemoveDir(Dir);
+end;
+
+{ Deletes every file/dir in TempDir matching Pattern (dirs recursed via WipeDir). }
+procedure WipeTempMatch(const TempDir, Pattern: String);
+var
+  FindRec: TFindRec;
+  P: String;
+begin
+  if (TempDir = '') or (not DirExists(TempDir)) then
+    Exit;
+  if FindFirst(TempDir + '\' + Pattern, FindRec) then
+  try
+    repeat
+      if (FindRec.Name <> '.') and (FindRec.Name <> '..') then
+      begin
+        P := TempDir + '\' + FindRec.Name;
+        if DirExists(P) then
+          WipeDir(P)
+        else
+          DeleteFile(P);
+      end;
+    until not FindNext(FindRec);
+  finally
+    FindClose(FindRec);
+  end;
+end;
+
+{ Our temp footprint: BrowserHost CEF profiles (wdm_bh_*), capture/chrome
+  helpers (wdm-browsercatch, wdm-chrome-*), setup exes, fallback activity log.
+  The wdm_*/WDM_* prefix is product-specific (Windows matching is
+  case-insensitive, so one pattern would do — both are listed for clarity). }
+procedure WipeTempDir(const TempDir: String);
+begin
+  if (TempDir = '') or (not DirExists(TempDir)) then
+    Exit;
+  WipeTempMatch(TempDir, 'WDM_Setup_*.exe');
+  WipeTempMatch(TempDir, 'WDM-activity.log*');
+  WipeTempMatch(TempDir, 'wdm_*');
+  WipeTempMatch(TempDir, 'WDM_*');
+end;
+
+{ Wipes all WDM data for one profile: deployed extension + token (WDM),
+  tasks/settings/cookies/engines/WebView2/token (WDM-Data), roaming
+  counterparts (unused today, swept for completeness), temp artifacts. }
+procedure WipeProfileWdmData(const LocalData, RoamingData, TempDir: String);
+begin
+  WipeDir(LocalData + '\WDM');
+  WipeDir(LocalData + '\WDM-Data');
+  WipeDir(RoamingData + '\WDM');
+  WipeDir(RoamingData + '\WDM-Data');
+  WipeTempDir(TempDir);
+end;
+
+{ Full data wipe across every local profile. Uninstall runs elevated as admin,
+  so LOCALAPPDATA alone points at the admin profile and would miss the real
+  user's data — enumerate C:\Users instead. Skips shared/template profiles. }
+procedure WipeAllProfilesWdmData;
+var
+  UsersRoot, Profile, LocalData: String;
+  EnvData: String;
+  FindRec: TFindRec;
+begin
+  { Current context first (covers the elevating admin): }
+  WipeProfileWdmData(ExpandConstant('{localappdata}'),
+    ExpandConstant('{userappdata}'), GetTempDir);
+  { Custom data home (AppPaths honors WDM_DATA_DIR when set): }
+  EnvData := ExpandConstant('{%WDM_DATA_DIR|}');
+  if (EnvData <> '') and DirExists(EnvData) then
+    WipeDir(EnvData);
+  { Every local profile: }
+  UsersRoot := ExpandConstant('{sd}\Users');
+  if not DirExists(UsersRoot) then
+    UsersRoot := 'C:\Users';
+  if FindFirst(UsersRoot + '\*', FindRec) then
+  try
+    repeat
+      if (FindRec.Name = '.') or (FindRec.Name = '..') then
+      begin
+        { skip dot entries }
+      end
+      else if (CompareText(FindRec.Name, 'Public') = 0) or
+        (CompareText(FindRec.Name, 'Default') = 0) or
+        (CompareText(FindRec.Name, 'Default User') = 0) or
+        (CompareText(FindRec.Name, 'All Users') = 0) then
+      begin
+        { skip shared/template profiles }
+      end
+      else
+      begin
+        Profile := UsersRoot + '\' + FindRec.Name;
+        LocalData := Profile + '\AppData\Local';
+        if DirExists(LocalData) then
+          WipeProfileWdmData(LocalData, Profile + '\AppData\Roaming',
+            LocalData + '\Temp');
+      end;
+    until not FindNext(FindRec);
+  finally
+    FindClose(FindRec);
+  end;
 end;
 
 { Surgical removal of our own ExtensionSettings entry. ExtensionSettings is a
@@ -407,33 +535,85 @@ end;
 
 procedure CleanRegistryKeys;
 begin
-  // Startup Run values
+  // Startup Run values (installer task + in-app Options toggle share value 'WDM').
+  // Per-user hives (HKCU + every HKEY_USERS SID) are handled in CleanAllUserHives.
   RegDeleteValue(HKCU, 'Software\Microsoft\Windows\CurrentVersion\Run', 'WDM');
   RegDeleteValue(HKLM, 'Software\Microsoft\Windows\CurrentVersion\Run', 'WDM');
+  RegDeleteValue(HKLM32, 'Software\Microsoft\Windows\CurrentVersion\Run', 'WDM');
 
   // App Paths
   RegDeleteKeyIncludingSubkeys(HKCU, 'Software\Microsoft\Windows\CurrentVersion\App Paths\WDM.exe');
   RegDeleteKeyIncludingSubkeys(HKLM, 'Software\Microsoft\Windows\CurrentVersion\App Paths\WDM.exe');
+  RegDeleteKeyIncludingSubkeys(HKLM32, 'Software\Microsoft\Windows\CurrentVersion\App Paths\WDM.exe');
 
-  // WDM Software keys
+  // WDM Software keys (both views)
   RegDeleteKeyIncludingSubkeys(HKCU, 'Software\WDM');
   RegDeleteKeyIncludingSubkeys(HKLM, 'Software\WDM');
-  RegDeleteKeyIncludingSubkeys(HKLM, 'SOFTWARE\WOW6432Node\WDM');
+  RegDeleteKeyIncludingSubkeys(HKLM32, 'Software\WDM');
 
-  // WMI / Wbem tracing keys
+  // WMI / Wbem tracing keys (both views + HKCU)
   RegDeleteKeyIncludingSubkeys(HKLM, 'SOFTWARE\Microsoft\Wbem\WDM');
+  RegDeleteKeyIncludingSubkeys(HKLM32, 'SOFTWARE\Microsoft\Wbem\WDM');
   RegDeleteKeyIncludingSubkeys(HKLM, 'SOFTWARE\Microsoft\Wbem\CORS\WDM');
+  RegDeleteKeyIncludingSubkeys(HKLM32, 'SOFTWARE\Microsoft\Wbem\CORS\WDM');
   RegDeleteKeyIncludingSubkeys(HKCU, 'SOFTWARE\Microsoft\Wbem\WDM');
 
-  // RADAR / AppID / Error Reporting traces
+  // RADAR / AppID / Error Reporting traces (both views + HKCU)
   RegDeleteKeyIncludingSubkeys(HKLM, 'SOFTWARE\Microsoft\RADAR\HeapLeakDetection\DiagnosedApplications\WDM.exe');
+  RegDeleteKeyIncludingSubkeys(HKLM32, 'SOFTWARE\Microsoft\RADAR\HeapLeakDetection\DiagnosedApplications\WDM.exe');
   RegDeleteKeyIncludingSubkeys(HKLM, 'SOFTWARE\Classes\AppID\WDM.exe');
+  RegDeleteKeyIncludingSubkeys(HKLM32, 'SOFTWARE\Classes\AppID\WDM.exe');
   RegDeleteKeyIncludingSubkeys(HKCU, 'SOFTWARE\Classes\AppID\WDM.exe');
 
-  // Inno Setup Uninstall registry keys
+  // Explorer verb (registry command, no COM).
+  RegDeleteKeyIncludingSubkeys(HKCR, '*\shell\WDM.Download');
+
+  // Inno Setup Uninstall registry keys (per-user legacy + both machine views)
   RegDeleteKeyIncludingSubkeys(HKCU, 'Software\Microsoft\Windows\CurrentVersion\Uninstall\{4F3B2C0A-8D2E-4B7A-9C1E-6A5B4D3E2F10}_is1');
   RegDeleteKeyIncludingSubkeys(HKLM, 'SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\{4F3B2C0A-8D2E-4B7A-9C1E-6A5B4D3E2F10}_is1');
-  RegDeleteKeyIncludingSubkeys(HKLM, 'SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\{4F3B2C0A-8D2E-4B7A-9C1E-6A5B4D3E2F10}_is1');
+  RegDeleteKeyIncludingSubkeys(HKLM32, 'SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\{4F3B2C0A-8D2E-4B7A-9C1E-6A5B4D3E2F10}_is1');
+end;
+
+{ Per-user registry cleanup under one hive: Root=HKCU with Prefix='' for the
+  current user, or Root=HKU with Prefix='<SID>\' for every enumerated user.
+  Covers the in-app Run-at-startup toggle, Software\WDM, App Paths, tracing
+  keys and the legacy per-user uninstall entry. }
+procedure CleanOneUserHive(const Root: Integer; const Prefix: String);
+begin
+  RegDeleteValue(Root, Prefix + 'Software\Microsoft\Windows\CurrentVersion\Run', 'WDM');
+  RegDeleteKeyIncludingSubkeys(Root, Prefix + 'Software\Microsoft\Windows\CurrentVersion\App Paths\WDM.exe');
+  RegDeleteKeyIncludingSubkeys(Root, Prefix + 'Software\WDM');
+  RegDeleteKeyIncludingSubkeys(Root, Prefix + 'SOFTWARE\Microsoft\Wbem\WDM');
+  RegDeleteKeyIncludingSubkeys(Root, Prefix + 'SOFTWARE\Classes\AppID\WDM.exe');
+  RegDeleteKeyIncludingSubkeys(Root, Prefix + 'Software\Microsoft\Windows\CurrentVersion\Uninstall\{4F3B2C0A-8D2E-4B7A-9C1E-6A5B4D3E2F10}_is1');
+end;
+
+{ Cleans every user hive: the elevated admin's HKCU plus each HKEY_USERS SID
+  (the admin's HKCU is NOT the installing user's hive). Also removes our own
+  browser policy entries per-SID — HKCU-only removal would miss the real user. }
+procedure CleanAllUserHives;
+var
+  Names: TArrayOfString;
+  I: Integer;
+  Sid: String;
+begin
+  CleanOneUserHive(HKCU, '');
+  if not RegGetSubkeyNames(HKU, '', Names) then
+    Exit;
+  for I := 0 to GetArrayLength(Names) - 1 do
+  begin
+    Sid := Names[I];
+    if (Sid = '.DEFAULT') or (Pos('_Classes', Sid) > 0) then
+    begin
+      { skip the default profile and COM class views }
+    end
+    else
+    begin
+      CleanOneUserHive(HKU, Sid + '\');
+      RemoveForceInstallPolicyAt(HKU, Sid + '\Software\Policies\Google\Chrome');
+      RemoveForceInstallPolicyAt(HKU, Sid + '\Software\Policies\Microsoft\Edge');
+    end;
+  end;
 end;
 
 procedure CurStepChanged(CurStep: TSetupStep);
@@ -442,12 +622,13 @@ begin
   begin
     KillAllProcesses;
     MigrateOldPerUserInstall;
-    // Do NOT delete AppDir on updates!
+    // Do NOT delete user data on install/updates!
     // Binaries ship from [Files]; user data (tasks.json, settings.json, engines,
     // WebView2 profile) lives OUTSIDE {app} in %LOCALAPPDATA%\WDM-Data, so an
-    // install or uninstall can no longer take the download list with it.
+    // install or update can no longer take the download list with it.
     // (The {app}\bin / WebView2 entries under [UninstallDelete] only clean up
     // leftovers from pre-move installs and bundled content.)
+    // Full wipe happens ONLY in CurUninstallStepChanged (see WipeAllProfilesWdmData).
   end;
   if CurStep = ssPostInstall then
   begin
@@ -471,8 +652,12 @@ begin
   begin
     KillAllProcesses;
     CleanRegistryKeys;
+    CleanAllUserHives;
     RemoveForceInstallPolicy(WdmChromePolicyKey);
     RemoveForceInstallPolicy(WdmEdgePolicyKey);
+    { FULL WIPE, no opt-out: every WDM trace on this machine — all profiles'
+      WDM/WDM-Data dirs, temp artifacts, per-user registry — is deleted. }
+    WipeAllProfilesWdmData;
   end;
 
   if CurUninstallStep = usPostUninstall then

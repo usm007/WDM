@@ -10,7 +10,10 @@ namespace WDM.Tests;
 
 /// <summary>Round 10 — P7: stable Id + segment snapshot persistence (A6),
 /// sidecar-loss resume from snapshot, HLS merge diagnostics (C4).
-/// TaskStore.AppDir is redirected to temp dirs (restored afterwards).</summary>
+/// TaskStore.AppDir is redirected to temp dirs (restored afterwards).
+/// Collection with Round14: both redirect the same static AppDir, and xunit
+/// runs different classes in parallel — interleaved redirects corrupt both.</summary>
+[Collection("TaskStoreState")]
 public sealed class Round10Tests : IDisposable
 {
     private readonly string _appDir = Path.Combine(Path.GetTempPath(), "wdm_r10app_" + Guid.NewGuid().ToString("N"));
