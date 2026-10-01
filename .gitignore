@@ -49,6 +49,13 @@ banner.png
 *_wpftmp.csproj
 *_wpftmp.*
 
+# Local build/release helper scripts - kept locally, never pushed
+set-logo.ps1
+opencode.json
+build-xpi.ps1
+build-test-install.ps1
+build-chrome-zip.ps1
+
 # Local debug / scratch files
 AutoFlow.ps1
 Test-DownloadFlow.ps1
