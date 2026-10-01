@@ -9,6 +9,56 @@
   // Strict domain guard: exclude YouTube (handled by youtube_menu.js + yt-dlp)
   if (location.hostname.includes("youtube.com") || location.hostname.includes("youtu.be")) return;
 
+  // No floating button on major paid/subscription streaming services. Their
+  // catalogs are DRM and/or ToS protected, so the button could only ever
+  // fail there — and its presence looks out of place. UGC platforms
+  // (Vimeo, Dailymotion, Twitch, social video) intentionally keep it.
+  // Suffix-matched so regional and player subdomains are covered too.
+  var NO_OVERLAY_HOSTS = [
+    "netflix.com",
+    "disneyplus.com",
+    "hulu.com", "hulu.jp",
+    "hbomax.com", "max.com",
+    "primevideo.com",
+    "paramountplus.com",
+    "peacocktv.com",
+    "tv.apple.com",
+    "discoveryplus.com", "discoveryplus.in",
+    "crunchyroll.com",
+    "hotstar.com",
+    "jiocinema.com",
+    "zee5.com",
+    "sonyliv.com",
+    "mxplayer.in",
+    "voot.com",
+    "altbalaji.com",
+    "sunnxt.com",
+    "aha.video",
+    "erosnow.com",
+    "mubi.com",
+    "britbox.com",
+    "acorn.tv",
+    "viu.com",
+    "wetv.vip",
+    "iqiyi.com", "iq.com",
+    "tubitv.com",
+    "pluto.tv",
+    "spotify.com",
+    "youtube-nocookie.com"
+  ];
+  var NO_OVERLAY_BLOCKED = (function () {
+    var host = "";
+    try { host = String(location.hostname || "").toLowerCase(); } catch (e) { return false; }
+    for (var i = 0; i < NO_OVERLAY_HOSTS.length; i++) {
+      var base = NO_OVERLAY_HOSTS[i];
+      if (host === base || host.slice(-base.length - 1) === "." + base) return true;
+    }
+    return false;
+  })();
+  if (NO_OVERLAY_BLOCKED) return;
+  // NOTE: a `return` here exits the whole sniffer IIFE: no hook injection,
+  // no media registration, no overlay on these hosts.
+
   // Video-only allowlist: the floating button lists downloadable video, never audio.
   const VIDEO_FILE_RE = /\.(mp4|m4v|webm|mkv|avi|mov|flv)(\?|$)/i;
   const AUDIO_RE = /\.(mp3|m4a|aac|ogg|opus|flac|wav|wma)(\?|$)/i;
