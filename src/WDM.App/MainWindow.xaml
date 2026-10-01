@@ -232,9 +232,9 @@
                             AutomationProperties.AutomationId="BtnAddDownload"
                             AutomationProperties.Name="Add download">
                         <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                            <!-- Brand mark: exact link.svg geometry, white on accent -->
-                            <ContentControl Content="{StaticResource Mark.LinkPlus}" Width="15" Height="12"
-                                            Margin="0,0,6,0" VerticalAlignment="Center" Focusable="False" />
+                            <!-- Download arrow, same size as the label text -->
+                            <ui:SymbolIcon Symbol="ArrowDownload24" FontSize="11" Foreground="White"
+                                           Margin="0,0,6,0" VerticalAlignment="Center" />
                             <TextBlock Text="Add Download" Foreground="White" FontWeight="SemiBold" FontSize="11" VerticalAlignment="Center" />
                         </StackPanel>
                     </Button>
