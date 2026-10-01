@@ -232,9 +232,14 @@
                             AutomationProperties.AutomationId="BtnAddDownload"
                             AutomationProperties.Name="Add download">
                         <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                            <!-- Download arrow, same size as the label text -->
-                            <ui:SymbolIcon Symbol="ArrowDownload24" FontSize="11" Foreground="White"
-                                           Margin="0,0,6,0" VerticalAlignment="Center" />
+                            <!-- Arrow-down-into-tray mark, verbatim from the provided SVG -->
+                            <Viewbox Width="13" Height="13" Stretch="Uniform" Margin="0,0,6,0" VerticalAlignment="Center">
+                                <Canvas Width="24" Height="24">
+                                    <Path Data="M3 16.5v2.25A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75V16.5M16.5 12 12 16.5m0 0L7.5 12m4.5 4.5V3"
+                                          Stroke="White" StrokeThickness="1.5"
+                                          StrokeStartLineCap="Round" StrokeEndLineCap="Round" StrokeLineJoin="Round" />
+                                </Canvas>
+                            </Viewbox>
                             <TextBlock Text="Add Download" Foreground="White" FontWeight="SemiBold" FontSize="11" VerticalAlignment="Center" />
                         </StackPanel>
                     </Button>
