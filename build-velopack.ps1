@@ -92,22 +92,69 @@ if (Test-Path $setup) {
 $uploadDir = Join-Path $PSScriptRoot "release_upload"
 if (Test-Path $uploadDir) { Remove-Item $uploadDir -Recurse -Force }
 New-Item -ItemType Directory -Path $uploadDir -Force | Out-Null
-$fullSetup = Join-Path $outFull "WDM-win-Setup.exe"
+$velopackSetup = Join-Path $outFull "WDM-win-Setup.exe"
 $portable = Join-Path $outFull "WDM-win-Portable.zip"
 # Prefer the self-contained delta as the small update package, fallback to the full nupkg
 $deltaPkg = Get-ChildItem $outFull -Filter "WDM-$Version-delta.nupkg" -ErrorAction SilentlyContinue | Select-Object -First 1
 $fullPkg = Get-ChildItem $outFull -Filter "WDM-$Version-full.nupkg" -ErrorAction SilentlyContinue | Select-Object -First 1
 $updatePkg = if ($deltaPkg) { $deltaPkg } else { $fullPkg }
 $releasesJson = Join-Path $outFull "releases.win.json"
-if (Test-Path $fullSetup) { Copy-Item $fullSetup (Join-Path $uploadDir "WDM-Full-Setup-$Version.exe") }
+# Velopack one-click (per-user, splash + silent, no wizard) is NOT the main setup.
+# Name it explicitly so users never mistake it for the wizard installer.
+if (Test-Path $velopackSetup) { Copy-Item $velopackSetup (Join-Path $uploadDir "WDM-User-Setup-$Version.exe") }
 if (Test-Path $portable) { Copy-Item $portable (Join-Path $uploadDir "WDM-Portable-$Version.zip") }
 if ($updatePkg -and (Test-Path $updatePkg.FullName)) { Copy-Item $updatePkg.FullName (Join-Path $uploadDir $updatePkg.Name) -Force }
 if ($fullPkg -and (Test-Path $fullPkg.FullName)) { Copy-Item $fullPkg.FullName (Join-Path $uploadDir $fullPkg.Name) -Force }
 if (Test-Path $releasesJson) { Copy-Item $releasesJson (Join-Path $uploadDir "releases.win.json") -Force }
+# Main wizard installer (per-machine, Program Files, with setup window) is Inno.
+# Build it here so release_upload always has WDM-Setup-$Version.exe alongside the per-user one.
+try {
+    $iscc = $null
+    foreach ($cand in @(
+        (Join-Path $env:LOCALAPPDATA "Programs\Inno Setup 6\ISCC.exe"),
+        "C:\Program Files (x86)\Inno Setup 6\ISCC.exe",
+        "C:\Program Files\Inno Setup 6\ISCC.exe")) {
+        if (Test-Path $cand) { $iscc = $cand; break }
+    }
+    if (-not $iscc) {
+        $cmd = Get-Command ISCC.exe -ErrorAction SilentlyContinue
+        if ($cmd) { $iscc = $cmd.Source }
+    }
+    if ($iscc) {
+        $iss = Join-Path $PSScriptRoot "src\WDM.Setup\installer.iss"
+        $staging = Join-Path $PSScriptRoot "staging"
+        if (-not (Test-Path (Join-Path $staging "WDM.exe"))) {
+            Write-Host "Staging missing WDM.exe, republishing self-contained to staging for Inno ..."
+            & dotnet publish (Join-Path $PSScriptRoot "src\WDM.App\WDM.csproj") -c Release -r win-x64 --self-contained true -o $staging -p:Version=$Version --nologo -v q
+            if ($LASTEXITCODE -ne 0) { throw "dotnet publish for Inno staging failed." }
+        }
+        # Inno needs numeric 4-part version; strip any suffix (e.g. 2.8.5 -> 2.8.5.0).
+        $numeric = $Version
+        if ($numeric -notmatch '^\d+\.\d+\.\d+\.\d+$') {
+            $m = [regex]::Match($numeric, '^(\d+)\.(\d+)\.(\d+)')
+            if ($m.Success) { $numeric = "$($m.Groups[1]).$($m.Groups[2]).$($m.Groups[3]).0" }
+        }
+        Write-Host "Compiling Inno wizard installer ($numeric) ..."
+        & $iscc "/dMyAppVersion=$numeric" $iss
+        if ($LASTEXITCODE -ne 0) { throw "ISCC failed." }
+        $builtInno = Join-Path $PSScriptRoot ("output\WDM_Setup_" + $numeric + ".exe")
+        if (Test-Path $builtInno) {
+            Copy-Item $builtInno (Join-Path $uploadDir "WDM-Setup-$Version.exe") -Force
+        } else {
+            Write-Host "WARNING: Inno output not found: $builtInno (release will lack WDM-Setup-$Version.exe)"
+        }
+    } else {
+        Write-Host "WARNING: ISCC.exe not found, skipping Inno build (release will lack WDM-Setup-$Version.exe)"
+    }
+} catch {
+    Write-Host "WARNING: Inno build failed: $($_.Exception.Message) (release will lack WDM-Setup-$Version.exe)"
+}
 Write-Host ""
 Write-Host "Release upload in $uploadDir :"
 Get-ChildItem $uploadDir | Format-Table Name, @{N="SizeMB";E={"{0:F2}" -f ($_.Length/1MB)}}, Length
-Write-Host "  1) WDM-Full-Setup-$Version.exe  -> full installer for new users (Velopack Setup, self-contained .NET 8)"
+Write-Host "  1) WDM-Setup-$Version.exe        -> MAIN wizard installer for new users (Inno, per-machine Program Files, with setup window)"
+Write-Host "  2) WDM-User-Setup-$Version.exe  -> ALTERNATIVE per-user one-click (Velopack, %LocalAppData%\WDM, splash + silent + auto-launch, no wizard)"
+Write-Host "  3) WDM-Portable-$Version.zip     -> portable, self-contained, no .NET install needed"
 Write-Host "  2) WDM-Portable-$Version.zip     -> portable, self-contained, no .NET install needed"
 Write-Host "  3) $($updatePkg.Name)  -> small update package - in-app updater downloads this delta, NOT the full installer"
 Write-Host "  4) $($fullPkg.Name)  -> full update package - fallback for updaters too far behind for delta"

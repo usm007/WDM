@@ -83,12 +83,9 @@ public sealed class AppSettings
     /// their per-task budget is spent. User Pause/Cancel/Remove always wins.</summary>
     public bool AutoResumeFailed { get; set; } = false;
 
-    // Notifications (1DM pref_notification.xml, desktop subset: no vibration/lockscreen)
-    public bool NotifyOnAdded { get; set; } = false;
-    public bool NotifyOnStarted { get; set; } = false;
+    // Notifications: completion + errors + sound only.
     public bool NotifyOnError { get; set; } = true;
     public bool NotificationSound { get; set; } = true;
-    public bool DetailedNotifications { get; set; } = false;
 
     // Category auto-routing
     public bool RouteByCategory { get; set; } = true;
@@ -135,8 +132,5 @@ public sealed class AppSettings
     public string? PostDownloadScript { get; set; }
 
     // Post-download automation (1DM pref_automation.xml, minus wifi-off: no mobile radio)
-    public bool MoveOnFinish { get; set; } = false;
-    public string? MoveOnFinishFolder { get; set; }
-    public bool RemoveLinkAfterFinish { get; set; } = false;
     public int DeleteFinishedLinksAfterDays { get; set; } = 0;
 }

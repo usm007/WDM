@@ -52,18 +52,12 @@ public partial class OptionsControl : UserControl
 
         ChecksumBox.IsChecked = s.ComputeChecksum;
         ScriptBox.Text = s.PostDownloadScript ?? "";
-        if (MoveOnFinishBox != null) MoveOnFinishBox.IsChecked = s.MoveOnFinish;
-        if (MoveFolderBox != null) MoveFolderBox.Text = s.MoveOnFinishFolder ?? "";
-        if (RemoveLinkBox != null) RemoveLinkBox.IsChecked = s.RemoveLinkAfterFinish;
         if (DeleteAfterDaysBox != null) DeleteAfterDaysBox.Text = s.DeleteFinishedLinksAfterDays.ToString();
         HlsContainerBox.SelectedIndex = HlsContainerIndex(s.HlsContainer);
 
         NotifyBox.IsChecked = s.NotifyOnCompletion;
-        if (NotifyAddedBox != null) NotifyAddedBox.IsChecked = s.NotifyOnAdded;
-        if (NotifyStartedBox != null) NotifyStartedBox.IsChecked = s.NotifyOnStarted;
         if (NotifyErrorBox != null) NotifyErrorBox.IsChecked = s.NotifyOnError;
         if (NotifySoundBox != null) NotifySoundBox.IsChecked = s.NotificationSound;
-        if (DetailedNotifyBox != null) DetailedNotifyBox.IsChecked = s.DetailedNotifications;
         InitMinCatchBox(s.MinCatchSizeBytes);
         TrayProgressBox.IsChecked = s.ShowTrayProgress;
         MinimizeToTrayBox.IsChecked = s.MinimizeToTray;
@@ -300,9 +294,6 @@ public partial class OptionsControl : UserControl
 
         if (ChecksumBox != null) s.ComputeChecksum = ChecksumBox.IsChecked == true;
         if (ScriptBox != null) s.PostDownloadScript = string.IsNullOrWhiteSpace(ScriptBox.Text) ? null : ScriptBox.Text.Trim();
-        if (MoveOnFinishBox != null) s.MoveOnFinish = MoveOnFinishBox.IsChecked == true;
-        if (MoveFolderBox != null) s.MoveOnFinishFolder = string.IsNullOrWhiteSpace(MoveFolderBox.Text) ? null : MoveFolderBox.Text.Trim();
-        if (RemoveLinkBox != null) s.RemoveLinkAfterFinish = RemoveLinkBox.IsChecked == true;
         if (DeleteAfterDaysBox != null && int.TryParse(DeleteAfterDaysBox.Text?.Trim(), out int dad) && dad >= 0)
             s.DeleteFinishedLinksAfterDays = Math.Min(dad, 365);
         if (HlsContainerBox?.SelectedItem is ComboBoxItem hls && hls.Tag is string hlsTag
@@ -310,11 +301,8 @@ public partial class OptionsControl : UserControl
             s.HlsContainer = container;
 
         if (NotifyBox != null) s.NotifyOnCompletion = NotifyBox.IsChecked == true;
-        if (NotifyAddedBox != null) s.NotifyOnAdded = NotifyAddedBox.IsChecked == true;
-        if (NotifyStartedBox != null) s.NotifyOnStarted = NotifyStartedBox.IsChecked == true;
         if (NotifyErrorBox != null) s.NotifyOnError = NotifyErrorBox.IsChecked == true;
         if (NotifySoundBox != null) s.NotificationSound = NotifySoundBox.IsChecked == true;
-        if (DetailedNotifyBox != null) s.DetailedNotifications = DetailedNotifyBox.IsChecked == true;
         SaveMinCatchBox(s);
         if (TrayProgressBox != null) s.ShowTrayProgress = TrayProgressBox.IsChecked == true;
         if (MinimizeToTrayBox != null) s.MinimizeToTray = MinimizeToTrayBox.IsChecked == true;
@@ -693,16 +681,6 @@ public partial class OptionsControl : UserControl
             return $"{bytes / (1024L * 1024 * 1024)} GB";
         double mb = bytes / (1024.0 * 1024.0);
         return mb == Math.Floor(mb) ? $"{mb:0} MB" : $"{mb:0.#} MB";
-    }
-
-    private void MoveFolderBrowseClick(object sender, RoutedEventArgs e)
-    {
-        var dialog = new OpenFolderDialog { InitialDirectory = MoveFolderBox.Text };
-        if (dialog.ShowDialog() == true)
-        {
-            MoveFolderBox.Text = dialog.FolderName;
-            SaveCurrentSettings();
-        }
     }
 
     private void ScriptBrowseClick(object sender, RoutedEventArgs e)

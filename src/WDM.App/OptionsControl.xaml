@@ -498,32 +498,6 @@
 
                         <TextBlock Text="Finish automation" FontSize="11.5" FontWeight="SemiBold" Foreground="{DynamicResource Brush.TextDim}" Margin="0,4,0,6" />
 
-                        <ui:CardControl Margin="0,0,0,4">
-                            <ui:CardControl.Header>
-                                <StackPanel>
-                                    <TextBlock Text="Move files when finished" FontWeight="Medium" FontSize="12" Foreground="{DynamicResource Brush.Text}" />
-                                    <TextBlock Text="Relocate completed files into this folder (collisions get numbered names)." FontSize="10.5" Foreground="{DynamicResource Brush.TextMuted}" Margin="0,2,0,0" TextWrapping="Wrap" MaxWidth="260" HorizontalAlignment="Left" TextAlignment="Left" />
-                                </StackPanel>
-                            </ui:CardControl.Header>
-                            <StackPanel>
-                                <ui:ToggleSwitch x:Name="MoveOnFinishBox" Margin="0,0,0,6" />
-                                <StackPanel Orientation="Horizontal">
-                                    <ui:TextBox x:Name="MoveFolderBox" Width="180" Height="32" VerticalContentAlignment="Center" FontSize="11" PlaceholderText="Destination folder…" />
-                                    <ui:Button Content="Browse…" Appearance="Secondary" Click="MoveFolderBrowseClick" Margin="8,0,0,0" Height="32" Padding="14,0" />
-                                </StackPanel>
-                            </StackPanel>
-                        </ui:CardControl>
-
-                        <ui:CardControl Margin="0,0,0,4">
-                            <ui:CardControl.Header>
-                                <StackPanel>
-                                    <TextBlock Text="Remove link after finish" FontWeight="Medium" FontSize="12" Foreground="{DynamicResource Brush.Text}" />
-                                    <TextBlock Text="Drop the list entry when a download completes (the file stays on disk)." FontSize="10.5" Foreground="{DynamicResource Brush.TextMuted}" Margin="0,2,0,0" TextWrapping="Wrap" MaxWidth="260" HorizontalAlignment="Left" TextAlignment="Left" />
-                                </StackPanel>
-                            </ui:CardControl.Header>
-                            <ui:ToggleSwitch x:Name="RemoveLinkBox" />
-                        </ui:CardControl>
-
                         <ui:CardControl Margin="0,0,0,12">
                             <ui:CardControl.Header>
                                 <StackPanel>
@@ -540,7 +514,7 @@
                             <ui:CardControl.Header>
                                 <StackPanel>
                                     <TextBlock Text="Notify on completion" FontWeight="Medium" FontSize="12" Foreground="{DynamicResource Brush.Text}" />
-                                    <TextBlock Text="Show a Windows desktop notification when a download finishes." FontSize="10.5" Foreground="{DynamicResource Brush.TextMuted}" Margin="0,2,0,0" />
+                                    <TextBlock Text="Show a Windows desktop notification when a download finishes. Click it to open WDM." FontSize="10.5" Foreground="{DynamicResource Brush.TextMuted}" Margin="0,2,0,0" />
                                 </StackPanel>
                             </ui:CardControl.Header>
                             <ui:ToggleSwitch x:Name="NotifyBox" />
@@ -549,28 +523,8 @@
                         <ui:CardControl Margin="0,0,0,4">
                             <ui:CardControl.Header>
                                 <StackPanel>
-                                    <TextBlock Text="Notify when downloads are added" FontWeight="Medium" FontSize="12" Foreground="{DynamicResource Brush.Text}" />
-                                    <TextBlock Text="Toast when a new download is queued." FontSize="10.5" Foreground="{DynamicResource Brush.TextMuted}" Margin="0,2,0,0" />
-                                </StackPanel>
-                            </ui:CardControl.Header>
-                            <ui:ToggleSwitch x:Name="NotifyAddedBox" />
-                        </ui:CardControl>
-
-                        <ui:CardControl Margin="0,0,0,4">
-                            <ui:CardControl.Header>
-                                <StackPanel>
-                                    <TextBlock Text="Notify when downloads start" FontWeight="Medium" FontSize="12" Foreground="{DynamicResource Brush.Text}" />
-                                    <TextBlock Text="Toast when a queued download begins transferring." FontSize="10.5" Foreground="{DynamicResource Brush.TextMuted}" Margin="0,2,0,0" />
-                                </StackPanel>
-                            </ui:CardControl.Header>
-                            <ui:ToggleSwitch x:Name="NotifyStartedBox" />
-                        </ui:CardControl>
-
-                        <ui:CardControl Margin="0,0,0,4">
-                            <ui:CardControl.Header>
-                                <StackPanel>
                                     <TextBlock Text="Notify on errors" FontWeight="Medium" FontSize="12" Foreground="{DynamicResource Brush.Text}" />
-                                    <TextBlock Text="Toast with the failure reason when a download fails." FontSize="10.5" Foreground="{DynamicResource Brush.TextMuted}" Margin="0,2,0,0" />
+                                    <TextBlock Text="Toast with the failure reason when a download fails. Click it to open WDM." FontSize="10.5" Foreground="{DynamicResource Brush.TextMuted}" Margin="0,2,0,0" />
                                 </StackPanel>
                             </ui:CardControl.Header>
                             <ui:ToggleSwitch x:Name="NotifyErrorBox" />
@@ -589,18 +543,8 @@
                         <ui:CardControl Margin="0,0,0,4">
                             <ui:CardControl.Header>
                                 <StackPanel>
-                                    <TextBlock Text="Detailed notifications" FontWeight="Medium" FontSize="12" Foreground="{DynamicResource Brush.Text}" />
-                                    <TextBlock Text="Put the file name in the notification title." FontSize="10.5" Foreground="{DynamicResource Brush.TextMuted}" Margin="0,2,0,0" />
-                                </StackPanel>
-                            </ui:CardControl.Header>
-                            <ui:ToggleSwitch x:Name="DetailedNotifyBox" />
-                        </ui:CardControl>
-
-                        <ui:CardControl Margin="0,0,0,4">
-                            <ui:CardControl.Header>
-                                <StackPanel>
-                                    <TextBlock Text="Show download speed in tray" FontWeight="Medium" FontSize="12" Foreground="{DynamicResource Brush.Text}" />
-                                    <TextBlock Text="Show real-time transfer rate tooltip on system tray icon." FontSize="10.5" Foreground="{DynamicResource Brush.TextMuted}" Margin="0,2,0,0" />
+                                    <TextBlock Text="Show floating progress panel" FontWeight="Medium" FontSize="12" Foreground="{DynamicResource Brush.Text}" />
+                                    <TextBlock Text="Shows active count, percent and speed in a small always-on-top pill when the main window is minimized. Drag to move, Esc to hide." FontSize="10.5" Foreground="{DynamicResource Brush.TextMuted}" Margin="0,2,0,0" TextWrapping="Wrap" MaxWidth="260" HorizontalAlignment="Left" TextAlignment="Left" />
                                 </StackPanel>
                             </ui:CardControl.Header>
                             <ui:ToggleSwitch x:Name="TrayProgressBox" />

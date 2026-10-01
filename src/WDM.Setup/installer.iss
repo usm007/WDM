@@ -191,6 +191,9 @@ begin
   if (TempDir = '') or (not DirExists(TempDir)) then
     Exit;
   WipeTempMatch(TempDir, 'WDM_Setup_*.exe');
+  WipeTempMatch(TempDir, 'WDM-Setup-*.exe');
+  WipeTempMatch(TempDir, 'WDM-User-Setup-*.exe');
+  WipeTempMatch(TempDir, 'WDM-Full-Setup-*.exe');
   WipeTempMatch(TempDir, 'WDM-activity.log*');
   WipeTempMatch(TempDir, 'wdm_*');
   WipeTempMatch(TempDir, 'WDM_*');
@@ -672,18 +675,12 @@ begin
       RemoveDir(AppDir);
     end;
 
-    // Clean up temporary setup installers in %TEMP%
+    // Clean up temporary setup installers in %TEMP% (all naming generations)
     TempDir := GetTempDir;
-    if FindFirst(TempDir + 'WDM_Setup_*.exe', FindRec) then
-    begin
-      try
-        repeat
-          DeleteFile(TempDir + FindRec.Name);
-        until not FindNext(FindRec);
-      finally
-        FindClose(FindRec);
-      end;
-    end;
+    WipeTempMatch(TempDir, 'WDM_Setup_*.exe');
+    WipeTempMatch(TempDir, 'WDM-Setup-*.exe');
+    WipeTempMatch(TempDir, 'WDM-User-Setup-*.exe');
+    WipeTempMatch(TempDir, 'WDM-Full-Setup-*.exe');
 
     // Additional safeguard: If AppDir still exists (e.g. unins000.exe was executing inside it),
     // launch a background cmd process to remove AppDir 2 seconds after unins000.exe terminates.

@@ -1003,8 +1003,6 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
         Tasks.Add(task);
         ActivityLog.Write("ADD", $"{ActivityLog.HostOf(task.Url)} | {task.FileName} | {task.Url}");
         _lastNotifiedStatus[task.Id] = task.Status;
-        if (Settings.NotifyOnAdded)
-            NotificationRequested?.Invoke(task, NotifyKind.Added);
         ApplyCategoryRouting(task);
         if (task.Status != TaskStatus.Paused)
         {
@@ -1044,8 +1042,6 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
             Tasks.Add(task);
             ActivityLog.Write("ADD", $"{ActivityLog.HostOf(task.Url)} | {task.FileName} | {task.Url}");
             _lastNotifiedStatus[task.Id] = task.Status;
-            if (Settings.NotifyOnAdded)
-                NotificationRequested?.Invoke(task, NotifyKind.Added);
             ApplyCategoryRouting(task);
             if (task.Status != TaskStatus.Paused)
             {
@@ -1299,7 +1295,6 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
             var live = Tasks.Select(t => t.FullPath).ToList();
             var folders = Tasks.Select(t => t.SaveFolder)
                 .Append(Settings.DownloadFolder)
-                .Append(Settings.MoveOnFinishFolder ?? "")
                 .ToList();
             _ = Task.Run(() => PostDownloadActions.CleanupOrphanedState(live, folders));
         }
@@ -1644,21 +1639,8 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
                 }
             }
 
-            // 1DM pref_automation: move-on-finish, then shell visibility (desktop
-            // MediaScanner), then optional link removal (row only, file stays).
-            if (Settings.MoveOnFinish && !string.IsNullOrWhiteSpace(Settings.MoveOnFinishFolder))
-            {
-                if (PostDownloadActions.TryMoveFinishedFile(task, Settings.MoveOnFinishFolder))
-                    SaveTasksSoon();
-            }
+            // Shell visibility (desktop MediaScanner equivalent).
             PostDownloadActions.NotifyFileCreated(task.FullPath);
-            if (Settings.RemoveLinkAfterFinish)
-            {
-                Engine.Remove(task, deleteFiles: false);
-                Tasks.Remove(task);
-                SaveTasksSoon();
-                UpdateStatus();
-            }
         }
         catch (OperationCanceledException)
         {
@@ -2377,12 +2359,10 @@ public sealed class DeletePromptRequest
 public enum NotifyKind
 {
     None,
-    Added,
-    Started,
     Failed,
 }
 
-/// <summary>Pure transition policy for event toasts: maps a status change plus
+/// <summary>Pure transition policy for failure toasts: maps a status change plus
 /// settings to a <see cref="NotifyKind"/>. Kept side-effect free for testing;
 /// the view layer renders the balloon and plays the sound.</summary>
 public static class NotificationCenter
@@ -2391,8 +2371,6 @@ public static class NotificationCenter
     {
         if (previous == current)
             return NotifyKind.None;
-        if (current == TaskStatus.Downloading && settings.NotifyOnStarted)
-            return NotifyKind.Started;
         if (current == TaskStatus.Failed && settings.NotifyOnError)
             return NotifyKind.Failed;
         return NotifyKind.None;

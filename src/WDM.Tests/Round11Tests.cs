@@ -20,27 +20,15 @@ public sealed class Round11Tests
         var s = new AppSettings
         {
             AutoResumeFailed = true,
-            NotifyOnAdded = true,
-            NotifyOnStarted = true,
             NotifyOnError = false,
             NotificationSound = false,
-            DetailedNotifications = true,
-            MoveOnFinish = true,
-            MoveOnFinishFolder = "C:\\Done",
-            RemoveLinkAfterFinish = true,
             DeleteFinishedLinksAfterDays = 30,
         };
         string json = JsonSerializer.Serialize(s, JsonOptions);
         var back = JsonSerializer.Deserialize<AppSettings>(json, JsonOptions)!;
         Assert.True(back.AutoResumeFailed);
-        Assert.True(back.NotifyOnAdded);
-        Assert.True(back.NotifyOnStarted);
         Assert.False(back.NotifyOnError);
         Assert.False(back.NotificationSound);
-        Assert.True(back.DetailedNotifications);
-        Assert.True(back.MoveOnFinish);
-        Assert.Equal("C:\\Done", back.MoveOnFinishFolder);
-        Assert.True(back.RemoveLinkAfterFinish);
         Assert.Equal(30, back.DeleteFinishedLinksAfterDays);
     }
 
@@ -51,10 +39,8 @@ public sealed class Round11Tests
         string legacy = "{\"DownloadFolder\":\"C:\\\\DL\",\"MaxRetries\":5,\"NotifyOnCompletion\":false}";
         var back = JsonSerializer.Deserialize<AppSettings>(legacy, JsonOptions)!;
         Assert.False(back.AutoResumeFailed);
-        Assert.False(back.NotifyOnAdded);
         Assert.True(back.NotifyOnError); // new default, not legacy false
         Assert.True(back.NotificationSound);
-        Assert.False(back.MoveOnFinish);
         Assert.Equal(0, back.DeleteFinishedLinksAfterDays);
         Assert.Equal(5, back.MaxRetries);
         Assert.False(back.NotifyOnCompletion);
@@ -70,13 +56,9 @@ public sealed class Round11Tests
         var s = new AppSettings
         {
             DeleteFinishedLinksAfterDays = 999,
-            MoveOnFinishFolder = "C:\\ok",
         };
         var v = Call(s);
         Assert.Equal(365, v.DeleteFinishedLinksAfterDays);
-
-        var badPath = new AppSettings { MoveOnFinishFolder = "C:\\a<b" };
-        Assert.Null(Call(badPath).MoveOnFinishFolder);
     }
 
     [Theory]
@@ -104,8 +86,7 @@ public sealed class Round11Tests
         foreach (string name in new[]
         {
             "AutoResumeBox",
-            "NotifyAddedBox", "NotifyStartedBox", "NotifyErrorBox", "NotifySoundBox",
-            "DetailedNotifyBox", "MoveOnFinishBox", "MoveFolderBox", "RemoveLinkBox",
+            "NotifyBox", "NotifyErrorBox", "NotifySoundBox",
             "DeleteAfterDaysBox", "MinCatchBox", "MinCatchCustomBox",
         })
             Assert.Contains($"x:Name=\"{name}\"", options);

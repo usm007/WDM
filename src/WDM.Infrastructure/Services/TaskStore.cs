@@ -354,11 +354,6 @@ public sealed class TaskStore
                     s.HostCooldowns.Remove(key);
             }
         }
-        if (!string.IsNullOrWhiteSpace(s.MoveOnFinishFolder))
-        {
-            string full;
-            s.MoveOnFinishFolder = TryNormalizeFolder(s.MoveOnFinishFolder, out full) ? full : null;
-        }
         if (string.IsNullOrWhiteSpace(s.DownloadFolder))
             s.DownloadFolder = DownloadTask.DefaultSaveFolder;
         else

@@ -65,14 +65,13 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
                 const string how = "Options > YouTube & Media";
                 ActivityLog.Write("REMUX-SKIP", $"{task.FileName} kept as .TS — FFmpeg is not installed ({how}).");
                 if (s.NotifyOnCompletion)
-                    _tray?.ShowBalloon(task.FileName, $"Kept as .TS: FFmpeg is missing. Get MP4/MKV conversion in {how}.");
+                    _tray?.ShowBalloon(task.FileName, $"Kept as .TS: FFmpeg is missing. Get MP4/MKV conversion in {how}.",
+                        () => _dispatcher.BeginInvoke(RestoreWindow));
             }
             else if (s.NotifyOnCompletion)
             {
-                if (s.DetailedNotifications)
-                    _tray?.ShowBalloon(task.FileName, "Download complete.");
-                else
-                    _tray?.ShowBalloon("Done", $"{task.FileName} is ready.");
+                _tray?.ShowBalloon("Done", $"{task.FileName} is ready.",
+                    () => _dispatcher.BeginInvoke(RestoreWindow));
             }
             if (s.NotificationSound)
                 MainViewModel.PlayNotificationSound(isError: false);
@@ -93,17 +92,9 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
             var s = _viewModel.Settings;
             switch (kind)
             {
-                case ViewModels.NotifyKind.Added:
-                    _tray?.ShowBalloon("Added", $"{task.FileName} queued for download.");
-                    break;
-                case ViewModels.NotifyKind.Started:
-                    _tray?.ShowBalloon("Started", $"{task.FileName} started downloading.");
-                    break;
                 case ViewModels.NotifyKind.Failed:
-                    if (s.DetailedNotifications)
-                        _tray?.ShowBalloon(task.FileName, $"Failed: {task.Error ?? "unknown error"}");
-                    else
-                        _tray?.ShowBalloon("Failed", $"{task.FileName}: {task.Error ?? "unknown error"}");
+                    _tray?.ShowBalloon("Failed", $"{task.FileName}: {task.Error ?? "unknown error"}",
+                        () => _dispatcher.BeginInvoke(RestoreWindow));
                     if (s.NotificationSound)
                         MainViewModel.PlayNotificationSound(isError: true);
                     break;

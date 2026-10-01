@@ -115,18 +115,17 @@ public sealed class Round5Tests
     // ---------- C1: notification policy ----------
 
     [Theory]
-    [InlineData(TaskStatus.Queued, TaskStatus.Downloading, true, false, NotifyKind.Started)]
-    [InlineData(TaskStatus.Paused, TaskStatus.Downloading, true, false, NotifyKind.Started)]
-    [InlineData(TaskStatus.Queued, TaskStatus.Downloading, false, false, NotifyKind.None)]
-    [InlineData(TaskStatus.Downloading, TaskStatus.Failed, false, true, NotifyKind.Failed)]
-    [InlineData(TaskStatus.Downloading, TaskStatus.Failed, false, false, NotifyKind.None)]
-    [InlineData(TaskStatus.Downloading, TaskStatus.Paused, true, true, NotifyKind.None)]
-    [InlineData(TaskStatus.Paused, TaskStatus.Paused, true, true, NotifyKind.None)]
-    [InlineData(TaskStatus.Failed, TaskStatus.Downloading, true, true, NotifyKind.Started)]
+    [InlineData(TaskStatus.Queued, TaskStatus.Downloading, false, NotifyKind.None)]
+    [InlineData(TaskStatus.Paused, TaskStatus.Downloading, false, NotifyKind.None)]
+    [InlineData(TaskStatus.Downloading, TaskStatus.Failed, true, NotifyKind.Failed)]
+    [InlineData(TaskStatus.Downloading, TaskStatus.Failed, false, NotifyKind.None)]
+    [InlineData(TaskStatus.Downloading, TaskStatus.Paused, true, NotifyKind.None)]
+    [InlineData(TaskStatus.Paused, TaskStatus.Paused, true, NotifyKind.None)]
+    [InlineData(TaskStatus.Failed, TaskStatus.Downloading, true, NotifyKind.None)]
     public void NotificationCenter_Decide_Matrix(
-        TaskStatus prev, TaskStatus cur, bool onStarted, bool onError, NotifyKind expected)
+        TaskStatus prev, TaskStatus cur, bool onError, NotifyKind expected)
     {
-        var s = new AppSettings { NotifyOnStarted = onStarted, NotifyOnError = onError };
+        var s = new AppSettings { NotifyOnError = onError };
         Assert.Equal(expected, NotificationCenter.Decide(prev, cur, s));
     }
 

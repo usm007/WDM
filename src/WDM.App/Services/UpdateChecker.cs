@@ -91,12 +91,17 @@ public static class UpdateChecker
         }
     }
 
-    /// <summary>Picks the browser_download_url of the WDM installer .exe from the release assets.</summary>
+    /// <summary>Picks the browser_download_url of the WDM installer .exe from the release assets.
+    /// Prefers the Inno wizard (WDM-Setup-, per-machine) for the GitHub fallback path:
+    /// non-Velopack installs must never auto-switch to the Velopack per-user one-click.
+    /// Velopack users never reach here (delta nupkg via VelopackUpdateService).</summary>
     private static string? FindInstallerUrl(JsonElement release)
     {
         if (!release.TryGetProperty("assets", out var assets) || assets.ValueKind != JsonValueKind.Array)
             return null;
 
+        string? innoMatch = null;
+        string? legacyInnoMatch = null;
         string? fallback = null;
         foreach (var asset in assets.EnumerateArray())
         {
@@ -105,23 +110,32 @@ public static class UpdateChecker
             if (!name.EndsWith(".exe", StringComparison.OrdinalIgnoreCase))
                 continue;
             // Only our own setup assets, not any random .exe.
-            // Matches both legacy (WDM_Setup_x.exe) and current (WDM-Full-Setup-x.exe) naming.
-            bool isSetup = name.StartsWith("WDM_Setup_", StringComparison.OrdinalIgnoreCase)
+            // Inno wizard: WDM-Setup-2.8.5.exe (new) and WDM_Setup_x.exe (legacy local builds).
+            // Velopack one-click (per-user, no wizard): WDM-User-Setup-, WDM-Full-Setup- (legacy
+            // misleading name for the same Velopack Setup.exe), WDM-win-Setup.exe.
+            bool isInno = name.StartsWith("WDM-Setup-", StringComparison.OrdinalIgnoreCase)
+                || name.StartsWith("WDM_Setup_", StringComparison.OrdinalIgnoreCase);
+            bool isVelopackSetup = name.StartsWith("WDM-User-Setup", StringComparison.OrdinalIgnoreCase)
                 || name.StartsWith("WDM-Full-Setup", StringComparison.OrdinalIgnoreCase)
-                || (name.StartsWith("WDM", StringComparison.OrdinalIgnoreCase)
-                    && name.Contains("Setup", StringComparison.OrdinalIgnoreCase));
-            if (!isSetup)
+                || name.StartsWith("WDM-Velopack", StringComparison.OrdinalIgnoreCase)
+                || name.Equals("WDM-win-Setup.exe", StringComparison.OrdinalIgnoreCase);
+            bool isGenericSetup = !isInno && !isVelopackSetup
+                && name.StartsWith("WDM", StringComparison.OrdinalIgnoreCase)
+                && name.Contains("Setup", StringComparison.OrdinalIgnoreCase);
+            if (!isInno && !isVelopackSetup && !isGenericSetup)
                 continue;
             if (asset.TryGetProperty("browser_download_url", out var u) &&
                 u.GetString() is string dl && IsTrustedDownloadUrl(dl))
             {
-                // Prefer the legacy exact name; otherwise keep first setup match as fallback.
-                if (name.StartsWith("WDM_Setup_", StringComparison.OrdinalIgnoreCase))
-                    return dl;
-                fallback ??= dl;
+                if (isInno && name.StartsWith("WDM-Setup-", StringComparison.OrdinalIgnoreCase))
+                    innoMatch ??= dl;
+                else if (isInno)
+                    legacyInnoMatch ??= dl;
+                else
+                    fallback ??= dl;
             }
         }
-        return fallback;
+        return innoMatch ?? legacyInnoMatch ?? fallback;
     }
 
     /// <summary>Picks the update package (.nupkg delta/full) for Velopack.</summary>
@@ -277,7 +291,7 @@ public static class UpdateChecker
         if (string.IsNullOrWhiteSpace(release.InstallerUrl) || !IsTrustedDownloadUrl(release.InstallerUrl))
             throw new InvalidOperationException("The latest release has no trusted installer asset.");
 
-        string fileName = $"WDM_Setup_{release.Version}_{Guid.NewGuid():N}.exe";
+        string fileName = $"WDM-Setup-{release.Version}_{Guid.NewGuid():N}.exe";
         string target = Path.Combine(Path.GetTempPath(), fileName);
         try
         {
@@ -391,15 +405,15 @@ public static class UpdateChecker
                 try { File.Delete(path); } catch { }
                 throw new InvalidOperationException(
                     "Downloaded installer failed SHA-256 verification: refusing to run it. " +
-                    "Delete %TEMP%\\WDM_Setup_*.exe and retry the update.");
+                    "Delete %TEMP%\\WDM-Setup-*.exe and retry the update.");
             }
         }
     }
 
-    /// <summary>Runs the downloaded installer. Every Setup.exe published on the releases
-    /// page is a Velopack bundle (clap-style parsing: only -s/--silent). Inno-style
-    /// /VERYSILENT tokens break its parsing and drop it back to the interactive
-    /// "WDM is already installed" dialog: so silent launches must pass --silent alone.</summary>
+    /// <summary>Runs the downloaded installer. Inno wizard and Velopack one-click take
+    /// different silent flags: Inno needs /VERYSILENT, Velopack (clap-style) only
+    /// understands -s/--silent (Inno-style /VERYSILENT tokens break its parsing and
+    /// drop it back to the interactive "already installed" dialog).</summary>
     public static Process? LaunchInstaller(string installerPath, bool silent = false)
     {
         if (string.IsNullOrWhiteSpace(installerPath) || !File.Exists(installerPath) ||
@@ -419,7 +433,14 @@ public static class UpdateChecker
             // OptionsControl/About/UpdateAvailable paths all funnel here).
             try { ViewModels.MainViewModel.Restarting?.Invoke(); } catch { }
         }
-        string args = silent ? "--silent" : "";
+        // Velopack one-click assets contain User-Setup / Full-Setup (legacy) / Velopack;
+        // everything else downloaded via FindInstallerUrl is the Inno wizard.
+        string fileName = Path.GetFileName(full);
+        bool isVelopack = fileName.StartsWith("WDM-User-Setup", StringComparison.OrdinalIgnoreCase)
+            || fileName.StartsWith("WDM-Full-Setup", StringComparison.OrdinalIgnoreCase)
+            || fileName.StartsWith("WDM-Velopack", StringComparison.OrdinalIgnoreCase)
+            || fileName.Equals("WDM-win-Setup.exe", StringComparison.OrdinalIgnoreCase);
+        string args = silent ? (isVelopack ? "--silent" : "/VERYSILENT /NORESTART") : "";
         var psi = new ProcessStartInfo(full, args) { UseShellExecute = true };
         return Process.Start(psi);
     }
