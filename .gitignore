@@ -49,12 +49,6 @@ banner.png
 *_wpftmp.csproj
 *_wpftmp.*
 
-# IDE / agent local config - never tracked
-.agents/
-.claude/
-.opencode/
-.project/
-
 # Local debug / scratch files
 AutoFlow.ps1
 Test-DownloadFlow.ps1
@@ -67,7 +61,6 @@ stdout.txt
 stderr.txt
 crash.log
 code.html
-skills-lock.json
 
 # Website (docs/) is local-only, deployed to Vercel — not tracked in git
 docs/
@@ -84,10 +77,7 @@ README.md
 stream_catch.md
 preparing-states-preview.html
 
-# AGENTS.md stays tracked (exception to *.md above)
-!AGENTS.md
-
-# Local generated/scratch output (media-intelligence Phase 1 hygiene)
+# Local generated/scratch output
 brag-output/
 new_design/
 logo_designs/
