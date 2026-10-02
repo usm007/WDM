@@ -3,7 +3,7 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
         xmlns:local="clr-namespace:WDM"
-        Title="Settings (WDM)"
+        Title="Settings"
         Icon="Assets/WDM.ico"
         Width="780"
         Height="560"

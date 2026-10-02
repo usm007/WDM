@@ -367,7 +367,7 @@ public partial class DownloadProgressDialog : Window, INotifyPropertyChanged
 
             if (Task.Status == TaskStatus.Completed)
             {
-                Title = Task.FileName;
+                Title = "Download Progress";
                 if (!_completionHandled)
                 {
                     _completionHandled = true;
@@ -376,7 +376,7 @@ public partial class DownloadProgressDialog : Window, INotifyPropertyChanged
             }
             else
             {
-                Title = Task.FileName;
+                Title = "Download Progress";
             }
         });
     }
@@ -414,7 +414,7 @@ public partial class DownloadProgressDialog : Window, INotifyPropertyChanged
 
     private void UpdateState()
     {
-        Title = Task.FileName;
+        Title = "Download Progress";
     }
 
     private void Tab_Checked(object sender, RoutedEventArgs e)

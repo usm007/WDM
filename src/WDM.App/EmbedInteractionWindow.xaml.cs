@@ -90,7 +90,7 @@ public partial class EmbedInteractionWindow : Wpf.Ui.Controls.FluentWindow
         try
         {
             var core = _webView?.CoreWebView2;
-            Title = "WDM: " + (string.IsNullOrWhiteSpace(core?.DocumentTitle) ? "Complete browser check" : core.DocumentTitle);
+            Title = (string.IsNullOrWhiteSpace(core?.DocumentTitle) ? "Complete browser check" : core.DocumentTitle);
         }
         catch { }
     }

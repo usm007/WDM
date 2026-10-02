@@ -1,7 +1,7 @@
 ﻿<Window x:Class="WDM.AddDownloadDialog"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-         Title="Add Download (WDM)"
+         Title="Add Download"
          AutomationProperties.AutomationId="AddDownloadDialogWindow"
          Icon="Assets/WDM.ico"
          xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"

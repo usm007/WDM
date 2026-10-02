@@ -560,6 +560,38 @@
                             <ui:ToggleSwitch x:Name="MinimizeToTrayBox" />
                         </ui:CardControl>
 
+                        <TextBlock Text="Download dialogs" FontSize="11.5" FontWeight="SemiBold" Foreground="{DynamicResource Brush.TextDim}" Margin="0,12,0,6" />
+
+                        <ui:CardControl Margin="0,0,0,4">
+                            <ui:CardControl.Header>
+                                <StackPanel>
+                                    <TextBlock Text="Show Add Download dialog" FontWeight="Medium" FontSize="12" Foreground="{DynamicResource Brush.Text}" />
+                                    <TextBlock Text="Off = start captured links directly with default settings, no confirmation dialog." FontSize="10.5" Foreground="{DynamicResource Brush.TextMuted}" Margin="0,2,0,0" TextWrapping="Wrap" MaxWidth="260" HorizontalAlignment="Left" TextAlignment="Left" />
+                                </StackPanel>
+                            </ui:CardControl.Header>
+                            <ui:ToggleSwitch x:Name="ShowAddDialogBox" Checked="UpdateOption_Changed" Unchecked="UpdateOption_Changed" />
+                        </ui:CardControl>
+
+                        <ui:CardControl Margin="0,0,0,4">
+                            <ui:CardControl.Header>
+                                <StackPanel>
+                                    <TextBlock Text="Show progress dialog on start" FontWeight="Medium" FontSize="12" Foreground="{DynamicResource Brush.Text}" />
+                                    <TextBlock Text="Off = downloads run silently in the list without popping the progress window." FontSize="10.5" Foreground="{DynamicResource Brush.TextMuted}" Margin="0,2,0,0" TextWrapping="Wrap" MaxWidth="260" HorizontalAlignment="Left" TextAlignment="Left" />
+                                </StackPanel>
+                            </ui:CardControl.Header>
+                            <ui:ToggleSwitch x:Name="ShowProgressDialogBox" Checked="UpdateOption_Changed" Unchecked="UpdateOption_Changed" />
+                        </ui:CardControl>
+
+                        <ui:CardControl Margin="0,0,0,4">
+                            <ui:CardControl.Header>
+                                <StackPanel>
+                                    <TextBlock Text="Show complete dialog on finish" FontWeight="Medium" FontSize="12" Foreground="{DynamicResource Brush.Text}" />
+                                    <TextBlock Text="Off = no Download Complete popup (tray notification and sound still follow their own toggles). On = popup appears even when all windows are minimized." FontSize="10.5" Foreground="{DynamicResource Brush.TextMuted}" Margin="0,2,0,0" TextWrapping="Wrap" MaxWidth="260" HorizontalAlignment="Left" TextAlignment="Left" />
+                                </StackPanel>
+                            </ui:CardControl.Header>
+                            <ui:ToggleSwitch x:Name="ShowCompleteDialogBox" Checked="UpdateOption_Changed" Unchecked="UpdateOption_Changed" />
+                        </ui:CardControl>
+
                         <ui:CardControl Margin="0,0,0,4">
                             <ui:CardControl.Header>
                                 <StackPanel>

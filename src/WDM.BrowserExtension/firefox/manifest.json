@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "WDM Download Catcher",
   "version": "1.2.9",
-  "description": "Catch browser downloads and stream media — send them to WDM (Windows Download Manager).",
+  "description": "Catch browser downloads and stream media - send them to WDM (Windows Download Manager).",
   "permissions": [
     "downloads",
     "storage",

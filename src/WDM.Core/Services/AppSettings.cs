@@ -32,6 +32,16 @@ public sealed class AppSettings
     public bool HasSeenTipsWindow { get; set; } = false;
     public bool MinimizeToTray { get; set; } = true;
     public bool NotifyOnCompletion { get; set; } = true;
+    /// <summary>When false, new downloads start directly without showing the
+    /// Add Download dialog (browser captures, second instances and valid URLs
+    /// start silently with default folder/settings).</summary>
+    public bool ShowAddDialog { get; set; } = true;
+    /// <summary>When false, starting a download does not auto-open the
+    /// per-download progress dialog. The task still runs in the list.</summary>
+    public bool ShowProgressDialog { get; set; } = true;
+    /// <summary>When false, the Download Complete popup is suppressed
+    /// (tray balloon/sound still follow their own toggles).</summary>
+    public bool ShowCompleteDialog { get; set; } = true;
     public bool ShowTrayProgress { get; set; } = false;
     public double? ProgressPanelLeft { get; set; }
     public double? ProgressPanelTop { get; set; }

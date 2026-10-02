@@ -50,7 +50,7 @@ public static class HlsDownloader
     {
         if (IsFatalStatus(resp.StatusCode))
             throw new HlsFatalHttpException(
-                $"Stream link rejected ({(int)resp.StatusCode} {resp.StatusCode}) — " +
+                $"Stream link rejected ({(int)resp.StatusCode} {resp.StatusCode}) - " +
                 $"the link is dead, expired, or access was revoked; retrying won't help: {url}",
                 resp.StatusCode);
     }
@@ -961,7 +961,7 @@ public static class HlsDownloader
             result.Segments.Add(seg);
             segmentOrdinal++;
             if (result.Segments.Count > maxSegments)
-                throw new InvalidOperationException($"HLS playlist has too many segments (>{maxSegments}) — refusing.");
+                throw new InvalidOperationException($"HLS playlist has too many segments (>{maxSegments}) - refusing.");
             if (haveMediaSequence)
                 mediaSequence++;
         }
@@ -1221,7 +1221,7 @@ public static class HlsDownloader
                 {
                     total += n;
                     if (total > maxPlaylistBytes)
-                        throw new InvalidOperationException("HLS playlist too large — refusing to parse.");
+                        throw new InvalidOperationException("HLS playlist too large - refusing to parse.");
                     sb.Append(buf, 0, n);
                 }
                 return (sb.ToString(), effectiveUrl);

@@ -22,8 +22,7 @@ public partial class DownloadCompleteDialog : Window
         SizeText.Text = task.SizeText;
         DateText.Text = task.CompletedAt?.ToString("g") ?? DateTime.Now.ToString("g");
 
-        FileChipName.Text = task.DisplayFileName;
-        FileChip.ToolTip = $"Drag \"{task.DisplayFileName}\" to a folder to copy it there";
+        FileChip.ToolTip = "Drag to a folder to copy the file there";
         if (!File.Exists(task.FullPath))
             MarkFileMissing();
     }

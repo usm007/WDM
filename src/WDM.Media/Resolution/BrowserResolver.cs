@@ -148,7 +148,7 @@ public static class BrowserResolver
                     SourceUrl = pageUrl,
                     Status = ResolutionStatus.DrmProtected,
                     Title = title,
-                    Message = "This media looks DRM-protected — WDM can't download protected streams.",
+                    Message = "This media looks DRM-protected - WDM can't download protected streams.",
                 };
             }
             foreach (var v in expanded)

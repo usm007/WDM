@@ -342,10 +342,10 @@ public static class EngineManager
                 continue;
             string dest = Path.GetFullPath(Path.Combine(extractDir, entry.FullName));
             if (!dest.StartsWith(fullBase, StringComparison.OrdinalIgnoreCase))
-                throw new InvalidOperationException("Archive contains an unsafe path — refusing extraction.");
+                throw new InvalidOperationException("Archive contains an unsafe path - refusing extraction.");
             declaredUncompressed += entry.Length;
             if (declaredUncompressed > 1024L * 1024 * 1024)
-                throw new InvalidOperationException("Archive too large — refusing extraction.");
+                throw new InvalidOperationException("Archive too large - refusing extraction.");
             validated.Add((entry, dest));
         }
         long actualExtracted = 0;
@@ -368,7 +368,7 @@ public static class EngineManager
                 written += n;
                 actualExtracted += n;
                 if (actualExtracted > 1024L * 1024 * 1024)
-                    throw new InvalidOperationException("Archive too large — refusing extraction.");
+                    throw new InvalidOperationException("Archive too large - refusing extraction.");
                 dst.Write(buf, 0, n);
             }
         }
@@ -423,7 +423,7 @@ public static class EngineManager
 
         var total = response.Content.Headers.ContentLength ?? 0;
         if (total > maxBytes)
-            throw new InvalidOperationException("Engine download too large — refusing.");
+            throw new InvalidOperationException("Engine download too large - refusing.");
         await using var stream = await response.Content.ReadAsStreamAsync(ct);
         await using var file = new FileStream(dest, FileMode.CreateNew, FileAccess.Write, FileShare.None, 81920, useAsync: true);
 
@@ -531,7 +531,7 @@ public static class EngineManager
         {
             try { File.Delete(path); } catch { }
             throw new EngineMissingException(
-                $"{display} failed SHA-256 verification (possible tampering or CDN corruption) — refusing to install.");
+                $"{display} failed SHA-256 verification (possible tampering or CDN corruption) - refusing to install.");
         }
     }
 

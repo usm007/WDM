@@ -315,11 +315,11 @@ public sealed class DownloadTask : INotifyPropertyChanged
         get
         {
             if (Status != TaskStatus.Downloading)
-                return "—";
+                return "-";
             if (!string.IsNullOrEmpty(_eta))
                 return _eta;
             // Preparing gap (resolve/probe) + early 1% stall: never blank.
-            return _isPreparing ? "…" : "—";
+            return _isPreparing ? "…" : "-";
         }
         set
         {
@@ -396,7 +396,7 @@ public sealed class DownloadTask : INotifyPropertyChanged
         }
     }
 
-    public string SizeText => TotalBytes > 0 ? FormatBytes(TotalBytes) : "—";
+    public string SizeText => TotalBytes > 0 ? FormatBytes(TotalBytes) : "-";
 
     public string CompletionPercentText
     {
@@ -406,7 +406,7 @@ public sealed class DownloadTask : INotifyPropertyChanged
                 return "100%";
             if (TotalBytes > 0)
                 return $"{Progress}%";
-            return "—";
+            return "-";
         }
     }
 
@@ -427,7 +427,7 @@ public sealed class DownloadTask : INotifyPropertyChanged
             if (DownloadedBytes > 0)
                 return DownloadedText;
 
-            return "—";
+            return "-";
         }
     }
 
@@ -442,7 +442,7 @@ public sealed class DownloadTask : INotifyPropertyChanged
         get
         {
             if (Status != TaskStatus.Downloading)
-                return "—";
+                return "-";
             if (SpeedBps >= 1)
                 return $"{FormatBytes((long)SpeedBps)}/s";
             // Preparing gap + 1% stall: never blank so the row never collapses.
@@ -456,7 +456,7 @@ public sealed class DownloadTask : INotifyPropertyChanged
         {
             if (Uri.TryCreate(Url, UriKind.Absolute, out var uri))
                 return uri.Host;
-            return "—";
+            return "-";
         }
     }
 
@@ -511,9 +511,9 @@ public sealed class DownloadTask : INotifyPropertyChanged
     public string DownloadedOfTotalText => DisplaySizeText;
 
     public long RemainingBytes => TotalBytes > DownloadedBytes ? TotalBytes - DownloadedBytes : 0;
-    public string RemainingBytesText => TotalBytes > 0 && RemainingBytes > 0 ? FormatBytes(RemainingBytes) : (Status == TaskStatus.Completed ? "0 B" : "—");
+    public string RemainingBytesText => TotalBytes > 0 && RemainingBytes > 0 ? FormatBytes(RemainingBytes) : (Status == TaskStatus.Completed ? "0 B" : "-");
     public string ConnectionsText => ChunkCount > 1 ? $"{ChunkCount} threads" : "1 thread";
-    public string EtaDetailText => !string.IsNullOrEmpty(Eta) ? $"{Eta} remaining" : (Status == TaskStatus.Downloading ? "Calculating…" : "—");
+    public string EtaDetailText => !string.IsNullOrEmpty(Eta) ? $"{Eta} remaining" : (Status == TaskStatus.Downloading ? "Calculating…" : "-");
     public string ExactBytesText => TotalBytes > 0 ? $"{TotalBytes:N0} B" : (DownloadedBytes > 0 ? $"{DownloadedBytes:N0} B" : "Unknown");
 
     public string QueueText => Status == TaskStatus.Queued ? (QueuePosition > 0 ? QueuePosition.ToString() : "Q") : "";

@@ -37,7 +37,7 @@ public static class ResolutionPipeline
             {
                 SourceUrl = pageUrl,
                 Status = ResolutionStatus.Disabled,
-                Message = "Media fetching is disabled (except YouTube) — enable it in Options.",
+                Message = "Media fetching is disabled (except YouTube) - enable it in Options.",
             };
         }
 
@@ -287,7 +287,7 @@ public static class ResolutionPipeline
         {
             SourceUrl = pageUrl,
             Status = ResolutionStatus.DrmProtected,
-            Message = "This media looks DRM-protected — WDM can't download protected streams.",
+            Message = "This media looks DRM-protected - WDM can't download protected streams.",
         };
 
     internal static List<MediaVariant> Rank(List<MediaVariant> variants)

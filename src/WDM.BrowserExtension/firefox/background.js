@@ -442,8 +442,8 @@ function updateActionTitle() {
     if (!webext.action || !webext.action.setTitle) return;
     const p = webext.action.setTitle({
       title: captureEnabled
-        ? "WDM Download Catcher — capturing ON (click to pause)"
-        : "WDM Download Catcher — capturing OFF (click to resume)"
+        ? "WDM Download Catcher - capturing ON (click to pause)"
+        : "WDM Download Catcher - capturing OFF (click to resume)"
     });
     if (p && typeof p.catch === "function") p.catch(() => {});
   } catch {}

@@ -131,15 +131,15 @@ public static class UserFriendlyError
         if (ex is DownloadEngine.CloudflareBlockedException)
             return "Error: Cloudflare blocked";
         if (ex is DownloadEngine.DiskFullPausedException)
-            return "Paused: disk full — free space, then resume";
+            return "Paused: disk full - free space, then resume";
         if (ex is DownloadEngine.FileChangedException fce)
             return fce.Reason switch
             {
-                "session-expired" => "Paused: session expired — Refresh the link to continue",
-                "range-unsupported" => "Paused: server dropped resume support — Refresh the link or restart",
-                "etag-changed" => "Paused: file replaced on server (ETag) — Refresh the link or restart",
-                "mtime-changed" => "Paused: file replaced on server (date) — Refresh the link or restart",
-                "size-changed" => "Paused: file size changed — Refresh the link or restart",
+                "session-expired" => "Paused: session expired - Refresh the link to continue",
+                "range-unsupported" => "Paused: server dropped resume support - Refresh the link or restart",
+                "etag-changed" => "Paused: file replaced on server (ETag) - Refresh the link or restart",
+                "mtime-changed" => "Paused: file replaced on server (date) - Refresh the link or restart",
+                "size-changed" => "Paused: file size changed - Refresh the link or restart",
                 _ => "Error: file changed on server",
             };
         if (ex is HlsDownloader.HlsPackagedStreamException packEx)

@@ -997,7 +997,7 @@ public sealed class DownloadEngine
                         "The site session expired (signed out or token revoked). Refresh the link to continue.", "session-expired");
                 else if (FatalErrors.IsDiskFullError(ex))
                     mapped = new DiskFullPausedException(
-                        "Disk full — paused. Free space (or move the folder), then resume.");
+                        "Disk full - paused. Free space (or move the folder), then resume.");
                 task.Status = mapped is FileChangedException or DiskFullPausedException ? TaskStatus.Paused : TaskStatus.Failed;
                 task.Error = UserFriendlyError.ForDownload(mapped);
                 task.ErrorDetail = UserFriendlyError.For(mapped);
@@ -1292,7 +1292,7 @@ public sealed class DownloadEngine
             const long margin = 64L * 1024 * 1024;
             if (free < remaining + margin)
                 throw new DiskFullPausedException(
-                    $"Disk full — paused. Need {DownloadTask.FormatBytes(remaining)} free, found {DownloadTask.FormatBytes(free.Value)}. Free space (or move the folder), then resume.");
+                    $"Disk full - paused. Need {DownloadTask.FormatBytes(remaining)} free, found {DownloadTask.FormatBytes(free.Value)}. Free space (or move the folder), then resume.");
         }
         catch (DiskFullPausedException) { throw; }
         catch { }
@@ -2966,7 +2966,7 @@ public sealed class DownloadEngine
         catch (OperationCanceledException) { throw; }
         catch (Exception ex) when (FatalErrors.IsDiskFullError(ex))
         {
-            throw new DiskFullPausedException("Disk full — paused. Free space (or move the folder), then resume.");
+            throw new DiskFullPausedException("Disk full - paused. Free space (or move the folder), then resume.");
         }
     }
 
@@ -3033,7 +3033,7 @@ public sealed class DownloadEngine
         }
         catch (Exception ex) when (FatalErrors.IsDiskFullError(ex))
         {
-            throw new DiskFullPausedException("Disk full — paused. Free space (or move the folder), then resume.");
+            throw new DiskFullPausedException("Disk full - paused. Free space (or move the folder), then resume.");
         }
     }
 
@@ -3047,14 +3047,14 @@ public sealed class DownloadEngine
             meta.ProbeBody?.Dispose();
             throw new TorrentNotSupportedException(
                 "This link serves a torrent file (.torrent), and torrent downloads aren't supported in WDM yet. " +
-                "Copy the magnet link or wait for torrent support — the descriptor was not saved.");
+                "Copy the magnet link or wait for torrent support - the descriptor was not saved.");
         }
         if (!meta.IsHls && !meta.IsDash && IsHtmlContentType(mediaType) &&
             !StreamHintIs(task, "HLS", "DASH", "Video", "Stream"))
         {
             meta.ProbeBody?.Dispose();
             throw new HtmlPageException(
-                "This link points to a web page, not a file — the server returned HTML. " +
+                "This link points to a web page, not a file - the server returned HTML. " +
                 "Open the page in a browser and capture the direct video/file link (WDM extension overlay " +
                 "or \"Resolve in WDM\"), then download that instead.");
         }
@@ -3082,7 +3082,7 @@ public sealed class DownloadEngine
         meta.ProbeBody?.Dispose();
         throw new InvalidOperationException(
             "MEGA needs a browser session first: open mega.nz in your browser (logged in), " +
-            "then retry — the extension forwards the session automatically.");
+            "then retry - the extension forwards the session automatically.");
     }
 
     /// <summary>1DM <c>FetchUrlMimeType</c> rule: a suggested filename without an
@@ -3120,22 +3120,22 @@ public sealed class DownloadEngine
     {
         task.IsResumable = false;
         if (meta.IsHls)
-            task.ResumeCapabilityText = "No — HLS segment stream";
+            task.ResumeCapabilityText = "No - HLS segment stream";
         else if (meta.IsDash)
-            task.ResumeCapabilityText = "No — DASH stream";
+            task.ResumeCapabilityText = "No - DASH stream";
         else if (task.HasPostBody())
-            task.ResumeCapabilityText = "No — form replay (single connection)";
+            task.ResumeCapabilityText = "No - form replay (single connection)";
         else if (task.HasProxyOverride())
-            task.ResumeCapabilityText = "No — browser proxy (single connection)";
+            task.ResumeCapabilityText = "No - browser proxy (single connection)";
         else if (meta.TotalBytes > 0 && meta.SupportsRanges)
         {
             task.IsResumable = true;
-            task.ResumeCapabilityText = "Yes — multithreaded chunking";
+            task.ResumeCapabilityText = "Yes - multithreaded chunking";
         }
         else if (meta.TotalBytes <= 0)
-            task.ResumeCapabilityText = "No — size unknown";
+            task.ResumeCapabilityText = "No - size unknown";
         else
-            task.ResumeCapabilityText = "No — server doesn't support ranges";
+            task.ResumeCapabilityText = "No - server doesn't support ranges";
     }
 
     private sealed class Session : IDisposable
@@ -3451,7 +3451,7 @@ public sealed class DownloadEngine
         task.Status = TaskStatus.Downloading;
         // YouTube tasks must not show HTTP-specific probe text; set immediately so the
         // progress window never flashes "Checking server support..." (see screenshot).
-        task.ResumeCapabilityText = "YouTube — via yt-dlp (single stream)";
+        task.ResumeCapabilityText = "YouTube - via yt-dlp (single stream)";
         task.IsResumable = false;
         task.IsPreparing = true;
         task.PhaseText = "Preparing video…";
@@ -3600,7 +3600,7 @@ public sealed class DownloadEngine
             {
                 task.Status = TaskStatus.Failed;
                 task.Error = "Error: video unavailable";
-                task.ErrorDetail = "The video couldn't be downloaded. It may be private, removed, or need sign-in — try the YouTube sign-in option.";
+                task.ErrorDetail = "The video couldn't be downloaded. It may be private, removed, or need sign-in - try the YouTube sign-in option.";
                 task.SpeedBps = 0;
                 task.Eta = "";
                 task.IsPreparing = false;

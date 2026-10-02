@@ -2,13 +2,14 @@
         xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="Download Complete (WDM)"
+        Title="Download Complete"
         Icon="Assets/WDM.ico"
         Width="500"
         SizeToContent="Height"
         WindowStartupLocation="CenterScreen"
         ResizeMode="NoResize"
-        ShowInTaskbar="False"
+        ShowInTaskbar="True"
+        Topmost="False"
         Background="{DynamicResource Brush.Surface}"
         UseLayoutRounding="True"
         SnapsToDevicePixels="True"
@@ -111,10 +112,10 @@
                             <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
                                 <ui:SymbolIcon x:Name="FileChipIcon" Symbol="Document24" FontSize="13"
                                                Foreground="{DynamicResource Brush.Accent}" Margin="0,0,6,0" VerticalAlignment="Center" />
-                                <TextBlock x:Name="FileChipName" Text="filename.ext" FontSize="11"
+                                <TextBlock x:Name="FileChipName" Text="Drag to folder" FontSize="11"
                                            FontFamily="{StaticResource Font.App}"
                                            Foreground="{DynamicResource Brush.Text}"
-                                           TextTrimming="CharacterEllipsis" MaxWidth="150" VerticalAlignment="Center" />
+                                           VerticalAlignment="Center" />
                             </StackPanel>
                         </Border>
                         <ui:Button Content="Close" Style="{StaticResource Button.SecondaryAction}" Click="CloseClick" Height="32" MinWidth="85" Margin="0,0,8,0" IsCancel="True"

@@ -61,6 +61,9 @@ public partial class OptionsControl : UserControl
         InitMinCatchBox(s.MinCatchSizeBytes);
         TrayProgressBox.IsChecked = s.ShowTrayProgress;
         MinimizeToTrayBox.IsChecked = s.MinimizeToTray;
+        if (ShowAddDialogBox != null) ShowAddDialogBox.IsChecked = s.ShowAddDialog;
+        if (ShowProgressDialogBox != null) ShowProgressDialogBox.IsChecked = s.ShowProgressDialog;
+        if (ShowCompleteDialogBox != null) ShowCompleteDialogBox.IsChecked = s.ShowCompleteDialog;
         if (TitleSyncBox != null) TitleSyncBox.IsChecked = s.EnableTitleSync;
         if (MediaFetchingBox != null) MediaFetchingBox.IsChecked = s.EnableMediaFetching;
         RunAtStartupBox.IsChecked = s.RunAtStartup;
@@ -306,6 +309,9 @@ public partial class OptionsControl : UserControl
         SaveMinCatchBox(s);
         if (TrayProgressBox != null) s.ShowTrayProgress = TrayProgressBox.IsChecked == true;
         if (MinimizeToTrayBox != null) s.MinimizeToTray = MinimizeToTrayBox.IsChecked == true;
+        if (ShowAddDialogBox != null) s.ShowAddDialog = ShowAddDialogBox.IsChecked == true;
+        if (ShowProgressDialogBox != null) s.ShowProgressDialog = ShowProgressDialogBox.IsChecked == true;
+        if (ShowCompleteDialogBox != null) s.ShowCompleteDialog = ShowCompleteDialogBox.IsChecked == true;
         if (TitleSyncBox != null) s.EnableTitleSync = TitleSyncBox.IsChecked == true;
         if (MediaFetchingBox != null) s.EnableMediaFetching = MediaFetchingBox.IsChecked == true;
         if (RunAtStartupBox != null) s.RunAtStartup = RunAtStartupBox.IsChecked == true;

@@ -981,7 +981,8 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
         SelectedFilter = FilterKind.All;
         SaveTasksSoon();
         UpdateStatus();
-        ShowProgressDialogRequested?.Invoke(task);
+        if (Settings.ShowProgressDialog)
+            ShowProgressDialogRequested?.Invoke(task);
     }
 
     public void AddTask(DownloadTask task)
@@ -1008,7 +1009,8 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
         {
             Engine.Start(task);
             CancelPendingShutdownIfAny();
-            ShowProgressDialogRequested?.Invoke(task);
+            if (Settings.ShowProgressDialog)
+                ShowProgressDialogRequested?.Invoke(task);
         }
         SelectedFilter = FilterKind.All;
         SaveTasksSoon();
@@ -1047,7 +1049,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
             {
                 Engine.Start(task);
                 anyStarted = true;
-                if (showDialogForFirst && !dialogShown)
+                if (showDialogForFirst && !dialogShown && Settings.ShowProgressDialog)
                 {
                     dialogShown = true;
                     ShowProgressDialogRequested?.Invoke(task);

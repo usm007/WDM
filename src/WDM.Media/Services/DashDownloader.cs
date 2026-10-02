@@ -43,7 +43,7 @@ public static class DashDownloader
         if (root is null || !root.Name.LocalName.Equals("MPD", StringComparison.OrdinalIgnoreCase))
             throw new InvalidOperationException("Not a valid DASH manifest.");
         if ((Attr(root, "type") ?? "static").Equals("dynamic", StringComparison.OrdinalIgnoreCase))
-            throw new InvalidOperationException("Live DASH streams aren't supported — only on-demand (.mpd VOD).");
+            throw new InvalidOperationException("Live DASH streams aren't supported - only on-demand (.mpd VOD).");
 
         double? mpdDuration = ParseDuration(Attr(root, "mediaPresentationDuration"));
         string chain = AustriaChain(root, manifestUrl);

@@ -77,8 +77,11 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
                 MainViewModel.PlayNotificationSound(isError: false);
 
             // Show completion dialog, queueing subsequent completions if one is already open.
+            // Respects the "Show complete dialog" option; balloon/sound above are independent.
             _dispatcher.BeginInvoke(() =>
             {
+                if (!s.ShowCompleteDialog)
+                    return;
                 if (_completeDialog is not null)
                 {
                     _completedTasksQueue.Enqueue(task);
@@ -339,6 +342,18 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
     private void ShowAddDialog(string? prefillUrl = null, string? prefillFileName = null, string? prefillReferer = null, Dictionary<string, string>? prefillHeaders = null, bool fromCapture = false, string? pageTitle = null,
         string? postData = null, string? postContentType = null, string? proxyHost = null, int proxyPort = 0, string? proxyType = null, bool fullSession = false)
     {
+        // Silent start: skip the Add dialog entirely and queue the download
+        // directly with defaults. Manual clicks with no URL still need the
+        // dialog to collect one.
+        if (!_viewModel.Settings.ShowAddDialog
+            && !string.IsNullOrWhiteSpace(prefillUrl)
+            && DownloadEngine.IsHttpUrl(prefillUrl.Trim()))
+        {
+            StartDownloadSilently(prefillUrl.Trim(), prefillFileName, prefillReferer, prefillHeaders,
+                pageTitle, postData, postContentType, proxyHost, proxyPort, proxyType, fullSession);
+            return;
+        }
+
         string targetFolder = _viewModel.Settings.DownloadFolder;
         string rawName = prefillFileName ?? (!string.IsNullOrWhiteSpace(prefillUrl) ? DownloadEngine.DeriveName(prefillUrl) : "");
         string initialFileName = DownloadEngine.SanitizeFileName(rawName, pageTitle, prefillReferer);
@@ -375,6 +390,49 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
         dialog.Show();
     }
 
+    /// <summary>Silent start (no Add dialog, no window restore): builds a task
+    /// from capture/defaults and queues it. Progress/complete popups still
+    /// follow their own show/hide options.</summary>
+    private void StartDownloadSilently(string url, string? fileName, string? referer,
+        Dictionary<string, string>? headers, string? pageTitle,
+        string? postData, string? postContentType,
+        string? proxyHost, int proxyPort, string? proxyType, bool fullSession)
+    {
+        try
+        {
+            string rawName = fileName ?? DownloadEngine.DeriveName(url);
+            string finalName = DownloadEngine.SanitizeFileName(rawName, pageTitle, referer);
+            if (string.IsNullOrWhiteSpace(finalName))
+                finalName = DownloadEngine.DeriveName(url);
+            var task = new DownloadTask
+            {
+                Url = url,
+                Referer = referer,
+                Headers = headers is null
+                    ? new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+                    : new Dictionary<string, string>(headers, StringComparer.OrdinalIgnoreCase),
+                PostData = string.IsNullOrWhiteSpace(postData) ? null : postData,
+                PostContentType = string.IsNullOrWhiteSpace(postContentType) ? null : postContentType,
+                ProxyHost = proxyHost,
+                ProxyPort = proxyPort,
+                ProxyType = proxyType,
+                FullSessionReplay = fullSession,
+                SaveFolder = _viewModel.Settings.DownloadFolder,
+                FileName = finalName,
+                ChunkCount = Math.Max(0, _viewModel.Settings.DefaultChunkCount),
+                SpeedLimitKbps = 0,
+                Category = DownloadTask.Categorize(finalName),
+                IsYouTube = _viewModel.Settings.EnableYouTubeDownloads && YouTubeResolver.IsYoutubeUrl(url),
+                Status = Models.TaskStatus.Queued,
+            };
+            _viewModel.AddTask(task);
+        }
+        catch (Exception ex)
+        {
+            App.LogException(ex);
+        }
+    }
+
     /// <summary>Batch capture checklist (1DM multi-post dialog equivalent):
     /// checked links become downloads via a single batched add.</summary>
     private void ShowBatchAddDialog(List<Services.CaptureServer.BatchCaptureItem> items)
@@ -400,10 +458,28 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
             if (_completedTasksQueue.Count > 0)
             {
                 var next = _completedTasksQueue.Dequeue();
-                ShowNextCompleteDialog(next);
+                // A queued completion may have arrived while the option was on;
+                // re-check so turning it off mid-queue stops further popups.
+                if (_viewModel.Settings.ShowCompleteDialog)
+                    ShowNextCompleteDialog(next);
+                else
+                    _completedTasksQueue.Clear();
             }
         };
+        // Must surface even when the main window is minimized / hidden to tray:
+        // temporary Topmost + Activate pops it above all windows, then unpin so
+        // it does not stay always-on-top.
+        dialog.Topmost = true;
+        dialog.ShowActivated = true;
+        if (dialog.WindowState == WindowState.Minimized)
+            dialog.WindowState = WindowState.Normal;
         dialog.Show();
+        dialog.Activate();
+        dialog.Focus();
+        _dispatcher.BeginInvoke(new Action(() =>
+        {
+            try { dialog.Topmost = false; } catch { }
+        }), System.Windows.Threading.DispatcherPriority.Background);
     }
 
     private void ShowProperties(DownloadTask? task)

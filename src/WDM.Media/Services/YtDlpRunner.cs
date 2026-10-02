@@ -188,7 +188,7 @@ public static class YtDlpRunner
         error.Append(await errTask);
 
         if (output.Length > 20 * 1024 * 1024)
-            throw new YtDlpException("Metadata response too large — refusing to parse.");
+            throw new YtDlpException("Metadata response too large - refusing to parse.");
 
         if (proc.ExitCode != 0)
         {

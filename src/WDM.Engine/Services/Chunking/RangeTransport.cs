@@ -456,7 +456,7 @@ public static class RangeTransport
                     {
                         lastError = new HttpRequestException(
                             $"Mirror content mismatch at byte {diffAt} (range {committed}-{toInclusive} from {url}): " +
-                            "no undisputed mirror remains — refusing to assemble.");
+                            "no undisputed mirror remains - refusing to assemble.");
                         attempts++;
                         telemetry.AddRetry();
                         if (attempts >= budget)
