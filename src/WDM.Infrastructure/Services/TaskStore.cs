@@ -596,6 +596,7 @@ public sealed class TaskStore
                 Progress = t.Progress,
                 SpeedLimitKbps = t.SpeedLimitKbps,
                 Priority = t.Priority,
+                WaitForIdle = t.WaitForIdle,
                 Category = t.Category,
                 Checksum = t.Checksum,
                 Error = t.Error,
@@ -642,6 +643,10 @@ public sealed class TaskRecord
     public int Progress { get; set; }
     public long SpeedLimitKbps { get; set; }
     public PriorityLevel Priority { get; set; } = PriorityLevel.Normal;
+    /// <summary>"Add to Queue" strict-sequential flag (see
+    /// <see cref="WDM.Models.DownloadTask.WaitForIdle"/>). Missing in old
+    /// files — tolerated as false.</summary>
+    public bool WaitForIdle { get; set; }
     public DownloadCategory Category { get; set; } = DownloadCategory.Other;
     public string? Checksum { get; set; }
     public string? Error { get; set; }

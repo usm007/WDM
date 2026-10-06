@@ -327,6 +327,7 @@ public partial class AddDownloadDialog : Window
 
         OkButton.IsEnabled = isValid;
         if (DownloadLaterButton != null) DownloadLaterButton.IsEnabled = isValid;
+        if (QueueButton != null) QueueButton.IsEnabled = isValid;
         if (isValid)
         {
             StartHint.Visibility = Visibility.Collapsed;
@@ -897,6 +898,7 @@ public partial class AddDownloadDialog : Window
                 bool urlOk = IsSupportedHttpUrl(NormalizePastedUrl(UrlBox.Text));
                 OkButton.IsEnabled = !probing && urlOk;
                 if (DownloadLaterButton != null) DownloadLaterButton.IsEnabled = !probing && urlOk;
+                if (QueueButton != null) QueueButton.IsEnabled = !probing && urlOk;
                 OkButton.Content = probing ? "Checking…" : "Start download";
                 if (DownloadLaterButton != null) DownloadLaterButton.Content = probing ? "Checking…" : "Download later";
             });
@@ -1137,7 +1139,9 @@ public partial class AddDownloadDialog : Window
 
     private void DownloadLaterClick(object sender, RoutedEventArgs e) => CreateAndAddTask(startImmediately: false);
 
-    private void CreateAndAddTask(bool startImmediately)
+    private void QueueClick(object sender, RoutedEventArgs e) => CreateAndAddTask(startImmediately: true, strictQueue: true);
+
+    private void CreateAndAddTask(bool startImmediately, bool strictQueue = false)
     {
         string url = NormalizePastedUrl(UrlBox.Text);
         if (!IsSupportedHttpUrl(url))
@@ -1240,6 +1244,7 @@ public partial class AddDownloadDialog : Window
                     YouTubeFormatArg = batchFormat,
                     YouTubeExtraArgs = batchExtra.Count > 0 ? string.Join("\n", batchExtra) : null,
                     Status = startImmediately ? TaskStatus.Queued : TaskStatus.Paused,
+                    WaitForIdle = strictQueue,
                 });
             }
 
@@ -1326,6 +1331,7 @@ public partial class AddDownloadDialog : Window
             YouTubeFormatArg = formatArg,
             YouTubeExtraArgs = extraArgs.Count > 0 ? string.Join("\n", extraArgs) : null,
             Status = startImmediately ? TaskStatus.Queued : TaskStatus.Paused,
+            WaitForIdle = strictQueue,
         };
 
         _viewModel.AddTask(task);

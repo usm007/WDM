@@ -698,6 +698,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
                 Progress = Math.Clamp(record.Progress, 0, 100),
                 SpeedLimitKbps = Math.Max(0, record.SpeedLimitKbps),
                 Priority = record.Priority,
+                WaitForIdle = record.WaitForIdle,
                 Category = record.Category,
                 Checksum = record.Checksum,
                 Error = record.Error,
@@ -1368,7 +1369,10 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
     public void ResumeSelected()
     {
         if (SelectedTask is not null && SelectedTask.Status == TaskStatus.Paused)
+        {
+            SelectedTask.WaitForIdle = false;
             Engine.Start(SelectedTask);
+        }
     }
 
     public void StopSelected()
@@ -1384,7 +1388,10 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
         if (SelectedTask.Status is TaskStatus.Downloading or TaskStatus.Queued)
             Engine.Pause(SelectedTask);
         else if (SelectedTask.Status == TaskStatus.Paused)
+        {
+            SelectedTask.WaitForIdle = false;
             Engine.Start(SelectedTask);
+        }
     }
 
     public void ToggleTask(DownloadTask task)
@@ -1392,7 +1399,10 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
         if (task.Status is TaskStatus.Downloading or TaskStatus.Queued)
             Engine.Pause(task);
         else if (task.Status == TaskStatus.Paused)
+        {
+            task.WaitForIdle = false;
             Engine.Start(task);
+        }
         SaveTasksSoon();
         UpdateStatus();
     }
@@ -1413,6 +1423,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
         task.AutoResumeAttempts = 0;
         task.Error = null;
         task.Eta = "";
+        task.WaitForIdle = false;
         Engine.Start(task);
         ActivityLog.Write("RETRY", task.FileName);
         SaveTasksSoon();
@@ -1427,6 +1438,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
         task.AutoResumeAttempts = 0;
         task.Error = null;
         task.Eta = "";
+        task.WaitForIdle = false;
         Engine.Start(task);
         ActivityLog.Write("REFRESH-LINK", $"{task.FileName} -> {ActivityLog.HostOf(newUrl)} | resuming from {ActivityLog.ProgressOf(task.DownloadedBytes, task.TotalBytes)}");
         SaveTasksSoon();
@@ -1450,7 +1462,10 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
         task.Error = null;
         task.Eta = "";
         if (wasActive && task.Status == TaskStatus.Paused)
+        {
+            task.WaitForIdle = false;
             Engine.Start(task);
+        }
         SaveTasksSoon();
         UpdateStatus();
         return true;

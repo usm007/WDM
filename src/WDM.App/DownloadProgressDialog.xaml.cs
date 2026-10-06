@@ -480,6 +480,7 @@ public partial class DownloadProgressDialog : Window, INotifyPropertyChanged
         Task.Error = null;
         Task.ErrorDetail = null;
         Task.Eta = "";
+        Task.WaitForIdle = false;
         _mainViewModel.Engine.Start(Task);
         _mainViewModel.SaveTasksSoon();
         OnPropertyChanged(nameof(CanPause));

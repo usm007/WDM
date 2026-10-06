@@ -176,6 +176,44 @@ public static class FileNameHelper
     }
 
     /// <summary>
+    /// IDM-style: last URL path segment usable as a filename STEM even when it
+    /// carries no extension (e.g. gofile <c>/download/web/&lt;guid&gt;/Movie Title (2026</c>).
+    /// Null when the segment is missing, too short, token/hash-like, numeric,
+    /// or generic — callers then fall back to disposition/MIME/page-title.
+    /// </summary>
+    public static string? DescriptiveStemFromUrl(string url)
+    {
+        if (!Uri.TryCreate(url, UriKind.Absolute, out var uri))
+            return null;
+        string raw = Path.GetFileName(uri.AbsolutePath);
+        string tail;
+        try { tail = Uri.UnescapeDataString(raw); }
+        catch { tail = raw; }
+        tail = tail.Trim();
+        if (tail.Length < 8 || tail.Length > 120)
+            return null;
+        // Opaque identifiers carry no title signal: GUIDs, hex/base64 tokens,
+        // pure numbers. (Dashes/underscores excluded from the token class so
+        // real slugs like "my-movie-2024" survive.)
+        if (Regex.IsMatch(tail, @"^[0-9a-fA-F]{8}(-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12}$"))
+            return null;
+        if (!tail.Any(char.IsWhiteSpace) && Regex.IsMatch(tail, @"^[A-Za-z0-9+/=]{16,}$"))
+            return null;
+        if (Regex.IsMatch(tail, @"^[0-9a-fA-F]{16,}$"))
+            return null;
+        if (Regex.IsMatch(tail, @"^\d+$"))
+            return null;
+        // Descriptive = reads like a title: word separators, or a year.
+        bool hasSeparators = tail.IndexOfAny(new[] { ' ', '-', '_', '.', '(', '[', '%' }) >= 0;
+        bool hasYear = Regex.IsMatch(tail, @"\b(19|20)\d{2}\b");
+        if (!hasSeparators && !hasYear)
+            return null;
+        if (IsGenericStem(tail))
+            return null;
+        return tail;
+    }
+
+    /// <summary>
     /// Appends an extension to a name if it doesn't already have one. If the name is
     /// empty, produces <c>download_&lt;timestamp&gt;&lt;ext&gt;</c>.
     /// </summary>
@@ -316,6 +354,8 @@ public static class FileNameHelper
             @"(?i)\bfilmyzilla(\s*(org|com|cc|ws|vip|top|me|link|site|in))?\b",
             @"(?i)\b9xmovies(\s*(org|com|cc|ws|vip|top|me|link|site|in))?\b",
             @"(?i)\b(pagalworld|mp4moviez|yts\.mx|yts|yify|eztv|psa|rarbg|tigole|qxr|megusta|galaxytt|galaxyrg|1337x|mkvcinemas)\b",
+            @"(?i)\b(gofile(\.io)?|uptobox(\.com)?|rapidgator(\.net)?|nitroflare(\.com)?|turbobit(\.net)?|1fichier(\.com)?|pixeldrain(\.com)?|catbox(\.moe)?|doodstream|streamtape(\.com)?|mixdrop|krakenfiles|filejoker|anonfiles|zippyshare|sendvid)\b",
+            @"(?i)\b(mega\.(nz|io)|mediafire\.com|dropbox\.com|drive\.google)\b",
             @"(?i)\b(www\s+[a-z0-9\-]+\s+(com|org|net|in|vu|cc|ws))\b",
             @"(?i)\b(download\s+(full\s+movie|hd|movie|in\s+hindi))\b",
             @"(?i)\s+(vu|cc|ws|top|vip|site)\s*$"
@@ -368,7 +408,7 @@ public static class FileNameHelper
     private static string FinalizeName(string stem, string ext)
     {
         string name = Regex.Replace(stem, @"\s+", " ").Trim();
-        name = name.Trim('-', ' ', '.', '_', ',', '|', '~', ':', ';');
+        name = name.Trim('-', ' ', '.', '_', ',', '|', '~', ':', ';', '•', '·', '»', '(', '[');
 
         if (string.IsNullOrWhiteSpace(name))
             name = $"download_{DateTime.Now:yyyyMMdd_HHmmss}";
@@ -396,7 +436,7 @@ public static class FileNameHelper
         name = Regex.Replace(name, @":", " ");
         name = Regex.Replace(name, @"\s+", " ").Trim();
         name = name.TrimStart('.');
-        name = name.Trim('-', ' ', '_', ',', '|', '~', ';');
+        name = name.Trim('-', ' ', '_', ',', '|', '~', ';', '•', '·', '»', '(', '[');
         if (string.IsNullOrWhiteSpace(name))
             return $"download_{DateTime.Now:yyyyMMddHHmmss}";
         // Reserved Windows device names (CON, PRN, AUX, NUL, COM1-9, LPT1-9).
@@ -485,7 +525,7 @@ public static class FileNameHelper
         string t = title.Trim();
         if (t.Length < 3) return true;
         return Regex.IsMatch(t,
-            @"^(Seedr(\s*[:\-–—]?\s*.*)?|Google Drive|OneDrive|Dropbox|MediaFire|Mega|iCloud|Home|Index|Untitled|Welcome|Download|Direct Download)$",
+            @"^(Seedr(\s*[:\-–—]?\s*.*)?|Google Drive|OneDrive|Dropbox|MediaFire|Mega|Gofile|Uptobox|Rapidgator|Nitroflare|Turbobit|1fichier|Pixeldrain|Catbox|Doodstream|Streamtape|Mixdrop|Krakenfiles|iCloud|Home|Index|Untitled|Welcome|Download|Direct Download)$",
             RegexOptions.IgnoreCase);
     }
     /// <summary>[Name] [year] [language] [quality] — the only video name shape.
@@ -566,13 +606,20 @@ public static class FileNameHelper
         title = Regex.Replace(title, @"^\s*(Watch|Now Playing)\s+", "", RegexOptions.IgnoreCase);
 
         // Strip site suffix e.g. " - World4uFree", " | Vegamovies", " » 1TamilMV"
-        title = Regex.Replace(title, @"\s*[-–—|»•]\s*(World4uFree|Vegamovies|1TamilMV|Bolly4u|MoviesMod|Khatrimaza|FilmyZilla|9xmovies|Pagalworld|Mp4moviez|.*?\.(vu|org|com|net|in|cc|ws|top|vip|site)).*$", "", RegexOptions.IgnoreCase);
+        title = Regex.Replace(title, @"\s*[-–—|»•·]\s*(World4uFree|Vegamovies|1TamilMV|Bolly4u|MoviesMod|Khatrimaza|FilmyZilla|9xmovies|Pagalworld|Mp4moviez|.*?\.(vu|org|com|net|in|cc|ws|top|vip|site)).*$", "", RegexOptions.IgnoreCase);
+
+        // File-host branding is never part of a title ("Clip · Gofile",
+        // "Movie - Mega", "Show | MediaFire"). End-anchored after a
+        // separator, so mid-title words ("Mega Shark") are untouched.
+        // Bare short names only for unambiguous hosts; common words
+        // (drive, mega, mediafire, dropbox) need their dotted/host form.
+        title = Regex.Replace(title, @"\s*[-–—|»•·]\s*(gofile(\.io)?|mega\.(nz|io)|mediafire\.com|dropbox\.com|drive\.google|google\s*drive|1fichier(\.com)?|uptobox(\.com)?|rapidgator(\.net)?|nitroflare(\.com)?|turbobit(\.net)?|pixeldrain(\.com)?|catbox(\.moe)?|doodstream(\.\w+)?|streamtape(\.com)?|mixdrop(\.\w+)?|krakenfiles(\.com)?|filejoker(\.net)?|anonfiles(\.\w+)?|zippyshare(\.com)?|sendvid(\.com)?|mega|mediafire|dropbox)\s*$", "", RegexOptions.IgnoreCase);
 
         // Generic trailing site tag when the known-site list missed
         // ("My Film - VOE", "Show | dood"): strip the last " - X" chunk only when
         // X looks like a site tag (dotted, very short, or all-caps) so real
         // subtitles ("Episode 5 - Finale") survive.
-        title = Regex.Replace(title, @"\s*[-–—|»•]\s*([^-–—|»•]{1,32})$", m =>
+        title = Regex.Replace(title, @"\s*[-–—|»•·]\s*([^-–—|»•·]{1,32})$", m =>
         {
             string chunk = m.Groups[1].Value.Trim();
             bool siteLike = chunk.Contains('.')

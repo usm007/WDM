@@ -4,7 +4,7 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         Title="Download Complete"
         Icon="Assets/WDM.ico"
-        Width="500"
+        Width="540"
         SizeToContent="Height"
         WindowStartupLocation="CenterScreen"
         ResizeMode="NoResize"
@@ -92,7 +92,7 @@
                                AutomationProperties.AutomationId="BtnCompleteOpenFolder" />
                     <StackPanel Orientation="Horizontal" DockPanel.Dock="Right">
                         <Border x:Name="FileChip" Cursor="Hand" Height="32" Padding="8,0" Margin="0,0,12,0"
-                                VerticalAlignment="Center" MaxWidth="230"
+                                VerticalAlignment="Center"
                                 BorderThickness="1" CornerRadius="5"
                                 MouseLeftButtonDown="FileChip_MouseLeftButtonDown"
                                 AutomationProperties.AutomationId="ChipCompleteFileDrag"
@@ -110,17 +110,18 @@
                                 </Style>
                             </Border.Style>
                             <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                                <ui:SymbolIcon x:Name="FileChipIcon" Symbol="Document24" FontSize="13"
+                                <ui:SymbolIcon x:Name="FileChipIcon" Symbol="FolderOpen24" FontSize="13"
                                                Foreground="{DynamicResource Brush.Accent}" Margin="0,0,6,0" VerticalAlignment="Center" />
                                 <TextBlock x:Name="FileChipName" Text="Drag to folder" FontSize="11"
                                            FontFamily="{StaticResource Font.App}"
                                            Foreground="{DynamicResource Brush.Text}"
-                                           VerticalAlignment="Center" />
+                                           VerticalAlignment="Center"
+                                           TextTrimming="CharacterEllipsis" />
                             </StackPanel>
                         </Border>
-                        <ui:Button Content="Close" Style="{StaticResource Button.SecondaryAction}" Click="CloseClick" Height="32" MinWidth="85" Margin="0,0,8,0" IsCancel="True"
+                        <ui:Button Content="Close" Style="{StaticResource Button.SecondaryAction}" Click="CloseClick" Height="32" MinWidth="80" Margin="0,0,8,0" IsCancel="True"
                                    AutomationProperties.AutomationId="BtnCompleteClose" />
-                        <ui:Button Content="Open File" Style="{StaticResource Button.PrimaryAction}" Click="OpenFile_Click" Height="32" MinWidth="95" IsDefault="True"
+                        <ui:Button Content="Open File" Style="{StaticResource Button.PrimaryAction}" Click="OpenFile_Click" Height="32" MinWidth="90" IsDefault="True"
                                    AutomationProperties.AutomationId="BtnCompleteOpenFile" />
                     </StackPanel>
                 </DockPanel>

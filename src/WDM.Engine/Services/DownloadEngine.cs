@@ -310,6 +310,16 @@ public sealed class DownloadEngine
             if (_queue.Contains(task))
                 return;
 
+            // "Add to Queue": waits for total idle, overriding MaxConcurrent.
+            // Explicit Start/Retry clears the flag first (see MainViewModel).
+            if (task.WaitForIdle && _sessions.Count > 0)
+            {
+                task.Status = TaskStatus.Queued;
+                _queue.Add(task);
+                TaskChanged?.Invoke();
+                return;
+            }
+
             if (_sessions.Count >= _maxConcurrent)
             {
                 task.Status = TaskStatus.Queued;
@@ -644,6 +654,11 @@ public sealed class DownloadEngine
             {
                 if (_sessions.Count + toStart.Count >= _maxConcurrent)
                     break;
+                // Strict "Add to Queue" items never leapfrog: they start only
+                // at total idle with an empty batch, so queued work ahead of
+                // them runs first and strict items stay sequential.
+                if (task.WaitForIdle && (_sessions.Count > 0 || toStart.Count > 0))
+                    continue;
                 _queue.Remove(task);
                 toStart.Add(task);
             }
@@ -2574,6 +2589,14 @@ public sealed class DownloadEngine
             // Keep the SmartSanitize result as-is.
             return fromPath;
         }
+
+        // IDM-style: an extensionless but descriptive tail ("Movie Title (2026")
+        // is still the best stem we have — prefer it over download_*.bin and
+        // junk page titles. The real extension still arrives via
+        // Content-Disposition/MIME at probe time when the server sends one.
+        string? stem = FileNameHelper.DescriptiveStemFromUrl(url);
+        if (!string.IsNullOrWhiteSpace(stem))
+            return SanitizeFileName(stem);
 
         // URL carries no usable filename (signed/tokenized paths): fall back to a
         // proper extension derived from the MIME type instead of a generic .bin.

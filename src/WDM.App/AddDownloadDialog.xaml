@@ -323,6 +323,9 @@
                 <ui:Button x:Name="DownloadLaterButton" DockPanel.Dock="Left" Content="Download later" Style="{StaticResource Button.SecondaryAction}"
                            AutomationProperties.AutomationId="BtnDownloadLater"
                            Click="DownloadLaterClick" MinWidth="105" Height="32" Margin="0,0,10,0" IsEnabled="False" />
+                <ui:Button x:Name="QueueButton" DockPanel.Dock="Left" Content="Add to Queue" Style="{StaticResource Button.SecondaryAction}"
+                           AutomationProperties.AutomationId="BtnAddToQueue" ToolTip="Starts only after current downloads finish, ignoring the concurrent-download limit"
+                           Click="QueueClick" MinWidth="105" Height="32" Margin="0,0,10,0" IsEnabled="False" />
                 <StackPanel Orientation="Horizontal" DockPanel.Dock="Right">
                     <ui:Button Content="Cancel" Style="{StaticResource Button.SecondaryAction}" IsCancel="True" Click="CancelClick"
                                AutomationProperties.AutomationId="BtnCancel"

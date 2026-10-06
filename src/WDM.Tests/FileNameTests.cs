@@ -70,4 +70,50 @@ public sealed class FileNameTests
 
         Assert.Contains("My Movie 2024", result);
     }
+
+    [Theory]
+    [InlineData("I Edc EEPJ · Gofile", "I Edc EEPJ")]
+    [InlineData("Some Movie (2024) - Mega", "Some Movie (2024)")]
+    [InlineData("Clip | MediaFire", "Clip")]
+    [InlineData("Show - Google Drive", "Show")]
+    public void CleanPageTitle_StripsFileHostBranding(string title, string expected)
+    {
+        Assert.Equal(expected, FileNameHelper.CleanPageTitle(title));
+    }
+
+    [Fact]
+    public void CleanPageTitle_KeepsHostWordInsideRealTitle()
+    {
+        Assert.Equal("Mega Shark vs Giant Octopus", FileNameHelper.CleanPageTitle("Mega Shark vs Giant Octopus"));
+    }
+
+    [Fact]
+    public void DescriptiveStemFromUrl_ExtensionlessTitleTail()
+    {
+        string? stem = FileNameHelper.DescriptiveStemFromUrl(
+            "https://file-na-lax-1.gofile.io/download/web/982bae6b-ca2c-4e6e-85f4-7fd43b368d71/Spider-Man%20-%20Brand%20New%20Day%20(2026");
+        Assert.Equal("Spider-Man - Brand New Day (2026", stem);
+    }
+
+    [Theory]
+    [InlineData("https://cdn.example.com/dl/982bae6bca2c4e6e85f47fd43b368d71")]
+    [InlineData("https://cdn.example.com/dl/a1b2c3d4e5f60718293a4b5c6d7e8f90")]
+    [InlineData("https://cdn.example.com/dl/12345678")]
+    [InlineData("https://cdn.example.com/dl/x")]
+    [InlineData("https://cdn.example.com/dl/video")]
+    public void DescriptiveStemFromUrl_RejectsTokens(string url)
+    {
+        Assert.Null(FileNameHelper.DescriptiveStemFromUrl(url));
+    }
+
+    [Fact]
+    public void DeriveName_PrefersDescriptiveStemOverBinFallback()
+    {
+        string name = WDM.Services.DownloadEngine.DeriveName(
+            "https://file-na-lax-1.gofile.io/download/web/982bae6b-ca2c-4e6e-85f4-7fd43b368d71/Spider-Man%20-%20Brand%20New%20Day%20(2026",
+            "application/octet-stream");
+        Assert.Contains("Spider-Man", name);
+        Assert.DoesNotContain(".bin", name);
+        Assert.False(name.StartsWith("download_", StringComparison.OrdinalIgnoreCase), name);
+    }
 }

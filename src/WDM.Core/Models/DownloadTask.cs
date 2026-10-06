@@ -142,6 +142,16 @@ public sealed class DownloadTask : INotifyPropertyChanged
         set => Set(ref _priority, value);
     }
 
+    private bool _waitForIdle;
+    /// <summary>"Add to Queue": starts only when no other download is active,
+    /// overriding MaxConcurrentDownloads. Cleared by an explicit Start/Retry;
+    /// bulk resume and auto-starts respect it. Persisted.</summary>
+    public bool WaitForIdle
+    {
+        get => _waitForIdle;
+        set => Set(ref _waitForIdle, value);
+    }
+
     private string _saveFolder = DefaultSaveFolder;
     public string SaveFolder
     {
