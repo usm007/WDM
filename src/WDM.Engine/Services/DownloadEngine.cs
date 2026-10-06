@@ -806,6 +806,7 @@ public sealed class DownloadEngine
             ThrowIfUnsupportedContent(task, meta);
             ThrowIfMegaSessionMissing(task, meta);
             task.TotalBytes = meta.TotalBytes;
+            task.IsSizeEstimated = meta.IsSizeEstimated;
             ThrowIfNoRoomFor(task);
             session.CurrentUrlIndex = meta.UrlIndex;
             ApplyResumeCapability(task, meta);
@@ -942,6 +943,7 @@ public sealed class DownloadEngine
             task.SpeedBps = 0;
             task.Eta = "";
             task.IsPreparing = false;
+            task.IsSizeEstimated = false;
             task.PhaseText = "";
             TaskCompleted?.Invoke(task);
         }
@@ -965,6 +967,7 @@ public sealed class DownloadEngine
             }
             task.Status = TaskStatus.Paused;
             task.IsPreparing = false;
+            task.IsSizeEstimated = false;
             task.PhaseText = "";
         }
         catch (Exception ex)
@@ -1263,7 +1266,29 @@ public sealed class DownloadEngine
             if (await SniffHlsContentAsync(task, url, ct))
                 isHls = true;
         }
-        return new ProbeMeta(totalBytes, supportsRanges, suggestedName, contentType, isHls, isDash, etag, lastModified, probeBody, urlIndex);
+        // HLS pre-download sizing (IDM-style): the playlist file itself is only a
+        // few KB, so resolve it now and estimate the stream total up front. The
+        // Add dialog shows "~size" instead of unknown; the estimate is replaced
+        // by measured segment sizes once the download starts. Never throws.
+        bool hlsEstimated = false;
+        if (isHls)
+        {
+            try
+            {
+                long estimate = await HlsDownloader.TryEstimateSizeAsync(
+                    ClientFor(task), finalUrl ?? url, task.Referer, task.Headers, ct);
+                if (estimate > 0)
+                {
+                    totalBytes = estimate;
+                    hlsEstimated = true;
+                }
+            }
+            catch
+            {
+                ct.ThrowIfCancellationRequested();
+            }
+        }
+        return new ProbeMeta(totalBytes, supportsRanges, suggestedName, contentType, isHls, isDash, etag, lastModified, probeBody, urlIndex, hlsEstimated);
     }
 
     private static bool IsResuming(Session session)
@@ -1641,7 +1666,8 @@ public sealed class DownloadEngine
                 {
                     task.PhaseText = phase;
                     TaskChanged?.Invoke();
-                });
+                },
+                estimated => task.IsSizeEstimated = estimated);
         }
         catch (HlsDownloader.HlsPackagedStreamException packEx)
         {
@@ -1782,6 +1808,7 @@ public sealed class DownloadEngine
                     _reservedPaths.Add(task.FullPath);
                 }
                 task.TotalBytes = new FileInfo(outPath).Length;
+                task.IsSizeEstimated = false;
                 Interlocked.Exchange(ref session.BytesDownloaded, task.TotalBytes);
                 Interlocked.Exchange(ref session.LastBytes, task.TotalBytes);
                 TaskChanged?.Invoke();
@@ -3022,6 +3049,7 @@ public sealed class DownloadEngine
             task.SpeedBps = 0;
             task.Eta = "";
             task.IsPreparing = false;
+            task.IsSizeEstimated = false;
             task.PhaseText = "";
             TaskCompleted?.Invoke(task);
         }
@@ -3110,7 +3138,8 @@ public sealed class DownloadEngine
         string? Etag,
         string? LastModified,
         HttpResponseMessage? ProbeBody,
-        int UrlIndex);
+        int UrlIndex,
+        bool IsSizeEstimated = false);
 
     /// <summary>Records whether the current source can be resumed mid-transfer. Mirrors
     /// the branch taken in <see cref="RunSessionAsync"/>: chunked only when the size is
@@ -3613,6 +3642,7 @@ public sealed class DownloadEngine
             task.SpeedBps = 0;
             task.Eta = "";
             task.IsPreparing = false;
+            task.IsSizeEstimated = false;
             task.PhaseText = "";
         }
         catch (Exception ex)
@@ -3623,6 +3653,7 @@ public sealed class DownloadEngine
             task.SpeedBps = 0;
             task.Eta = "";
             task.IsPreparing = false;
+            task.IsSizeEstimated = false;
             task.PhaseText = "";
         }
         finally
@@ -3657,6 +3688,7 @@ public sealed class DownloadEngine
             || line.StartsWith("[ExtractAudio]", StringComparison.OrdinalIgnoreCase)))
         {
             task.IsPreparing = false;
+            task.IsSizeEstimated = false;
             task.PhaseText = "";
         }
         if (line.StartsWith("[download] Destination: "))

@@ -40,6 +40,8 @@ public static class HlsDownloader
         public byte[]? Iv;
         public long Start;
         public long Length;
+        /// <summary>EXTINF duration in seconds (0 when the playlist omits it).</summary>
+        public double Duration;
     }
 
     private static bool IsFatalStatus(System.Net.HttpStatusCode code) =>
@@ -60,6 +62,13 @@ public static class HlsDownloader
         public List<Segment> Segments = new();
         public string? InitUri;
         public long TotalBytes;
+        /// <summary>Sum of EXTINF durations in seconds (0 when absent).</summary>
+        public double TotalDurationSeconds;
+        /// <summary>Chosen rendition BANDWIDTH in bits/s (-1 when the URL was
+        /// already a media playlist and no master was seen).</summary>
+        public long BandwidthBps = -1;
+        /// <summary>True when #EXT-X-ENDLIST was present: VOD, safe to size.</summary>
+        public bool HasEndList;
         /// <summary>An EXT-X-KEY METHOD other than AES-128/NONE was seen
         /// (e.g. SAMPLE-AES): segments are packaged-encrypted and need ffmpeg.</summary>
         public bool HasUnsupportedEncryption;
@@ -213,7 +222,8 @@ public static class HlsDownloader
         Action<long> setTotalBytes,
         Func<long, CancellationToken, Task> throttle,
         Dictionary<string, string>? headers = null,
-        Action<string>? setPhase = null)
+        Action<string>? setPhase = null,
+        Action<bool>? setSizeEstimated = null)
     {
         var (playlist, effectiveManifestUrl) = await ResolvePlaylistAsync(http, manifestUrl, referer, headers, ct);
 
@@ -233,6 +243,28 @@ public static class HlsDownloader
         // Discover each segment's size so the engine can show real progress and ETA.
         await ProbeSegmentSizesAsync(http, playlist, referer, headers, setPhase, ct);
         setTotalBytes(playlist.TotalBytes);
+        if (playlist.Segments.Any(s => s.Length > 0))
+        {
+            setSizeEstimated?.Invoke(false);
+        }
+        else
+        {
+            // Nothing measurable (HEAD rejected + range probes length-less):
+            // fall back to a bitrate/extrapolated estimate so progress and
+            // ETA still work instead of staying unknown for the whole run.
+            long estimate = ExtrapolateTotalBytes(playlist);
+            if (estimate <= 0)
+                estimate = EstimateTotalBytes(playlist.BandwidthBps, playlist.TotalDurationSeconds);
+            if (estimate > 0)
+            {
+                setTotalBytes(estimate);
+                setSizeEstimated?.Invoke(true);
+            }
+            else
+            {
+                setSizeEstimated?.Invoke(false);
+            }
+        }
         if (initSegment is not null)
             addBytes(initSegment.Length);
 
@@ -613,6 +645,7 @@ public static class HlsDownloader
     private static async Task<(Playlist Playlist, string EffectiveUrl)> ResolvePlaylistAsync(
         HttpClient http, string manifestUrl, string? referer, Dictionary<string, string>? headers, CancellationToken ct)
     {
+        long playlistBandwidth = -1;
         for (int depth = 0; depth < 3; depth++)
         {
             var (text, effectiveUrl) = await FetchTextAsync(http, manifestUrl, referer, headers, ct);
@@ -625,16 +658,18 @@ public static class HlsDownloader
             // lines; those variant URIs must never be mistaken for media segments.
             if (text.Contains("#EXT-X-STREAM-INF:", StringComparison.OrdinalIgnoreCase))
             {
-                var variant = ParseMasterVariant(text);
-                if (variant is null)
+                var (variantUri, variantBandwidth) = ParseMasterVariant(text);
+                if (variantUri is null)
                     throw new InvalidOperationException("HLS master playlist has no usable variant.");
-                manifestUrl = ResolveUrl(manifestUrl, variant);
+                playlistBandwidth = variantBandwidth;
+                manifestUrl = ResolveUrl(manifestUrl, variantUri);
                 continue;
             }
 
             var playlist = ParsePlaylist(text, manifestUrl);
             if (playlist is null)
                 throw new InvalidOperationException("Not a valid HLS playlist.");
+            playlist.BandwidthBps = playlistBandwidth;
 
             await PrepareKeysAsync(http, manifestUrl, referer, headers, playlist, ct);
             return (playlist, manifestUrl);
@@ -643,7 +678,7 @@ public static class HlsDownloader
         throw new InvalidOperationException("HLS playlist did not resolve to a media playlist.");
     }
 
-    private static string? ParseMasterVariant(string text)
+    private static (string? uri, long bandwidth) ParseMasterVariant(string text)
     {
         string? best = null;
         long bestBandwidth = -1;
@@ -659,7 +694,108 @@ public static class HlsDownloader
                 bestHeight = height;
             }
         }
-        return best;
+        return (best, bestBandwidth);
+    }
+
+    /// <summary>Bitrate-based size estimate (IDM-style): BANDWIDTH bits/s ×
+    /// total EXTINF duration / 8. Used when segment probes yield no lengths
+    /// (HEAD rejected + range probes length-less). Returns 0 when unusable.</summary>
+    public static long EstimateTotalBytes(long bandwidthBps, double totalSeconds)
+    {
+        if (bandwidthBps <= 0 || totalSeconds <= 0
+            || double.IsNaN(totalSeconds) || double.IsInfinity(totalSeconds))
+            return 0;
+        double bytes = bandwidthBps / 8.0 * totalSeconds;
+        if (bytes <= 0 || bytes > (double)long.MaxValue)
+            return 0;
+        return (long)bytes;
+    }
+
+    /// <summary>Extrapolates the playlist total from measured segments:
+    /// total duration × (measured bytes / measured duration). Returns 0 when
+    /// no segment has both a measured size and a duration.</summary>
+    internal static long ExtrapolateTotalBytes(Playlist playlist)
+    {
+        if (playlist is null || !playlist.HasEndList || playlist.TotalDurationSeconds <= 0)
+            return 0;
+        long measuredBytes = 0;
+        double measuredSeconds = 0;
+        foreach (var seg in playlist.Segments)
+        {
+            if (seg.Length > 0 && seg.Duration > 0)
+            {
+                measuredBytes += seg.Length;
+                measuredSeconds += seg.Duration;
+            }
+        }
+        if (measuredBytes <= 0 || measuredSeconds <= 0)
+            return 0;
+        double bytes = measuredBytes / measuredSeconds * playlist.TotalDurationSeconds;
+        if (bytes <= 0 || bytes > (double)long.MaxValue)
+            return 0;
+        return (long)bytes;
+    }
+
+    /// <summary>Best-effort pre-download HLS size for the Add dialog: resolves
+    /// master → variant (keeping BANDWIDTH) or uses a direct media playlist,
+    /// then estimates via BANDWIDTH × duration, else via the first segments'
+    /// probed sizes extrapolated over the total duration. VOD only
+    /// (#EXT-X-ENDLIST required). Returns 0 when nothing usable; never throws.</summary>
+    public static async Task<long> TryEstimateSizeAsync(
+        HttpClient http, string manifestUrl, string? referer, Dictionary<string, string>? headers, CancellationToken ct)
+    {
+        try
+        {
+            using var budget = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            budget.CancelAfter(TimeSpan.FromSeconds(15));
+            var token = budget.Token;
+            long bandwidth = -1;
+            string url = manifestUrl;
+            for (int depth = 0; depth < 3; depth++)
+            {
+                var (text, effectiveUrl) = await FetchTextAsync(http, url, referer, headers, token);
+                url = effectiveUrl;
+                if (text.Contains("#EXT-X-STREAM-INF:", StringComparison.OrdinalIgnoreCase))
+                {
+                    var (variantUri, variantBandwidth) = ParseMasterVariant(text);
+                    if (variantUri is null)
+                        return 0;
+                    bandwidth = variantBandwidth;
+                    url = ResolveUrl(url, variantUri);
+                    continue;
+                }
+                var playlist = ParsePlaylist(text, url);
+                if (playlist is null || !playlist.HasEndList
+                    || playlist.Segments.Count == 0 || playlist.TotalDurationSeconds <= 0)
+                    return 0;
+                if (bandwidth > 0)
+                    return EstimateTotalBytes(bandwidth, playlist.TotalDurationSeconds);
+                // Direct media URL (no master, no BANDWIDTH): probe the first
+                // few segments and extrapolate over the total duration.
+                long probedBytes = 0;
+                double probedSeconds = 0;
+                foreach (var seg in playlist.Segments.Take(3))
+                {
+                    if (seg.Duration <= 0)
+                        continue;
+                    long len = await ProbeSizeAsync(http, seg.Uri, referer, headers, token);
+                    if (len > 0)
+                    {
+                        probedBytes += len;
+                        probedSeconds += seg.Duration;
+                    }
+                }
+                if (probedBytes <= 0 || probedSeconds <= 0)
+                    return 0;
+                double bytes = probedBytes / probedSeconds * playlist.TotalDurationSeconds;
+                return bytes > 0 && bytes <= (double)long.MaxValue ? (long)bytes : 0;
+            }
+            return 0;
+        }
+        catch
+        {
+            return 0;
+        }
     }
 
     /// <summary>All usable variants of a master playlist. When baseUrl is set,
@@ -855,6 +991,9 @@ public static class HlsDownloader
         string[] lines = text.Split('\n');
         int segmentOrdinal = 0;
         bool sawExtM3U = false;
+        double pendingDuration = 0;
+        if (text.Contains("#EXT-X-ENDLIST", StringComparison.OrdinalIgnoreCase))
+            result.HasEndList = true;
         for (int i = 0; i < lines.Length; i++)
         {
             string line = lines[i].Trim();
@@ -906,6 +1045,18 @@ public static class HlsDownloader
                     haveMediaSequence = true;
                 continue;
             }
+            if (line.StartsWith("#EXTINF:", StringComparison.OrdinalIgnoreCase))
+            {
+                // Duration of the next segment URI (IDM-style sizing input).
+                string num = line.Substring("#EXTINF:".Length).Trim();
+                int comma = num.IndexOf(',');
+                if (comma >= 0)
+                    num = num.Substring(0, comma);
+                if (double.TryParse(num.Trim(), System.Globalization.NumberStyles.Float,
+                        System.Globalization.CultureInfo.InvariantCulture, out double secs) && secs > 0)
+                    pendingDuration = secs;
+                continue;
+            }
             if (line.StartsWith("#"))
                 continue;
             if (line.Length == 0)
@@ -926,7 +1077,9 @@ public static class HlsDownloader
                 break;
             }
 
-            var seg = new Segment { Uri = ResolveUrl(baseUrl, line), Key = null, Iv = null };
+            var seg = new Segment { Uri = ResolveUrl(baseUrl, line), Key = null, Iv = null, Duration = pendingDuration };
+            result.TotalDurationSeconds += pendingDuration;
+            pendingDuration = 0;
             if (byterange is not null)
             {
                 string[] parts = byterange.Split('@');

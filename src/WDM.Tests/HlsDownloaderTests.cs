@@ -286,4 +286,111 @@ public sealed class HlsDownloaderTests
         }
         protected override bool TryComputeLength(out long length) { length = _data.Length; return true; }
     }
+
+    [Trait("Category", Cats.Unit)][Fact]
+    public void EstimateTotalBytes_MathAndGuards()
+    {
+        Assert.Equal(60_000_000, HlsDownloader.EstimateTotalBytes(8_000_000, 60));
+        Assert.Equal(0, HlsDownloader.EstimateTotalBytes(0, 60));
+        Assert.Equal(0, HlsDownloader.EstimateTotalBytes(8_000_000, 0));
+        Assert.Equal(0, HlsDownloader.EstimateTotalBytes(-1, 60));
+        Assert.Equal(0, HlsDownloader.EstimateTotalBytes(8_000_000, double.NaN));
+    }
+
+    [Trait("Category", Cats.Unit)][Fact]
+    public async Task TryEstimateSize_Master_UsesBandwidth_NoSegmentProbes()
+    {
+        var o = new FakeHlsOrigin();
+        o.Routes["http://h/master.m3u8"] = _ => Text(
+            "#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=8000000,RESOLUTION=1920x1080\nhttp://h/1080p.m3u8\n");
+        o.Routes["http://h/1080p.m3u8"] = _ => Text(Vod("http://h", 10));
+        using var http = new HttpClient(o) { Timeout = TimeSpan.FromSeconds(30) };
+        long est = await HlsDownloader.TryEstimateSizeAsync(http, "http://h/master.m3u8", null, null, CancellationToken.None);
+        Assert.Equal(60_000_000, est); // 8 Mbps * 60s / 8
+        Assert.DoesNotContain(o.Hits.Keys, u => u.Contains("seg"));
+    }
+
+    [Trait("Category", Cats.Unit)][Fact]
+    public async Task TryEstimateSize_DirectMediaPlaylist_ExtrapolatesFirstSegments()
+    {
+        var o = new FakeHlsOrigin();
+        o.Routes["http://h/index.m3u8"] = _ => Text(Vod("http://h", 10));
+        for (int i = 0; i < 10; i++)
+        {
+            int k = i;
+            // HEAD reports a length; the estimator must stop after a few.
+            o.Routes[$"http://h/seg{k}.ts"] = req =>
+            {
+                if (req.Method != HttpMethod.Head)
+                    return new HttpResponseMessage(HttpStatusCode.OK) { Content = new ByteArrayContent(Payload(k, 1000 * (k + 1))) };
+                var r = new HttpResponseMessage(HttpStatusCode.OK) { Content = new ByteArrayContent(Array.Empty<byte>()) };
+                r.Content.Headers.ContentLength = 1000 * (k + 1);
+                return r;
+            };
+        }
+        using var http = new HttpClient(o) { Timeout = TimeSpan.FromSeconds(30) };
+        long est = await HlsDownloader.TryEstimateSizeAsync(http, "http://h/index.m3u8", null, null, CancellationToken.None);
+        // First 3: 6000 B / 18 s over 60 s total.
+        Assert.Equal(20_000, est);
+        Assert.True(o.Hits.Keys.Count(u => u.Contains("seg")) <= 3);
+    }
+
+    [Trait("Category", Cats.Unit)][Fact]
+    public async Task TryEstimateSize_LivePlaylist_ReturnsZero()
+    {
+        var o = new FakeHlsOrigin();
+        // Sliding-window live playlist: no EXT-X-ENDLIST.
+        var sb = new StringBuilder("#EXTM3U\n#EXT-X-VERSION:3\n#EXT-X-TARGETDURATION:6\n#EXT-X-MEDIA-SEQUENCE:100\n");
+        for (int i = 0; i < 4; i++) sb.Append($"#EXTINF:6.0,\nhttp://h/seg{i}.ts\n");
+        o.Routes["http://h/live.m3u8"] = _ => Text(sb.ToString());
+        using var http = new HttpClient(o) { Timeout = TimeSpan.FromSeconds(30) };
+        Assert.Equal(0, await HlsDownloader.TryEstimateSizeAsync(http, "http://h/live.m3u8", null, null, CancellationToken.None));
+    }
+
+    [Trait("Category", Cats.Unit)][Fact]
+    public async Task TryEstimateSize_DeadLink_ReturnsZero()
+    {
+        var o = new FakeHlsOrigin();
+        o.Routes["http://h/gone.m3u8"] = _ => new HttpResponseMessage(HttpStatusCode.Forbidden);
+        using var http = new HttpClient(o) { Timeout = TimeSpan.FromSeconds(30) };
+        Assert.Equal(0, await HlsDownloader.TryEstimateSizeAsync(http, "http://h/gone.m3u8", null, null, CancellationToken.None));
+    }
+
+    [Trait("Category", Cats.Unit)][Fact]
+    public async Task DownloadAsync_FallsBackToEstimate_WhenSegmentsUnmeasurable()
+    {
+        string dir = TempDir();
+        try
+        {
+            var o = new FakeHlsOrigin();
+            o.Routes["http://h/master.m3u8"] = _ => Text(
+                "#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=8000000,RESOLUTION=1920x1080\nhttp://h/1080p.m3u8\n");
+            o.Routes["http://h/1080p.m3u8"] = _ => Text(Vod("http://h", 4));
+            for (int i = 0; i < 4; i++)
+            {
+                int k = i;
+                o.Routes[$"http://h/seg{k}.ts"] = req =>
+                {
+                    // CDN rejects HEAD and answers range probes length-less,
+                    // but full downloads succeed.
+                    if (req.Method == HttpMethod.Head)
+                        return new HttpResponseMessage(HttpStatusCode.MethodNotAllowed);
+                    var body = new ByteArrayContent(Payload(k));
+                    var r = new HttpResponseMessage(HttpStatusCode.OK) { Content = body };
+                    r.Content.Headers.ContentLength = null;
+                    return r;
+                };
+            }
+            using var http = new HttpClient(o) { Timeout = TimeSpan.FromSeconds(60) };
+            string dest = Path.Combine(dir, "out.ts");
+            long reportedTotal = -1;
+            bool? estimated = null;
+            await HlsDownloader.DownloadAsync(http, "http://h/master.m3u8", null, dest, CancellationToken.None,
+                _ => { }, t => reportedTotal = t, (_, _) => Task.CompletedTask, null, null, e => estimated = e);
+            Assert.Equal(24_000_000, reportedTotal); // 8 Mbps * 24 s / 8
+            Assert.True(estimated);
+            Assert.Equal(4 * 4096, new FileInfo(dest).Length);
+        }
+        finally { TestFiles.DeleteDir(dir); }
+    }
 }

@@ -681,26 +681,24 @@
       .wdm-player-overlay {
         position: absolute;
         z-index: 2147483645;
-        top: 12px;
-        right: 12px;
         display: inline-flex;
         align-items: center;
-        gap: 6px;
-        background: rgba(20, 20, 24, 0.88);
-        backdrop-filter: blur(10px);
-        -webkit-backdrop-filter: blur(10px);
-        border: 1px solid rgba(255, 255, 255, 0.15);
-        border-radius: 6px;
-        padding: 5px 10px;
-        color: #ffffff;
-        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-        font-size: 12px;
-        font-weight: 500;
-        box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+        gap: 5px;
+        background: #f5f5f5;
+        border: 1px solid #d0d0d0;
+        border-radius: 4px;
+        padding: 3px 8px;
+        color: #333333;
+        font-family: Arial, Helvetica, sans-serif;
+        font-size: 11px;
+        font-weight: 400;
+        line-height: 1.4;
+        white-space: nowrap;
+        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.30);
         cursor: pointer;
         opacity: 0;
         pointer-events: none;
-        transition: opacity 0.2s ease, transform 0.2s ease;
+        transition: opacity 0.15s ease;
         user-select: none;
         -webkit-user-select: none;
       }
@@ -709,49 +707,49 @@
         pointer-events: auto;
       }
       .wdm-player-overlay:hover {
-        background: rgba(30, 32, 40, 0.96);
-        border-color: #3b82f6;
-        transform: translateY(-1px);
+        background: #e9e9e9;
+        border-color: #bdbdbd;
       }
       .wdm-player-overlay-icon {
-        width: 16px;
-        height: 16px;
+        width: 14px;
+        height: 14px;
         flex-shrink: 0;
         display: inline-block;
       }
       .wdm-player-overlay-label {
         white-space: nowrap;
-        color: #f3f4f6;
+        color: #333333;
       }
       .wdm-player-overlay-close {
-        margin-left: 6px;
-        width: 18px;
-        height: 18px;
+        margin-left: 2px;
+        width: 16px;
+        height: 16px;
+        padding: 0;
         display: inline-flex;
         align-items: center;
         justify-content: center;
-        background: rgba(255,255,255,0.10);
+        background: transparent;
         border: none;
-        border-radius: 4px;
-        color: #e5e7eb;
+        border-radius: 3px;
+        color: #888888;
         font-size: 11px;
         line-height: 1;
         cursor: pointer;
         flex-shrink: 0;
       }
       .wdm-player-overlay-close:hover {
-        background: rgba(239,68,68,0.90);
-        color: #fff;
+        background: #d5d5d5;
+        color: #333333;
       }
       .wdm-player-overlay-dropdown {
         position: absolute;
-        top: 100%;
+        bottom: 100%;
         right: 0;
-        margin-top: 4px;
-        background: #18181b;
-        border: 1px solid #3f3f46;
-        border-radius: 6px;
-        box-shadow: 0 8px 24px rgba(0,0,0,0.5);
+        margin-bottom: 4px;
+        background: #ffffff;
+        border: 1px solid #d0d0d0;
+        border-radius: 4px;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.25);
         display: none;
         flex-direction: column;
         min-width: 180px;
@@ -765,22 +763,23 @@
       .wdm-dropdown-item {
         padding: 8px 12px;
         font-size: 11px;
-        color: #e4e4e7;
+        color: #333333;
         display: flex;
         align-items: center;
         justify-content: space-between;
         gap: 8px;
-        border-bottom: 1px solid rgba(255,255,255,0.06);
+        border-bottom: 1px solid #eeeeee;
         transition: background 0.15s;
         cursor: pointer;
       }
       .wdm-dropdown-item:last-child { border-bottom: none; }
-      .wdm-dropdown-item:hover { background: #2563eb; color: #ffffff; }
+      .wdm-dropdown-item:hover { background: #e8f0fe; color: #1a73e8; }
       .wdm-dropdown-badge {
         font-size: 10px;
         padding: 2px 5px;
         border-radius: 4px;
-        background: rgba(255,255,255,0.12);
+        background: #eeeeee;
+        color: #555555;
         font-weight: 600;
         text-transform: uppercase;
       }
@@ -807,13 +806,32 @@
       </svg>
     `;
 
+    // WDM logo (extension icon, same source as the YouTube button)
+    const logoUrl = (webext.runtime && webext.runtime.getURL) ? webext.runtime.getURL("icon16.png") : "";
+    const logoImg = logoUrl
+      ? `<img class="wdm-player-overlay-icon" src="${logoUrl}" alt="WDM" />`
+      : svgIcon;
+
     overlay.innerHTML = `
-      ${svgIcon}
-      <span class="wdm-player-overlay-label">Download this video</span>
+      ${logoImg}
+      <span class="wdm-player-overlay-label">Download</span>
       <span style="font-size:9px; opacity:0.7; margin-left:2px;">▼</span>
       <button class="wdm-player-overlay-close" title="Hide">✕</button>
       <div class="wdm-player-overlay-dropdown"></div>
     `;
+
+    // If the packaged icon is unreachable, fall back to the arrow glyph.
+    const logoEl = overlay.querySelector(".wdm-player-overlay-icon");
+    if (logoEl && logoEl.tagName === "IMG") {
+      logoEl.addEventListener("error", () => {
+        try {
+          const tmp = document.createElement("div");
+          tmp.innerHTML = svgIcon;
+          const svg = tmp.firstChild;
+          if (svg) logoEl.replaceWith(svg);
+        } catch {}
+      });
+    }
 
     const closeBtn = overlay.querySelector(".wdm-player-overlay-close");
     const dropdown = overlay.querySelector(".wdm-player-overlay-dropdown");
@@ -1036,7 +1054,15 @@
         dropdown.classList.remove("wdm-open");
       }
       overlay.style.position = "fixed";
-      overlay.style.top = Math.max(8, rect.top + 10) + "px";
+      // Bottom-right of the player; if that would clip off-viewport, fall
+      // back to the top edge instead of letting it disappear.
+      const estH = overlay.offsetHeight > 0 ? overlay.offsetHeight : 30;
+      let top = rect.bottom - estH - 10;
+      if (top + estH > window.innerHeight - 8)
+        top = window.innerHeight - estH - 8;
+      if (top < 8)
+        top = Math.max(8, rect.top + 10);
+      overlay.style.top = top + "px";
       overlay.style.right = Math.max(8, window.innerWidth - rect.right + 10) + "px";
       overlay.style.zIndex = "2147483647";
       const fsElem = document.fullscreenElement || document.webkitFullscreenElement;
@@ -1426,7 +1452,7 @@
       const label = overlay.querySelector(".wdm-player-overlay-label");
       if (!label) return;
       if (detectedStreams.size === 0) { label.textContent = "Resolve in WDM"; return; }
-      // Show the peak known rendition on the button ("Download this video • 1080p").
+      // Show the peak known rendition on the button ("Download · 1080p").
       let best = 0;
       let bestQ = "";
       try {
@@ -1437,7 +1463,7 @@
           if (r > best) { best = r; bestQ = q; }
         }
       } catch {}
-      label.textContent = bestQ ? "Download this video • " + bestQ : "Download this video";
+      label.textContent = bestQ ? "Download · " + bestQ : "Download";
     } catch {}
   }
 

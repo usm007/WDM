@@ -216,6 +216,23 @@ public sealed class DownloadTask : INotifyPropertyChanged
         }
     }
 
+    private bool _isSizeEstimated;
+    /// <summary>True when TotalBytes is a bitrate/extrapolated estimate
+    /// (unmeasurable HLS), not a probed length. Shown with a "~" prefix.</summary>
+    public bool IsSizeEstimated
+    {
+        get => _isSizeEstimated;
+        set
+        {
+            if (Set(ref _isSizeEstimated, value))
+            {
+                Raise(nameof(SizeText));
+                Raise(nameof(DisplaySizeText));
+                Raise(nameof(DownloadedOfTotalText));
+            }
+        }
+    }
+
     private long _totalBytes = -1;
     public long TotalBytes
     {
@@ -396,7 +413,9 @@ public sealed class DownloadTask : INotifyPropertyChanged
         }
     }
 
-    public string SizeText => TotalBytes > 0 ? FormatBytes(TotalBytes) : "-";
+    public string SizeText => TotalBytes > 0
+        ? (IsSizeEstimated ? "~" + FormatBytes(TotalBytes) : FormatBytes(TotalBytes))
+        : "-";
 
     public string CompletionPercentText
     {
