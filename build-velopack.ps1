@@ -122,10 +122,15 @@ try {
     if ($iscc) {
         $iss = Join-Path $PSScriptRoot "src\WDM.Setup\installer.iss"
         $staging = Join-Path $PSScriptRoot "staging"
-        if (-not (Test-Path (Join-Path $staging "WDM.exe"))) {
-            Write-Host "Staging missing WDM.exe, republishing self-contained to staging for Inno ..."
-            & dotnet publish (Join-Path $PSScriptRoot "src\WDM.App\WDM.csproj") -c Release -r win-x64 --self-contained true -o $staging -p:Version=$Version --nologo -v q
-            if ($LASTEXITCODE -ne 0) { throw "dotnet publish for Inno staging failed." }
+        # ALWAYS republish staging fresh: reusing a stale staging dir once
+        # shipped 2.8.5 binaries inside a 2.8.11 installer. Never skip this.
+        if (Test-Path $staging) { Remove-Item $staging -Recurse -Force }
+        Write-Host "Publishing self-contained WDM $Version to staging for Inno ..."
+        & dotnet publish (Join-Path $PSScriptRoot "src\WDM.App\WDM.csproj") -c Release -r win-x64 --self-contained true -o $staging -p:Version=$Version --nologo -v q
+        if ($LASTEXITCODE -ne 0) { throw "dotnet publish for Inno staging failed." }
+        $stagedVer = (Get-Item (Join-Path $staging "WDM.exe")).VersionInfo.FileVersion
+        if (-not $stagedVer.StartsWith($Version, [StringComparison]::OrdinalIgnoreCase)) {
+            throw "Staged WDM.exe is $stagedVer, expected $Version*: refusing to pack a mismatched installer."
         }
         # Inno needs numeric 4-part version; strip any suffix (e.g. 2.8.5 -> 2.8.5.0).
         $numeric = $Version
