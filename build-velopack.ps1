@@ -92,16 +92,15 @@ if (Test-Path $setup) {
 $uploadDir = Join-Path $PSScriptRoot "release_upload"
 if (Test-Path $uploadDir) { Remove-Item $uploadDir -Recurse -Force }
 New-Item -ItemType Directory -Path $uploadDir -Force | Out-Null
-$velopackSetup = Join-Path $outFull "WDM-win-Setup.exe"
 $portable = Join-Path $outFull "WDM-win-Portable.zip"
 # Prefer the self-contained delta as the small update package, fallback to the full nupkg
 $deltaPkg = Get-ChildItem $outFull -Filter "WDM-$Version-delta.nupkg" -ErrorAction SilentlyContinue | Select-Object -First 1
 $fullPkg = Get-ChildItem $outFull -Filter "WDM-$Version-full.nupkg" -ErrorAction SilentlyContinue | Select-Object -First 1
 $updatePkg = if ($deltaPkg) { $deltaPkg } else { $fullPkg }
 $releasesJson = Join-Path $outFull "releases.win.json"
-# Velopack one-click (per-user, splash + silent, no wizard) is NOT the main setup.
-# Name it explicitly so users never mistake it for the wizard installer.
-if (Test-Path $velopackSetup) { Copy-Item $velopackSetup (Join-Path $uploadDir "WDM-User-Setup-$Version.exe") }
+# Single-installer policy: the GitHub release carries exactly ONE installer exe,
+# the Inno wizard (per-machine, installs for all users). The Velopack one-click
+# Setup.exe is still produced by vpk pack in $outFull but is NEVER uploaded.
 if (Test-Path $portable) { Copy-Item $portable (Join-Path $uploadDir "WDM-Portable-$Version.zip") }
 if ($updatePkg -and (Test-Path $updatePkg.FullName)) { Copy-Item $updatePkg.FullName (Join-Path $uploadDir $updatePkg.Name) -Force }
 if ($fullPkg -and (Test-Path $fullPkg.FullName)) { Copy-Item $fullPkg.FullName (Join-Path $uploadDir $fullPkg.Name) -Force }
@@ -152,9 +151,7 @@ try {
 Write-Host ""
 Write-Host "Release upload in $uploadDir :"
 Get-ChildItem $uploadDir | Format-Table Name, @{N="SizeMB";E={"{0:F2}" -f ($_.Length/1MB)}}, Length
-Write-Host "  1) WDM-Setup-$Version.exe        -> MAIN wizard installer for new users (Inno, per-machine Program Files, with setup window)"
-Write-Host "  2) WDM-User-Setup-$Version.exe  -> ALTERNATIVE per-user one-click (Velopack, %LocalAppData%\WDM, splash + silent + auto-launch, no wizard)"
-Write-Host "  3) WDM-Portable-$Version.zip     -> portable, self-contained, no .NET install needed"
+Write-Host "  1) WDM-Setup-$Version.exe        -> THE ONLY installer (Inno wizard, per-machine, installs for all users)"
 Write-Host "  2) WDM-Portable-$Version.zip     -> portable, self-contained, no .NET install needed"
 Write-Host "  3) $($updatePkg.Name)  -> small update package - in-app updater downloads this delta, NOT the full installer"
 Write-Host "  4) $($fullPkg.Name)  -> full update package - fallback for updaters too far behind for delta"

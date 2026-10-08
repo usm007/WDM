@@ -45,7 +45,10 @@ public sealed class AppSettings
     public bool ShowTrayProgress { get; set; } = false;
     public double? ProgressPanelLeft { get; set; }
     public double? ProgressPanelTop { get; set; }
-    public bool RunAtStartup { get; set; }
+    /// <summary>Autostart on Windows logon. ON by default for fresh installs;
+    /// the app self-heals the Run entry at startup (missing/empty/orphaned
+    /// targets are rewritten, never left behind).</summary>
+    public bool RunAtStartup { get; set; } = true;
     public bool StartInBackground { get; set; }
     public bool UseDarkTheme { get; set; }
     public AppTheme Theme { get; set; } = AppTheme.Default;

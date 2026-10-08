@@ -1294,6 +1294,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
             return;
         try
         {
+            EnsureRunAtStartup();
             PruneFinishedLinks(DateTime.Now);
             var live = Tasks.Select(t => t.FullPath).ToList();
             var folders = Tasks.Select(t => t.SaveFolder)
@@ -1972,29 +1973,115 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
         ApplyRunAtStartup();
     }
 
+    private const string RunKeyPath = @"Software\Microsoft\Windows\CurrentVersion\Run";
+    private const string RunValueName = "WDM";
+    private const string StartupApprovedPath = @"Software\Microsoft\Windows\CurrentVersion\Explorer\StartupApproved\Run";
+
+    private static string? RunEntryTarget()
+    {
+        string exe = Environment.ProcessPath ?? ApplicationPath;
+        if (string.IsNullOrWhiteSpace(exe))
+            return null;
+        return $"\"{exe.Trim()}\" /minimized";
+    }
+
     private void ApplyRunAtStartup()
     {
-        const string runKey = @"Software\Microsoft\Windows\CurrentVersion\Run";
-        const string appName = "WDM";
         try
         {
-            using var key = Microsoft.Win32.Registry.CurrentUser.OpenSubKey(runKey, writable: true);
+            using var key = Microsoft.Win32.Registry.CurrentUser.OpenSubKey(RunKeyPath, writable: true);
             if (key is null)
                 return;
             if (Settings.RunAtStartup)
             {
-                string exe = Environment.ProcessPath ?? ApplicationPath;
-                key.SetValue(appName, $"\"{exe}\" /minimized");
+                // Never write an empty value: a blank Run entry silently
+                // disables autostart with no error (seen in the wild).
+                string? target = RunEntryTarget();
+                if (string.IsNullOrWhiteSpace(target))
+                    key.DeleteValue(RunValueName, throwOnMissingValue: false);
+                else
+                    key.SetValue(RunValueName, target);
             }
             else
             {
-                key.DeleteValue(appName, throwOnMissingValue: false);
+                key.DeleteValue(RunValueName, throwOnMissingValue: false);
             }
         }
         catch
         {
             // Registry write failed.
         }
+    }
+
+    /// <summary>Decides whether the Run entry needs repair: missing, blank,
+    /// unparseable, or pointing at an exe that no longer exists (e.g. a
+    /// wiped per-machine install). Pure logic, unit-tested.</summary>
+    internal static bool RunEntryNeedsRepair(string? currentValue)
+    {
+        if (string.IsNullOrWhiteSpace(currentValue))
+            return true;
+        string v = currentValue.Trim();
+        string exe;
+        if (v.StartsWith("\""))
+        {
+            int end = v.IndexOf('"', 1);
+            if (end <= 1)
+                return true;
+            exe = v.Substring(1, end - 1);
+        }
+        else
+        {
+            int space = v.IndexOf(' ');
+            exe = space < 0 ? v : v.Substring(0, space);
+        }
+        if (string.IsNullOrWhiteSpace(exe))
+            return true;
+        try { return !File.Exists(exe); }
+        catch { return true; }
+    }
+
+    /// <summary>Startup self-heal (called once from
+    /// <see cref="RunStartupMaintenance"/>): when autostart is on but the Run
+    /// entry is missing/blank/orphaned, rewrite it with this exe and drop the
+    /// stale StartupApproved disable flag left behind by the dead entry. A
+    /// valid entry that the user disabled stays disabled.</summary>
+    internal void EnsureRunAtStartup()
+    {
+        try
+        {
+            if (!Settings.RunAtStartup)
+            {
+                ApplyRunAtStartup();
+                return;
+            }
+            string? current = null;
+            try
+            {
+                using var key = Microsoft.Win32.Registry.CurrentUser.OpenSubKey(RunKeyPath, writable: false);
+                current = key?.GetValue(RunValueName) as string;
+            }
+            catch { }
+            if (!RunEntryNeedsRepair(current))
+                return;
+            string? target = RunEntryTarget();
+            if (string.IsNullOrWhiteSpace(target))
+                return;
+            try
+            {
+                using var key = Microsoft.Win32.Registry.CurrentUser.OpenSubKey(RunKeyPath, writable: true);
+                key?.SetValue(RunValueName, target);
+            }
+            catch { return; }
+            // The approval flag belonged to the dead entry: without clearing
+            // it, Windows keeps the repaired entry disabled.
+            try
+            {
+                using var approved = Microsoft.Win32.Registry.CurrentUser.OpenSubKey(StartupApprovedPath, writable: true);
+                approved?.DeleteValue(RunValueName, throwOnMissingValue: false);
+            }
+            catch { }
+        }
+        catch { }
     }
 
     private static string ApplicationPath =>

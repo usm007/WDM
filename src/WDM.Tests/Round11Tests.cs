@@ -1,6 +1,7 @@
 using System.Text.Json;
 using System.Xml;
 using WDM.Services;
+using WDM.ViewModels;
 
 namespace WDM.Tests;
 
@@ -41,9 +42,36 @@ public sealed class Round11Tests
         Assert.False(back.AutoResumeFailed);
         Assert.True(back.NotifyOnError); // new default, not legacy false
         Assert.True(back.NotificationSound);
+        Assert.True(back.RunAtStartup); // on-by-default also covers keyless files
         Assert.Equal(0, back.DeleteFinishedLinksAfterDays);
         Assert.Equal(5, back.MaxRetries);
         Assert.False(back.NotifyOnCompletion);
+    }
+
+    [Fact]
+    public void AppSettings_RunAtStartup_DefaultsOn()
+    {
+        Assert.True(new AppSettings().RunAtStartup);
+    }
+
+    [Theory]
+    [InlineData(null, true)]
+    [InlineData("", true)]
+    [InlineData("   ", true)]
+    [InlineData("\"unclosed", true)]
+    [InlineData("\"C:\\No\\Such\\WDM.exe\" /minimized", true)]
+    [InlineData("C:\\No\\Such\\WDM.exe", true)]
+    public void RunEntryNeedsRepair_Orphans(string? value, bool expected)
+    {
+        Assert.Equal(expected, MainViewModel.RunEntryNeedsRepair(value));
+    }
+
+    [Fact]
+    public void RunEntryNeedsRepair_ValidTarget_Keeps()
+    {
+        string exe = System.Reflection.Assembly.GetExecutingAssembly().Location;
+        Assert.False(MainViewModel.RunEntryNeedsRepair($"\"{exe}\" /minimized"));
+        Assert.False(MainViewModel.RunEntryNeedsRepair(exe));
     }
 
     [Fact]
