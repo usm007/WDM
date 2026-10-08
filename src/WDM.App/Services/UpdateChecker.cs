@@ -410,10 +410,34 @@ public static class UpdateChecker
         }
     }
 
-    /// <summary>Runs the downloaded installer. Inno wizard and Velopack one-click take
-    /// different silent flags: Inno needs /VERYSILENT, Velopack (clap-style) only
-    /// understands -s/--silent (Inno-style /VERYSILENT tokens break its parsing and
-    /// drop it back to the interactive "already installed" dialog).</summary>
+    /// <summary>True for the Velopack one-click Setup (per-user, clap-style
+    /// flags). Everything else the updater downloads is the Inno wizard.</summary>
+    internal static bool IsVelopackSetup(string installerPath)
+    {
+        string fileName = Path.GetFileName(installerPath ?? "");
+        return fileName.StartsWith("WDM-User-Setup", StringComparison.OrdinalIgnoreCase)
+            || fileName.StartsWith("WDM-Full-Setup", StringComparison.OrdinalIgnoreCase)
+            || fileName.StartsWith("WDM-Velopack", StringComparison.OrdinalIgnoreCase)
+            || fileName.Equals("WDM-win-Setup.exe", StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>Silent flags per installer family. Inno uses /SILENT (not
+    /// /VERYSILENT) so a failed install still shows its error instead of
+    /// vanishing without a trace.</summary>
+    internal static string InstallerArgs(string installerPath, bool silent)
+    {
+        if (!silent)
+            return "";
+        return IsVelopackSetup(installerPath) ? "--silent" : "/SILENT /NORESTART";
+    }
+
+    /// <summary>Runs the downloaded installer. Inno is per-machine and cannot
+    /// install without elevation, so it launches via UAC (runas); without it
+    /// the install fails silently after the app already exited. Velopack
+    /// one-click is per-user and must NOT elevate (breaks its
+    /// %LocalAppData% targeting). Inno-style flags break Velopack's
+    /// clap-style parsing and drop it back to the interactive
+    /// "already installed" dialog, hence per-family args.</summary>
     public static Process? LaunchInstaller(string installerPath, bool silent = false)
     {
         if (string.IsNullOrWhiteSpace(installerPath) || !File.Exists(installerPath) ||
@@ -433,15 +457,10 @@ public static class UpdateChecker
             // OptionsControl/About/UpdateAvailable paths all funnel here).
             try { ViewModels.MainViewModel.Restarting?.Invoke(); } catch { }
         }
-        // Velopack one-click assets contain User-Setup / Full-Setup (legacy) / Velopack;
-        // everything else downloaded via FindInstallerUrl is the Inno wizard.
-        string fileName = Path.GetFileName(full);
-        bool isVelopack = fileName.StartsWith("WDM-User-Setup", StringComparison.OrdinalIgnoreCase)
-            || fileName.StartsWith("WDM-Full-Setup", StringComparison.OrdinalIgnoreCase)
-            || fileName.StartsWith("WDM-Velopack", StringComparison.OrdinalIgnoreCase)
-            || fileName.Equals("WDM-win-Setup.exe", StringComparison.OrdinalIgnoreCase);
-        string args = silent ? (isVelopack ? "--silent" : "/VERYSILENT /NORESTART") : "";
+        string args = InstallerArgs(full, silent);
         var psi = new ProcessStartInfo(full, args) { UseShellExecute = true };
+        if (silent && !IsVelopackSetup(full))
+            psi.Verb = "runas";
         return Process.Start(psi);
     }
 

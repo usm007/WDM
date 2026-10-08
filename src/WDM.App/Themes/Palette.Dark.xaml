@@ -33,10 +33,10 @@
     <Color x:Key="Color.SidebarSelectedEnd">#3D3D3D</Color>
     <Color x:Key="Color.SidebarSelectedText">#FFFFFF</Color>
 
-    <!-- Semantic status colors -->
-    <Color x:Key="Color.StatusActive">#3B82F6</Color>
+    <!-- Semantic status colors (text-facing shades: AA on dark surfaces) -->
+    <Color x:Key="Color.StatusActive">#60A5FA</Color>
     <Color x:Key="Color.StatusComplete">#10B981</Color>
-    <Color x:Key="Color.StatusFailed">#EF4444</Color>
+    <Color x:Key="Color.StatusFailed">#F87171</Color>
     <Color x:Key="Color.StatusPaused">#F59E0B</Color>
     <Color x:Key="Color.StatusQueued">#A78BFA</Color>
 
@@ -50,11 +50,11 @@
     <!-- Semantic aliases -->
     <Color x:Key="Color.Success">#10B981</Color>
     <Color x:Key="Color.Warning">#F59E0B</Color>
-    <Color x:Key="Color.Danger">#EF4444</Color>
+    <Color x:Key="Color.Danger">#F87171</Color>
 
     <!-- Disabled state -->
     <Color x:Key="Color.DisabledBg">#2D2D2D</Color>
-    <Color x:Key="Color.DisabledFg">#5A5A5A</Color>
+    <Color x:Key="Color.DisabledFg">#9A9A9A</Color>
 
     <!-- Zones -->
     <Color x:Key="Color.Track">#383838</Color>

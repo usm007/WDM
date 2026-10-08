@@ -33,11 +33,11 @@
     <Color x:Key="Color.SidebarSelectedEnd">#DFDFDF</Color>
     <Color x:Key="Color.SidebarSelectedText">#1A1A1A</Color>
 
-    <!-- Semantic status colors -->
+    <!-- Semantic status colors (text-facing shades: AA on light surfaces) -->
     <Color x:Key="Color.StatusActive">#1865F2</Color>
-    <Color x:Key="Color.StatusComplete">#16A34A</Color>
-    <Color x:Key="Color.StatusFailed">#EF4444</Color>
-    <Color x:Key="Color.StatusPaused">#F59E0B</Color>
+    <Color x:Key="Color.StatusComplete">#15803D</Color>
+    <Color x:Key="Color.StatusFailed">#B91C1C</Color>
+    <Color x:Key="Color.StatusPaused">#B45309</Color>
     <Color x:Key="Color.StatusQueued">#7C3AED</Color>
 
     <!-- Soft tints for status elements -->
@@ -47,10 +47,10 @@
     <Color x:Key="Color.StatusPausedSoft">#FEF5E6</Color>
     <Color x:Key="Color.StatusQueuedSoft">#F2EBFD</Color>
 
-    <!-- Semantic aliases -->
-    <Color x:Key="Color.Success">#16A34A</Color>
-    <Color x:Key="Color.Warning">#F59E0B</Color>
-    <Color x:Key="Color.Danger">#EF4444</Color>
+    <!-- Semantic aliases (text-facing shades: AA on light surfaces) -->
+    <Color x:Key="Color.Success">#15803D</Color>
+    <Color x:Key="Color.Warning">#B45309</Color>
+    <Color x:Key="Color.Danger">#B91C1C</Color>
 
     <!-- Disabled state: readable slate on light disabled fill (WCAG AA for UI text) -->
     <Color x:Key="Color.DisabledBg">#E9EEF4</Color>

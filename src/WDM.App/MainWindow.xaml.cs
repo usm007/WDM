@@ -63,7 +63,7 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
                 // .ts. Say so plainly (balloon + log) and point at the download
                 // spot — never silently skip the conversion the user asked for.
                 const string how = "Options > YouTube & Media";
-                ActivityLog.Write("REMUX-SKIP", $"{task.FileName} kept as .TS — FFmpeg is not installed ({how}).");
+                ActivityLog.Write("REMUX-SKIP", $"{task.FileName} kept as .TS: FFmpeg is not installed ({how}).");
                 if (s.NotifyOnCompletion)
                     _tray?.ShowBalloon(task.FileName, $"Kept as .TS: FFmpeg is missing. Get MP4/MKV conversion in {how}.",
                         () => _dispatcher.BeginInvoke(RestoreWindow));

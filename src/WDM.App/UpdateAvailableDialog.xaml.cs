@@ -1,4 +1,5 @@
 using System;
+using System.Diagnostics;
 using System.Linq;
 using System.Windows;
 using Velopack;
@@ -194,7 +195,55 @@ public partial class UpdateAvailableDialog : Window
             ProgressStatusText.Text = "Launching installer…";
             DownloadProgressBar.Value = 100;
             ProgressPctText.Text = "100%";
-            UpdateChecker.LaunchInstaller(installer, silent: true);
+            Process? installerProc = null;
+            try
+            {
+                // Per-machine setup needs elevation: LaunchInstaller prompts
+                // via UAC. Dismissing it throws here, so the app must NOT shut
+                // down on this path (previous code exited unconditionally and
+                // left the user with nothing running and nothing installed).
+                installerProc = UpdateChecker.LaunchInstaller(installer, silent: true);
+            }
+            catch (Exception launchEx)
+            {
+                App.LogException(launchEx);
+                DetailsText.Text = "The installer couldn't start (the all-users install needs one admin approval). Nothing was changed.";
+                InstallButton.IsEnabled = true;
+                LaterButton.IsEnabled = true;
+                InstallButton.Content = "Open Release Page";
+                InstallButton.Click -= InstallClick;
+                InstallButton.Click += (s, _) => UpdateChecker.OpenReleasesPage(_release.Url);
+                return;
+            }
+            bool installerRunning = false;
+            int installerCode = 0;
+            try
+            {
+                if (installerProc is not null)
+                {
+                    installerProc.Refresh();
+                    installerRunning = !installerProc.HasExited;
+                    if (!installerRunning)
+                    {
+                        try { installerCode = installerProc.ExitCode; } catch { }
+                    }
+                }
+            }
+            catch { }
+            if (!installerRunning)
+            {
+                // Exited before doing anything (blocked/failed launch): report
+                // instead of shutting down into a broken state.
+                App.LogException(new InvalidOperationException(
+                    $"Installer exited immediately (code {installerCode}): {installer}"));
+                DetailsText.Text = $"The installer exited without installing (code {installerCode}). Try again or download manually from the release page.";
+                InstallButton.IsEnabled = true;
+                LaterButton.IsEnabled = true;
+                InstallButton.Content = "Open Release Page";
+                InstallButton.Click -= InstallClick;
+                InstallButton.Click += (s, _) => UpdateChecker.OpenReleasesPage(_release.Url);
+                return;
+            }
             await Task.Delay(500);
             DialogResult = true;
             Close();
