@@ -1064,6 +1064,11 @@ public sealed class CaptureServer : IDisposable
         // approves only when the referer/page host (or a parent) sits on the
         // user's explicit allow-list. Default-deny everywhere else.
         bool fullSession = payload.FullSession && IsFullSessionApproved(payload, referer);
+        // Browser-observed size hint: optional, validated, never authoritative.
+        // Older payloads omit it (stays null). Invalid/negative/out-of-range
+        // values are treated as unknown. Manifest sizes must never arrive here
+        // (the extension strips HLS/DASH manifests before sending).
+        long? observedHint = SanitizeObservedSize(payload.ObservedSizeBytes ?? payload.ObservedSize);
         item = new BatchCaptureItem
         {
             Url = url,
@@ -1077,6 +1082,7 @@ public sealed class CaptureServer : IDisposable
             ProxyHost = proxyHost,
             ProxyPort = proxyPort,
             ProxyType = proxyType,
+            ObservedSizeBytes = observedHint,
         };
         // The engine sends task.Referer as the Referer header itself — a
         // Referer/Referrer entry left in Headers would go out twice and strict
@@ -1210,6 +1216,19 @@ public sealed class CaptureServer : IDisposable
         return staged;
     }
 
+    /// <summary>Validates a browser-observed size hint. Only positive values
+    /// within (0, 64 GiB] survive; everything else (null, zero, negative,
+    /// overflowing) becomes unknown (null).</summary>
+    internal static long? SanitizeObservedSize(long? value)
+    {
+        if (!value.HasValue || value.Value <= 0)
+            return null;
+        const long max = 64L * 1024 * 1024 * 1024;
+        if (value.Value > max)
+            return null;
+        return value.Value;
+    }
+
     private static string? SanitizeCaptureFileName(string? name)
     {
         if (string.IsNullOrWhiteSpace(name))
@@ -1276,6 +1295,12 @@ public sealed class CaptureServer : IDisposable
         public string? AudioUrl { get; set; }
         public string? PageUrl { get; set; }
         public string? KeyUrl { get; set; }
+        /// <summary>Browser-observed size hint (bytes). Optional, nullable;
+        /// validated in TryBuildCaptureItem. Never authoritative.</summary>
+        public long? ObservedSizeBytes { get; set; }
+        /// <summary>Legacy alias for older/newer extension builds sending
+        /// "observedSize". Same semantics as <see cref="ObservedSizeBytes"/>.</summary>
+        public long? ObservedSize { get; set; }
         // Form POST replay (IDM Bc equivalent): base64 body + content type,
         // captured from the page's own form POST. Validated in TryBuildCaptureItem.
         public string? PostData { get; set; }
@@ -1316,6 +1341,9 @@ public sealed class CaptureServer : IDisposable
         public string? ProxyHost { get; set; }
         public int ProxyPort { get; set; }
         public string? ProxyType { get; set; }
+        /// <summary>Browser-observed size hint (unvalidated upstream).
+        /// Null = unknown. Never persisted as a confirmed remote size.</summary>
+        public long? ObservedSizeBytes { get; set; }
     }
 
     private sealed class BlobChunk

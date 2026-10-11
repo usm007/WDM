@@ -1155,22 +1155,39 @@ public sealed class DownloadEngine
         }
 
         // 1) HEAD probe - cheap, gives size + range support + disposition.
+        // Header-only (ResponseHeadersRead): no body is read to determine size.
+        // Content-Length is trusted only for a successful response whose
+        // representation is a real file (not an HTML error/auth/challenge page).
         try
         {
             var head = await SendWithRetryAsync(() => BuildRequest(HttpMethod.Head, task, null, url), ct, ClientFor(task));
             using (head)
             {
                 finalUrl = head.RequestMessage?.RequestUri?.ToString() ?? finalUrl;
+                if (IsCloudflareChallenge(head))
+                {
+                    var cfEx = await BuildCloudflareExceptionAsync(head, url, ct);
+                    throw cfEx;
+                }
                 if (head.IsSuccessStatusCode && !postProbed)
                 {
                     supportsRanges = head.Headers.AcceptRanges.Any(r => r.Equals("bytes", StringComparison.OrdinalIgnoreCase));
-                    long total = head.Content.Headers.ContentLength ?? -1;
-                    if (total > 0)
-                        totalBytes = total;
-                    contentType = head.Content.Headers.ContentType?.ToString();
+                    contentType ??= head.Content.Headers.ContentType?.ToString();
+                    // Only a usable file representation yields a confirmed size.
+                    if (IsProbeSizeContentType(contentType))
+                    {
+                        long total = head.Content.Headers.ContentLength ?? -1;
+                        if (total > 0 && total <= MaxProbeSizeBytes)
+                            totalBytes = total;
+                    }
                     suggestedName = NameFromDisposition(head.Content.Headers.ContentDisposition);
                     etag = head.Headers.ETag?.ToString();
                     lastModified = head.Content.Headers.LastModified?.ToString("R");
+                }
+                else
+                {
+                    contentType ??= head.Content.Headers.ContentType?.ToString();
+                    suggestedName ??= NameFromDisposition(head.Content.Headers.ContentDisposition);
                 }
             }
         }
@@ -1199,9 +1216,16 @@ public sealed class DownloadEngine
                 }
                 if (get.StatusCode == HttpStatusCode.PartialContent)
                 {
-                    supportsRanges = true;
-                    if (get.Content.Headers.ContentRange?.Length is long len && len > 0)
-                        totalBytes = len;
+                    // 206: the complete total comes from Content-Range after '/',
+                    // never from the partial Content-Length (1 byte here).
+                    long? total = GetContentRangeTotal(get);
+                    if (total.HasValue)
+                    {
+                        supportsRanges = true;
+                        totalBytes = total.Value;
+                    }
+                    // Without a valid total the 206 proves nothing about size;
+                    // leave totalBytes unknown rather than fabricating one.
                     etag ??= get.Headers.ETag?.ToString();
                     lastModified ??= get.Content.Headers.LastModified?.ToString("R");
                     suggestedName ??= NameFromDisposition(get.Content.Headers.ContentDisposition);
@@ -1210,10 +1234,16 @@ public sealed class DownloadEngine
                 }
                 else if (get.IsSuccessStatusCode)
                 {
-                    // Server ignored the Range header; use Content-Length if present.
-                    long len = get.Content.Headers.ContentLength ?? -1;
-                    if (len > 0)
-                        totalBytes = len;
+                    // Server ignored Range and returned 200: its Content-Length
+                    // describes the complete representation. Headers only — the
+                    // body is kept open for single-stream reuse, never buffered
+                    // here to determine size.
+                    if (IsProbeSizeContentType(get.Content.Headers.ContentType?.ToString() ?? contentType))
+                    {
+                        long len = get.Content.Headers.ContentLength ?? -1;
+                        if (len > 0 && len <= MaxProbeSizeBytes)
+                            totalBytes = len;
+                    }
                     supportsRanges = false;
                     etag ??= get.Headers.ETag?.ToString();
                     lastModified ??= get.Content.Headers.LastModified?.ToString("R");
@@ -1226,11 +1256,14 @@ public sealed class DownloadEngine
                 }
                 else if (get.StatusCode == HttpStatusCode.RequestedRangeNotSatisfiable)
                 {
-                    // 416 with a Content-Range still tells us the total size, and
-                    // proves the server understands ranges.
-                    supportsRanges = true;
-                    if (get.Content.Headers.ContentRange?.Length is long len && len > 0)
-                        totalBytes = len;
+                    // 416: only Content-Range: bytes */N with a valid N proves
+                    // the total. An arbitrary 416 without one stays unknown.
+                    long? total416 = GetContentRangeTotal(get);
+                    if (total416.HasValue)
+                    {
+                        supportsRanges = true;
+                        totalBytes = total416.Value;
+                    }
                     etag ??= get.Headers.ETag?.ToString();
                     lastModified ??= get.Content.Headers.LastModified?.ToString("R");
                     suggestedName ??= NameFromDisposition(get.Content.Headers.ContentDisposition);
@@ -1304,6 +1337,89 @@ public sealed class DownloadEngine
             }
         }
         return new ProbeMeta(totalBytes, supportsRanges, suggestedName, contentType, isHls, isDash, etag, lastModified, probeBody, urlIndex, hlsEstimated);
+    }
+
+    /// <summary>Upper bound for any adopted probe total (64 GiB). Larger,
+    /// negative, zero or malformed values stay unknown — never a size.</summary>
+    internal const long MaxProbeSizeBytes = 64L * 1024 * 1024 * 1024;
+
+    /// <summary>True when a probe Content-Type may carry a file size.
+    /// HTML/auth pages, torrent descriptors and challenge pages never do:
+    /// their lengths describe an error document, not the file.</summary>
+    internal static bool IsProbeSizeContentType(string? contentType)
+    {
+        if (string.IsNullOrWhiteSpace(contentType))
+            return true; // absent type: no evidence it is an error page
+        string mediaType = contentType.Split(';')[0].Trim();
+        if (IsHtmlContentType(mediaType) || IsTorrentContentType(mediaType))
+            return false;
+        return true;
+    }
+
+    /// <summary>Extracts the complete-representation total from a response's
+    /// Content-Range (the number after '/'). Null when missing, wildcard,
+    /// malformed, non-positive or overflowing. Never returns the partial
+    /// Content-Length.</summary>
+    internal static long? GetContentRangeTotal(HttpResponseMessage response)
+    {
+        try
+        {
+            var cr = response.Content?.Headers?.ContentRange;
+            if (cr is null || !cr.HasLength)
+                return null;
+            long total = cr.Length!.Value;
+            if (total <= 0 || total > MaxProbeSizeBytes)
+                return null;
+            // Sanity: a bounded 0-0 probe must start at 0 when From is known.
+            if (cr.HasRange && cr.From.HasValue && cr.From.Value != 0)
+            {
+                // Still accept: some stacks echo odd From values, but the
+                // total after '/' remains authoritative when valid.
+            }
+            return total;
+        }
+        catch { return null; }
+    }
+
+    /// <summary>Strict Content-Range total parser for header strings
+    /// (browser-observed and test paths). Accepts only "bytes S-E/N" with a
+    /// numeric N in (0, 64 GiB]. Wildcards, negatives, malformed and
+    /// overflowing totals yield null.</summary>
+    internal static long? ParseContentRangeTotal(string? raw)
+    {
+        try
+        {
+            if (string.IsNullOrWhiteSpace(raw))
+                return null;
+            var m = System.Text.RegularExpressions.Regex.Match(
+                raw.Trim(), @"^bytes\s+(\d+)\s*-\s*(\d+)\s*/\s*(\d+)\s*$",
+                System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+            if (!m.Success)
+            {
+                // 416 form: "bytes */N"
+                var m416 = System.Text.RegularExpressions.Regex.Match(
+                    raw.Trim(), @"^bytes\s+\*/\s*(\d+)\s*$",
+                    System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+                if (!m416.Success)
+                    return null;
+                if (!long.TryParse(m416.Groups[1].Value, out long n) || n <= 0 || n > MaxProbeSizeBytes)
+                    return null;
+                return n;
+            }
+            if (!long.TryParse(m.Groups[3].Value, out long total) || total <= 0 || total > MaxProbeSizeBytes)
+                return null;
+            long from = long.Parse(m.Groups[1].Value);
+            long to = long.Parse(m.Groups[2].Value);
+            if (from < 0 || to < from || total <= to)
+            {
+                // Total must cover the range; a total smaller than the range
+                // end is malformed. total == to+? is fine (total > to).
+                if (total <= to)
+                    return null;
+            }
+            return total;
+        }
+        catch { return null; }
     }
 
     private static bool IsResuming(Session session)
@@ -2151,9 +2267,22 @@ public sealed class DownloadEngine
             if (response.Content.Headers.ContentLength is long length && length > 0)
             {
                 if (isPartial)
-                    task.TotalBytes = existingLength + length;
+                {
+                    // 206: authoritative total is Content-Range; the partial
+                    // Content-Length must never be compared to the file size.
+                    long? rangeTotal = GetContentRangeTotal(response);
+                    task.TotalBytes = rangeTotal ?? (existingLength + length);
+                }
                 else
                     task.TotalBytes = length;
+            }
+            else if (isPartial)
+            {
+                // 206 without a usable Content-Length: still adopt a valid
+                // Content-Range total so resume/validation sees the truth.
+                long? rangeTotal = GetContentRangeTotal(response);
+                if (rangeTotal.HasValue)
+                    task.TotalBytes = rangeTotal.Value;
             }
 
             Interlocked.Exchange(ref session.BytesDownloaded, existingLength);

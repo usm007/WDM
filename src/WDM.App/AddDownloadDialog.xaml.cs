@@ -28,6 +28,14 @@ public partial class AddDownloadDialog : Window
     // not media bytes, so _probeTotalBytes must never seed the task size.
     private CancellationTokenSource? _probeCts;
     private bool _probeIsStream;
+    // Browser-observed (unconfirmed) size hint for the current URL. Display
+    // only; never seeds TotalBytes, chunk counts, preallocation or resume.
+    private long? _observedSizeHint;
+    private string? _observedSizeUrl;
+    // Monotonic probe generation: stale probes (older URL keystrokes) must
+    // never update the current URL's size, filename or media state.
+    private int _probeSeq;
+    private string? _probeUrl;
     private ResolvedQuery? _lastResolved;
     // Form POST replay + proxy mirror carried from a browser capture. No UI
     // box: replayed silently by the engine at start; the probe badge notes it.
@@ -48,7 +56,8 @@ public partial class AddDownloadDialog : Window
     private bool _suppressHlsSelection;
 
     public AddDownloadDialog(MainViewModel viewModel, string? prefillUrl = null, string? prefillFileName = null, string? prefillReferer = null, Dictionary<string, string>? prefillHeaders = null,
-        string? postData = null, string? postContentType = null, string? proxyHost = null, int proxyPort = 0, string? proxyType = null, bool fullSession = false)
+        string? postData = null, string? postContentType = null, string? proxyHost = null, int proxyPort = 0, string? proxyType = null, bool fullSession = false,
+        long? observedSizeBytes = null)
     {
         _viewModel = viewModel;
         InitializeComponent();
@@ -64,6 +73,7 @@ public partial class AddDownloadDialog : Window
         _prefillFullSession = fullSession;
         _postDataUrl = !string.IsNullOrWhiteSpace(postData) && !string.IsNullOrWhiteSpace(prefillUrl)
             ? NormalizePastedUrl(prefillUrl) : null;
+        SetObservedSizeHint(observedSizeBytes, prefillUrl);
         FolderBox.Text = viewModel.Settings.DownloadFolder;
         ChunksBox.SelectedIndex = Math.Clamp(ChunkIndex(viewModel.Settings.DefaultChunkCount), 0, ChunksBox.Items.Count - 1);
         CategoryBox.SelectedIndex = 0;
@@ -79,6 +89,7 @@ public partial class AddDownloadDialog : Window
             try { _probeCts?.Cancel(); } catch { }
             try { _probeCts?.Dispose(); } catch { }
             _probeCts = null;
+            _probeSeq++;
         };
 
         Loaded += (_, _) =>
@@ -104,7 +115,8 @@ public partial class AddDownloadDialog : Window
     public bool IsEmpty => string.IsNullOrWhiteSpace(UrlBox.Text);
 
     public void UpdatePrefill(string? url, string? fileName = null, string? referer = null, Dictionary<string, string>? headers = null,
-        string? postData = null, string? postContentType = null, string? proxyHost = null, int proxyPort = 0, string? proxyType = null, bool fullSession = false)
+        string? postData = null, string? postContentType = null, string? proxyHost = null, int proxyPort = 0, string? proxyType = null, bool fullSession = false,
+        long? observedSizeBytes = null)
     {
         if (!string.IsNullOrWhiteSpace(url))
         {
@@ -118,6 +130,7 @@ public partial class AddDownloadDialog : Window
             _prefillFullSession = fullSession;
             _postDataUrl = !string.IsNullOrWhiteSpace(postData) && !string.IsNullOrWhiteSpace(url)
                 ? NormalizePastedUrl(url) : null;
+            SetObservedSizeHint(observedSizeBytes, NormalizePastedUrl(url));
             UrlBox.Text = NormalizePastedUrl(url);
             if (!string.IsNullOrWhiteSpace(fileName))
             {
@@ -131,6 +144,36 @@ public partial class AddDownloadDialog : Window
             UrlBox.SelectAll();
             UrlBox.Focus();
         }
+    }
+
+    /// <summary>Stores a browser-observed size hint for one URL. Invalid
+    /// values become unknown. A hint for a previous URL never applies to the
+    /// new URL's dialog state, and a late hint never overwrites a newer
+    /// native result (the probe display re-evaluates on arrival).</summary>
+    internal void SetObservedSizeHint(long? sizeBytes, string? url)
+    {
+        if (sizeBytes.HasValue && sizeBytes.Value > 0 && sizeBytes.Value <= 64L * 1024 * 1024 * 1024
+            && !string.IsNullOrWhiteSpace(url))
+        {
+            _observedSizeHint = sizeBytes.Value;
+            _observedSizeUrl = NormalizePastedUrl(url);
+        }
+        else
+        {
+            _observedSizeHint = null;
+            _observedSizeUrl = null;
+        }
+    }
+
+    /// <summary>Test/logic hook: the validated hint for the given URL, or
+    /// null when unknown or belonging to a different URL.</summary>
+    internal long? GetObservedHintFor(string? url)
+    {
+        if (_observedSizeHint.HasValue && !string.IsNullOrWhiteSpace(url)
+            && !string.IsNullOrWhiteSpace(_observedSizeUrl)
+            && string.Equals(NormalizePastedUrl(url), _observedSizeUrl, StringComparison.Ordinal))
+            return _observedSizeHint;
+        return null;
     }
 
     protected override void OnSourceInitialized(EventArgs e)
@@ -664,6 +707,19 @@ public partial class AddDownloadDialog : Window
         try { _probeCts?.Dispose(); } catch { }
         _probeCts = new CancellationTokenSource();
         var ct = _probeCts.Token;
+        int seq = ++_probeSeq;
+
+        // Reuse a current valid probe result instead of redundant requests.
+        if (string.Equals(_probeUrl, url, StringComparison.Ordinal) && _probeTotalBytes > 0 && !_probeIsStream)
+        {
+            // Still the same URL with a confirmed size: refresh the verdict.
+            UpdateDuplicateWarning(url);
+            ProbeBadge.Visibility = Visibility.Visible;
+            ProbeIcon.Symbol = SymbolRegular.CheckmarkCircle24;
+            ProbeText.Text = $"{DownloadTask.FormatBytes(_probeTotalBytes)} • Multi-threaded resume supported";
+            return;
+        }
+        _probeUrl = url;
 
         ProbeBadge.Visibility = Visibility.Visible;
         ProbeIcon.Symbol = SymbolRegular.ArrowSync24;
@@ -774,12 +830,29 @@ public partial class AddDownloadDialog : Window
             }
 
             using var resp = await http.SendAsync(req, HttpCompletionOption.ResponseHeadersRead, ct);
+            if (seq != _probeSeq || ct.IsCancellationRequested)
+                return;
 
-            long totalBytes = resp.Content.Headers.ContentLength ?? -1;
+            // HEAD Content-Length is a confirmed size only for a successful
+            // file representation (never an HTML error/auth page).
+            string? headType = resp.Content.Headers.ContentType?.MediaType;
+            bool headUsable = DownloadEngine.IsProbeSizeContentType(headType);
+            long totalBytes = -1;
+            if (resp.IsSuccessStatusCode && headUsable)
+            {
+                long cl = resp.Content.Headers.ContentLength ?? -1;
+                if (cl > 0 && cl <= DownloadEngine.MaxProbeSizeBytes)
+                    totalBytes = cl;
+            }
             bool supportsRanges = resp.Headers.AcceptRanges.Any(r => r.Equals("bytes", StringComparison.OrdinalIgnoreCase));
             string? rangeDispositionRaw = null;
+            string? rangeType = null;
+            System.Net.HttpStatusCode rangeStatus = 0;
 
-            if (!supportsRanges || !resp.IsSuccessStatusCode)
+            // A known filename never suppresses this fallback; advertising
+            // Accept-Ranges without a total still probes. Only a confirmed
+            // total + range support together skip the bounded request.
+            if (totalBytes <= 0 || !supportsRanges || !resp.IsSuccessStatusCode)
             {
                 // Range test with byte=0-0 fallback probe
                 var rangeReq = new HttpRequestMessage(HttpMethod.Get, url);
@@ -790,9 +863,42 @@ public partial class AddDownloadDialog : Window
                         rangeReq.Headers.TryAddWithoutValidation(kv.Key, kv.Value);
                 }
                 using HttpResponseMessage rangeResp = await http.SendAsync(rangeReq, HttpCompletionOption.ResponseHeadersRead, ct);
-                supportsRanges = rangeResp.StatusCode == System.Net.HttpStatusCode.PartialContent;
-                if (totalBytes <= 0 && rangeResp.Content.Headers.ContentRange?.Length is long len)
-                    totalBytes = len;
+                if (seq != _probeSeq || ct.IsCancellationRequested)
+                    return;
+                rangeStatus = rangeResp.StatusCode;
+                rangeType = rangeResp.Content.Headers.ContentType?.MediaType;
+                if (rangeResp.StatusCode == System.Net.HttpStatusCode.PartialContent)
+                {
+                    // 206: total from Content-Range after '/', never the
+                    // partial Content-Length.
+                    long? rangeTotal = DownloadEngine.GetContentRangeTotal(rangeResp);
+                    if (rangeTotal.HasValue)
+                    {
+                        totalBytes = rangeTotal.Value;
+                        supportsRanges = true;
+                    }
+                }
+                else if (rangeResp.IsSuccessStatusCode)
+                {
+                    // 200 ignoring Range: full Content-Length, headers only.
+                    if (DownloadEngine.IsProbeSizeContentType(rangeType ?? headType))
+                    {
+                        long len = rangeResp.Content.Headers.ContentLength ?? -1;
+                        if (len > 0 && len <= DownloadEngine.MaxProbeSizeBytes)
+                            totalBytes = len;
+                    }
+                    supportsRanges = false;
+                }
+                else if (rangeResp.StatusCode == System.Net.HttpStatusCode.RequestedRangeNotSatisfiable)
+                {
+                    // 416: only bytes */N with a valid N proves the total.
+                    long? total416 = DownloadEngine.GetContentRangeTotal(rangeResp);
+                    if (total416.HasValue)
+                    {
+                        totalBytes = total416.Value;
+                        supportsRanges = true;
+                    }
+                }
                 string? rangeRaw = rangeResp.Content.Headers.TryGetValues("Content-Disposition", out var rvals) ? rvals.FirstOrDefault() : null;
                 rangeDispositionRaw = rangeRaw;
             }
@@ -818,35 +924,59 @@ public partial class AddDownloadDialog : Window
 
             // Late landing from a superseded keystroke must not poison the
             // current URL's size (same guard as the duplicate refresh below).
+            if (seq != _probeSeq)
+                return;
             if (!string.Equals(NormalizePastedUrl(UrlBox.Text), url, StringComparison.Ordinal))
                 return;
+            // A hint belonging to a previous URL is never reused; only the
+            // current URL's hint may be displayed, and never as confirmed.
+            long? hintForUrl = GetObservedHintFor(url);
             _probeTotalBytes = totalBytes;
             // The probe learned the size after the keystroke handler ran — refresh the
             // duplicate verdict for the URL that was actually probed.
             if (string.Equals(NormalizePastedUrl(UrlBox.Text), url, StringComparison.Ordinal))
                 UpdateDuplicateWarning(url);
 
-            string sizeStr = totalBytes > 0 ? DownloadTask.FormatBytes(totalBytes) : "Unknown size";
             bool isHls = resp.Content.Headers.ContentType?.MediaType is string mt
                 && (mt.Contains("mpegurl", StringComparison.OrdinalIgnoreCase) || mt.Contains("m3u8", StringComparison.OrdinalIgnoreCase))
                 || url.Contains(".m3u8", StringComparison.OrdinalIgnoreCase);
             _probeIsStream = isHls;
             if (isHls)
             {
+                // Manifest bytes are not media bytes: never show the playlist
+                // Content-Length as the final media size.
                 ProbeIcon.Symbol = SymbolRegular.CheckmarkCircle24;
-                ProbeText.Text = $"{sizeStr} • HLS stream (downloads as one media file)";
+                ProbeText.Text = "Size unknown • HLS stream (downloads as one media file)";
                 _ = LoadHlsVariantsAsync(url, http, ct);
             }
-            else if (supportsRanges)
+            else if (totalBytes > 0)
             {
-                ProbeIcon.Symbol = SymbolRegular.CheckmarkCircle24;
-                ProbeText.Text = $"{sizeStr} • Multi-threaded resume supported";
+                // Valid native result replaces any hint.
+                string sizeStr = DownloadTask.FormatBytes(totalBytes);
+                if (supportsRanges)
+                {
+                    ProbeIcon.Symbol = SymbolRegular.CheckmarkCircle24;
+                    ProbeText.Text = $"{sizeStr} • Multi-threaded resume supported";
+                }
+                else
+                {
+                    ProbeIcon.Symbol = SymbolRegular.Info24;
+                    ProbeText.Text = $"{sizeStr} • Single-thread download (Server doesn't support resuming)";
+                }
+                if (HlsPanel != null) HlsPanel.Visibility = Visibility.Collapsed;
+            }
+            else if (hintForUrl.HasValue)
+            {
+                // Unknown native result does not confirm the hint: show it
+                // only as an unconfirmed observed size. Never "0 B".
+                ProbeIcon.Symbol = SymbolRegular.Info24;
+                ProbeText.Text = $"{DownloadTask.FormatBytes(hintForUrl.Value)} • Observed size (unconfirmed)";
                 if (HlsPanel != null) HlsPanel.Visibility = Visibility.Collapsed;
             }
             else
             {
                 ProbeIcon.Symbol = SymbolRegular.Info24;
-                ProbeText.Text = $"{sizeStr} • Single-thread download (Server doesn't support resuming)";
+                ProbeText.Text = "Size unknown • Single-thread download (Server doesn't support resuming)";
                 if (HlsPanel != null) HlsPanel.Visibility = Visibility.Collapsed;
             }
 
@@ -858,7 +988,22 @@ public partial class AddDownloadDialog : Window
         }
         catch
         {
-            if (!ct.IsCancellationRequested)
+            if (!ct.IsCancellationRequested && seq == _probeSeq
+                && string.Equals(NormalizePastedUrl(UrlBox.Text), url, StringComparison.Ordinal))
+            {
+                long? hintForUrl = GetObservedHintFor(url);
+                if (hintForUrl.HasValue)
+                {
+                    ProbeIcon.Symbol = SymbolRegular.Info24;
+                    ProbeText.Text = $"{DownloadTask.FormatBytes(hintForUrl.Value)} • Observed size (unconfirmed)";
+                }
+                else
+                {
+                    ProbeIcon.Symbol = SymbolRegular.CheckmarkCircle24;
+                    ProbeText.Text = "Size unknown";
+                }
+            }
+            else if (!ct.IsCancellationRequested)
             {
                 ProbeIcon.Symbol = SymbolRegular.CheckmarkCircle24;
                 ProbeText.Text = "URL ready for download";

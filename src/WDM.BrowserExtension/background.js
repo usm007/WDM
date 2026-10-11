@@ -80,21 +80,68 @@ function probeCacheWrite(url, entry) {
     probeCache.set(url, Object.assign({ time: Date.now() }, entry));
   } catch {}
 }
-function probeSizeFromHeaders(headers) {
-  // Content-Range: bytes 0-0/2848208 (206) preferred; else Content-Length.
+const MAX_OBSERVED_BYTES = 64 * 1024 * 1024 * 1024;
+function isManifestUrl(u) {
+  try { return /\.m3u8(\?|$)/i.test(u) || /\.mpd(\?|$)/i.test(u); } catch { return false; }
+}
+function isManifestContentType(ct) {
   try {
-    const cr = getHeader(headers, "content-range") || "";
-    const m = /\/(\d+)\s*$/.exec(cr);
+    const c = String(ct || "").toLowerCase();
+    return c.includes("mpegurl") || c.includes("m3u8") || c.includes("dash+xml") || c.includes("mp2t") || c.includes("x-mpegurl");
+  } catch { return false; }
+}
+function parseStrictPositiveInt(raw) {
+  try {
+    const s = String(raw == null ? "" : raw).trim();
+    if (!/^\d+$/.test(s)) return null;
+    const n = Number(s);
+    if (!Number.isSafeInteger(n) || n <= 0 || n >= MAX_OBSERVED_BYTES) return null;
+    return n;
+  } catch { return null; }
+}
+function parseContentRangeTotal(raw) {
+  try {
+    const s = String(raw == null ? "" : raw).trim();
+    let m = /^bytes\s+\d+\s*-\s*\d+\s*\/\s*(\d+)\s*$/i.exec(s);
     if (m) {
-      const total = parseInt(m[1], 10);
-      if (total > 0 && total < 64 * 1024 * 1024 * 1024) return total;
+      const n = Number(m[1]);
+      if (!Number.isSafeInteger(n) || n <= 0 || n >= MAX_OBSERVED_BYTES) return null;
+      return n;
+    }
+    m = /^bytes\s+\*\/\s*(\d+)\s*$/i.exec(s);
+    if (m) {
+      const n = Number(m[1]);
+      if (!Number.isSafeInteger(n) || n <= 0 || n >= MAX_OBSERVED_BYTES) return null;
+      return n;
     }
   } catch {}
-  try {
-    const cl = parseInt(getHeader(headers, "content-length") || "0", 10);
-    if (cl > 0 && cl < 64 * 1024 * 1024 * 1024) return cl;
-  } catch {}
   return null;
+}
+function probeSizeFromHeaders(headers, status, contentType, url) {
+  // Strict observed-size parser. Manifests never yield a final media size.
+  // 206 -> Content-Range total only (never partial Content-Length).
+  // 200 -> Content-Length only when valid, positive and in range.
+  // Wildcard/malformed/negative/overflowing totals are unknown (null).
+  try {
+    const ct = contentType != null ? String(contentType) : String(getHeader(headers, "content-type") || "");
+    const u = url != null ? String(url) : "";
+    if ((u && isManifestUrl(u)) || (ct && isManifestContentType(ct))) return null;
+    if (status === 206) {
+      return parseContentRangeTotal(getHeader(headers, "content-range"));
+    }
+    if (status === 200 || status == null) {
+      if (status === 200) {
+        const ctype = ct.toLowerCase().split(";")[0].trim();
+        if (ctype.startsWith("text/html") || ctype === "application/xhtml+xml") return null;
+      }
+      // Prefer a valid Content-Range total when present (some 200s echo it),
+      // otherwise fall back to a strictly-parsed Content-Length.
+      const crTotal = parseContentRangeTotal(getHeader(headers, "content-range"));
+      if (crTotal) return crTotal;
+      return parseStrictPositiveInt(getHeader(headers, "content-length"));
+    }
+    return null;
+  } catch { return null; }
 }
 async function fetchWithTimeout(url, options, ms) {
   let timer = null;
@@ -128,15 +175,17 @@ async function probeMediaHeaders(url, reqHeaders) {
     } catch {}
     return arr;
   };
-  const adopt = (r) => {
+  const adopt = (r, status) => {
     // Returns "file" (adopted), "page" (definitive non-file, no fallback),
     // or null (no info — worth the ranged-GET fallback).
     if (!r) return null;
     let ctype = "";
     try { ctype = (r.headers.get("content-type") || "").toLowerCase(); } catch {}
     if (ctype.startsWith("text/html")) return "page"; // a page, not a file
+    if (isManifestContentType(ctype) || isManifestUrl(url)) return null; // manifest bytes are not the media size
     const h = plainHeaders(r);
-    const size = probeSizeFromHeaders(h);
+    const st = typeof status === "number" ? status : (r.status === 206 ? 206 : (r.ok ? 200 : null));
+    const size = probeSizeFromHeaders(h, st, ctype, url);
     let fileName = null;
     try { fileName = parseCdFileName(getHeader(h, "content-disposition") || ""); } catch {}
     if (size) out.size = size;
@@ -147,7 +196,7 @@ async function probeMediaHeaders(url, reqHeaders) {
     // HEAD first (header-only, no bytes).
     try {
       const head = await fetchWithTimeout(url, { method: "HEAD", headers, credentials: "include" }, PROBE_TIMEOUT_MS);
-      if (head && head.ok && adopt(head) === "page") {
+      if (head && head.ok && adopt(head, head.status) === "page") {
         probeCacheWrite(url, out);
         return out;
       }
@@ -159,7 +208,7 @@ async function probeMediaHeaders(url, reqHeaders) {
         const range = await fetchWithTimeout(url,
           { method: "GET", headers: Object.assign({ "Range": "bytes=0-0" }, headers), credentials: "include" },
           PROBE_TIMEOUT_MS);
-        if (range && (range.ok || range.status === 206)) adopt(range);
+        if (range && (range.ok || range.status === 206)) adopt(range, range.status);
       } catch {}
     }
   } catch {}
@@ -794,6 +843,25 @@ webext.runtime.onMessage.addListener((message, sender, sendResponse) => {
           }
         } catch {}
         // Replay the form POST body + browser proxy descriptor when present.
+        // Attach the sniffed entry's observed size when the payload lacks one
+        // (player overlay handoff). Manifests never contribute a size hint.
+        try {
+          if (p && p.url && p.observedSizeBytes == null && p.observedSize == null && !isManifestUrl(p.url)) {
+            const direct = sanitizeObservedHint(p.size);
+            if (direct != null) p.observedSizeBytes = direct;
+            else {
+              for (const map of tabMediaMap.values()) {
+                const e = map && map.get(p.url);
+                if (e && e.size) {
+                  const h = sanitizeObservedHint(e.size);
+                  if (h != null) { p.observedSizeBytes = h; break; }
+                }
+              }
+            }
+            if (p.observedSizeBytes != null && isManifestUrl(p.url)) delete p.observedSizeBytes;
+            if (p.size != null) delete p.size;
+          }
+        } catch {}
         enrichHandoffPayload(p);
         const r = await fetchWdmWithRetry(`${WDM_HOST}/download`, {
           method: "POST",
@@ -1089,13 +1157,24 @@ function registerTabMedia(tabId, url, hint, extra) {
   const extraSize = extra && extra.size ? extra.size : null;
   const cdName = extra && extra.fileName ? String(extra.fileName) : "";
   if (known) {
-    if (!known.quality && extraQuality) known.quality = extraQuality;
-    if (!known.size && extraSize) known.size = extraSize;
-    if (extra && extra.reqHeaders && !known.reqHeaders) known.reqHeaders = extra.reqHeaders;
+    // Existing entry: adopt a valid later header update, converge the
+    // background map + content-script entry + visible overlay on the same
+    // observed-size state. No duplicate messages when nothing changed;
+    // stale events never overwrite newer valid metadata with unknown.
+    let changed = false;
+    if (!known.quality && extraQuality) { known.quality = extraQuality; changed = true; }
+    if (extraSize && (!known.size || known.size !== extraSize)) { known.size = extraSize; changed = true; }
+    if (extra && extra.reqHeaders && !known.reqHeaders) { known.reqHeaders = extra.reqHeaders; changed = true; }
+    if (extra && typeof extra.drm !== "undefined" && extra.drm && !known.drm) { known.drm = true; changed = true; }
     if (!known.fileName && cdName) {
       known.fileName = cdName;
       const stem = cdLabelStem(cdName);
       if (stem) known.label = stem;
+      changed = true;
+    }
+    if (changed) {
+      try { known.time = Date.now(); } catch {}
+      sendHintToTab(tabId, { action: "wdmMediaHint", url, hint: known.type, pageTitle: known.pageTitle || null, quality: known.quality || null, size: known.size || null, fileName: known.fileName || null });
     }
     return;
   }
@@ -1176,12 +1255,23 @@ try {
   if (webext.webRequest && webext.webRequest.onHeadersReceived) {
     webext.webRequest.onHeadersReceived.addListener((details) => {
       try {
-        // Observed Content-Length rides along as the size hint (direct mp4s
-        // show "MP4 720p • 1.2 GB" instead of a bare "VIDEO").
+        // Passive observation only: never issue HEAD/range probes here.
+        // Eligible complete 200 direct-media responses adopt a strictly
+        // parsed Content-Length; 206 adopts the Content-Range total only.
+        // Manifests never produce a final-media size.
+        const status = details.statusCode || 0;
+        const ctypeRaw = getHeader(details.responseHeaders, "content-type") || "";
+        const ctype = ctypeRaw.toLowerCase().split(";")[0].trim();
+        const manifest = isManifestUrl(details.url) || isManifestContentType(ctypeRaw);
         let observedSize = null;
         try {
-          const cl = parseInt(getHeader(details.responseHeaders, "content-length") || "0", 10);
-          if (cl > 0 && cl < 32 * 1024 * 1024 * 1024) observedSize = cl;
+          if (!manifest) {
+            if (status === 206) {
+              observedSize = probeSizeFromHeaders(details.responseHeaders, 206, ctypeRaw, details.url);
+            } else if (status === 200) {
+              observedSize = probeSizeFromHeaders(details.responseHeaders, 200, ctypeRaw, details.url);
+            }
+          }
         } catch {}
         // Pending opaque URLs: confirm via observed content-type (passive, no
         // extra requests, no CORS issues). Video/HLS/DASH confirms, else drop.
@@ -1189,13 +1279,15 @@ try {
         const cdName = parseCdFileName(getHeader(details.responseHeaders, "content-disposition") || "");
         const authHit = pendingAuth.get(details.url);
         const reqHeaders = authHit && authHit.auth ? { "Authorization": authHit.auth } : null;
-        const hintExtra = (observedSize || cdName || reqHeaders) ? { size: observedSize, fileName: cdName || null, reqHeaders } : null;
+        // Manifest entries carry no size hint (playlist bytes are not media).
+        const safeSize = manifest ? null : observedSize;
+        const hintExtra = (safeSize || cdName || reqHeaders) ? { size: safeSize, fileName: cdName || null, reqHeaders } : null;
         if (pend) {
           pendingVerify.delete(details.url);
           if (pend.tabId === details.tabId) {
-            const ctype = (getHeader(details.responseHeaders, "content-type") || "").toLowerCase();
-            if (ctype.startsWith("video/") || ctype.includes("mpegurl") || ctype.includes("m3u8") ||
-                ctype.includes("dash+xml") || ctype.includes("mp2t")) {
+            const ctypeFull = (getHeader(details.responseHeaders, "content-type") || "").toLowerCase();
+            if (ctypeFull.startsWith("video/") || ctypeFull.includes("mpegurl") || ctypeFull.includes("m3u8") ||
+                ctypeFull.includes("dash+xml") || ctypeFull.includes("mp2t")) {
               registerTabMedia(details.tabId, details.url, classifyUrl(details.url) || "Video", hintExtra);
               return;
             }
@@ -1203,6 +1295,16 @@ try {
         }
         if (isMediaResponse(details)) {
           registerTabMedia(details.tabId, details.url, classifyUrl(details.url), hintExtra);
+        } else if (safeSize || cdName) {
+          // A valid later header update for an already-registered entry must
+          // still converge even when the response no longer classifies as
+          // new media (e.g. first seen via onBeforeRequest without headers).
+          try {
+            const map = tabMediaMap.get(details.tabId);
+            if (map && map.has(details.url)) {
+              registerTabMedia(details.tabId, details.url, (map.get(details.url) || {}).type || classifyUrl(details.url), hintExtra);
+            }
+          } catch {}
         }
       } catch {}
     }, { urls: ["<all_urls>"] }, ["responseHeaders"]);
@@ -1429,7 +1531,7 @@ webext.downloads.onCreated.addListener(async (item) => {
       }
     } catch {}
 
-    await sendToWdm(downloadUrl, item.filename, item.referrer, headers, pageTitle);
+    await sendToWdm(downloadUrl, item.filename, item.referrer, headers, pageTitle, sanitizeObservedHint(item.totalBytes));
 
     try {
       await webext.downloads.cancel(item.id);
@@ -1442,7 +1544,15 @@ webext.downloads.onCreated.addListener(async (item) => {
   }
 });
 
-async function sendToWdm(url, filename, referrer, headers, pageTitle) {
+function sanitizeObservedHint(v) {
+  try {
+    const n = Number(v);
+    if (!Number.isSafeInteger(n) || n <= 0 || n >= MAX_OBSERVED_BYTES) return null;
+    return n;
+  } catch { return null; }
+}
+
+async function sendToWdm(url, filename, referrer, headers, pageTitle, observedSizeBytes) {
   headers = headers || {};
   // Derive Origin from the referrer when the content script didn't supply one,
   // so HLS/DASH CDNs that gate on Origin still accept the desktop request.
@@ -1451,17 +1561,32 @@ async function sendToWdm(url, filename, referrer, headers, pageTitle) {
       headers["Origin"] = new URL(referrer).origin;
     }
   } catch {}
+  const hint = sanitizeObservedHint(observedSizeBytes);
+  // Attach a sniffed-media observed size when the caller looked one up.
+  let sniffedHint = null;
+  try {
+    if (hint == null) {
+      for (const map of tabMediaMap.values()) {
+        const e = map && map.get(url);
+        if (e && e.size) { sniffedHint = sanitizeObservedHint(e.size); break; }
+      }
+    }
+  } catch {}
+  const finalHint = hint != null ? hint : sniffedHint;
+  const payload = {
+    url,
+    fileName: filename || null,
+    referer: referrer || null,
+    headers: headers || {},
+    pageTitle: pageTitle || null,
+    fullSession: pageHostApproved(url, referrer) || undefined
+  };
+  // Optional hint only: never bytesReceived/fileSize, never a manifest size.
+  if (finalHint != null && !isManifestUrl(url)) payload.observedSizeBytes = finalHint;
   const response = await fetchWdmWithRetry(`${WDM_HOST}/download`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(enrichHandoffPayload({
-      url,
-      fileName: filename || null,
-      referer: referrer || null,
-      headers: headers || {},
-      pageTitle: pageTitle || null,
-      fullSession: pageHostApproved(url, referrer) || undefined
-    })),
+    body: JSON.stringify(enrichHandoffPayload(payload)),
   });
   if (!response.ok) {
     throw new Error(`WDM responded ${response.status}`);
@@ -1492,7 +1617,8 @@ async function sendBatchToWdm(items) {
         headers["Origin"] = new URL(it.referer).origin;
       }
     } catch {}
-    enriched.push(enrichHandoffPayload({
+    const sniffSize = sanitizeObservedHint(it.size != null ? it.size : (it.observedSizeBytes != null ? it.observedSizeBytes : null));
+    const batchPayload = {
       url: it.url,
       fileName: it.fileName || null,
       referer: it.referer || null,
@@ -1500,7 +1626,9 @@ async function sendBatchToWdm(items) {
       pageTitle: it.pageTitle || null,
       keyUrl: it.keyUrl || null,
       fullSession: allowPageItem || undefined
-    }));
+    };
+    if (sniffSize != null && !isManifestUrl(it.url)) batchPayload.observedSizeBytes = sniffSize;
+    enriched.push(enrichHandoffPayload(batchPayload));
   }
   if (enriched.length === 0) throw new Error("No valid URLs in batch");
   const response = await fetchWdmWithRetry(`${WDM_HOST}/download/batch`, {

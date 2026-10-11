@@ -560,6 +560,16 @@
       }
     }
     const title = realTitle() || document.title || null;
+    // Browser-observed size hint (unconfirmed): direct media only. Manifest
+    // (.m3u8/.mpd) sizes are playlist bytes, never the final media size.
+    let observedHint = null;
+    try {
+      const s = (entry && entry.size) || null;
+      const t = (entry && entry.type) || streamType;
+      const u = String(url || "");
+      const isManifest = /\.m3u8(\?|$)/i.test(u) || /\.mpd(\?|$)/i.test(u) || t === "HLS" || t === "DASH";
+      if (s && Number(s) > 0 && !isManifest) observedHint = Number(s);
+    } catch {}
     const payload = {
       url: url,
       fileName: buildDownloadFileName(entry || label, quality) || null,
@@ -573,6 +583,7 @@
       keyUrl: (entry && entry.keyUrl) || playlistKeyHints.get(url) || null,
       drm: !!(entry && entry.drm)
     };
+    if (observedHint) payload.observedSizeBytes = observedHint;
 
     try {
       if (webext && webext.runtime && webext.runtime.sendMessage) {
@@ -1453,17 +1464,33 @@
       if (!label) return;
       if (detectedStreams.size === 0) { label.textContent = "Resolve in WDM"; return; }
       // Show the peak known rendition on the button ("Download · 1080p").
+      // Observed sizes (passive response headers, never probed here) ride
+      // along for single and multi-stream overlays alike.
       let best = 0;
       let bestQ = "";
+      let bestSize = 0;
       try {
         for (const s of detectedStreams.values()) {
           const q = qualityOf(s);
-          if (!q) continue;
-          const r = q === "4K" ? 5000 : (parseInt(q, 10) || 0);
-          if (r > best) { best = r; bestQ = q; }
+          if (q) {
+            const r = q === "4K" ? 5000 : (parseInt(q, 10) || 0);
+            if (r > best) { best = r; bestQ = q; }
+          }
+          // Direct-media sizes only: manifest entries never carry one.
+          if (s && s.size && Number(s.size) > 0 && s.type !== "HLS" && s.type !== "DASH") {
+            const n = Number(s.size);
+            if (n > bestSize) bestSize = n;
+          }
         }
       } catch {}
-      label.textContent = bestQ ? "Download · " + bestQ : "Download";
+      let text = bestQ ? "Download · " + bestQ : "Download";
+      try {
+        if (bestSize > 0) {
+          const st = formatBytes(bestSize);
+          if (st) text = text + " · " + st;
+        }
+      } catch {}
+      label.textContent = text;
     } catch {}
   }
 

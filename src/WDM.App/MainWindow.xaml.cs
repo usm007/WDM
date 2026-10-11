@@ -127,7 +127,7 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
                 fromCapture: true, pageTitle: item.PageTitle,
                 postData: item.PostData, postContentType: item.PostContentType,
                 proxyHost: item.ProxyHost, proxyPort: item.ProxyPort, proxyType: item.ProxyType,
-                fullSession: item.FullSession);
+                fullSession: item.FullSession, observedSizeBytes: item.ObservedSizeBytes);
         });
         // Loopback listener bind happens off the UI thread so slow/busy boot
         // networking can never delay first paint. Callers marshal via dispatcher.
@@ -340,7 +340,8 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
     private AddDownloadDialog? _activeAddDialog;
 
     private void ShowAddDialog(string? prefillUrl = null, string? prefillFileName = null, string? prefillReferer = null, Dictionary<string, string>? prefillHeaders = null, bool fromCapture = false, string? pageTitle = null,
-        string? postData = null, string? postContentType = null, string? proxyHost = null, int proxyPort = 0, string? proxyType = null, bool fullSession = false)
+        string? postData = null, string? postContentType = null, string? proxyHost = null, int proxyPort = 0, string? proxyType = null, bool fullSession = false,
+        long? observedSizeBytes = null)
     {
         // Silent start: skip the Add dialog entirely and queue the download
         // directly with defaults. Manual clicks with no URL still need the
@@ -367,14 +368,14 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
         {
             if (_activeAddDialog.IsEmpty)
             {
-                _activeAddDialog.UpdatePrefill(prefillUrl, initialFileName, prefillReferer, prefillHeaders, postData, postContentType, proxyHost, proxyPort, proxyType, fullSession);
+                _activeAddDialog.UpdatePrefill(prefillUrl, initialFileName, prefillReferer, prefillHeaders, postData, postContentType, proxyHost, proxyPort, proxyType, fullSession, observedSizeBytes);
                 _activeAddDialog.Topmost = fromCapture;
                 _activeAddDialog.Activate();
                 return;
             }
         }
 
-        var dialog = new AddDownloadDialog(_viewModel, prefillUrl, initialFileName, prefillReferer, prefillHeaders, postData, postContentType, proxyHost, proxyPort, proxyType, fullSession)
+        var dialog = new AddDownloadDialog(_viewModel, prefillUrl, initialFileName, prefillReferer, prefillHeaders, postData, postContentType, proxyHost, proxyPort, proxyType, fullSession, observedSizeBytes)
         {
             Topmost = fromCapture,
         };
