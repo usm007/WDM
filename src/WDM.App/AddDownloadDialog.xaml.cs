@@ -732,14 +732,11 @@ public partial class AddDownloadDialog : Window
         {
             try
             {
-                if (FtpTransport.TryParseUrl(url, out string fhost, out int fport,
-                        out string fuser, out string fpass, out string fpath))
+                if (Redm.Core.FtpEngine.TryParseUrl(url, out _, out _, out _, out _, out _))
                 {
-                    using var ftpProbe = new FtpTransport(fhost, fport, fuser, fpass);
                     using var ftpCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
                     ftpCts.CancelAfter(TimeSpan.FromSeconds(8));
-                    await ftpProbe.ConnectAsync(ftpCts.Token);
-                    long fsize = await ftpProbe.GetSizeAsync(fpath, ftpCts.Token);
+                    long fsize = await Redm.Core.FtpEngine.ProbeSizeAsync(url, ftpCts.Token);
                     if (fsize > 0)
                     {
                         _probeTotalBytes = fsize;

@@ -5,26 +5,106 @@ public static class FtpEngine
     // Note: FtpWebRequest is obsolete (SYSLIB0014) but retained deliberately:
     // it is the only built-in FTP client on net8.0-windows and it works. A
     // future port may move to a maintained third-party FTP client.
-    public static async Task DownloadAsync(string url, string dest, IProgress<double>? progress, CancellationToken ct)
+
+    /// <summary>Parses an <c>ftp://</c> file link into host, port, credentials and
+    /// remote path. Anonymous credentials when the link carries none; directory
+    /// links and non-FTP schemes are rejected.</summary>
+    public static bool TryParseUrl(string url, out string host, out int port, out string user, out string pass, out string path)
+    {
+        host = "";
+        port = 21;
+        user = "anonymous";
+        pass = "wdm@local";
+        path = "";
+        try
+        {
+            if (!Uri.TryCreate((url ?? "").Trim(), UriKind.Absolute, out var u) ||
+                u.Scheme != Uri.UriSchemeFtp || string.IsNullOrWhiteSpace(u.Host))
+                return false;
+            host = u.Host;
+            port = u.IsDefaultPort ? 21 : u.Port;
+            if (port < 1 || port > 65535)
+                return false;
+            string[] userInfo = u.UserInfo.Split(':', 2);
+            if (userInfo.Length > 0 && userInfo[0].Length > 0)
+            {
+                user = Uri.UnescapeDataString(userInfo[0]);
+                if (userInfo.Length > 1)
+                    pass = Uri.UnescapeDataString(userInfo[1]);
+                else if (!string.Equals(user, "anonymous", StringComparison.OrdinalIgnoreCase) &&
+                         !string.Equals(user, "ftp", StringComparison.OrdinalIgnoreCase))
+                    pass = "";
+            }
+            if (user.Length == 0 || user.Length > 128 || pass.Length > 1024)
+                return false;
+            path = Uri.UnescapeDataString(u.AbsolutePath);
+            if (string.IsNullOrWhiteSpace(path) || path.EndsWith('/'))
+                return false;
+            return true;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    /// <summary>Remote size over a control connection (SIZE). Zero when the server
+    /// does not report it.</summary>
+    public static async Task<long> ProbeSizeAsync(string url, CancellationToken ct = default)
+    {
+        try
+        {
+            var req = CreateRequest(url, System.Net.WebRequestMethods.Ftp.GetFileSize);
+            using var res = (System.Net.FtpWebResponse)await req.GetResponseAsync();
+            return res.ContentLength;
+        }
+        catch { return 0; }
+    }
+
+    /// <summary>Downloads an FTP file, resuming in place from a partially written
+    /// destination (REST). Progress is reported through the host callbacks.</summary>
+    public static async Task DownloadAsync(string url, string dest, Action<long>? onTotal,
+        Action<int>? onBytes, Func<int, CancellationToken, Task>? throttle, CancellationToken ct)
     {
         Directory.CreateDirectory(Path.GetDirectoryName(dest) ?? ".");
-        string part = dest + ".part";
-        long resumeFrom = File.Exists(part) ? new FileInfo(part).Length : 0;
-        var req = (System.Net.FtpWebRequest)System.Net.WebRequest.Create(url);
-        req.Method = System.Net.WebRequestMethods.Ftp.DownloadFile;
-        req.UseBinary = true;
-        req.UsePassive = true;
-        if (resumeFrom > 0) req.ContentOffset = resumeFrom; // REST: resume, not rewrite
+        long size = await ProbeSizeAsync(url, ct);
+        if (size > 0) onTotal?.Invoke(size);
+
+        long existing = 0;
+        try { existing = File.Exists(dest) ? new FileInfo(dest).Length : 0; } catch { }
+        if (existing > 0 && (size <= 0 || existing > size))
+            existing = 0; // remote replaced or unknown: restart
+        if (size > 0 && existing == size)
+        {
+            ct.ThrowIfCancellationRequested();
+            return; // already complete
+        }
+
+        var req = CreateRequest(url, System.Net.WebRequestMethods.Ftp.DownloadFile);
+        if (existing > 0) req.ContentOffset = existing; // REST: resume, not rewrite
         using var res = (System.Net.FtpWebResponse)await req.GetResponseAsync();
         using var src = res.GetResponseStream();
-        Directory.CreateDirectory(Path.GetDirectoryName(dest) ?? ".");
-        using var outF = new FileStream(dest + ".part", FileMode.Append, FileAccess.Write, FileShare.None);
+        await using var outF = new FileStream(dest, existing > 0 ? FileMode.Append : FileMode.Create,
+            FileAccess.Write, FileShare.Read);
         var buf = new byte[64 * 1024];
         int n;
-        while ((n = await src.ReadAsync(buf, ct)) > 0) await outF.WriteAsync(buf.AsMemory(0, n), ct);
-        outF.Close();
-        File.Move(dest + ".part", dest, true);
-        progress?.Report(1);
+        while ((n = await src.ReadAsync(buf, ct)) > 0)
+        {
+            await outF.WriteAsync(buf.AsMemory(0, n), ct);
+            onBytes?.Invoke(n);
+            if (throttle is not null) await throttle(n, ct);
+        }
+    }
+
+    private static System.Net.FtpWebRequest CreateRequest(string url, string method)
+    {
+        var req = (System.Net.FtpWebRequest)System.Net.WebRequest.Create(url);
+        req.Method = method;
+        req.UseBinary = true;
+        req.UsePassive = true;
+        if (TryParseUrl(url, out _, out _, out string user, out string pass, out _))
+            req.Credentials = new System.Net.NetworkCredential(user, pass);
+        return req;
     }
 }
 

@@ -3208,35 +3208,34 @@ public sealed class DownloadEngine
     {
         var task = session.Task;
         task.IsPreparing = true;
-        if (!FtpTransport.TryParseUrl(task.Url, out string host, out int port,
-                out string user, out string pass, out string path))
+        if (!Redm.Core.FtpEngine.TryParseUrl(task.Url, out _, out _, out _, out _, out _))
         {
             FailTask(task, "Error: not a valid FTP file link.");
             return;
         }
         task.PhaseText = "Connecting to FTP server…";
-        using var ftp = new FtpTransport(host, port, user, pass);
         try
         {
-            await ftp.ConnectAsync(session.Token);
-            long size = await ftp.GetSizeAsync(path, session.Token);
-            task.TotalBytes = size;
-            ThrowIfNoRoomFor(task);
             try { Directory.CreateDirectory(task.SaveFolder); } catch { }
             long existing = 0;
             try { existing = File.Exists(task.FullPath) ? new FileInfo(task.FullPath).Length : 0; } catch { }
-            if (existing > 0 && (size < 0 || existing > size))
-                existing = 0; // remote replaced or unknown: restart
-            task.PhaseText = "Downloading from FTP…";
-            await using var output = new FileStream(task.FullPath,
-                existing > 0 ? FileMode.Append : FileMode.Create, FileAccess.Write, FileShare.Read);
             Interlocked.Exchange(ref session.BytesDownloaded, existing);
-            await ftp.DownloadRangeAsync(path, existing, output, async (read, token) =>
-            {
-                await _governor.ThrottleAsync(EffectiveLimitKbps(), read, token);
-                await session.Governor.ThrottleAsync(task.SpeedLimitKbps, read, token);
-                Interlocked.Add(ref session.BytesDownloaded, read);
-            }, session.Token);
+            task.PhaseText = "Downloading from FTP…";
+            await Redm.Core.FtpEngine.DownloadAsync(
+                task.Url,
+                task.FullPath,
+                size =>
+                {
+                    task.TotalBytes = size;
+                    ThrowIfNoRoomFor(task);
+                },
+                read => Interlocked.Add(ref session.BytesDownloaded, read),
+                async (read, token) =>
+                {
+                    await ThrottleIdmAsync(read, token);
+                    await session.Governor.ThrottleAsync(task.SpeedLimitKbps, read, token);
+                },
+                session.Token);
             session.Token.ThrowIfCancellationRequested();
             task.Status = TaskStatus.Completed;
             task.CompletedAt = DateTime.Now;

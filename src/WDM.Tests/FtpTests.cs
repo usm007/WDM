@@ -103,6 +103,27 @@ public sealed class FtpTests : IDisposable
                             case "TYPE":
                                 await writer.WriteLineAsync("200 Binary mode");
                                 break;
+                            case "OPTS":
+                                await writer.WriteLineAsync("200 OPTS ok");
+                                break;
+                            case "PWD":
+                                await writer.WriteLineAsync("257 \"/\" is the current directory");
+                                break;
+                            case "CWD":
+                                await writer.WriteLineAsync("250 Directory changed");
+                                break;
+                            case "SYST":
+                                await writer.WriteLineAsync("215 UNIX Type: L8");
+                                break;
+                            case "FEAT":
+                                await writer.WriteLineAsync("211-Extensions supported");
+                                await writer.WriteLineAsync(" SIZE");
+                                await writer.WriteLineAsync(" REST STREAM");
+                                await writer.WriteLineAsync("211 End");
+                                break;
+                            case "NOOP":
+                                await writer.WriteLineAsync("200 NOOP ok");
+                                break;
                             case "SIZE":
                                 await writer.WriteLineAsync($"213 {_file.Length}");
                                 break;
@@ -169,18 +190,18 @@ public sealed class FtpTests : IDisposable
     [Trait("Category", Cats.Unit)][Fact]
     public void TryParseUrl_Matrix()
     {
-        Assert.True(FtpTransport.TryParseUrl("ftp://files.example.com/pub/a.zip", out var h, out var p, out var u, out var pw, out var path));
+        Assert.True(Redm.Core.FtpEngine.TryParseUrl("ftp://files.example.com/pub/a.zip", out var h, out var p, out var u, out var pw, out var path));
         Assert.Equal("files.example.com", h);
         Assert.Equal(21, p);
         Assert.Equal("anonymous", u);
         Assert.Equal("a.zip", Path.GetFileName(path));
-        Assert.True(FtpTransport.TryParseUrl("ftp://bob:s3cret@h.test:2121/f.bin", out h, out p, out u, out pw, out path));
+        Assert.True(Redm.Core.FtpEngine.TryParseUrl("ftp://bob:s3cret@h.test:2121/f.bin", out h, out p, out u, out pw, out path));
         Assert.Equal("bob", u);
         Assert.Equal("s3cret", pw);
         Assert.Equal(2121, p);
-        Assert.False(FtpTransport.TryParseUrl("http://h.test/f", out _, out _, out _, out _, out _));
-        Assert.False(FtpTransport.TryParseUrl("ftp://h.test/dir/", out _, out _, out _, out _, out _));
-        Assert.False(FtpTransport.TryParseUrl("not a url", out _, out _, out _, out _, out _));
+        Assert.False(Redm.Core.FtpEngine.TryParseUrl("http://h.test/f", out _, out _, out _, out _, out _));
+        Assert.False(Redm.Core.FtpEngine.TryParseUrl("ftp://h.test/dir/", out _, out _, out _, out _, out _));
+        Assert.False(Redm.Core.FtpEngine.TryParseUrl("not a url", out _, out _, out _, out _, out _));
     }
 
     [Trait("Category", Cats.E2E)][Fact]
