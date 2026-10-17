@@ -31,6 +31,10 @@ public sealed class DownloadEngine
     private int _maxConcurrent = 3;
     private int _maxRetries = 3;
     private long _baseLimitKbps;
+    /// <summary>Global speed limiter for chunked transfers, supplied by the IDM
+    /// core (<see cref="Redm.Core.SpeedGovernor"/>); rebuilt when the limit changes.</summary>
+    private Redm.Core.SpeedGovernor? _idmGovernor;
+    private long _idmGovernorKbps = -1;
 
     public event Action? TaskChanged;
     public event Action<DownloadTask>? TaskCompleted;
@@ -501,8 +505,23 @@ public sealed class DownloadEngine
                 return;
             TryDelete(session.StatePath);
             TryDelete(task.FullPath);
+            DeleteParts(task.FullPath);
             session.Dispose();
         });
+    }
+
+    /// <summary>Deletes the part files (<c>dest.part0</c>, <c>dest.part1</c>, …) an
+    /// IDM range transfer leaves behind for resume.</summary>
+    private static void DeleteParts(string destPath)
+    {
+        try
+        {
+            string directory = Path.GetDirectoryName(destPath) ?? ".";
+            string pattern = Path.GetFileName(destPath) + ".part*";
+            foreach (string file in Directory.EnumerateFiles(directory, pattern))
+                TryDelete(file);
+        }
+        catch { }
     }
 
     /// <summary>Mirrors a live session's chunk bitmap into per-chunk records for
@@ -553,6 +572,7 @@ public sealed class DownloadEngine
             {
                 TryDelete(task.FullPath);
                 TryDelete(StatePath(task));
+                DeleteParts(task.FullPath);
             }
             return;
         }
@@ -580,6 +600,7 @@ public sealed class DownloadEngine
             {
                 TryDelete(task.FullPath);
                 TryDelete(session.StatePath);
+                DeleteParts(task.FullPath);
             }
             session.Dispose();
         });
@@ -1686,10 +1707,10 @@ public sealed class DownloadEngine
     private async Task RunChunkedAsync(Session session, long totalBytes)
     {
         var task = session.Task;
-        // Initial worker hint only (display + seed): long-term sizing and
-        // concurrency are owned by the adaptive range engine at runtime.
+        // Initial worker hint only (display + seed): the IDM range engine plans
+        // the parts and owns the connection count at runtime (1..8, like IDM).
         int hint = task.ChunkCount > 0 ? task.ChunkCount : AutoChunkCount(totalBytes);
-        int initial = Math.Clamp(hint, SchedulerController.MinWorkers, SchedulerController.MaxWorkers);
+        int initial = Math.Clamp(hint, 1, IdmRangeEngine.MaxConnections);
         task.ChunkCount = initial;
 
         var urls = new List<string> { task.Url };
@@ -1703,7 +1724,7 @@ public sealed class DownloadEngine
             }
         }
 
-        var engine = new AdaptiveRangeEngine();
+        var engine = new IdmRangeEngine();
         session.RangeEngine = engine;
         await engine.RunAsync(
             totalBytes,
@@ -1720,7 +1741,7 @@ public sealed class DownloadEngine
             (response, url) => ClassifyCloudflareForRange(response, url),
             async (bytes, ct) =>
             {
-                await _governor.ThrottleAsync(EffectiveLimitKbps(), bytes, ct);
+                await ThrottleIdmAsync(bytes, ct);
                 await session.Governor.ThrottleAsync(task.SpeedLimitKbps, bytes, ct);
             },
             bytes => Interlocked.Add(ref session.BytesDownloaded, bytes),
@@ -2364,6 +2385,28 @@ public sealed class DownloadEngine
                 ChunkProgressUpdated?.Invoke(session.Task, session.State.ProgressPercent());
         }
         Interlocked.Exchange(ref _totalSpeedBps, total);
+    }
+
+    /// <summary>Global speed limit applied to chunked transfers, paced by the IDM
+    /// core governor (<see cref="Redm.Core.SpeedGovernor"/>).</summary>
+    private async Task ThrottleIdmAsync(int bytes, CancellationToken ct)
+    {
+        long kbps = EffectiveLimitKbps();
+        Redm.Core.SpeedGovernor? governor = null;
+        if (kbps > 0)
+        {
+            lock (_lock)
+            {
+                if (_idmGovernor is null || _idmGovernorKbps != kbps)
+                {
+                    _idmGovernor = new Redm.Core.SpeedGovernor(kbps * 1024);
+                    _idmGovernorKbps = kbps;
+                }
+                governor = _idmGovernor;
+            }
+        }
+        if (governor is not null)
+            await governor.ThrottleAsync(bytes, ct);
     }
 
     private long EffectiveLimitKbps()
@@ -3330,9 +3373,9 @@ public sealed class DownloadEngine
         public CancellationTokenSource Cts { get; } = new();
         public CancellationToken Token => Cts.Token;
         public ChunkState? State { get; set; }
-        /// <summary>Live adaptive range engine for chunked downloads (null on
+        /// <summary>Live IDM range engine for chunked downloads (null on
         /// HLS/DASH/single-stream/YouTube paths, which keep their own logic).</summary>
-        public AdaptiveRangeEngine? RangeEngine { get; set; }
+        public IdmRangeEngine? RangeEngine { get; set; }
         public long ChunkSize;
         public int NextChunk;
         public long BytesDownloaded;

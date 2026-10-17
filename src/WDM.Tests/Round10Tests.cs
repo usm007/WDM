@@ -155,7 +155,7 @@ public sealed class Round10Tests : IDisposable
                         int n = (int)Math.Min(slice, end - off + 1);
                         resp.OutputStream.Write(_body, (int)off, n);
                         resp.OutputStream.Flush();
-                        Thread.Sleep(15);
+                        Thread.Sleep(60);
                     }
                 }
                 resp.OutputStream.Close();
@@ -187,7 +187,7 @@ public sealed class Round10Tests : IDisposable
     }
 
     [Fact]
-    public async Task Resume_AfterSidecarLoss_UsesSnapshotInsteadOfRefetch()
+    public async Task Resume_AfterPause_UsesPartFilesInsteadOfRefetch()
     {
         using var server = new ThrottledServer(4 * 1024 * 1024);
         var engine = new DownloadEngine();
@@ -197,51 +197,52 @@ public sealed class Round10Tests : IDisposable
         {
             var task = new DownloadTask { Url = server.BaseUrl + "big.bin", FileName = "big.bin", SaveFolder = dir };
             engine.Start(task);
-            // Pause only after whole chunks completed (BytesDownloaded counts
-            // partial reads; a snapshot with zero Done chunks would legitimately
-            // refetch everything and flake the assertion below).
+            // Wait until the IDM part files hold real progress on an unfinished
+            // download — the part files ARE the resume state for range transfers.
             var readySw = System.Diagnostics.Stopwatch.StartNew();
-            List<SegmentRecord>? live = null;
+            long partBytes = 0;
             while (readySw.Elapsed < TimeSpan.FromSeconds(30))
             {
-                live = engine.SnapshotSegments(task);
-                if (live is not null && live.Count(r => r.Done) >= 2 &&
-                    task.DownloadedBytes < server.Body.Length - 1000L)
+                partBytes = PartBytes(task.FullPath);
+                if (partBytes > 0 && !File.Exists(task.FullPath))
                     break;
-                live = null;
-                await Task.Delay(100);
+                await Task.Delay(50);
             }
-            Assert.NotNull(live);
-            // Snapshot while the session is live (like SaveTasks does on its tick:
-            // paused tasks have no session, so the mirror is always taken live).
-            var snap = engine.SnapshotSegments(task);
-            Assert.NotNull(snap);
-            Assert.Contains(snap, r => r.Done);
-            Assert.Contains(snap, r => !r.Done);
+            Assert.True(partBytes > 0, "no part-file progress observed before the download finished");
+
             engine.Pause(task);
             await WaitForAsync(task, () => task.Status == TaskStatus.Paused, TimeSpan.FromSeconds(15));
             Assert.Equal(TaskStatus.Paused, task.Status);
-            task.SegmentSnapshot = snap;
-
-            // Simulate sidecar loss (cleaner tools, manual delete, crash).
-            string sidecar = task.FullPath + ".wdmstate";
-            Assert.True(File.Exists(sidecar));
-            File.Delete(sidecar);
+            long pausedBytes = PartBytes(task.FullPath);
+            Assert.True(pausedBytes > 0, "pausing lost the part-file progress");
 
             long servedBefore = Interlocked.Read(ref server.BytesServed);
             engine.Start(task);
             Assert.Equal(TaskStatus.Completed, await WaitForAsync(task, () => task.Status == TaskStatus.Completed, TimeSpan.FromSeconds(60)));
             long servedAfter = Interlocked.Read(ref server.BytesServed) - servedBefore;
 
-            // Snapshot resume: only the missing tail is re-fetched, not the whole file.
+            // Part-file resume: only the missing remainder is re-fetched.
             Assert.True(servedAfter < server.Body.Length,
-                $"served {servedAfter} of {server.Body.Length} after resume — snapshot was ignored");
+                $"served {servedAfter} of {server.Body.Length} after resume — part-file resume was ignored");
             Assert.Equal(server.Body, await File.ReadAllBytesAsync(Path.Combine(dir, "big.bin")));
+            Assert.Empty(Directory.GetFiles(dir, "*.part*"));
         }
         finally
         {
             try { Directory.Delete(dir, recursive: true); } catch { }
         }
+    }
+
+    /// <summary>Bytes held by the IDM part files of a destination.</summary>
+    private static long PartBytes(string destPath)
+    {
+        try
+        {
+            string dir = Path.GetDirectoryName(destPath) ?? ".";
+            return Directory.EnumerateFiles(dir, Path.GetFileName(destPath) + ".part*")
+                .Sum(f => new FileInfo(f).Length);
+        }
+        catch { return 0; }
     }
 
     // ---------- C4: merge diagnostics ----------

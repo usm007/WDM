@@ -6,6 +6,27 @@ using System.Threading.Tasks;
 
 namespace WDM.Services.Chunking;
 
+/// <summary>Outcome of a single transport attempt, used to steer the per-origin
+/// concurrency budget. Server-pressure errors and disk failures are classified
+/// separately: disk failures must never reduce origin pressure.</summary>
+public enum HttpOutcome
+{
+    Success,
+    RangeNotSatisfiable,
+    OkWithoutRange,
+    ClientError,
+    TooManyRequests,
+    ServerError,
+    Timeout,
+    ConnectionReset,
+    TlsFailure,
+    ShortRead,
+    WrongRange,
+    ContentMismatch,
+    DiskFatal,
+    CloudflareBlocked,
+}
+
 /// <summary>
 /// Per-origin concurrency budget shared by every download session targeting the
 /// same scheme+host+port. Range parallelism is per-session; origin pressure is

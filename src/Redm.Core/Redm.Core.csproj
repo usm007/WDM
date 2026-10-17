@@ -1,0 +1,22 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <RootNamespace>Redm.Core</RootNamespace>
+    <AssemblyName>Redm.Core</AssemblyName>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <EmbeddedResource Include="Locales\*.json" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="WDM" />
+    <InternalsVisibleTo Include="WDM.Engine" />
+    <InternalsVisibleTo Include="WDM.Tests" />
+    <InternalsVisibleTo Include="WDM.FunctionalTests" />
+  </ItemGroup>
+
+</Project>

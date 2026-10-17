@@ -96,8 +96,7 @@ public sealed class ConcurrencyTests
         string dir = TestFiles.NewTempDir("wdm-race");
         try
         {
-            OriginController.ResetForTests();
-            var engine = new AdaptiveRangeEngine();
+            var engine = new IdmRangeEngine();
             using var http = new HttpClient(origin) { Timeout = TimeSpan.FromSeconds(60) };
             string dest = Path.Combine(dir, "f.bin");
             await engine.RunAsync(content.Length, dest, dest + ".wdmstate",

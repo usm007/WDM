@@ -234,26 +234,24 @@ public sealed class FakeProgrammableOrigin : HttpMessageHandler
 /// <summary>One-line diagnostics dump for range-engine failures (no binary data).</summary>
 public static class TestDiagnostics
 {
-    public static string Dump(RangeScheduler sched, CompletionMap? map, FakeProgrammableOrigin? origin, long totalBytes)
+    public static string Dump(IdmRangeEngine engine, FakeProgrammableOrigin? origin, long totalBytes)
     {
-        var active = sched.ActiveSnapshot();
-        return $"total={totalBytes} completed={map?.CompletedBytes} blocks={map?.CompletedBlockCount}/{map?.BlockCount} " +
-               $"active={active.Count} pending={sched.PendingCount} " +
-               $"leases=[{string.Join(",", active.Select(l => $"{l.Start}-{l.EndExclusive}@{l.CommittedOffset}g{l.Generation}"))}] " +
+        var parts = engine.ProgressFractions();
+        return $"total={totalBytes} baseline={engine.CompletedBytesBaseline} parts={parts.Length} " +
+               $"fractions=[{string.Join(",", parts.Select(p => p.ToString("0.00")))}] " +
                $"requests={origin?.RequestCount} bytesSent={origin?.TotalBytesSent}";
     }
 }
 
-/// <summary>Shared engine driver: real AdaptiveRangeEngine over a fake origin.</summary>
+/// <summary>Shared engine driver: real IDM range engine over a fake origin.</summary>
 public static class EngineDriver
 {
-    public static async Task<AdaptiveRangeEngine> RunAsync(
+    public static async Task<IdmRangeEngine> RunAsync(
         FakeProgrammableOrigin origin, byte[] content, string dir, string name,
         List<string>? urls = null, string? etag = "\"v1\"", int workers = 4,
         int maxRetries = 3, CancellationToken ct = default, Action<long>? onBytes = null)
     {
-        OriginController.ResetForTests();
-        var engine = new AdaptiveRangeEngine();
+        var engine = new IdmRangeEngine();
         using var http = new HttpClient(origin) { Timeout = TimeSpan.FromSeconds(60) };
         string dest = Path.Combine(dir, name);
         urls ??= new List<string> { "http://primary/file.bin" };
