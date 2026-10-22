@@ -20,6 +20,16 @@ public enum HlsContainer
     KeepTs
 }
 
+/// <summary>What WDM does when the last active download finishes. One-shot per
+/// work batch: it fires only after at least one transfer ran this session.</summary>
+public enum QueueCompleteAction
+{
+    None,
+    Exit,
+    Shutdown,
+    Sleep
+}
+
 public sealed class AppSettings
 {
     public string DownloadFolder { get; set; } = DownloadTask.DefaultSaveFolder;
@@ -43,6 +53,15 @@ public sealed class AppSettings
     /// (tray balloon/sound still follow their own toggles).</summary>
     public bool ShowCompleteDialog { get; set; } = true;
     public bool ShowTrayProgress { get; set; } = false;
+    /// <summary>Ask before a real exit while downloads are still active.
+    /// Off by default (IDM parity); closing to the tray is not an exit.</summary>
+    public bool ConfirmExitWithActiveDownloads { get; set; } = false;
+    /// <summary>Set the finished file's modified time to the server's
+    /// Last-Modified value, so Explorer sorts downloads by their real date.</summary>
+    public bool PreserveServerTimestamp { get; set; } = true;
+    /// <summary>Action after the last active download finishes. None by default;
+    /// useful for overnight queues (exit, shut down, or sleep).</summary>
+    public QueueCompleteAction QueueCompleteAction { get; set; } = QueueCompleteAction.None;
     public double? ProgressPanelLeft { get; set; }
     public double? ProgressPanelTop { get; set; }
     /// <summary>Autostart on Windows logon. ON by default for fresh installs;
@@ -120,6 +139,12 @@ public sealed class AppSettings
     /// <summary>Stored in plaintext in settings.json (same tradeoff as IDM —
     /// a per-user file under %LocalAppData%).</summary>
     public string? ProxyPassword { get; set; }
+
+    /// <summary>Proxy bypass masks, one per line (or comma separated). Same
+    /// wildcard syntax as the IDM address-exception list: <c>*.example.com</c>
+    /// matches a host, <c>*.example.com/path/*</c> matches host + path. URLs
+    /// that match go direct instead of through the manual proxy.</summary>
+    public string ProxyBypassList { get; set; } = "";
 
     /// <summary>Per-site full-session replay approvals (page-host cookies may
     /// ride to third-party CDNs for these hosts only). Shown with a warning

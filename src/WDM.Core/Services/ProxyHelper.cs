@@ -1,4 +1,6 @@
 using System;
+using System.Collections.Generic;
+using System.Linq;
 using System.Net;
 
 namespace WDM.Services;
@@ -31,9 +33,55 @@ public static class ProxyHelper
             };
             if (!string.IsNullOrWhiteSpace(s.ProxyUsername))
                 proxy.Credentials = new NetworkCredential(s.ProxyUsername.Trim(), s.ProxyPassword ?? "");
-            return proxy;
+            var masks = ParseBypassMasks(s.ProxyBypassList);
+            return masks.Count == 0 ? proxy : new MaskedProxy(proxy, masks);
         }
         catch { return null; }
+    }
+
+    /// <summary>Parses the bypass text box into a clean mask list. Accepts one
+    /// mask per line, or comma/semicolon separated lists.</summary>
+    public static IReadOnlyList<string> ParseBypassMasks(string? text)
+    {
+        if (string.IsNullOrWhiteSpace(text))
+            return Array.Empty<string>();
+        return text
+            .Split(new[] { '\r', '\n', ',', ';' }, StringSplitOptions.RemoveEmptyEntries)
+            .Select(m => m.Trim())
+            .Where(m => m.Length > 0)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+    }
+
+    /// <summary>Routes matched URLs around the manual proxy. The match syntax
+    /// comes from the IDM address-exception list (host wildcards and
+    /// host/path wildcards), so proxy bypass and catch exceptions share one
+    /// grammar.</summary>
+    private sealed class MaskedProxy : IWebProxy
+    {
+        private readonly IWebProxy _inner;
+        private readonly IReadOnlyList<string> _masks;
+
+        public MaskedProxy(IWebProxy inner, IReadOnlyList<string> masks)
+        {
+            _inner = inner;
+            _masks = masks;
+        }
+
+        public ICredentials? Credentials
+        {
+            get => _inner.Credentials;
+            set => _inner.Credentials = value;
+        }
+
+        public Uri? GetProxy(Uri destination) =>
+            Matches(destination) ? destination : _inner.GetProxy(destination);
+
+        public bool IsBypassed(Uri host) =>
+            Matches(host) || _inner.IsBypassed(host);
+
+        private bool Matches(Uri uri) =>
+            Redm.Core.AddressExceptions.IsExcluded(_masks, uri.AbsoluteUri);
     }
 
     /// <summary>http_proxy-style URL for child processes (yt-dlp --proxy,

@@ -42,6 +42,7 @@ public partial class OptionsControl : UserControl
         if (ProxyPortBox != null) ProxyPortBox.Text = s.ProxyPort.ToString();
         if (ProxyUserBox != null) ProxyUserBox.Text = s.ProxyUsername ?? "";
         if (ProxyPassBox != null) ProxyPassBox.Text = s.ProxyPassword ?? "";
+        if (ProxyBypassBox != null) ProxyBypassBox.Text = s.ProxyBypassList ?? "";
 
         RouteBox.IsChecked = s.RouteByCategory;
         VideoFolderBox.Text = s.CategoryFolders.GetValueOrDefault(DownloadCategory.Video.ToString()) ?? "";
@@ -51,6 +52,7 @@ public partial class OptionsControl : UserControl
         ProgramFolderBox.Text = s.CategoryFolders.GetValueOrDefault(DownloadCategory.Program.ToString()) ?? "";
 
         ChecksumBox.IsChecked = s.ComputeChecksum;
+        if (ServerTimestampBox != null) ServerTimestampBox.IsChecked = s.PreserveServerTimestamp;
         ScriptBox.Text = s.PostDownloadScript ?? "";
         if (DeleteAfterDaysBox != null) DeleteAfterDaysBox.Text = s.DeleteFinishedLinksAfterDays.ToString();
         HlsContainerBox.SelectedIndex = HlsContainerIndex(s.HlsContainer);
@@ -61,6 +63,7 @@ public partial class OptionsControl : UserControl
         InitMinCatchBox(s.MinCatchSizeBytes);
         TrayProgressBox.IsChecked = s.ShowTrayProgress;
         MinimizeToTrayBox.IsChecked = s.MinimizeToTray;
+        if (ConfirmExitBox != null) ConfirmExitBox.IsChecked = s.ConfirmExitWithActiveDownloads;
         if (ShowAddDialogBox != null) ShowAddDialogBox.IsChecked = s.ShowAddDialog;
         if (ShowProgressDialogBox != null) ShowProgressDialogBox.IsChecked = s.ShowProgressDialog;
         if (ShowCompleteDialogBox != null) ShowCompleteDialogBox.IsChecked = s.ShowCompleteDialog;
@@ -281,6 +284,7 @@ public partial class OptionsControl : UserControl
             s.ProxyPort = Math.Clamp(pport, 1, 65535);
         if (ProxyUserBox != null) s.ProxyUsername = string.IsNullOrWhiteSpace(ProxyUserBox.Text) ? null : ProxyUserBox.Text.Trim();
         if (ProxyPassBox != null) s.ProxyPassword = string.IsNullOrEmpty(ProxyPassBox.Text) ? null : ProxyPassBox.Text;
+        if (ProxyBypassBox != null) s.ProxyBypassList = ProxyBypassBox.Text?.Trim() ?? "";
 
         s.RouteByCategory = RouteBox?.IsChecked == true;
         if (VideoFolderBox != null)
@@ -296,6 +300,7 @@ public partial class OptionsControl : UserControl
         }
 
         if (ChecksumBox != null) s.ComputeChecksum = ChecksumBox.IsChecked == true;
+        if (ServerTimestampBox != null) s.PreserveServerTimestamp = ServerTimestampBox.IsChecked == true;
         if (ScriptBox != null) s.PostDownloadScript = string.IsNullOrWhiteSpace(ScriptBox.Text) ? null : ScriptBox.Text.Trim();
         if (DeleteAfterDaysBox != null && int.TryParse(DeleteAfterDaysBox.Text?.Trim(), out int dad) && dad >= 0)
             s.DeleteFinishedLinksAfterDays = Math.Min(dad, 365);
@@ -309,6 +314,7 @@ public partial class OptionsControl : UserControl
         SaveMinCatchBox(s);
         if (TrayProgressBox != null) s.ShowTrayProgress = TrayProgressBox.IsChecked == true;
         if (MinimizeToTrayBox != null) s.MinimizeToTray = MinimizeToTrayBox.IsChecked == true;
+        if (ConfirmExitBox != null) s.ConfirmExitWithActiveDownloads = ConfirmExitBox.IsChecked == true;
         if (ShowAddDialogBox != null) s.ShowAddDialog = ShowAddDialogBox.IsChecked == true;
         if (ShowProgressDialogBox != null) s.ShowProgressDialog = ShowProgressDialogBox.IsChecked == true;
         if (ShowCompleteDialogBox != null) s.ShowCompleteDialog = ShowCompleteDialogBox.IsChecked == true;

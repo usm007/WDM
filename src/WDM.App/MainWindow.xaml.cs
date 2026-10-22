@@ -149,6 +149,7 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
         _tray.PauseAllRequested += () => _dispatcher.BeginInvoke(() => _viewModel.Engine.PauseAll());
         _tray.ResumeAllRequested += () => _dispatcher.BeginInvoke(() => _viewModel.ResumeAll());
         _tray.ExitRequested += () => _dispatcher.BeginInvoke(ExitApp);
+        _viewModel.ExitRequested += () => _dispatcher.BeginInvoke(ExitApp);
 
         App.SecondInstanceHandler = args => _dispatcher.BeginInvoke(() => HandleSecondInstance(args));
 
@@ -397,7 +398,8 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
     private void StartDownloadSilently(string url, string? fileName, string? referer,
         Dictionary<string, string>? headers, string? pageTitle,
         string? postData, string? postContentType,
-        string? proxyHost, int proxyPort, string? proxyType, bool fullSession)
+        string? proxyHost, int proxyPort, string? proxyType, bool fullSession,
+        bool waitForIdle = false)
     {
         try
         {
@@ -425,6 +427,7 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
                 Category = DownloadTask.Categorize(finalName),
                 IsYouTube = _viewModel.Settings.EnableYouTubeDownloads && YouTubeResolver.IsYoutubeUrl(url),
                 Status = Models.TaskStatus.Queued,
+                WaitForIdle = waitForIdle,
             };
             _viewModel.AddTask(task);
         }
@@ -640,15 +643,59 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
     {
         if (args is { Length: > 0 } && !App.ArgsContainUrl(args))
             return;
-        RestoreWindow();
+
+        bool silent = args?.Any(App.IsSilentFlag) == true;
+        bool direct = HasSwitch(args, "/d", "--download");
+        bool addToQueue = HasSwitch(args, "/a", "--add");
+        bool quitWhenDone = HasSwitch(args, "/q", "--quit");
+
+        if (!silent)
+            RestoreWindow();
+
         try
         {
-            string? url = args?.Select(a => App.FirstDownloadLink(a)).FirstOrDefault(u => !string.IsNullOrWhiteSpace(u));
-            if (!string.IsNullOrWhiteSpace(url))
-                ShowAddDialog(prefillUrl: url.Trim());
+            var links = (args ?? Array.Empty<string>())
+                .Select(App.FirstDownloadLink)
+                .Where(u => !string.IsNullOrWhiteSpace(u))
+                .Select(u => u!)
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList();
+            if (links.Count == 0)
+                return;
+
+            if (direct || addToQueue)
+            {
+                // /d starts immediately with defaults; /a places the links behind
+                // any running transfer (strict queue). Neither opens the Add dialog.
+                foreach (var link in links)
+                {
+                    if (!DownloadEngine.IsHttpUrl(link))
+                    {
+                        ShowAddDialog(prefillUrl: link);
+                        continue;
+                    }
+                    StartDownloadSilently(link, null, null, null, null, null, null,
+                        null, 0, null, false, waitForIdle: addToQueue && !direct);
+                }
+            }
+            else
+            {
+                // Bare URL keeps the classic hand-off: one Add dialog.
+                ShowAddDialog(prefillUrl: links[0]);
+            }
+
+            if (quitWhenDone)
+                _viewModel.ArmQueueCompleteActionForSession(QueueCompleteAction.Exit);
         }
-        catch { }
+        catch (Exception ex)
+        {
+            App.LogException(ex);
+        }
     }
+
+    private static bool HasSwitch(string[]? args, params string[] names) =>
+        args is not null && args.Any(a => names.Any(n =>
+            string.Equals(a.Trim(), n, StringComparison.OrdinalIgnoreCase)));
 
     /// <summary>Shows the always-on-top tray progress panel only while the main
     /// window is hidden to the tray, a download is running, and the option is on.</summary>
@@ -684,8 +731,26 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
 
     private void ExitApp()
     {
+        if (!_exiting && !ConfirmExitWhileActive())
+            return;
         _exiting = true;
         Close();
+    }
+
+    /// <summary>Real exit guard. Closing to the tray is not an exit, so the
+    /// prompt only appears for menu/tray Exit and for close-without-tray.</summary>
+    private bool ConfirmExitWhileActive()
+    {
+        if (!_viewModel.Settings.ConfirmExitWithActiveDownloads || !_viewModel.HasActiveDownloads)
+            return true;
+        var answer = MessageBox.Show(
+            this,
+            "Downloads are still running. Exit WDM anyway?\n\nUnfinished transfers stop; their progress is kept for the next start.",
+            "Exit WDM",
+            MessageBoxButton.YesNo,
+            MessageBoxImage.Warning,
+            MessageBoxResult.No);
+        return answer == MessageBoxResult.Yes;
     }
 
     /// <summary>Checks for updates: Velopack delta first (patch-only, ~2MB), then GitHub full installer as fallback.
@@ -1294,6 +1359,11 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
             var active = _viewModel.Tasks.FirstOrDefault(t => t.Status == Models.TaskStatus.Downloading);
             if (active is not null)
                 UpdateProgressPanel(_viewModel.Settings.ShowTrayProgress ? active : null);
+            return;
+        }
+        if (!_exiting && !ConfirmExitWhileActive())
+        {
+            e.Cancel = true;
             return;
         }
         base.OnClosing(e);

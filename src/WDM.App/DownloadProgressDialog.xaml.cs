@@ -4,7 +4,10 @@ using System.Runtime.CompilerServices;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
+using System.Windows.Media;
+using System.Windows.Threading;
 using WDM.Models;
+using WDM.Services;
 using WDM.ViewModels;
 
 namespace WDM;
@@ -61,16 +64,84 @@ public sealed class BlockVisualItem : INotifyPropertyChanged
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));
 }
 
+/// <summary>One live connection row: the planned byte range, its progress and
+/// its recent throughput. Mirrors the connection list in IDM's progress view.</summary>
+public sealed class ConnectionVisualItem : INotifyPropertyChanged
+{
+    private string _label = "";
+    private string _rangeText = "";
+    private double _percent;
+    private string _speedText = "";
+
+    public string Label
+    {
+        get => _label;
+        set
+        {
+            if (_label != value) { _label = value; OnPropertyChanged(); }
+        }
+    }
+
+    public string RangeText
+    {
+        get => _rangeText;
+        set
+        {
+            if (_rangeText != value) { _rangeText = value; OnPropertyChanged(); }
+        }
+    }
+
+    public double Percent
+    {
+        get => _percent;
+        set
+        {
+            if (Math.Abs(_percent - value) > 0.05)
+            {
+                _percent = value;
+                OnPropertyChanged();
+                OnPropertyChanged(nameof(PercentText));
+            }
+        }
+    }
+
+    public string PercentText => $"{Math.Round(_percent)}%";
+
+    public string SpeedText
+    {
+        get => _speedText;
+        set
+        {
+            if (_speedText != value) { _speedText = value; OnPropertyChanged(); }
+        }
+    }
+
+    public event PropertyChangedEventHandler? PropertyChanged;
+    private void OnPropertyChanged([CallerMemberName] string? name = null) =>
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));
+}
+
 public partial class DownloadProgressDialog : Window, INotifyPropertyChanged
 {
     private readonly MainViewModel _mainViewModel;
     private double[]? _lastChunkProgress;
     private long _lastChunkUiTick;
+    private readonly DispatcherTimer _speedTimer;
+    private readonly Queue<double> _speedSamples = new();
+    private long[] _lastConnBytes = Array.Empty<long>();
+    private long _lastConnTick;
     public DownloadTask Task { get; }
 
     public const int BlockCount = 64;
 
     public ObservableCollection<BlockVisualItem> BlockList { get; } = new();
+
+    /// <summary>IDM-style per-connection rows. The IDM core plans at most eight
+    /// ranges, and each range is one connection, so this list is the live
+    /// connection view rather than a synthetic thread count.</summary>
+    public ObservableCollection<ConnectionVisualItem> Connections { get; } = new();
+
+    public string ConnectionSummaryText { get; private set; } = "waiting";
 
     /// <summary>e.g. "42 / 64 done": bound to the file-map header.</summary>
     public string BlockSummaryText
@@ -96,13 +167,22 @@ public partial class DownloadProgressDialog : Window, INotifyPropertyChanged
         _mainViewModel.PropertyChanged += ViewModel_PropertyChanged;
         UpdateState();
         SetupBlockVisuals();
+        SetupConnections(1);
+        UpdateConnectionFallback();
         ApplyYouTubeMode();
+        _speedTimer = new DispatcherTimer(DispatcherPriority.Background)
+        {
+            Interval = TimeSpan.FromMilliseconds(500)
+        };
+        _speedTimer.Tick += (_, _) => SampleSpeed();
         // The task may already be Completed when the dialog opens (fast
         // small files): no further PropertyChanged will fire, so evaluate
         // completion options once on load or CloseOnComplete/OpenOnComplete
         // silently never run.
         Loaded += (_, _) =>
         {
+            _speedTimer.Start();
+            DrawSpeedGraph();
             if (Task.Status == TaskStatus.Completed && !_completionHandled)
             {
                 _completionHandled = true;
@@ -224,10 +304,31 @@ public partial class DownloadProgressDialog : Window, INotifyPropertyChanged
         }
     }
 
-    /// <summary>Global flag (stored on the MainViewModel): "shutdown after ALL
-    /// active downloads finish". Delegated so checking the box in any dialog
-    /// survives that dialog being closed, stays in sync across open dialogs,
-    /// and fires even if this task already finished before the box was checked.</summary>
+    /// <summary>Index of the queue-complete action: 0 = nothing, 1 = exit,
+    /// 2 = shut down, 3 = sleep. Delegated to the MainViewModel so the choice
+    /// survives this dialog, stays in sync across open progress windows, and
+    /// fires even if this task already finished before it was selected.</summary>
+    public int QueueCompleteIndex
+    {
+        get => (int)_mainViewModel.QueueCompleteAction;
+        set
+        {
+            var action = (QueueCompleteAction)Math.Clamp(value, 0, 3);
+            if (_mainViewModel.QueueCompleteAction != action)
+            {
+                _mainViewModel.QueueCompleteAction = action;
+                OnPropertyChanged();
+            }
+            else if (action != QueueCompleteAction.None)
+            {
+                // Already selected (e.g. from another dialog): re-evaluate in
+                // case everything already finished.
+                _mainViewModel.MaybeShutdownOnQueueComplete();
+            }
+        }
+    }
+
+    /// <summary>Compatibility alias for the old shutdown-only checkbox.</summary>
     public bool ShutdownOnComplete
     {
         get => _mainViewModel.ShutdownWhenQueueComplete;
@@ -240,8 +341,6 @@ public partial class DownloadProgressDialog : Window, INotifyPropertyChanged
             }
             else if (value)
             {
-                // Already on (e.g. enabled from another dialog): re-evaluate in
-                // case everything already finished.
                 _mainViewModel.MaybeShutdownOnQueueComplete();
             }
         }
@@ -250,7 +349,14 @@ public partial class DownloadProgressDialog : Window, INotifyPropertyChanged
     private void ViewModel_PropertyChanged(object? sender, PropertyChangedEventArgs e)
     {
         if (e.PropertyName == nameof(MainViewModel.ShutdownWhenQueueComplete))
+        {
             OnPropertyChanged(nameof(ShutdownOnComplete));
+            OnPropertyChanged(nameof(QueueCompleteIndex));
+        }
+        else if (e.PropertyName == nameof(MainViewModel.QueueCompleteAction))
+        {
+            OnPropertyChanged(nameof(QueueCompleteIndex));
+        }
     }
 
     private bool _completionHandled = false;
@@ -270,6 +376,149 @@ public partial class DownloadProgressDialog : Window, INotifyPropertyChanged
         UpdateBlockVisuals();
     }
 
+    private void SetupConnections(int count)
+    {
+        Connections.Clear();
+        for (int i = 0; i < count; i++)
+        {
+            Connections.Add(new ConnectionVisualItem
+            {
+                Label = count == 1 ? "Connection 1" : $"Connection {i + 1}",
+                RangeText = "waiting"
+            });
+        }
+        _lastConnBytes = new long[count];
+        _lastConnTick = 0;
+        ConnectionSummaryText = count == 1 ? "single connection" : $"{count} connections";
+        OnPropertyChanged(nameof(ConnectionSummaryText));
+    }
+
+    /// <summary>Until the first chunk update arrives, show overall progress on a
+    /// single row so the list never looks empty during probing.</summary>
+    private void UpdateConnectionFallback()
+    {
+        if (Connections.Count != 1)
+            SetupConnections(1);
+        var row = Connections[0];
+        row.RangeText = Task.TotalBytes > 0 ? Task.SizeText : "waiting for size";
+        row.Percent = Math.Clamp(Task.Progress, 0, 100);
+        row.SpeedText = Task.Status == TaskStatus.Downloading ? Task.SpeedText : "";
+        ConnectionSummaryText = "1 connection";
+        OnPropertyChanged(nameof(ConnectionSummaryText));
+    }
+
+    /// <summary>Refreshes the per-range rows from the engine's 0-100 progress
+    /// array. Per-connection speed is the byte delta since the previous tick.
+    /// The IDM core plans at most eight ranges; larger arrays come from the
+    /// legacy chunk state, which has no per-connection mapping, so they fall
+    /// back to a single overall row.</summary>
+    private void UpdateConnections(double[] progress)
+    {
+        int n = progress.Length;
+        if (n == 0 || n > 8)
+        {
+            UpdateConnectionFallback();
+            return;
+        }
+
+        if (Connections.Count != n)
+        {
+            Connections.Clear();
+            for (int i = 0; i < n; i++)
+                Connections.Add(new ConnectionVisualItem { Label = $"Connection {i + 1}" });
+            _lastConnBytes = new long[n];
+            _lastConnTick = 0;
+        }
+
+        long total = Task.TotalBytes;
+        long baseSize = total > 0 ? total / n : 0;
+        long now = Environment.TickCount64;
+        double elapsed = _lastConnTick > 0 ? Math.Max(0.001, (now - _lastConnTick) / 1000.0) : 0;
+
+        for (int i = 0; i < n; i++)
+        {
+            var row = Connections[i];
+            double pct = Math.Clamp(progress[i], 0, 100);
+            long segStart = i * baseSize;
+            long segEnd = i == n - 1 ? total : (i + 1) * baseSize;
+            long segBytes = Math.Max(1, segEnd - segStart);
+            long current = segStart + (long)(segBytes * pct / 100.0);
+
+            double speed = 0;
+            if (elapsed > 0 && i < _lastConnBytes.Length && current >= _lastConnBytes[i])
+                speed = (current - _lastConnBytes[i]) / elapsed;
+            if (i < _lastConnBytes.Length)
+                _lastConnBytes[i] = current;
+
+            row.RangeText = total > 0
+                ? $"{DownloadTask.FormatBytes(segStart)} - {DownloadTask.FormatBytes(segEnd)}"
+                : "shared range";
+            row.Percent = pct;
+            row.SpeedText = pct >= 99.5
+                ? "done"
+                : speed > 0 ? $"{DownloadTask.FormatBytes((long)speed)}/s" : "";
+        }
+        _lastConnTick = now;
+
+        int done = 0;
+        int active = 0;
+        foreach (var row in Connections)
+        {
+            if (row.Percent >= 99.5) done++;
+            else if (row.Percent > 0) active++;
+        }
+        ConnectionSummaryText = $"{active} active - {done} done";
+        OnPropertyChanged(nameof(ConnectionSummaryText));
+    }
+
+    private void SampleSpeed()
+    {
+        if (!IsLoaded || Visibility != Visibility.Visible)
+            return;
+        _speedSamples.Enqueue(Math.Max(0, Task.SpeedBps));
+        while (_speedSamples.Count > 60)
+            _speedSamples.Dequeue();
+        DrawSpeedGraph();
+    }
+
+    private void DrawSpeedGraph()
+    {
+        if (SpeedCanvas is null || SpeedLine is null)
+            return;
+        double width = SpeedCanvas.ActualWidth;
+        double height = SpeedCanvas.ActualHeight;
+        if (width <= 2 || height <= 2)
+            return;
+
+        var samples = _speedSamples.ToArray();
+        double peak = 1;
+        foreach (var value in samples)
+            if (value > peak) peak = value;
+
+        var points = new PointCollection();
+        for (int i = 0; i < samples.Length; i++)
+        {
+            double x = i * (width / 59.0);
+            double y = height - 1 - (samples[i] / peak) * (height - 2);
+            points.Add(new Point(x, Math.Clamp(y, 1, height - 1)));
+        }
+        SpeedLine.Points = points;
+        if (SpeedBaseline is not null)
+        {
+            SpeedBaseline.X2 = width;
+            SpeedBaseline.Y1 = height - 1;
+            SpeedBaseline.Y2 = height - 1;
+        }
+        if (SpeedNowText is not null)
+            SpeedNowText.Text = Task.SpeedText;
+        if (SpeedPeakText is not null)
+            SpeedPeakText.Text = samples.Length > 0
+                ? $"peak {DownloadTask.FormatBytes((long)peak)}/s"
+                : "";
+    }
+
+    private void SpeedCanvas_SizeChanged(object sender, SizeChangedEventArgs e) => DrawSpeedGraph();
+
     private void Engine_ChunkProgressUpdated(DownloadTask task, double[] progress)
     {
         if (task.Id != Task.Id)
@@ -285,6 +534,7 @@ public partial class DownloadProgressDialog : Window, INotifyPropertyChanged
         {
             _lastChunkProgress = progress;
             UpdateBlockVisuals();
+            UpdateConnections(progress);
         });
     }
 
@@ -292,10 +542,8 @@ public partial class DownloadProgressDialog : Window, INotifyPropertyChanged
     {
         if (BlockList.Count == 0) return;
 
-        // Aggregate the engine's per-segment progress (binary 0/100 over
-        // potentially hundreds of file segments) onto the fixed 64-block map.
-        // Block identity is file position, not thread: threads pull from a
-        // shared pool, so per-thread bars were synthetic anyway.
+        // Aggregate the engine's per-range progress (0-100 per range, at most
+        // eight ranges) onto the fixed 64-block map by file position.
         if (Task.Status == TaskStatus.Completed)
         {
             for (int i = 0; i < BlockCount; i++)
@@ -353,6 +601,8 @@ public partial class DownloadProgressDialog : Window, INotifyPropertyChanged
             OnPropertyChanged(nameof(YouTubeStatusHint));
             OnPropertyChanged(nameof(YouTubeProgressFill));
             OnPropertyChanged(nameof(YouTubeProgressRemaining));
+            if (_lastChunkProgress is null or { Length: 0 })
+                UpdateConnectionFallback();
             if (e.PropertyName == nameof(DownloadTask.ChunkCount))
             {
                 OnPropertyChanged(nameof(ChunkCountText));
@@ -517,6 +767,7 @@ public partial class DownloadProgressDialog : Window, INotifyPropertyChanged
 
     protected override void OnClosed(EventArgs e)
     {
+        _speedTimer.Stop();
         _mainViewModel.Engine.ChunkProgressUpdated -= Engine_ChunkProgressUpdated;
         _mainViewModel.PropertyChanged -= ViewModel_PropertyChanged;
         Task.PropertyChanged -= Task_PropertyChanged;

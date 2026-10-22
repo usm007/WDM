@@ -194,7 +194,9 @@
                     <StackPanel x:Name="PanelStatus" Visibility="Collapsed" />
 
                     <!-- TAB 1: Details Panel (Textual + Graphical) -->
-                    <StackPanel x:Name="PanelDetails" Visibility="Collapsed" Margin="0,2,0,8">
+                    <ScrollViewer x:Name="PanelDetails" Visibility="Collapsed" Margin="0,2,0,8"
+                                  MaxHeight="480" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                        <StackPanel>
                         <!-- Graphical File Map (block visualization: 1 block = 1/64 of the file) -->
                         <Border Background="{DynamicResource Brush.SurfaceAlt}" BorderBrush="{DynamicResource Brush.Border}"
                                 BorderThickness="1" CornerRadius="6" Padding="10,8" Margin="0,0,0,8">
@@ -253,6 +255,66 @@
                             </StackPanel>
                         </Border>
 
+                        <!-- Live connections (one range per connection in the IDM core) -->
+                        <Border Background="{DynamicResource Brush.SurfaceAlt}" BorderBrush="{DynamicResource Brush.Border}"
+                                BorderThickness="1" CornerRadius="6" Padding="10,8" Margin="0,0,0,8">
+                            <StackPanel>
+                                <DockPanel Margin="0,0,0,4">
+                                    <TextBlock Text="CONNECTIONS" FontSize="9" FontWeight="Bold"
+                                               Foreground="{DynamicResource Brush.TextMuted}" VerticalAlignment="Center" />
+                                    <TextBlock Text="{Binding ConnectionSummaryText}" FontSize="9.5" FontWeight="SemiBold"
+                                               Foreground="{DynamicResource Brush.Accent}" HorizontalAlignment="Right" VerticalAlignment="Center" />
+                                </DockPanel>
+                                <ItemsControl ItemsSource="{Binding Connections}">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate>
+                                            <Grid Margin="0,2">
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="98" />
+                                                    <ColumnDefinition Width="*" />
+                                                    <ColumnDefinition Width="40" />
+                                                    <ColumnDefinition Width="64" />
+                                                </Grid.ColumnDefinitions>
+                                                <StackPanel Grid.Column="0" VerticalAlignment="Center">
+                                                    <TextBlock Text="{Binding Label}" FontSize="10" Foreground="{DynamicResource Brush.Text}" />
+                                                    <TextBlock Text="{Binding RangeText}" FontSize="8.5" Foreground="{DynamicResource Brush.TextMuted}" />
+                                                </StackPanel>
+                                                <ProgressBar Grid.Column="1" Value="{Binding Percent}" Maximum="100"
+                                                             Height="4" Margin="4,0,8,0" VerticalAlignment="Center"
+                                                             BorderThickness="0" Background="{DynamicResource Brush.Track}"
+                                                             Foreground="{DynamicResource Brush.Accent}" />
+                                                <TextBlock Grid.Column="2" Text="{Binding PercentText}" FontSize="9.5"
+                                                           Foreground="{DynamicResource Brush.TextDim}" HorizontalAlignment="Right" VerticalAlignment="Center" />
+                                                <TextBlock Grid.Column="3" Text="{Binding SpeedText}" FontSize="9.5"
+                                                           Foreground="{DynamicResource Brush.TextMuted}" HorizontalAlignment="Right" VerticalAlignment="Center" />
+                                            </Grid>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                            </StackPanel>
+                        </Border>
+
+                        <!-- Throughput sparkline -->
+                        <Border Background="{DynamicResource Brush.SurfaceAlt}" BorderBrush="{DynamicResource Brush.Border}"
+                                BorderThickness="1" CornerRadius="6" Padding="10,8" Margin="0,0,0,8">
+                            <StackPanel>
+                                <DockPanel Margin="0,0,0,4">
+                                    <TextBlock Text="SPEED" FontSize="9" FontWeight="Bold"
+                                               Foreground="{DynamicResource Brush.TextMuted}" VerticalAlignment="Center" />
+                                    <TextBlock x:Name="SpeedNowText" FontSize="9.5" FontWeight="SemiBold"
+                                               Foreground="{DynamicResource Brush.Accent}" HorizontalAlignment="Right" VerticalAlignment="Center" />
+                                </DockPanel>
+                                <Canvas x:Name="SpeedCanvas" Height="38" ClipToBounds="True" SizeChanged="SpeedCanvas_SizeChanged">
+                                    <Line x:Name="SpeedBaseline" X1="0" Y1="37" X2="0" Y2="37"
+                                          Stroke="{DynamicResource Brush.Border}" StrokeThickness="1" />
+                                    <Polyline x:Name="SpeedLine" Stroke="{DynamicResource Brush.Accent}"
+                                              StrokeThickness="1.6" StrokeLineJoin="Round" />
+                                </Canvas>
+                                <TextBlock x:Name="SpeedPeakText" FontSize="8.5"
+                                           Foreground="{DynamicResource Brush.TextMuted}" HorizontalAlignment="Right" />
+                            </StackPanel>
+                        </Border>
+
                         <!-- Textual Details -->
                         <Border Background="{DynamicResource Brush.SurfaceAlt}" BorderBrush="{DynamicResource Brush.Border}"
                                 BorderThickness="1" CornerRadius="6" Padding="12,8">
@@ -306,7 +368,8 @@
                                            Foreground="{DynamicResource Brush.Text}" Margin="0,3" VerticalAlignment="Center" />
                             </Grid>
                         </Border>
-                    </StackPanel>
+                        </StackPanel>
+                    </ScrollViewer>
 
                     <!-- TAB 2: Speed Limiter -->
                     <StackPanel x:Name="PanelLimiter" Visibility="Collapsed" Margin="0,4,0,8">
@@ -336,8 +399,13 @@
                                   IsChecked="{Binding CloseOnComplete, Mode=TwoWay}" FontSize="12" Margin="0,0,0,8" />
                         <CheckBox Content="Open file automatically when finished"
                                   IsChecked="{Binding OpenOnComplete, Mode=TwoWay}" FontSize="12" Margin="0,0,0,8" />
-                        <CheckBox Content="Shutdown computer after all active downloads finish"
-                                  IsChecked="{Binding ShutdownOnComplete, Mode=TwoWay}" FontSize="12" Margin="0,0,0,4" />
+                        <TextBlock Text="When all active downloads finish:" FontSize="12" Margin="0,4,0,6" />
+                        <ComboBox SelectedIndex="{Binding QueueCompleteIndex, Mode=TwoWay}" Width="220" Height="32" HorizontalAlignment="Left">
+                            <ComboBoxItem Content="Do nothing" />
+                            <ComboBoxItem Content="Exit WDM" />
+                            <ComboBoxItem Content="Shut down the computer" />
+                            <ComboBoxItem Content="Sleep" />
+                        </ComboBox>
                     </StackPanel>
                 </Grid>
             </StackPanel>

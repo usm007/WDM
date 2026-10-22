@@ -2380,7 +2380,15 @@ public sealed class DownloadEngine
             }
 
             if (session.RangeEngine is { } rangeEngine)
-                ChunkProgressUpdated?.Invoke(session.Task, rangeEngine.ProgressFractions());
+            {
+                // The IDM core reports 0-1 fractions; the UI contract is 0-100
+                // per range (same as the legacy chunk state path).
+                var fractions = rangeEngine.ProgressFractions();
+                var percents = new double[fractions.Length];
+                for (int i = 0; i < fractions.Length; i++)
+                    percents[i] = fractions[i] * 100.0;
+                ChunkProgressUpdated?.Invoke(session.Task, percents);
+            }
             else if (session.State is not null)
                 ChunkProgressUpdated?.Invoke(session.Task, session.State.ProgressPercent());
         }

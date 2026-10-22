@@ -24,6 +24,7 @@ public partial class App : Application
         "/autostart", "--autostart",
         "/tray", "--tray", "-tray",
         "/silent", "--silent", "-silent",
+        "/s", "-s",
         "/background",
     };
 
@@ -136,7 +137,10 @@ public partial class App : Application
                 {
                     try { SingleInstancePipe.TrySendArgs(SingleInstancePipe.PipeNameForCurrentSession(), e.Args, 800); }
                     catch { }
-                    BringExistingInstanceToFront();
+                    // A silent hand-off (/s, /d /s, /minimized) must not
+                    // focus-steal the running window.
+                    if (!e.Args.Any(IsSilentFlag))
+                        BringExistingInstanceToFront();
                 }
                 Shutdown();
                 return;
@@ -163,6 +167,8 @@ public partial class App : Application
             string.Equals(a, "--tray", StringComparison.OrdinalIgnoreCase) ||
             string.Equals(a, "/silent", StringComparison.OrdinalIgnoreCase) ||
             string.Equals(a, "--silent", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(a, "/s", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(a, "-s", StringComparison.OrdinalIgnoreCase) ||
             string.Equals(a, "/background", StringComparison.OrdinalIgnoreCase) ||
             string.Equals(a, "-minimized", StringComparison.OrdinalIgnoreCase) ||
              string.Equals(a, "-silent", StringComparison.OrdinalIgnoreCase) ||

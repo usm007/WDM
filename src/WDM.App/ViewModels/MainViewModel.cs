@@ -76,6 +76,9 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
     public static Action? Restarting;
     public event Action<DownloadTask>? ShowProgressDialogRequested;
     public event Action<DownloadTask>? RefreshLinkRequested;
+    /// <summary>Raised when the queue-complete action is "Exit". The window
+    /// handles it like the tray Exit command.</summary>
+    public event Action? ExitRequested;
 
     public RelayCommand OpenAddDialogCommand { get; }
     public RelayCommand PauseCommand { get; }
@@ -124,6 +127,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
     {
         _dispatcher = Dispatcher.CurrentDispatcher;
         Settings = TaskStore.LoadSettings();
+        _queueCompleteAction = Settings.QueueCompleteAction;
         Engine = new DownloadEngine();
         Engine.MaxConcurrent = Settings.MaxConcurrentDownloads;
         Engine.GlobalSpeedLimitKbps = Settings.GlobalSpeedLimitKbps;
@@ -1636,6 +1640,8 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
         using var cts = new CancellationTokenSource(TimeSpan.FromMinutes(5));
         try
         {
+            ApplyServerTimestamp(task, Settings.PreserveServerTimestamp);
+
             if (Settings.ComputeChecksum && File.Exists(task.FullPath))
             {
                 string path = task.FullPath;
@@ -1667,6 +1673,33 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
         catch
         {
             // Best-effort script/checksum handling.
+        }
+    }
+
+    /// <summary>Applies the server's Last-Modified date to the finished file.
+    /// The value is captured at probe time and persisted as an RFC 1123 string;
+    /// tasks without it (HLS/yt-dlp/local copies) keep their current date.</summary>
+    internal static bool ApplyServerTimestamp(DownloadTask task, bool enabled)
+    {
+        if (!enabled || task is null || string.IsNullOrWhiteSpace(task.LastModified))
+            return false;
+        string path = task.FullPath;
+        if (string.IsNullOrWhiteSpace(path) || !File.Exists(path))
+            return false;
+        if (!DateTimeOffset.TryParse(task.LastModified,
+                System.Globalization.CultureInfo.InvariantCulture,
+                System.Globalization.DateTimeStyles.AssumeUniversal |
+                System.Globalization.DateTimeStyles.AdjustToUniversal,
+                out var when))
+            return false;
+        try
+        {
+            File.SetLastWriteTimeUtc(path, when.UtcDateTime);
+            return true;
+        }
+        catch
+        {
+            return false;
         }
     }
 
@@ -2096,6 +2129,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
         CheckNotificationTransitions();
         UpdateStatus();
         SaveTasksSoon();
+        MaybeShutdownOnQueueComplete();
     }
 
     private void RefreshQueuePositions()
@@ -2121,50 +2155,101 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
     public int CompletedDownloadsCount => Tasks.Count(t => t.Status == TaskStatus.Completed);
     public bool HasActiveDownloads => Engine.ActiveCount > 0 || Engine.QueuedCount > 0;
 
-    private bool _shutdownWhenQueueComplete;
-    /// <summary>Global "shutdown when done" flag. Set from any progress dialog's
-    /// "Shutdown computer after all active downloads finish" checkbox. It must be
-    /// global (not per-dialog) so it survives the dialog being closed and so it
-    /// fires only once every active/queued download has finished.</summary>
-    public bool ShutdownWhenQueueComplete
+    private QueueCompleteAction _queueCompleteAction = QueueCompleteAction.None;
+    /// <summary>True once work actually ran this session, so a persisted action
+    /// cannot fire on an empty startup queue.</summary>
+    private bool _queueHadWork;
+
+    /// <summary>Global "when the queue finishes" action. Set from any progress
+    /// dialog and persisted in settings; fires only once every active/queued
+    /// download has finished.</summary>
+    public QueueCompleteAction QueueCompleteAction
     {
-        get => _shutdownWhenQueueComplete;
+        get => _queueCompleteAction;
         set
         {
-            if (_shutdownWhenQueueComplete != value)
+            if (_queueCompleteAction == value)
             {
-                _shutdownWhenQueueComplete = value;
-                OnPropertyChanged(nameof(ShutdownWhenQueueComplete));
-                if (value)
+                if (value != QueueCompleteAction.None)
                     MaybeShutdownOnQueueComplete();
+                return;
             }
+            _queueCompleteAction = value;
+            Settings.QueueCompleteAction = value;
+            OnPropertyChanged(nameof(QueueCompleteAction));
+            OnPropertyChanged(nameof(ShutdownWhenQueueComplete));
+            try { TaskStore.SaveSettings(Settings); } catch { }
+            if (value != QueueCompleteAction.None)
+                MaybeShutdownOnQueueComplete();
         }
     }
 
-    /// <summary>Called whenever a task completes (and whenever the flag is turned
-    /// on) to cover the "checked the box after everything already finished" case.</summary>
+    /// <summary>Compatibility wrapper for the old shutdown-only checkbox.</summary>
+    public bool ShutdownWhenQueueComplete
+    {
+        get => QueueCompleteAction == QueueCompleteAction.Shutdown;
+        set
+        {
+            if (value)
+                QueueCompleteAction = QueueCompleteAction.Shutdown;
+            else if (QueueCompleteAction == QueueCompleteAction.Shutdown)
+                QueueCompleteAction = QueueCompleteAction.None;
+        }
+    }
+
+    /// <summary>Arms a queue-complete action for this session only, without
+    /// changing the saved preference. Used by the /q command-line switch.</summary>
+    public void ArmQueueCompleteActionForSession(QueueCompleteAction action)
+    {
+        _queueCompleteAction = action;
+        OnPropertyChanged(nameof(QueueCompleteAction));
+        OnPropertyChanged(nameof(ShutdownWhenQueueComplete));
+        if (action != QueueCompleteAction.None)
+            MaybeShutdownOnQueueComplete();
+    }
+
+    /// <summary>Called whenever a task completes (and whenever an action is
+    /// selected) to cover the "picked it after everything already finished" case.</summary>
     public void MaybeShutdownOnQueueComplete()
     {
-        if (!_shutdownWhenQueueComplete)
+        var action = QueueCompleteAction;
+        if (action == QueueCompleteAction.None || !_queueHadWork)
             return;
         if (HasActiveDownloads)
             return;
         if (Tasks.Any(t => t.Status == TaskStatus.Downloading || t.Status == TaskStatus.Queued))
             return;
-        // Paused tasks are unfinished work — shutting down now would strand
-        // them mid-queue. Wait until they are resumed or removed.
+        // Paused tasks are unfinished work - acting now would strand them
+        // mid-queue. Wait until they are resumed or removed.
         if (Tasks.Any(t => t.Status == TaskStatus.Paused))
             return;
-        // Failed tasks still need attention (retry) — don't shut down over them.
+        // Failed tasks still need attention (retry) - don't act over them.
         if (Tasks.Any(t => t.Status == TaskStatus.Failed))
             return;
-        // One-shot: consume the flag only once the shutdown command is issued,
-        // so a failed shutdown.exe keeps the request armed for the next check.
-        if (!TriggerSystemShutdown())
-            return;
-        _shutdownIssuedByWdm = true;
-        _shutdownWhenQueueComplete = false;
-        OnPropertyChanged(nameof(ShutdownWhenQueueComplete));
+
+        bool fired;
+        switch (action)
+        {
+            case QueueCompleteAction.Exit:
+                ActivityLog.Write("EXIT", "queue complete - exiting WDM");
+                ExitRequested?.Invoke();
+                fired = true;
+                break;
+            case QueueCompleteAction.Shutdown:
+                fired = TriggerSystemShutdown();
+                if (fired)
+                    _shutdownIssuedByWdm = true;
+                break;
+            case QueueCompleteAction.Sleep:
+                fired = TriggerSystemSleep();
+                break;
+            default:
+                return;
+        }
+        // One-shot per work batch: keep the user's preference, but don't fire
+        // again until new work starts.
+        if (fired)
+            _queueHadWork = false;
     }
 
     private static bool TriggerSystemShutdown()
@@ -2178,7 +2263,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
             });
             if (proc is null)
                 throw new InvalidOperationException("Could not start the shutdown process.");
-            ActivityLog.Write("SHUTDOWN", "queue complete — system shutdown scheduled (60s)");
+            ActivityLog.Write("SHUTDOWN", "queue complete - system shutdown scheduled (60s)");
             return true;
         }
         catch (Exception ex)
@@ -2189,6 +2274,31 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
         }
     }
 
+    [System.Runtime.InteropServices.DllImport("powrprof.dll", SetLastError = true)]
+    [return: System.Runtime.InteropServices.MarshalAs(System.Runtime.InteropServices.UnmanagedType.U1)]
+    private static extern bool SetSuspendState(
+        [System.Runtime.InteropServices.MarshalAs(System.Runtime.InteropServices.UnmanagedType.U1)] bool hibernate,
+        [System.Runtime.InteropServices.MarshalAs(System.Runtime.InteropServices.UnmanagedType.U1)] bool forceCritical,
+        [System.Runtime.InteropServices.MarshalAs(System.Runtime.InteropServices.UnmanagedType.U1)] bool disableWakeEvent);
+
+    private static bool TriggerSystemSleep()
+    {
+        try
+        {
+            // hibernate=false => sleep; forceCritical=false lets apps veto;
+            // disableWakeEvent=false keeps normal wake devices enabled.
+            if (!SetSuspendState(false, false, false))
+                throw new InvalidOperationException("The system refused the sleep request.");
+            ActivityLog.Write("SLEEP", "queue complete - system sleep requested");
+            return true;
+        }
+        catch (Exception ex)
+        {
+            App.LogException(ex);
+            ErrorDialogs.ShowWarning(null, "Couldn't sleep", "WDM couldn't put the computer to sleep. You can do it from the Start menu.");
+            return false;
+        }
+    }
     public string StatusPrefixText => HasActiveDownloads
         ? $"{Engine.ActiveCount} active · "
         : $"{TotalDownloadsCount} download{(TotalDownloadsCount == 1 ? "" : "s")} · ";
@@ -2201,6 +2311,8 @@ public sealed class MainViewModel : INotifyPropertyChanged, IDisposable
     {
         int active = Engine.ActiveCount;
         int queued = Engine.QueuedCount;
+        if (active > 0 || queued > 0)
+            _queueHadWork = true;
         RefreshFilterCounts();
         UpdateEmptyState();
 
