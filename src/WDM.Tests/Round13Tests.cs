@@ -13,16 +13,16 @@ public sealed class Round13Tests
     private const long GB = 1024L * 1024 * 1024;
 
     [Fact]
-    public void MinCatchSize_DefaultIs200MB()
+    public void MinCatchSize_DefaultIsCatchAll()
     {
-        Assert.Equal(200 * MB, new AppSettings().MinCatchSizeBytes);
+        Assert.Equal(0, new AppSettings().MinCatchSizeBytes);
     }
 
     [Fact]
     public void MinCatchSize_LegacyJsonDefaults()
     {
         var back = JsonSerializer.Deserialize<AppSettings>("{\"MaxRetries\":5}")!;
-        Assert.Equal(200 * MB, back.MinCatchSizeBytes);
+        Assert.Equal(0, back.MinCatchSizeBytes);
     }
 
     [Theory]

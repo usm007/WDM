@@ -110,7 +110,7 @@ public sealed class AppSettings
     /// this are left to the browser instead of being handed to WDM. 0 disables
     /// the gate (catch everything). Unknown sizes pass unless the file type
     /// proves it small (images, pages, styles, fonts).</summary>
-    public long MinCatchSizeBytes { get; set; } = 200L * 1024 * 1024;
+    public long MinCatchSizeBytes { get; set; } = 0;
 
     /// <summary>Optional allow-list of browser file extensions to auto-catch
     /// (comma separated, without dots). Empty = every type, still subject to
