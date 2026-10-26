@@ -3,6 +3,7 @@ using WDM.Tests.TestInfrastructure;
 
 namespace WDM.Tests;
 
+[Collection(ProcessStateCollection.Name)]
 public sealed class EngineManagerTests
 {
     [Trait("Category", Cats.Unit)][Fact]
