@@ -8,6 +8,7 @@ using WDM.Tests.TestInfrastructure;
 
 namespace WDM.Tests;
 
+[Collection(EngineStateCollection.Name)]
 public sealed class HostPolicyTests : IDisposable
 {
     private const string Origin = "https://fragile.test:443";

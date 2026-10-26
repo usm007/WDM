@@ -14,6 +14,7 @@ namespace WDM.Tests;
 
 /// <summary>Coverage for the IDM range engine (Redm.Core segmentation plus
 /// part-file resume) that replaced the adaptive range scheduler.</summary>
+[Collection(EngineStateCollection.Name)]
 public sealed class IdmRangeEngineTests
 {
     [Trait("Category", Cats.Unit)]

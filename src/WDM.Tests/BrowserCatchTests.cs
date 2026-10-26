@@ -17,6 +17,7 @@ using Xunit.Abstractions;
 
 namespace WDM.Tests;
 
+[Collection(EngineStateCollection.Name)]
 public sealed class BrowserCatchTests
 {
     private const int SnifferPort = 17701;

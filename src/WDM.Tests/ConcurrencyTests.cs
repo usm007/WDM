@@ -4,6 +4,7 @@ using WDM.Tests.TestInfrastructure;
 
 namespace WDM.Tests;
 
+[Collection(EngineStateCollection.Name)]
 public sealed class ConcurrencyTests
 {
     [Trait("Category", Cats.Unit)][Fact(DisplayName = "RACE-001 cancel at commit keeps state")]

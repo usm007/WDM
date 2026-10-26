@@ -8,6 +8,7 @@ using WDM.Tests.TestInfrastructure;
 namespace WDM.Tests;
 
 /// <summary>HTTP protocol edges + expanded capture security (offline).</summary>
+[Collection(EngineStateCollection.Name)]
 public sealed class ProtocolSecurityTests
 {
     private static bool IsBlocked(string url) => NetworkGuard.IsBlockedResolveTarget(url);
