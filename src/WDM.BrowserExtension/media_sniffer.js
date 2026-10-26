@@ -170,6 +170,25 @@
     const w = typeof browser !== "undefined" ? browser : chrome;
     if (w && w.runtime && w.runtime.onMessage) {
       w.runtime.onMessage.addListener((msg) => {
+        if (msg && msg.action === "wdmSiteOn") {
+          wdmSiteDisabled = false;
+          return;
+        }
+        if (msg && msg.action === "wdmSiteOff") {
+          // Per-site switch: stop listing media and tear down the panel.
+          wdmSiteDisabled = true;
+          try { detectedStreams.clear(); } catch {}
+          try {
+            for (const [videoEl, o] of playerOverlays.entries()) {
+              try { if (o._wdmInterval) clearInterval(o._wdmInterval); } catch {}
+              try { o.remove(); } catch {}
+              try { if (videoEl._wdmRO) videoEl._wdmRO.disconnect(); } catch {}
+              try { if (videoEl._wdmIO) videoEl._wdmIO.disconnect(); } catch {}
+            }
+            playerOverlays.clear();
+          } catch {}
+          return;
+        }
         if (msg && msg.action === "wdmMediaHint" && msg.url) {
           if (typeof msg.pageTitle === "string" && msg.pageTitle.trim().length >= 4) {
             pageTitleHint = msg.pageTitle.trim().slice(0, 120);
@@ -201,6 +220,24 @@
   // used by the listener above at runtime (listener fires later), so `let`
   // placement here is safe — assignment happens only inside callbacks.
   let pageTitleHint = "";
+  // Per-site switch: automatic capture is dropped in the background for a
+  // disabled site; this flag makes the panel agree instead of offering files
+  // that will not be caught. Seeded from the stored block list, updated live
+  // by the wdmSiteOff broadcast.
+  let wdmSiteDisabled = false;
+  try {
+    const wblocked = typeof browser !== "undefined" ? browser : chrome;
+    const applyBlocked = (res) => {
+      try {
+        const b = res && res.blocked;
+        const host = String(location.hostname || "").toLowerCase();
+        if (!host || !b || !Array.isArray(b.domains)) return;
+        wdmSiteDisabled = b.domains.some((d) => host === d || host.endsWith("." + d));
+      } catch {}
+    };
+    const pending = wblocked.runtime.sendMessage({ action: "getBlocked" });
+    if (pending && typeof pending.then === "function") pending.then(applyBlocked, () => {});
+  } catch {}
   // Master playlist probe cache: masterUrl -> { best, variants: Map<absUrl, height> }.
   const masterProbeCache = new Map();
   // Live decoded frame height from the playing <video> (e.g. 1080). Used as a
@@ -822,6 +859,7 @@
 
   // 4. Create or update floating overlay for a video element
   function getOrCreateOverlay(videoEl) {
+    if (wdmSiteDisabled) return null;
     if (playerOverlays.has(videoEl)) {
       return playerOverlays.get(videoEl);
     }
@@ -1164,6 +1202,7 @@
   // sendVerifyMedia and only return if background confirms video content).
   // extra carries background enrichment {quality, resolution, size, pageTitle}.
   function registerMediaStream(url, hintType, customLabel, extra) {
+    if (wdmSiteDisabled) return;
     if (!url || typeof url !== "string") return;
     if (url.startsWith("data:") || url.startsWith("blob:http://127.0.0.1") || url.startsWith("blob:http://localhost")) return;
     // Player API endpoints (e.g. POST /api/stream) are scanned for bodies,

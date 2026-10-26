@@ -391,11 +391,15 @@ function normalizeBlocked(b) {
   } catch {}
   return out;
 }
+let blockedLoaded = false;
 async function loadBlocked() {
   try {
     const data = await webext.storage.local.get(BLOCK_KEY);
     if (data && data[BLOCK_KEY]) blockedCache = normalizeBlocked(data[BLOCK_KEY]);
   } catch {}
+  // Remember that the stored list has been read once: page scripts ask for
+  // it on every frame, and each answer must not cost a storage round trip.
+  blockedLoaded = true;
 }
 function blockedHostCheck(host, domains) {
   try {
@@ -708,7 +712,10 @@ webext.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
 
   if (message.action === "getBlocked") {
-    sendResponse({ blocked: blockedCache });
+    // A page can ask before the stored list finished loading; answer with the
+    // truth rather than an empty list, and only read storage once.
+    if (blockedLoaded) sendResponse({ blocked: blockedCache });
+    else loadBlocked().then(() => sendResponse({ blocked: blockedCache }));
     return true;
   }
 
@@ -1513,3 +1520,197 @@ async function sendBatchToWdm(items) {
   }
   return response.json();
 }
+
+// ---------------------------------------------------------------------------
+// Right-click integration (IDM parity).
+//
+// "Download with WDM" on a link or media element, plus a per-site switch.
+// Both are explicit user intent, so they bypass the automatic-catch filters
+// (size floor, type lists, blocked sites).
+//
+// No popup is declared on purpose - the toolbar icon stays the capture
+// toggle, and one-off actions live in the context menu.
+const MENU_DOWNLOAD_LINK = "wdm-menu-download-link";
+const MENU_DOWNLOAD_MEDIA = "wdm-menu-download-media";
+const MENU_SEPARATOR = "wdm-menu-separator";
+const MENU_SITE_TOGGLE = "wdm-menu-site-toggle";
+
+function notifyUser(message) {
+  try {
+    if (!webext.notifications || !webext.notifications.create) return;
+    const p = webext.notifications.create({
+      type: "basic",
+      iconUrl: "icon128.png",
+      title: "WDM Download Catcher",
+      message: String(message || "").slice(0, 250),
+    });
+    if (p && typeof p.catch === "function") p.catch(() => {});
+  } catch {}
+}
+
+// contextMenus.create throws "duplicate id" when the menu is rebuilt without
+// clearing first, so every build starts from removeAll.
+function installContextMenus() {
+  try {
+    if (!webext.contextMenus || !webext.contextMenus.create) return;
+    let built = false;
+    const build = () => {
+      if (built) return;
+      built = true;
+      const add = (props) => {
+        try {
+          const p = webext.contextMenus.create(props);
+          if (p && typeof p.catch === "function") p.catch(() => {});
+        } catch {}
+      };
+      add({ id: MENU_DOWNLOAD_LINK, title: "Download link with WDM", contexts: ["link"] });
+      add({ id: MENU_DOWNLOAD_MEDIA, title: "Download media with WDM", contexts: ["video", "audio", "image"] });
+      add({ id: MENU_SEPARATOR, type: "separator", contexts: ["page", "link", "video", "audio", "image"] });
+      add({ id: MENU_SITE_TOGGLE, title: "Disable WDM on this site", contexts: ["page", "link", "video", "audio", "image"] });
+    };
+    try {
+      const res = webext.contextMenus.removeAll(build);
+      if (res && typeof res.then === "function") res.then(build, build);
+    } catch { build(); }
+  } catch {}
+}
+
+try {
+  if (webext.runtime && webext.runtime.onInstalled) {
+    webext.runtime.onInstalled.addListener(() => installContextMenus());
+  }
+  if (webext.runtime && webext.runtime.onStartup) {
+    webext.runtime.onStartup.addListener(() => installContextMenus());
+  }
+} catch {}
+installContextMenus();
+
+function webHostOf(url) {
+  try {
+    const u = new URL(url);
+    if (u.protocol !== "http:" && u.protocol !== "https:") return "";
+    return u.hostname.toLowerCase();
+  } catch { return ""; }
+}
+
+// The label follows the site of the tab the menu was opened on. A stale label
+// is harmless: the click reads the stored list and toggles from truth.
+async function syncSiteMenu(pageUrl) {
+  try {
+    if (!webext.contextMenus || !webext.contextMenus.update) return;
+    let url = pageUrl;
+    if (!url) {
+      const tabs = await webext.tabs.query({ active: true, currentWindow: true });
+      url = tabs && tabs[0] ? tabs[0].url : "";
+    }
+    const host = webHostOf(url);
+    const off = !!host && blockedHost(host);
+    const props = host
+      ? { visible: true, title: off ? `Enable WDM on ${host}` : `Disable WDM on ${host}` }
+      : { visible: false };
+    const p = webext.contextMenus.update(MENU_SITE_TOGGLE, props);
+    if (p && typeof p.catch === "function") p.catch(() => {});
+  } catch {}
+}
+
+async function toggleSiteFor(pageUrl) {
+  const host = webHostOf(pageUrl);
+  if (!host) return null;
+  const data = await webext.storage.local.get(BLOCK_KEY);
+  const cur = normalizeBlocked(data && data[BLOCK_KEY]);
+  const nowOff = !cur.domains.includes(host);
+  cur.domains = nowOff ? cur.domains.concat([host]) : cur.domains.filter(d => d !== host);
+  await webext.storage.local.set({ [BLOCK_KEY]: cur });
+  blockedCache = cur;
+  if (nowOff) {
+    purgeBlockedFromMaps(u => {
+      try { return blockedHostCheck(new URL(u).hostname, cur.domains); } catch { return false; }
+    });
+    // Open tabs of that site must stop advertising media they will no longer
+    // hand over: tell their page scripts to drop the panel.
+    try {
+      const tabs = await webext.tabs.query({ url: [`*://${host}/*`] });
+      for (const tab of tabs || []) sendHintToTab(tab.id, { action: "wdmSiteOff" });
+    } catch {}
+  } else {
+    try {
+      const tabs = await webext.tabs.query({ url: [`*://${host}/*`] });
+      for (const tab of tabs || []) sendHintToTab(tab.id, { action: "wdmSiteOn" });
+    } catch {}
+  }
+  await syncSiteMenu(pageUrl);
+  notifyUser(nowOff ? `WDM will stay quiet on ${host}` : `WDM is catching downloads on ${host} again`);
+  return nowOff;
+}
+
+// The sniffer may already know this URL's server name; reuse it so a
+// right-click handoff carries the same name an automatic catch would.
+function sniffedFor(url) {
+  try {
+    for (const map of tabMediaMap.values()) {
+      const entry = map.get(url);
+      if (entry) return { fileName: entry.fileName || null };
+    }
+  } catch {}
+  return null;
+}
+
+async function handoffFromMenu(url, pageUrl, tab) {
+  const referer = webHostOf(pageUrl) ? pageUrl : "";
+  const headers = { "User-Agent": navigator.userAgent };
+  try {
+    const cookie = await getCookieHeaderForUrl(url, referer, pageHostApproved(url, referer));
+    if (cookie) headers["Cookie"] = cookie;
+  } catch {}
+  if (referer) headers["Referer"] = referer;
+  const sniffed = sniffedFor(url);
+
+  if (!isWdmActive) await checkWdm();
+  if (!isWdmActive) {
+    notifyUser("WDM is not running. Start WDM and try again.");
+    return;
+  }
+  try {
+    await sendToWdm(url, sniffed && sniffed.fileName, referer, headers, (tab && tab.title) || "");
+    notifyUser("Sent to WDM.");
+  } catch {
+    notifyUser("Could not reach WDM.");
+  }
+}
+
+async function onMenuClicked(info, tab) {
+  if (!info) return;
+  const pageUrl = info.pageUrl || (tab && tab.url) || "";
+  if (info.menuItemId === MENU_SITE_TOGGLE) {
+    await toggleSiteFor(pageUrl);
+    return;
+  }
+  let url = "";
+  if (info.menuItemId === MENU_DOWNLOAD_LINK) url = info.linkUrl || "";
+  else if (info.menuItemId === MENU_DOWNLOAD_MEDIA) url = info.srcUrl || "";
+  if (!url || !/^https?:\/\//i.test(url)) return;
+  // A link that points at the page already open is the page, not a file.
+  if (url === pageUrl) return;
+  await handoffFromMenu(url, pageUrl, tab);
+}
+
+try {
+  if (webext.contextMenus && webext.contextMenus.onClicked) {
+    webext.contextMenus.onClicked.addListener((info, tab) => {
+      onMenuClicked(info, tab).catch(() => {});
+    });
+  }
+  if (webext.tabs && webext.tabs.onActivated) {
+    webext.tabs.onActivated.addListener(() => { syncSiteMenu().catch(() => {}); });
+  }
+  if (webext.tabs && webext.tabs.onUpdated) {
+    webext.tabs.onUpdated.addListener((tabId, changeInfo) => {
+      if (changeInfo && (changeInfo.status === "complete" || changeInfo.url)) {
+        syncSiteMenu().catch(() => {});
+      }
+    });
+  }
+} catch {}
+
+try { loadBlocked().then(() => syncSiteMenu()); } catch {}
+syncSiteMenu();

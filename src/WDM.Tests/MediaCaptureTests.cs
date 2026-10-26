@@ -7,6 +7,7 @@ using WDM.Tests.TestInfrastructure;
 namespace WDM.Tests;
 
 /// <summary>Extension static validation + local deterministic capture E2E + media fixtures.</summary>
+[Collection(EngineStateCollection.Name)]
 public sealed class MediaCaptureTests
 {
     private static string RepoRoot()
@@ -37,6 +38,41 @@ public sealed class MediaCaptureTests
         // Endpoint paths the extension speaks must exist server-side (contract).
         foreach (string ep in new[] { "/ping", "/download", "/download/batch", "/download/blob-chunk", "/download/mega-sid", "/resolve" })
             Assert.True(CaptureServerHasEndpoint(ep), ep);
+    }
+
+    // IDM's extension offers a right-click "Download with ..." entry and a
+    // per-site switch. Both are explicit user intent and must exist in every
+    // shipped variant, using the same block list automatic capture honours.
+    [Trait("Category", Cats.Browser)][Theory]
+    [InlineData("WDM.BrowserExtension")]
+    [InlineData("WDM.BrowserExtension/firefox")]
+    public void Extension_RightClickMenu_AndPerSiteSwitch(string relative)
+    {
+        string root = RepoRoot();
+        string extDir = Path.Combine(root, "src", relative.Replace('/', Path.DirectorySeparatorChar));
+
+        using var doc = JsonDocument.Parse(File.ReadAllText(Path.Combine(extDir, "manifest.json")));
+        var perms = doc.RootElement.GetProperty("permissions").EnumerateArray()
+            .Select(e => e.GetString()).ToHashSet();
+        Assert.Contains("contextMenus", perms);
+        Assert.Contains("notifications", perms);
+
+        string bg = File.ReadAllText(Path.Combine(extDir, "background.js"));
+        Assert.Contains("contextMenus.onClicked", bg);
+        Assert.Contains("Download link with WDM", bg);
+        Assert.Contains("Download media with WDM", bg);
+        Assert.Contains("wdm-menu-site-toggle", bg);
+        // The switch persists into the same list isBlockedCapture reads.
+        Assert.Contains("BLOCK_KEY", bg);
+        Assert.Contains("function isBlockedCapture", bg);
+        Assert.Contains("blockedCache = cur", bg);
+        // A handoff that cannot reach WDM must say so, never fail silently.
+        Assert.Contains("WDM is not running", bg);
+        // Disabling a site must reach open pages, not just future captures.
+        Assert.Contains("wdmSiteOff", bg);
+        string sniffer = File.ReadAllText(Path.Combine(extDir, "media_sniffer.js"));
+        Assert.Contains("wdmSiteDisabled", sniffer);
+        Assert.Contains("action === \"wdmSiteOff\"", sniffer);
     }
 
     private static bool CaptureServerHasEndpoint(string path)

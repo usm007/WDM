@@ -1,10 +1,11 @@
 {
   "manifest_version": 3,
   "name": "WDM Download Catcher",
-  "version": "1.4.0",
+  "version": "1.5.0",
   "description": "Catch browser downloads and stream media - send them to WDM (Windows Download Manager).",
   "permissions": [
     "downloads",
+    "contextMenus",
     "storage",
     "cookies",
     "tabs",
