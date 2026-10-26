@@ -1,12 +1,14 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Text;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
 using Microsoft.Win32;
 using WDM.Models;
 using WDM.Services;
+using WDM.Services.Chunking;
 using WDM.ViewModels;
 
 namespace WDM;
@@ -43,6 +45,12 @@ public partial class OptionsControl : UserControl
         if (ProxyUserBox != null) ProxyUserBox.Text = s.ProxyUsername ?? "";
         if (ProxyPassBox != null) ProxyPassBox.Text = s.ProxyPassword ?? "";
         if (ProxyBypassBox != null) ProxyBypassBox.Text = s.ProxyBypassList ?? "";
+        if (CatchTypesBox != null) CatchTypesBox.Text = s.CatchFileTypes ?? "";
+        if (SkipTypesBox != null) SkipTypesBox.Text = s.SkipFileTypes ?? "";
+        if (AltSkipBox != null) AltSkipBox.IsChecked = s.AltClickSkipsCapture;
+        if (WatchClipboardBox != null) WatchClipboardBox.IsChecked = s.WatchClipboardForUrls;
+        if (HostLimitsBox != null) HostLimitsBox.Text = FormatHostLimits(s.HostConnectionLimits);
+        UpdateHostCooldownText(s);
 
         RouteBox.IsChecked = s.RouteByCategory;
         VideoFolderBox.Text = s.CategoryFolders.GetValueOrDefault(DownloadCategory.Video.ToString()) ?? "";
@@ -285,6 +293,11 @@ public partial class OptionsControl : UserControl
         if (ProxyUserBox != null) s.ProxyUsername = string.IsNullOrWhiteSpace(ProxyUserBox.Text) ? null : ProxyUserBox.Text.Trim();
         if (ProxyPassBox != null) s.ProxyPassword = string.IsNullOrEmpty(ProxyPassBox.Text) ? null : ProxyPassBox.Text;
         if (ProxyBypassBox != null) s.ProxyBypassList = ProxyBypassBox.Text?.Trim() ?? "";
+        if (CatchTypesBox != null) s.CatchFileTypes = CatchTypesBox.Text?.Trim() ?? "";
+        if (SkipTypesBox != null) s.SkipFileTypes = SkipTypesBox.Text?.Trim() ?? "";
+        if (AltSkipBox != null) s.AltClickSkipsCapture = AltSkipBox.IsChecked == true;
+        if (WatchClipboardBox != null) s.WatchClipboardForUrls = WatchClipboardBox.IsChecked == true;
+        if (HostLimitsBox != null) s.HostConnectionLimits = ParseHostLimits(HostLimitsBox.Text);
 
         s.RouteByCategory = RouteBox?.IsChecked == true;
         if (VideoFolderBox != null)
@@ -585,6 +598,98 @@ public partial class OptionsControl : UserControl
             FolderBox.Text = dialog.FolderName;
             SaveCurrentSettings();
         }
+    }
+
+    private void ClearHostState_Click(object sender, RoutedEventArgs e)
+    {
+        if (_viewModel == null)
+            return;
+        try
+        {
+            _viewModel.Settings.HostCooldowns.Clear();
+            OriginController.ClearLearnedState();
+            _viewModel.PersistSettings();
+            UpdateHostCooldownText(_viewModel.Settings);
+        }
+        catch (Exception ex)
+        {
+            App.LogException(ex);
+            ErrorDialogs.ShowError(Window.GetWindow(this), "Host limits",
+                "The learned host state couldn't be cleared. Please try again.");
+        }
+    }
+
+    private static string FormatHostLimits(Dictionary<string, int>? limits)
+    {
+        if (limits is null || limits.Count == 0)
+            return "";
+        var sb = new StringBuilder();
+        foreach (var kv in limits.OrderBy(k => k.Key, StringComparer.OrdinalIgnoreCase))
+            sb.Append(kv.Key).Append('=').Append(Math.Clamp(kv.Value, 1, 32)).Append('\n');
+        return sb.ToString().TrimEnd();
+    }
+
+    internal static Dictionary<string, int> ParseHostLimits(string? text)
+    {
+        var result = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+        if (string.IsNullOrWhiteSpace(text))
+            return result;
+        foreach (string rawLine in text.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries))
+        {
+            string line = rawLine.Trim();
+            if (line.Length == 0 || line.StartsWith("#", StringComparison.Ordinal))
+                continue;
+            int eq = line.LastIndexOf('=');
+            if (eq <= 0 || eq == line.Length - 1)
+                continue;
+            string host = line[..eq].Trim();
+            if (!int.TryParse(line[(eq + 1)..].Trim(), out int cap))
+                continue;
+            string? key = NormalizeOriginKey(host);
+            if (key is null)
+                continue;
+            result[key] = Math.Clamp(cap, 1, 32);
+        }
+        return result;
+    }
+
+    private static string? NormalizeOriginKey(string? host)
+    {
+        if (string.IsNullOrWhiteSpace(host))
+            return null;
+        string value = host.Trim();
+        if (!value.Contains("://", StringComparison.Ordinal))
+            value = "https://" + value;
+        if (!Uri.TryCreate(value, UriKind.Absolute, out Uri? uri))
+            return null;
+        if (uri.Scheme != Uri.UriSchemeHttp && uri.Scheme != Uri.UriSchemeHttps)
+            return null;
+        return OriginController.KeyOf(value);
+    }
+
+    private void UpdateHostCooldownText(AppSettings s)
+    {
+        if (HostCooldownsText is null)
+            return;
+        long now = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+        var active = s.HostCooldowns
+            .Where(kv => kv.Value is not null && kv.Value.UntilUnix > now)
+            .OrderBy(kv => kv.Value.UntilUnix)
+            .ToList();
+        if (active.Count == 0)
+        {
+            HostCooldownsText.Text = "None — no host is currently backed off.";
+            return;
+        }
+        var sb = new StringBuilder();
+        foreach (var kv in active)
+        {
+            string until = DateTimeOffset.FromUnixTimeSeconds(kv.Value.UntilUnix).LocalDateTime.ToString("t");
+            string cause = string.IsNullOrWhiteSpace(kv.Value.Cause) ? "server pressure" : kv.Value.Cause;
+            if (sb.Length > 0) sb.Append('\n');
+            sb.Append(kv.Key).Append(" — ").Append(cause).Append(" until ").Append(until);
+        }
+        HostCooldownsText.Text = sb.ToString();
     }
 
     /// <summary>Minimum auto-catch size box: selects the matching preset, or the

@@ -566,9 +566,13 @@ try {
 } catch {}
 
 // Periodic ping to verify WDM connection status. Also picks up the
-// auto-catch size gate (minCatchBytes, 0 = catch everything).
+// auto-catch size gate (minCatchBytes, 0 = catch everything), file-type
+// allow/deny lists and the Alt-to-skip preference.
 let isWdmActive = false;
 let minCatchBytes = 0;
+let catchTypes = [];
+let skipTypes = [];
+let altSkip = true;
 async function checkWdm() {
   try {
     const res = await fetch(`${WDM_HOST}/ping`, { method: "GET" });
@@ -579,7 +583,13 @@ async function checkWdm() {
         if (j && typeof j.minCatchBytes === "number" && j.minCatchBytes >= 0) {
           minCatchBytes = Math.floor(j.minCatchBytes);
         }
+        if (j && Array.isArray(j.catchTypes)) catchTypes = normalizeTypeList(j.catchTypes);
+        if (j && Array.isArray(j.skipTypes)) skipTypes = normalizeTypeList(j.skipTypes);
+        if (j && typeof j.altSkip === "boolean") altSkip = j.altSkip;
       } catch {}
+      // A durable explicit handoff may have waited for WDM to start. Drain it
+      // in the background; overlapping pings are coalesced by the guard.
+      drainOutbox().catch(() => {});
     }
   } catch {
     isWdmActive = false;
@@ -619,12 +629,176 @@ function looksSmallByType(filename, url, mime) {
   return SMALL_CATCH_EXTS.has(ext);
 }
 
+// Normalizes the desktop-provided extension lists: lowercase, no leading dot,
+// bounded and de-duplicated. Empty catchTypes means "every type".
+function normalizeTypeList(raw) {
+  const out = [];
+  try {
+    for (const entry of raw || []) {
+      const ext = String(entry || "").trim().toLowerCase().replace(/^[*.]/, "");
+      if (ext && ext.length <= 24 && out.indexOf(ext) < 0) out.push(ext);
+      if (out.length >= 128) break;
+    }
+  } catch {}
+  return out;
+}
+
+// Automatic catches only: explicit overlay/page-resource downloads always go
+// through, regardless of these rules. Skip wins over allow.
+function catchRuleAllows(filename, url) {
+  const ext = catchExtOf(filename) || catchExtOf(url);
+  if (ext && skipTypes.indexOf(ext) >= 0) return false;
+  if (catchTypes.length > 0 && (!ext || catchTypes.indexOf(ext) < 0)) return false;
+  return true;
+}
+
+// Alt+click bypass (IDM/1DM behavior). The content script reports the click;
+// downloads.onCreated consumes the marker. A short any-download fallback covers
+// JavaScript download buttons that have no anchor URL.
+const ALT_SKIP_MS = 2500;
+let altSkipAnyUntil = 0;
+const altSkipUrls = new Map();
+function markAltSkip(url) {
+  if (!altSkip) return;
+  const now = Date.now();
+  const until = now + ALT_SKIP_MS;
+  altSkipAnyUntil = until;
+  try {
+    if (url && /^https?:\/\//i.test(url)) altSkipUrls.set(url, until);
+    if (altSkipUrls.size > 40) {
+      for (const [key, exp] of altSkipUrls) {
+        if (exp <= now) altSkipUrls.delete(key);
+      }
+    }
+  } catch {}
+}
+function consumeAltSkip(url) {
+  if (!altSkip) return false;
+  const now = Date.now();
+  try {
+    const until = url ? altSkipUrls.get(url) : 0;
+    if (until && until > now) {
+      altSkipUrls.delete(url);
+      altSkipAnyUntil = 0;
+      return true;
+    }
+    if (altSkipAnyUntil > now) {
+      altSkipAnyUntil = 0;
+      return true;
+    }
+  } catch {}
+  return false;
+}
+
+// Durable explicit-handoff spool. Automatic browser catches never enter it:
+// if WDM is closed the browser keeps that download. A user's explicit
+// "Download with WDM" click, however, is remembered and replayed when the
+// desktop app next starts (including after a browser restart).
+const OUTBOX_KEY = "wdmHandoffOutbox";
+const OUTBOX_MAX = 50;
+const OUTBOX_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+const OUTBOX_DRAIN_BATCH = 10;
+let outboxDraining = false;
+let outboxLock = Promise.resolve();
+
+function withOutboxLock(fn) {
+  const run = outboxLock.then(fn, fn);
+  outboxLock = run.then(() => {}, () => {});
+  return run;
+}
+
+async function readOutbox() {
+  try {
+    const data = await webext.storage.local.get(OUTBOX_KEY);
+    const list = data && data[OUTBOX_KEY];
+    return Array.isArray(list) ? list : [];
+  } catch { return []; }
+}
+
+async function writeOutbox(list) {
+  try {
+    await webext.storage.local.set({ [OUTBOX_KEY]: Array.isArray(list) ? list : [] });
+    return true;
+  } catch { return false; }
+}
+
+async function queueHandoff(payload) {
+  if (!payload || !payload.url || !/^https?:\/\//i.test(payload.url)) return false;
+  return withOutboxLock(async () => {
+    const now = Date.now();
+    const list = (await readOutbox()).filter(entry =>
+      entry && entry.payload && entry.payload.url &&
+      entry.payload.url !== payload.url &&
+      now - Number(entry.at || 0) < OUTBOX_TTL_MS);
+    list.push({ payload, at: now });
+    while (list.length > OUTBOX_MAX) list.shift();
+    return writeOutbox(list);
+  });
+}
+
+async function drainOutbox() {
+  if (outboxDraining || !isWdmActive) return;
+  outboxDraining = true;
+  try {
+    const list = await readOutbox();
+    if (list.length === 0) return;
+    const batch = list.slice(0, OUTBOX_DRAIN_BATCH);
+    const removeKeys = new Set();
+    const keyOf = (entry) => `${entry && entry.payload ? entry.payload.url : ""}|${entry && entry.at ? entry.at : 0}`;
+    for (let i = 0; i < batch.length; i++) {
+      const entry = batch[i];
+      if (!entry || !entry.payload || !entry.payload.url ||
+          Date.now() - Number(entry.at || 0) >= OUTBOX_TTL_MS) {
+        removeKeys.add(keyOf(entry));
+        continue;
+      }
+      let response;
+      try {
+        response = await fetchWdmWithRetry(`${WDM_HOST}/download`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(enrichHandoffPayload(entry.payload)),
+        });
+      } catch {
+        break; // keep this and every following entry for the next ping
+      }
+      if (response.ok) {
+        removeKeys.add(keyOf(entry));
+        continue;
+      }
+      // Authentication/token rotation, rate limits and server startup are
+      // transient: keep this entry and the rest for the next ping.
+      if (response.status === 401 || response.status === 429 || response.status >= 500) break;
+      // 400/403/404: the URL or replay data is permanently stale. Drop it
+      // instead of blocking the queue forever.
+      removeKeys.add(keyOf(entry));
+    }
+    if (removeKeys.size === 0) return;
+    // Re-read under the queue lock: a user may have queued a new handoff while
+    // the network calls above were running. Only remove the exact entries this
+    // drain processed, never a newer same-URL entry.
+    await withOutboxLock(async () => {
+      const current = await readOutbox();
+      const keep = current.filter(entry => !removeKeys.has(keyOf(entry)));
+      await writeOutbox(keep);
+    });
+  } finally {
+    outboxDraining = false;
+  }
+}
+
 // RPC message handler for content scripts (sniffer, overlay, youtube button)
 webext.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (!message || typeof message !== "object") return false;
 
   if (message.action === "ping") {
     checkWdm().then(() => sendResponse({ active: isWdmActive }));
+    return true;
+  }
+
+  if (message.action === "altSkip") {
+    markAltSkip(typeof message.url === "string" ? message.url : "");
+    sendResponse({ received: true });
     return true;
   }
 
@@ -863,11 +1037,37 @@ webext.runtime.onMessage.addListener((message, sender, sendResponse) => {
           }
         } catch {}
         enrichHandoffPayload(p);
-        const r = await fetchWdmWithRetry(`${WDM_HOST}/download`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(p)
-        });
+        // Explicit handoff: if the desktop app is closed, remember the
+        // already-enriched payload and replay it on the next /ping success.
+        // (Automatic catches deliberately do not queue — the browser keeps
+        // those files instead.)
+        if (!isWdmActive) {
+          await checkWdm();
+          if (!isWdmActive) {
+            const queued = await queueHandoff(p);
+            sendResponse({ success: queued, queued: queued, status: 0 });
+            return;
+          }
+        }
+        let r;
+        try {
+          r = await fetchWdmWithRetry(`${WDM_HOST}/download`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(p)
+          });
+        } catch (err) {
+          const queued = await queueHandoff(p);
+          sendResponse({ success: queued, queued: queued, error: queued ? null : "unreachable" });
+          return;
+        }
+        if (r.status === 503) {
+          const queued = await queueHandoff(p);
+          if (queued) {
+            sendResponse({ success: true, queued: true, status: r.status });
+            return;
+          }
+        }
         // Report the real outcome (status + server reason) so content-script
         // overlays can show success vs. unreachable vs. rejected instead of
         // assuming the click worked.
@@ -1470,6 +1670,8 @@ webext.downloads.onCreated.addListener(async (item) => {
   const downloadUrl = item.finalUrl || item.url;
   if (!downloadUrl || !/^https?:\/\//i.test(downloadUrl)) return;
   if (isBlockedCapture(downloadUrl)) return; // user-blocked: browser handles it
+  if (consumeAltSkip(downloadUrl)) return;   // Alt+click: browser handles it
+  if (!catchRuleAllows(item.filename, downloadUrl)) return; // type rules
   // Minimum auto-catch size (Settings): files known-smaller stay in the browser.
   // Unknown sizes can't be judged by bytes, so judge by type instead: small
   // web assets (images, pages, styles, fonts) can never reach the gate.
@@ -1631,11 +1833,22 @@ async function sendBatchToWdm(items) {
     enriched.push(enrichHandoffPayload(batchPayload));
   }
   if (enriched.length === 0) throw new Error("No valid URLs in batch");
-  const response = await fetchWdmWithRetry(`${WDM_HOST}/download/batch`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ items: enriched }),
-  });
+  let response;
+  try {
+    response = await fetchWdmWithRetry(`${WDM_HOST}/download/batch`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ items: enriched }),
+    });
+  } catch (err) {
+    // Explicit batch action while WDM is closed: spool each enriched item.
+    for (const payload of enriched) await queueHandoff(payload);
+    return { queued: enriched.length };
+  }
+  if (response.status === 503) {
+    for (const payload of enriched) await queueHandoff(payload);
+    return { queued: enriched.length };
+  }
   if (!response.ok) {
     throw new Error(`WDM responded ${response.status}`);
   }

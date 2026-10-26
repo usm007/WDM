@@ -20,6 +20,14 @@ internal sealed class RangeFailedException : Exception
     public RangeFailedException(string message, Exception inner) : base(message, inner) { }
 }
 
+/// <summary>A local write failed (disk full, permissions, device error). This is
+/// never treated as server pressure: the origin budget must not be reduced for
+/// a local-disk problem.</summary>
+internal sealed class DiskWriteException : IOException
+{
+    public DiskWriteException(string message, Exception inner) : base(message, inner) { }
+}
+
 /// <summary>
 /// One HTTP range download executed by the IDM core (Redm.Core): the segment
 /// plan comes from <see cref="Redm.Core.Engine.Plan"/>, resume is part-file based
@@ -27,6 +35,15 @@ internal sealed class RangeFailedException : Exception
 /// <see cref="TransferEngine.RetryDelay"/>, <see cref="TransferEngine.IsTransient"/>).
 /// The host supplies request construction, Cloudflare classification, speed
 /// throttling and progress reporting.
+///
+/// Reliability contract (restored from the adaptive scheduler):
+///  * every attempt takes a slot from <see cref="OriginController"/>;
+///  * a 206 must carry the exact requested Content-Range and the same object
+///    identity (ETag / Last-Modified / total length) as the primary;
+///  * when a part is resumed through a different mirror, the last 64 KiB of
+///    durable bytes are byte-compared before that mirror may append;
+///  * a mirror that lies is demoted for the rest of the download instead of
+///    being tried forever, and a corrupt part is never silently assembled.
 /// </summary>
 public sealed class IdmRangeEngine
 {
@@ -34,6 +51,9 @@ public sealed class IdmRangeEngine
     public const int MaxConnections = 8;
 
     private const int BufferSize = 64 * 1024;
+
+    /// <summary>Durable tail re-fetched from a different mirror before resume.</summary>
+    private const int OverlapVerifyBytes = 64 * 1024;
 
     private readonly object _gate = new();
     private readonly List<Segment> _plan = new();
@@ -156,9 +176,10 @@ public sealed class IdmRangeEngine
             throw new ArgumentException("at least one source URL is required", nameof(urls));
 
         int retries = maxRetries > 0 ? maxRetries : TransferEngine.MaxAttempts;
+        var health = new MirrorHealth(mirrors);
 
         var workers = plan
-            .Select((segment, index) => RunSegmentAsync(segment, index, parts, mirrors, etag, retries,
+            .Select(segment => RunSegmentAsync(segment, parts, health, totalBytes, etag, lastModified, retries,
                 httpProvider, buildRequest, classifyCloudflare, throttleAsync, addBytes, sessionToken))
             .ToArray();
         await Task.WhenAll(workers).ConfigureAwait(false);
@@ -169,10 +190,11 @@ public sealed class IdmRangeEngine
 
     private async Task RunSegmentAsync(
         Segment segment,
-        int index,
         string[] parts,
-        string[] mirrors,
+        MirrorHealth mirrors,
+        long totalBytes,
         string? etag,
+        string? lastModified,
         int retries,
         Func<HttpClient> httpProvider,
         Func<HttpMethod, RangeHeaderValue?, string, HttpRequestMessage> buildRequest,
@@ -181,9 +203,11 @@ public sealed class IdmRangeEngine
         Action<long> addBytes,
         CancellationToken ct)
     {
-        string part = parts[index];
+        string part = parts[segment.Index];
         long need = segment.End - segment.Start + 1;
         int attempt = 0;
+        Exception? lastError = null;
+        string? lastWriter = null;
 
         while (true)
         {
@@ -192,22 +216,55 @@ public sealed class IdmRangeEngine
             long have = PartLength(part);
             if (have >= need)
             {
-                MarkWritten(index, need);
+                MarkWritten(segment.Index, need);
                 return;
             }
             if (have > need)
             {
                 TryDelete(part);
                 have = 0;
-                MarkWritten(index, 0);
+                lastWriter = null;
+                MarkWritten(segment.Index, 0);
             }
 
             attempt++;
-            string url = mirrors[(index + attempt - 1) % mirrors.Length];
+            if (!mirrors.TryPick(out int mirrorIndex, out string url))
+            {
+                throw Failure(segment, attempt, lastError, "no usable source remains");
+            }
+
+            // A part written by the previous process (or by another mirror) is
+            // verified against the next mirror before it may append. The same
+            // mirror that wrote the tail is trusted for a plain reconnect.
+            if (have > 0 && !string.Equals(lastWriter, url, StringComparison.OrdinalIgnoreCase))
+            {
+                long? mismatch = await VerifyMirrorContentAsync(part, segment.Start, have, url, etag,
+                        httpProvider, buildRequest, ct)
+                    .ConfigureAwait(false);
+                if (mismatch is long at)
+                {
+                    string origin = OriginController.KeyOf(url);
+                    OriginController.ReportResult(origin, HttpOutcome.ContentMismatch);
+                    OriginController.ReportIntegrityFault(origin, "content-mismatch");
+                    mirrors.ReportBad(mirrorIndex);
+                    lastError = new IOException(
+                        $"source {url} served different bytes at offset {at} than the already-downloaded part");
+                    if (attempt > retries)
+                        throw Failure(segment, attempt, lastError, lastError.Message);
+                    await Task.Delay(TransferEngine.RetryDelay, ct).ConfigureAwait(false);
+                    continue;
+                }
+            }
+
+            string originKey = OriginController.KeyOf(url);
+            bool acquired = false;
+            HttpOutcome outcome = HttpOutcome.Success;
+            bool reportOutcome = true;
             try
             {
-                await using var dest = new FileStream(part, FileMode.Append, FileAccess.Write,
-                    FileShare.None, BufferSize, FileOptions.Asynchronous);
+                await OriginController.WaitForSlotAsync(originKey, ct).ConfigureAwait(false);
+                acquired = true;
+
                 using var request = buildRequest(HttpMethod.Get,
                     new RangeHeaderValue(segment.Start + have, segment.End), url);
                 if (have > 0 && !string.IsNullOrEmpty(etag))
@@ -217,65 +274,307 @@ public sealed class IdmRangeEngine
                 using var response = await http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, ct)
                     .ConfigureAwait(false);
 
-                // Validator changed or the server ignored our range: the part is
-                // stale, restart it clean (mirrors the IDM transfer rules).
-                if (response.StatusCode == HttpStatusCode.RequestedRangeNotSatisfiable ||
-                    (have > 0 && response.StatusCode == HttpStatusCode.OK))
+                int status = (int)response.StatusCode;
+
+                // Server pressure: keep the source but let the origin controller
+                // decide how long to wait before the next attempt.
+                if (status == 408 || status == 429 || status >= 500)
                 {
-                    TryDelete(part);
-                    MarkWritten(index, 0);
-                    if (attempt > retries) throw RangeFailure(segment, url, response.StatusCode);
+                    outcome = status == 429 ? HttpOutcome.TooManyRequests : HttpOutcome.ServerError;
+                    mirrors.ReportTransient(mirrorIndex);
+                    lastError = new HttpRequestException($"server returned HTTP {status} from {url}");
+                    if (attempt > retries)
+                        break;
                     continue;
                 }
 
-                if (response.StatusCode == HttpStatusCode.OK && index > 0 && have == 0)
+                if (response.StatusCode == HttpStatusCode.RequestedRangeNotSatisfiable)
                 {
-                    // Ranged request answered with the whole body for a later
-                    // segment: the source does not honour ranges.
-                    throw RangeFailure(segment, url, response.StatusCode);
+                    outcome = HttpOutcome.RangeNotSatisfiable;
+                    TryDelete(part);
+                    lastWriter = null;
+                    MarkWritten(segment.Index, 0);
+                    lastError = new HttpRequestException($"source {url} rejected the requested range with HTTP 416");
+                    if (attempt > retries)
+                        break;
+                    continue;
+                }
+
+                if (response.StatusCode == HttpStatusCode.OK)
+                {
+                    if (have > 0 || segment.Start > 0)
+                    {
+                        // A ranged request answered with the whole entity: the
+                        // part cannot be resumed from this response. Restart it
+                        // clean and try again (the server may honour the next one).
+                        outcome = HttpOutcome.OkWithoutRange;
+                        TryDelete(part);
+                        have = 0;
+                        lastWriter = null;
+                        MarkWritten(segment.Index, 0);
+                        lastError = new HttpRequestException($"source {url} ignored the byte range");
+                        if (attempt > retries)
+                            break;
+                        continue;
+                    }
+                    // First byte of the first segment: a plain 200 is a valid
+                    // full-body response. Copy only this segment's window.
+                }
+                else if (response.StatusCode != HttpStatusCode.PartialContent)
+                {
+                    outcome = HttpOutcome.ClientError;
+                    mirrors.ReportTransient(mirrorIndex);
+                    lastError = new HttpRequestException($"source {url} returned HTTP {status}");
+                    if (attempt > retries)
+                        break;
+                    continue;
                 }
 
                 if (classifyCloudflare(response, url) is { } blocked)
-                    throw blocked;
-
-                if (TransferEngine.IsTransient(response.StatusCode) && attempt <= retries)
                 {
-                    await Task.Delay(TransferEngine.RetryDelay, ct).ConfigureAwait(false);
+                    outcome = HttpOutcome.CloudflareBlocked;
+                    mirrors.ReportBad(mirrorIndex);
+                    lastError = blocked;
+                    if (attempt > retries || !mirrors.HasUsable)
+                        throw Failure(segment, attempt, blocked, "Cloudflare challenge");
                     continue;
                 }
 
-                response.EnsureSuccessStatusCode();
+                if (response.StatusCode == HttpStatusCode.PartialContent)
+                {
+                    long wantFrom = segment.Start + have;
+                    var range = response.Content.Headers.ContentRange;
+                    if (range?.From != wantFrom || range?.To != segment.End)
+                    {
+                        outcome = HttpOutcome.WrongRange;
+                        OriginController.ReportIntegrityFault(originKey, "wrong-range");
+                        mirrors.ReportBad(mirrorIndex);
+                        lastError = new HttpRequestException(
+                            $"source {url} returned range {range?.From}-{range?.To}, expected {wantFrom}-{segment.End}");
+                        if (attempt > retries)
+                            break;
+                        await Task.Delay(TransferEngine.RetryDelay, ct).ConfigureAwait(false);
+                        continue;
+                    }
+
+                    if (!mirrors.CheckIdentity(mirrorIndex, response, totalBytes, etag, lastModified))
+                    {
+                        outcome = HttpOutcome.WrongRange;
+                        OriginController.ReportIntegrityFault(originKey, "identity-mismatch");
+                        mirrors.ReportBad(mirrorIndex);
+                        lastError = new HttpRequestException(
+                            $"source {url} serves a different object than the primary (ETag/length mismatch)");
+                        if (attempt > retries)
+                            break;
+                        await Task.Delay(TransferEngine.RetryDelay, ct).ConfigureAwait(false);
+                        continue;
+                    }
+                }
 
                 using var source = await response.Content.ReadAsStreamAsync(ct).ConfigureAwait(false);
-                var buffer = new byte[BufferSize];
-                long written = have;
-                int read;
-                while ((read = await source.ReadAsync(buffer, ct).ConfigureAwait(false)) > 0)
+                FileStream dest;
+                try
                 {
-                    int take = (int)Math.Min(read, need - written);
-                    if (take <= 0) break;
-                    await dest.WriteAsync(buffer.AsMemory(0, take), ct).ConfigureAwait(false);
-                    written += take;
-                    MarkWritten(index, written);
-                    addBytes(take);
-                    await throttleAsync(take, ct).ConfigureAwait(false);
+                    dest = new FileStream(part, FileMode.Append, FileAccess.Write,
+                        FileShare.None, BufferSize, FileOptions.Asynchronous);
+                }
+                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+                {
+                    throw new DiskWriteException(
+                        $"could not open the part file for segment {segment.Index}", ex);
+                }
+                long written = have;
+                await using (dest)
+                {
+                    var buffer = new byte[BufferSize];
+                    int read;
+                    while ((read = await source.ReadAsync(buffer, ct).ConfigureAwait(false)) > 0)
+                    {
+                        int take = (int)Math.Min(read, need - written);
+                        if (take <= 0) break;
+                        try
+                        {
+                            await dest.WriteAsync(buffer.AsMemory(0, take), ct).ConfigureAwait(false);
+                        }
+                        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+                        {
+                            throw new DiskWriteException(
+                                $"could not write {take} bytes to the part file for segment {segment.Index}", ex);
+                        }
+                        written += take;
+                        MarkWritten(segment.Index, written);
+                        addBytes(take);
+                        await throttleAsync(take, ct).ConfigureAwait(false);
+                    }
+
+                    if (written > have)
+                        lastWriter = url;
                 }
 
                 if (written >= need)
                 {
-                    MarkWritten(index, need);
+                    MarkWritten(segment.Index, need);
+                    reportOutcome = false;
+                    OriginController.ReportResult(originKey, HttpOutcome.Success);
                     return;
                 }
 
                 // Short body (the server closed early): keep the grown part and
                 // resume on the next attempt.
-                if (attempt > retries) throw RangeFailure(segment, url, response.StatusCode);
+                if (written > have)
+                    OriginController.ReportResult(originKey, HttpOutcome.Success);
+                outcome = HttpOutcome.ShortRead;
+                lastError = new IOException(
+                    $"source {url} ended after {written - have} of {need - have} requested bytes");
+                if (attempt > retries)
+                    break;
             }
-            catch (OperationCanceledException) { throw; }
-            catch (Exception ex) when ((ex is HttpRequestException or IOException) && attempt <= retries)
+            catch (OperationCanceledException) when (!ct.IsCancellationRequested)
             {
+                outcome = HttpOutcome.Timeout;
+                mirrors.ReportTransient(mirrorIndex);
+                lastError = new TimeoutException($"source {url} timed out");
+                if (attempt > retries)
+                    break;
                 await Task.Delay(TransferEngine.RetryDelay, ct).ConfigureAwait(false);
             }
+            catch (OperationCanceledException)
+            {
+                throw;
+            }
+            catch (DiskWriteException ex)
+            {
+                outcome = HttpOutcome.DiskFatal;
+                lastError = ex;
+                throw;
+            }
+            catch (HttpRequestException ex)
+            {
+                outcome = HttpOutcome.ConnectionReset;
+                mirrors.ReportTransient(mirrorIndex);
+                lastError = ex;
+                if (attempt > retries)
+                    break;
+                await Task.Delay(TransferEngine.RetryDelay, ct).ConfigureAwait(false);
+            }
+            catch (IOException ex)
+            {
+                outcome = HttpOutcome.ConnectionReset;
+                mirrors.ReportTransient(mirrorIndex);
+                lastError = ex;
+                if (attempt > retries)
+                    break;
+                await Task.Delay(TransferEngine.RetryDelay, ct).ConfigureAwait(false);
+            }
+            finally
+            {
+                if (acquired)
+                    OriginController.Release(originKey);
+                if (reportOutcome && acquired)
+                    OriginController.ReportResult(originKey, outcome);
+            }
+        }
+
+        throw Failure(segment, attempt, lastError, "retry budget exhausted");
+    }
+
+    /// <summary>Re-fetches the durable tail of a part from <paramref name="url"/>
+    /// and reports the first differing offset. Network/range problems return
+    /// null: they are handled by the normal request path, not treated as a
+    /// content lie.</summary>
+    private static async Task<long?> VerifyMirrorContentAsync(
+        string part,
+        long segmentStart,
+        long have,
+        string url,
+        string? etag,
+        Func<HttpClient> httpProvider,
+        Func<HttpMethod, RangeHeaderValue?, string, HttpRequestMessage> buildRequest,
+        CancellationToken ct)
+    {
+        int length = (int)Math.Min(OverlapVerifyBytes, have);
+        if (length <= 0)
+            return null;
+        long localFrom = have - length;
+        long globalFrom = segmentStart + localFrom;
+        long globalTo = segmentStart + have - 1;
+
+        byte[] disk = new byte[length];
+        try
+        {
+            await using var file = new FileStream(part, FileMode.Open, FileAccess.Read,
+                FileShare.Read, BufferSize, FileOptions.Asynchronous);
+            file.Seek(localFrom, SeekOrigin.Begin);
+            int offset = 0;
+            while (offset < length)
+            {
+                int read = await file.ReadAsync(disk.AsMemory(offset, length - offset), ct).ConfigureAwait(false);
+                if (read <= 0)
+                    return null;
+                offset += read;
+            }
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            return null;
+        }
+
+        string origin = OriginController.KeyOf(url);
+        await OriginController.WaitForSlotAsync(origin, ct).ConfigureAwait(false);
+        HttpOutcome outcome = HttpOutcome.Success;
+        try
+        {
+            using var request = buildRequest(HttpMethod.Get, new RangeHeaderValue(globalFrom, globalTo), url);
+            if (!string.IsNullOrEmpty(etag))
+                request.Headers.TryAddWithoutValidation("If-Range", etag);
+            using var response = await httpProvider().SendAsync(request, HttpCompletionOption.ResponseHeadersRead, ct)
+                .ConfigureAwait(false);
+            if (response.StatusCode != HttpStatusCode.PartialContent)
+            {
+                outcome = response.StatusCode == HttpStatusCode.OK
+                    ? HttpOutcome.OkWithoutRange
+                    : HttpOutcome.ClientError;
+                return null;
+            }
+
+            var range = response.Content.Headers.ContentRange;
+            if (range?.From != globalFrom || range?.To != globalTo)
+            {
+                outcome = HttpOutcome.WrongRange;
+                return null;
+            }
+
+            byte[] net = await response.Content.ReadAsByteArrayAsync(ct).ConfigureAwait(false);
+            if (net.Length != length)
+            {
+                outcome = HttpOutcome.ShortRead;
+                return null;
+            }
+
+            for (int i = 0; i < length; i++)
+            {
+                if (net[i] != disk[i])
+                {
+                    outcome = HttpOutcome.ContentMismatch;
+                    return globalFrom + i;
+                }
+            }
+            return null;
+        }
+        catch (OperationCanceledException) when (!ct.IsCancellationRequested)
+        {
+            outcome = HttpOutcome.Timeout;
+            return null;
+        }
+        catch (Exception ex) when (ex is HttpRequestException or IOException)
+        {
+            outcome = HttpOutcome.ConnectionReset;
+            return null;
+        }
+        finally
+        {
+            OriginController.Release(origin);
+            OriginController.ReportResult(origin, outcome);
         }
     }
 
@@ -284,8 +583,14 @@ public sealed class IdmRangeEngine
         lock (_gate) _written[index] = value;
     }
 
-    private static Exception RangeFailure(Segment segment, string url, HttpStatusCode status) =>
-        new RangeFailedException($"segment {segment.Index} could not be resumed from {url} (HTTP {(int)status})");
+    private static RangeFailedException Failure(Segment segment, int attempts, Exception? cause, string reason)
+    {
+        string detail = cause is null || string.Equals(cause.Message, reason, StringComparison.Ordinal)
+            ? reason
+            : $"{reason}: {cause.Message}";
+        return new($"segment {segment.Index} failed after {attempts} attempt(s): {detail}",
+            cause ?? new IOException(reason));
+    }
 
     private static async Task MergeAsync(string destPath, string[] parts, long totalBytes, CancellationToken ct)
     {
@@ -317,5 +622,96 @@ public sealed class IdmRangeEngine
     private static void TryDelete(string path)
     {
         try { if (File.Exists(path)) File.Delete(path); } catch { }
+    }
+
+    /// <summary>Per-mirror health + identity gate shared by all segment workers.</summary>
+    private sealed class MirrorHealth
+    {
+        private readonly object _lock = new();
+        private readonly string[] _urls;
+        private readonly bool[] _bad;
+        private readonly int[] _errors;
+        private int _cursor;
+
+        public MirrorHealth(string[] urls)
+        {
+            _urls = urls;
+            _bad = new bool[urls.Length];
+            _errors = new int[urls.Length];
+        }
+
+        public bool HasUsable
+        {
+            get
+            {
+                lock (_lock)
+                    return _urls.Length == 1 || Array.IndexOf(_bad, false) >= 0;
+            }
+        }
+
+        public bool TryPick(out int index, out string url)
+        {
+            lock (_lock)
+            {
+                for (int i = 0; i < _urls.Length; i++)
+                {
+                    int candidate = (_cursor + i) % _urls.Length;
+                    if (_bad[candidate]) continue;
+                    _cursor = (candidate + 1) % _urls.Length;
+                    index = candidate;
+                    url = _urls[candidate];
+                    return true;
+                }
+            }
+            index = -1;
+            url = "";
+            return false;
+        }
+
+        public void ReportTransient(int index)
+        {
+            lock (_lock)
+            {
+                if (_urls.Length <= 1) return;
+                if (++_errors[index] >= 6)
+                    _bad[index] = true;
+            }
+        }
+
+        public void ReportBad(int index)
+        {
+            lock (_lock)
+            {
+                if (_urls.Length > 1)
+                    _bad[index] = true;
+            }
+        }
+
+        /// <summary>Rejects a 206 that describes another object. Identity
+        /// mismatches are treated like wrong ranges: the response body is never
+        /// written.</summary>
+        public bool CheckIdentity(int index, HttpResponseMessage response, long totalBytes,
+            string? etag, string? lastModified)
+        {
+            string? gotEtag = response.Headers.ETag?.ToString();
+            string? gotModified = response.Content.Headers.LastModified?.ToString("R");
+            long? length = response.Content.Headers.ContentRange?.Length;
+
+            bool bad = false;
+            if (length.HasValue && length.Value > 0 && length.Value != totalBytes)
+                bad = true;
+            if (!string.IsNullOrWhiteSpace(etag) && !string.IsNullOrWhiteSpace(gotEtag) &&
+                !string.Equals(etag, gotEtag, StringComparison.Ordinal))
+                bad = true;
+            bool etagAgrees = !string.IsNullOrWhiteSpace(etag) && !string.IsNullOrWhiteSpace(gotEtag) &&
+                              string.Equals(etag, gotEtag, StringComparison.Ordinal);
+            if (!etagAgrees && !string.IsNullOrWhiteSpace(lastModified) && !string.IsNullOrWhiteSpace(gotModified) &&
+                !string.Equals(lastModified, gotModified, StringComparison.OrdinalIgnoreCase))
+                bad = true;
+
+            if (!bad) return true;
+            ReportBad(index);
+            return false;
+        }
     }
 }

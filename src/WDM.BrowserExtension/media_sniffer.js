@@ -9,6 +9,24 @@
   // Strict domain guard: exclude YouTube (handled by youtube_menu.js + yt-dlp)
   if (location.hostname.includes("youtube.com") || location.hostname.includes("youtu.be")) return;
 
+  // Alt+click bypass: tell the background before the browser starts the
+  // download, so the download catcher can leave that one in the browser.
+  try {
+    var altApi = typeof browser !== "undefined" ? browser : (typeof chrome !== "undefined" ? chrome : null);
+    if (altApi && altApi.runtime && altApi.runtime.sendMessage) {
+      document.addEventListener("click", function (ev) {
+        try {
+          if (!ev || !ev.altKey) return;
+          var anchor = ev.target && ev.target.closest ? ev.target.closest("a[href]") : null;
+          var url = anchor && anchor.href ? anchor.href : "";
+          altApi.runtime.sendMessage({ action: "altSkip", url: url }, function () {
+            try { void altApi.runtime.lastError; } catch (e) {}
+          });
+        } catch (e) {}
+      }, true);
+    }
+  } catch (e) {}
+
   // No floating button on major paid/subscription streaming services. Their
   // catalogs are DRM and/or ToS protected, so the button could only ever
   // fail there — and its presence looks out of place. UGC platforms
@@ -633,6 +651,10 @@
   // Report the real handoff outcome on the overlay: success flash, or the
   // failure reason long enough to read (4s) + console detail.
   function confirmOverlaySent(overlay, res) {
+    if (res && res.queued) {
+      flashOverlayLabel(overlay, "Queued: WDM will fetch it when it starts");
+      return;
+    }
     if (res && res.success) {
       flashOverlayLabel(overlay, "Sent to WDM!");
       return;

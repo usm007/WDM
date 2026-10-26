@@ -95,4 +95,25 @@ public sealed class HostPolicyTests : IDisposable
         Assert.True(seen!.Value.u >= t0);
         Assert.True(seen!.Value.u <= t0 + 30);
     }
+
+    [Trait("Category", Cats.Unit)][Fact]
+    public void DiskFatal_Does_Not_Reduce_Origin_Budget()
+    {
+        int before = OriginController.GetPressure(Origin).Budget;
+        OriginController.ReportResult(Origin, HttpOutcome.DiskFatal);
+        Assert.Equal(before, OriginController.GetPressure(Origin).Budget);
+    }
+
+    [Trait("Category", Cats.Unit)][Fact]
+    public void ClearLearnedState_Restores_Default_Budget()
+    {
+        OriginController.ApplyPolicy(
+            new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase) { [Origin] = 1 }, null);
+        Assert.Equal(1, OriginController.GetPressure(Origin).Budget);
+
+        OriginController.ClearLearnedState();
+        OriginController.ApplyPolicy(null, null);
+
+        Assert.Equal(16, OriginController.GetPressure(Origin).Budget);
+    }
 }

@@ -163,6 +163,146 @@ public sealed class IdmRangeEngineTests
     }
 
     [Trait("Category", Cats.Unit)]
+    [Fact(DisplayName = "IDM-RANGE-007 a mirror with a lying Content-Range is demoted")]
+    public async Task WrongContentRange_Mirror_Is_Demoted()
+    {
+        var origin = new FakeProgrammableOrigin();
+        byte[] content = TestFiles.Make(2 * 1024 * 1024, seed: 17);
+        origin.AddObject("http://primary/file.bin", content);
+        origin.AddObject("http://mirror/file.bin", content);
+        origin.FaultPicker = (request, _) =>
+            request.RequestUri!.Host.Equals("primary", StringComparison.OrdinalIgnoreCase)
+                ? FaultKind.WrongContentRange
+                : FaultKind.None;
+        string dir = TestFiles.NewTempDir("wdm-idm");
+        try
+        {
+            await EngineDriver.RunAsync(origin, content, dir, "f.bin", workers: 2, maxRetries: 5,
+                urls: new List<string> { "http://primary/file.bin", "http://mirror/file.bin" });
+
+            Assert.Equal(content, await File.ReadAllBytesAsync(Path.Combine(dir, "f.bin")));
+            Assert.Contains(origin.Requests, r => r.Status == 206);
+        }
+        finally { TestFiles.DeleteDir(dir); }
+    }
+
+    [Trait("Category", Cats.Unit)]
+    [Fact(DisplayName = "IDM-RANGE-008 every mirror lying about the range fails loudly")]
+    public async Task WrongContentRange_All_Mirrors_Fails_Loudly()
+    {
+        var origin = new FakeProgrammableOrigin();
+        byte[] content = TestFiles.Make(512 * 1024, seed: 18);
+        origin.AddObject("http://primary/file.bin", content);
+        origin.FaultPicker = (_, _) => FaultKind.WrongContentRange;
+        string dir = TestFiles.NewTempDir("wdm-idm");
+        try
+        {
+            Exception ex = await Assert.ThrowsAnyAsync<Exception>(() =>
+                EngineDriver.RunAsync(origin, content, dir, "f.bin", workers: 1, maxRetries: 2));
+
+            Assert.Contains("range", ex.Message, StringComparison.OrdinalIgnoreCase);
+            Assert.False(File.Exists(Path.Combine(dir, "f.bin")));
+        }
+        finally { TestFiles.DeleteDir(dir); }
+    }
+
+    [Trait("Category", Cats.Unit)]
+    [Fact(DisplayName = "IDM-RANGE-009 a mirror that changes ETag is rejected before its bytes are written")]
+    public async Task IdentityMismatch_Mirror_Is_Rejected()
+    {
+        var origin = new FakeProgrammableOrigin();
+        byte[] content = TestFiles.Make(2 * 1024 * 1024, seed: 19);
+        origin.AddObject("http://primary/file.bin", content, etag: "\"v1\"");
+        origin.AddObject("http://mirror/file.bin", content, etag: "\"v2\"");
+        string dir = TestFiles.NewTempDir("wdm-idm");
+        try
+        {
+            await EngineDriver.RunAsync(origin, content, dir, "f.bin", workers: 2, maxRetries: 5,
+                urls: new List<string> { "http://mirror/file.bin", "http://primary/file.bin" });
+
+            Assert.Equal(content, await File.ReadAllBytesAsync(Path.Combine(dir, "f.bin")));
+        }
+        finally { TestFiles.DeleteDir(dir); }
+    }
+
+    [Trait("Category", Cats.Unit)]
+    [Fact(DisplayName = "IDM-RANGE-010 a lying mirror cannot append to an existing part")]
+    public async Task LyingMirror_Cannot_Append_To_Part()
+    {
+        var origin = new FakeProgrammableOrigin();
+        byte[] content = TestFiles.Make(2 * 1024 * 1024, seed: 20);
+        byte[] wrong = (byte[])content.Clone();
+        wrong[0] ^= 0xFF;
+        origin.AddObject("http://lying/file.bin", wrong);
+        origin.AddObject("http://primary/file.bin", content);
+        string dir = TestFiles.NewTempDir("wdm-idm");
+        try
+        {
+            string dest = Path.Combine(dir, "f.bin");
+            await File.WriteAllBytesAsync(dest + ".part0", content.AsSpan(0, 64 * 1024).ToArray());
+
+            await EngineDriver.RunAsync(origin, content, dir, "f.bin", workers: 1, maxRetries: 5,
+                urls: new List<string> { "http://lying/file.bin", "http://primary/file.bin" });
+
+            Assert.Equal(content, await File.ReadAllBytesAsync(dest));
+        }
+        finally { TestFiles.DeleteDir(dir); }
+    }
+
+    [Trait("Category", Cats.Unit)]
+    [Fact(DisplayName = "IDM-RANGE-011 no mirror may append to a part when every mirror lies")]
+    public async Task LyingMirrors_Do_Not_Assemble_Corrupt_File()
+    {
+        var origin = new FakeProgrammableOrigin();
+        byte[] content = TestFiles.Make(2 * 1024 * 1024, seed: 21);
+        byte[] wrong1 = (byte[])content.Clone();
+        byte[] wrong2 = (byte[])content.Clone();
+        wrong1[0] ^= 0xFF;
+        wrong2[0] ^= 0x0F;
+        origin.AddObject("http://lying-a/file.bin", wrong1);
+        origin.AddObject("http://lying-b/file.bin", wrong2);
+        string dir = TestFiles.NewTempDir("wdm-idm");
+        try
+        {
+            string dest = Path.Combine(dir, "f.bin");
+            await File.WriteAllBytesAsync(dest + ".part0", content.AsSpan(0, 64 * 1024).ToArray());
+
+            Exception ex = await Assert.ThrowsAnyAsync<Exception>(() =>
+                EngineDriver.RunAsync(origin, content, dir, "f.bin", workers: 1, maxRetries: 5,
+                    urls: new List<string> { "http://lying-a/file.bin", "http://lying-b/file.bin" }));
+
+            Assert.Contains("different bytes", ex.Message, StringComparison.OrdinalIgnoreCase);
+            Assert.False(File.Exists(dest));
+        }
+        finally { TestFiles.DeleteDir(dir); }
+    }
+
+    [Trait("Category", Cats.Unit)]
+    [Fact(DisplayName = "IDM-RANGE-012 range attempts feed the per-origin pressure budget")]
+    public async Task RangeAttempts_Update_OriginPressure()
+    {
+        var origin = new FakeProgrammableOrigin();
+        byte[] content = TestFiles.Make(1024 * 1024, seed: 22);
+        const string source = "http://pressure-idm.test/file.bin";
+        origin.AddObject(source, content);
+        int seen = 0;
+        origin.StatusOverride = (_, _) =>
+            Interlocked.Increment(ref seen) <= 2 ? HttpStatusCode.TooManyRequests : null;
+        string dir = TestFiles.NewTempDir("wdm-idm");
+        try
+        {
+            await EngineDriver.RunAsync(origin, content, dir, "f.bin", workers: 2, maxRetries: 6,
+                urls: new List<string> { source });
+
+            Assert.Equal(content, await File.ReadAllBytesAsync(Path.Combine(dir, "f.bin")));
+            Assert.True(seen > 2, $"expected retries after 429, saw {seen} requests");
+            Assert.True(OriginController.GetPressure(OriginController.KeyOf(source)).Budget < 16,
+                "a 429 must reduce the learned origin budget");
+        }
+        finally { TestFiles.DeleteDir(dir); }
+    }
+
+    [Trait("Category", Cats.Unit)]
     [Fact(DisplayName = "IDM-CORE-001 the IDM plan splits into at most eight equal parts")]
     public void IdmPlan_SplitsEvenly()
     {

@@ -243,6 +243,31 @@
                                         VerticalContentAlignment="Top" FontSize="11" Padding="8,6"
                                         PlaceholderText="*.local&#10;*.example.com/files/*" />
                         </ui:CardControl>
+
+                        <TextBlock Text="Per-host reliability" FontSize="11.5" FontWeight="SemiBold" Foreground="{DynamicResource Brush.TextDim}" Margin="0,4,0,6" />
+
+                        <ui:CardControl Margin="0,0,0,12">
+                            <ui:CardControl.Header>
+                                <StackPanel>
+                                    <TextBlock Text="Connection limit per host" FontWeight="Medium" FontSize="12" Foreground="{DynamicResource Brush.Text}" />
+                                    <TextBlock Text="One host per line: example.com=2, or https://example.com:443=2. Values are clamped to 1–32. Leave blank for automatic." FontSize="10.5" Foreground="{DynamicResource Brush.TextMuted}" Margin="0,2,0,0" TextWrapping="Wrap" MaxWidth="260" HorizontalAlignment="Left" TextAlignment="Left" />
+                                </StackPanel>
+                            </ui:CardControl.Header>
+                            <ui:TextBox x:Name="HostLimitsBox" Width="240" Height="72" TextWrapping="Wrap" AcceptsReturn="True"
+                                        VerticalContentAlignment="Top" FontSize="11" Padding="8,6"
+                                        PlaceholderText="example.com=2&#10;https://cdn.example.com:443=4" />
+                        </ui:CardControl>
+
+                        <ui:CardControl Margin="0,0,0,12">
+                            <ui:CardControl.Header>
+                                <StackPanel>
+                                    <TextBlock Text="Learned host cooldowns" FontWeight="Medium" FontSize="12" Foreground="{DynamicResource Brush.Text}" />
+                                    <TextBlock x:Name="HostCooldownsText" Text="None — no host is currently backed off." FontSize="10.5"
+                                               Foreground="{DynamicResource Brush.TextMuted}" Margin="0,2,0,0" TextWrapping="Wrap" MaxWidth="260" HorizontalAlignment="Left" TextAlignment="Left" />
+                                </StackPanel>
+                            </ui:CardControl.Header>
+                            <ui:Button Content="Clear learned" Appearance="Secondary" Height="32" Padding="14,0" Click="ClearHostState_Click" />
+                        </ui:CardControl>
                     </StackPanel>
 
                     <!-- 2. PAGE: FOLDERS & ROUTING -->
@@ -361,6 +386,36 @@
                                 </ComboBox>
                                 <ui:TextBox x:Name="MinCatchCustomBox" Width="180" Height="32" Margin="0,6,0,0" VerticalContentAlignment="Center" FontSize="11" PlaceholderText="Custom MB, e.g. 250 or 1.5 GB" />
                             </StackPanel>
+                        </ui:CardControl>
+
+                        <ui:CardControl Margin="0,0,0,12">
+                            <ui:CardControl.Header>
+                                <StackPanel>
+                                    <TextBlock Text="File-type catch rules" FontWeight="Medium" FontSize="12" Foreground="{DynamicResource Brush.Text}" />
+                                    <TextBlock Text="Comma-separated extensions, without dots. The allow-list runs first (blank = every type); the skip-list always wins. The size gate above still applies." FontSize="10.5" Foreground="{DynamicResource Brush.TextMuted}" Margin="0,2,0,0" TextWrapping="Wrap" MaxWidth="260" HorizontalAlignment="Left" TextAlignment="Left" />
+                                </StackPanel>
+                            </ui:CardControl.Header>
+                            <StackPanel>
+                                <ui:TextBox x:Name="CatchTypesBox" Width="240" Height="32" VerticalContentAlignment="Center" FontSize="11"
+                                            PlaceholderText="Only these: mp4, mkv, zip, iso" />
+                                <ui:TextBox x:Name="SkipTypesBox" Width="240" Height="32" Margin="0,6,0,0" VerticalContentAlignment="Center" FontSize="11"
+                                            PlaceholderText="Never these: jpg, png, pdf" />
+                                <StackPanel Orientation="Horizontal" Margin="0,10,0,0">
+                                    <ui:ToggleSwitch x:Name="AltSkipBox" />
+                                    <TextBlock Text="Hold Alt while clicking to skip WDM" FontSize="11" Foreground="{DynamicResource Brush.TextMuted}"
+                                               VerticalAlignment="Center" Margin="8,0,0,0" />
+                                </StackPanel>
+                            </StackPanel>
+                        </ui:CardControl>
+
+                        <ui:CardControl Margin="0,0,0,12">
+                            <ui:CardControl.Header>
+                                <StackPanel>
+                                    <TextBlock Text="Clipboard link monitor" FontWeight="Medium" FontSize="12" Foreground="{DynamicResource Brush.Text}" />
+                                    <TextBlock Text="When you copy an http(s) link, open it in the Add Download dialog. Off by default; WDM reads the clipboard only while this is on." FontSize="10.5" Foreground="{DynamicResource Brush.TextMuted}" Margin="0,2,0,0" TextWrapping="Wrap" MaxWidth="260" HorizontalAlignment="Left" TextAlignment="Left" />
+                                </StackPanel>
+                            </ui:CardControl.Header>
+                            <ui:ToggleSwitch x:Name="WatchClipboardBox" Checked="UpdateOption_Changed" Unchecked="UpdateOption_Changed" />
                         </ui:CardControl>
 
                         <TextBlock Text="Extension deployment" FontSize="11.5" FontWeight="SemiBold" Foreground="{DynamicResource Brush.TextDim}" Margin="0,4,0,6" />

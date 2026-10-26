@@ -1,3 +1,4 @@
+using System.Linq;
 using System.Net;
 using System.Text.Json;
 using WDM.Services;
@@ -93,6 +94,13 @@ public sealed class Round13Tests
         using var doc = JsonDocument.Parse(await resp.Content.ReadAsStringAsync());
         Assert.Equal("ok", doc.RootElement.GetProperty("status").GetString());
         Assert.Equal(200 * MB, doc.RootElement.GetProperty("minCatchBytes").GetInt64());
+        string[] include = doc.RootElement.GetProperty("catchTypes").EnumerateArray()
+            .Select(e => e.GetString() ?? "").ToArray();
+        string[] exclude = doc.RootElement.GetProperty("skipTypes").EnumerateArray()
+            .Select(e => e.GetString() ?? "").ToArray();
+        Assert.Equal(new[] { "mp4", "mkv", "zip" }, include);
+        Assert.Equal(new[] { "jpg", "png" }, exclude);
+        Assert.True(doc.RootElement.GetProperty("altSkip").GetBoolean());
     }
 
     private sealed class PingServer : IDisposable
@@ -105,6 +113,9 @@ public sealed class Round13Tests
         {
             _server = new CaptureServer((_, _, _, _, _) => { }, Port);
             _server.MinCatchBytesProvider = () => 200 * MB;
+            _server.CatchTypesProvider = () => new[] { "mp4", "MKV", "*.zip", "mp4!", "mp4" };
+            _server.SkipTypesProvider = () => new[] { "jpg", ".PNG", "png" };
+            _server.AltClickSkipsCaptureProvider = () => true;
             _server.Start();
         }
 

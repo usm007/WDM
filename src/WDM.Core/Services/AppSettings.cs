@@ -110,7 +110,26 @@ public sealed class AppSettings
     /// this are left to the browser instead of being handed to WDM. 0 disables
     /// the gate (catch everything). Unknown sizes pass unless the file type
     /// proves it small (images, pages, styles, fonts).</summary>
-    public long MinCatchSizeBytes { get; set; } = 200L * 1024 * 1024;    /// <summary>1DM <c>always_retry_download</c> (default OFF), bounded by
+    public long MinCatchSizeBytes { get; set; } = 200L * 1024 * 1024;
+
+    /// <summary>Optional allow-list of browser file extensions to auto-catch
+    /// (comma separated, without dots). Empty = every type, still subject to
+    /// <see cref="MinCatchSizeBytes"/>. Example: "mp4,mkv,zip,iso".</summary>
+    public string CatchFileTypes { get; set; } = "";
+
+    /// <summary>Browser file extensions that must always stay in the browser
+    /// (comma separated, without dots). Checked before the allow-list.</summary>
+    public string SkipFileTypes { get; set; } = "";
+
+    /// <summary>Hold Alt while clicking a link to skip WDM's browser handoff for
+    /// that click. On by default; harmless when the extension is not installed.</summary>
+    public bool AltClickSkipsCapture { get; set; } = true;
+
+    /// <summary>Opt-in background clipboard watcher: copying an http(s) link
+    /// offers it in the Add Download dialog. Off by default (no clipboard reads).</summary>
+    public bool WatchClipboardForUrls { get; set; } = false;
+
+    /// <summary>1DM <c>always_retry_download</c> (default OFF), bounded by
     /// <see cref="MaxRetries"/> per task: a timer re-queues Failed tasks until
     /// their per-task budget is spent. User Pause/Cancel/Remove always wins.</summary>
     public bool AutoResumeFailed { get; set; } = false;

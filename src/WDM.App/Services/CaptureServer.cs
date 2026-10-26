@@ -47,6 +47,11 @@ public sealed class CaptureServer : IDisposable
     /// <summary>Live settings provider (wired by the view): the minimum auto-catch
     /// size advertised to the extension via <c>/ping</c>. Null = no gate.</summary>
     public Func<long>? MinCatchBytesProvider { get; set; }
+    /// <summary>Catch allow-list / deny-list published to the extension on
+    /// <c>/ping</c>. Empty allow-list = every type (subject to the size gate).</summary>
+    public Func<IReadOnlyList<string>>? CatchTypesProvider { get; set; }
+    public Func<IReadOnlyList<string>>? SkipTypesProvider { get; set; }
+    public Func<bool>? AltClickSkipsCaptureProvider { get; set; }
 
     /// <summary>Third-party automation (gap 8, Ghost aria2-RPC equivalent):
     /// <c>GET /api/tasks</c> lists, <c>POST /api/add</c> enqueues without a
@@ -341,7 +346,22 @@ public sealed class CaptureServer : IDisposable
                     string ver = typeof(CaptureServer).Assembly.GetName().Version?.ToString(3) ?? "2.7.2";
                     long minCatch = 0;
                     try { minCatch = Math.Max(0, MinCatchBytesProvider?.Invoke() ?? 0); } catch { }
-                    await WriteResponseAsync(stream, HttpStatusCode.OK, $"{{\"status\":\"ok\",\"version\":\"{ver}\",\"minCatchBytes\":{minCatch}}}", origin);
+                    string[] include = Array.Empty<string>();
+                    string[] exclude = Array.Empty<string>();
+                    bool altSkip = true;
+                    try { include = NormalizeCatchTypes(CatchTypesProvider?.Invoke()); } catch { }
+                    try { exclude = NormalizeCatchTypes(SkipTypesProvider?.Invoke()); } catch { }
+                    try { altSkip = AltClickSkipsCaptureProvider?.Invoke() ?? true; } catch { }
+                    string ping = JsonSerializer.Serialize(new
+                    {
+                        status = "ok",
+                        version = ver,
+                        minCatchBytes = minCatch,
+                        catchTypes = include,
+                        skipTypes = exclude,
+                        altSkip,
+                    }, JsonWriteOptions);
+                    await WriteResponseAsync(stream, HttpStatusCode.OK, ping, origin);
                     return;
                 }
 
@@ -871,6 +891,46 @@ public sealed class CaptureServer : IDisposable
         if (o is not null && o.StartsWith("moz-extension://", StringComparison.OrdinalIgnoreCase))
             return ExtVersionAtLeast(extVersion, MinGracedExtVersion);
         return false;
+    }
+
+    /// <summary>Normalizes an extension rule list for <c>/ping</c>: trims dots,
+    /// lowercases, accepts comma/semicolon/space separated entries, drops
+    /// blanks/duplicates. An empty result means "no rule" (allow everything for
+    /// the include list, deny nothing for the exclude list).</summary>
+    private static string[] NormalizeCatchTypes(IReadOnlyList<string>? raw)
+    {
+        if (raw is null || raw.Count == 0)
+            return Array.Empty<string>();
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var list = new List<string>();
+        foreach (string? entry in raw)
+        {
+            if (string.IsNullOrWhiteSpace(entry))
+                continue;
+            foreach (string piece in entry.Split(new[] { ',', ';', ' ', '\t' },
+                         StringSplitOptions.RemoveEmptyEntries))
+            {
+                string ext = piece.Trim().TrimStart('*').TrimStart('.').ToLowerInvariant();
+                if (ext.Length == 0 || ext.Length > 24 || seen.Contains(ext))
+                    continue;
+                bool valid = true;
+                foreach (char c in ext)
+                {
+                    if (!char.IsLetterOrDigit(c) && c != '-' && c != '_')
+                    {
+                        valid = false;
+                        break;
+                    }
+                }
+                if (!valid)
+                    continue;
+                seen.Add(ext);
+                list.Add(ext);
+                if (list.Count >= 128)
+                    return list.ToArray();
+            }
+        }
+        return list.ToArray();
     }
 
     private static bool IsAllowedCaptureUrl(string url)

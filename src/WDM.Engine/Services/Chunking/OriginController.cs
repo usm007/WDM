@@ -90,6 +90,15 @@ public static class OriginController
                 var st = Get(kv.Key.Trim());
                 lock (st.Lock)
                 {
+                    // Integrity verdicts pin the host to one connection. They
+                    // must not block every request for minutes: a bad mirror is
+                    // handled by rotation/demotion in the range engine, not by a
+                    // global sleep.
+                    if (IsIntegrityCause(kv.Value.Cause))
+                    {
+                        st.Budget = 1;
+                        continue;
+                    }
                     var until = DateTimeOffset.FromUnixTimeSeconds(Math.Min(kv.Value.UntilUnix, now + 86400));
                     if (until > st.BackoffUntil)
                         st.BackoffUntil = until;
@@ -129,6 +138,34 @@ public static class OriginController
         _states.Clear();
         lock (_policyLock)
             _overrides = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+    }
+
+    /// <summary>Test hook: forget one origin's learned pressure/backoff so a
+    /// failing origin in one test cannot make every later test on the same
+    /// fake host wait for a 30-second cooldown.</summary>
+    internal static void ResetOriginForTests(string url)
+    {
+        string key = KeyOf(url);
+        _states.TryRemove(key, out _);
+        lock (_policyLock)
+            _overrides.Remove(key);
+    }
+
+    /// <summary>User-facing "clear learned host limits": forget learned
+    /// cooldowns/budgets without disturbing in-flight slots. User overrides are
+    /// replaced by the next <see cref="ApplyPolicy"/> call.</summary>
+    public static void ClearLearnedState()
+    {
+        foreach (var st in _states.Values)
+        {
+            lock (st.Lock)
+            {
+                st.Budget = DefaultBudget;
+                st.BackoffUntil = default;
+                st.Backoff = TimeSpan.FromMilliseconds(500);
+                st.IntegrityFaults = 0;
+            }
+        }
     }
 
     public static async Task WaitForSlotAsync(string origin, CancellationToken ct)
@@ -206,7 +243,9 @@ public static class OriginController
 
     /// <summary>Integrity faults (wrong ranges, content mismatches) are not
     /// server pressure — but three in a row from one host means a fragile
-    /// endpoint: pin it to 1 connection and persist that verdict.</summary>
+    /// endpoint: pin it to 1 connection and persist that verdict. The verdict
+    /// is deliberately not a timed backoff: a single lying mirror must not
+    /// stall an otherwise healthy download for minutes.</summary>
     public static void ReportIntegrityFault(string origin, string kind)
     {
         try
@@ -218,12 +257,16 @@ public static class OriginController
                     return;
                 st.IntegrityFaults = 0;
                 st.Budget = 1;
-                st.BackoffUntil = DateTimeOffset.UtcNow + TimeSpan.FromMinutes(5);
-                PersistCooldown(origin, st.BackoffUntil, kind);
+                PersistCooldown(origin, DateTimeOffset.UtcNow + TimeSpan.FromMinutes(5), kind);
             }
         }
         catch { }
     }
+
+    private static bool IsIntegrityCause(string? cause) =>
+        string.Equals(cause, "wrong-range", StringComparison.OrdinalIgnoreCase) ||
+        string.Equals(cause, "identity-mismatch", StringComparison.OrdinalIgnoreCase) ||
+        string.Equals(cause, "content-mismatch", StringComparison.OrdinalIgnoreCase);
 
     private static void PersistCooldown(string origin, DateTimeOffset until, string cause)
     {

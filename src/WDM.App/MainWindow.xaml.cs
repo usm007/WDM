@@ -18,6 +18,7 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
 {
     private readonly MainViewModel _viewModel;
     private readonly CaptureServer _captureServer;
+    private readonly ClipboardWatcher _clipboardWatcher;
     private readonly TrayIcon _tray;
     private readonly System.Windows.Threading.DispatcherTimer _trayTimer;
     private readonly Dictionary<Guid, Window> _openDialogs = new();
@@ -32,6 +33,10 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
         InitializeComponent();
         _viewModel = new MainViewModel();
         DataContext = _viewModel;
+
+        _clipboardWatcher = new ClipboardWatcher();
+        _clipboardWatcher.UrlDetected += url => _dispatcher.BeginInvoke(() => HandleClipboardUrl(url));
+        _clipboardWatcher.SetEnabled(_viewModel.Settings.WatchClipboardForUrls);
 
         _viewModel.AddTaskRequested += _ => _dispatcher.BeginInvoke(() => ShowAddDialog());
         _viewModel.EditTaskRequested += task => _dispatcher.BeginInvoke(() => ShowProperties(task));
@@ -135,6 +140,9 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
         _captureServer.OnBatchCapture = items => _dispatcher.BeginInvoke(() => ShowBatchAddDialog(items));
         _captureServer.OnBlobCaptured = result => _dispatcher.Invoke(() => _viewModel.AddCompletedFile(result));
         _captureServer.MinCatchBytesProvider = () => _viewModel.Settings.MinCatchSizeBytes;
+        _captureServer.CatchTypesProvider = () => SplitFileTypes(_viewModel.Settings.CatchFileTypes);
+        _captureServer.SkipTypesProvider = () => SplitFileTypes(_viewModel.Settings.SkipFileTypes);
+        _captureServer.AltClickSkipsCaptureProvider = () => _viewModel.Settings.AltClickSkipsCapture;
         // Third-party automation (gap 8): Invoke (not BeginInvoke) — the
         // loopback thread needs results. Safe: the UI thread never blocks on
         // the server, so this can't deadlock.
@@ -339,6 +347,29 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
     }
 
     private AddDownloadDialog? _activeAddDialog;
+
+    /// <summary>Clipboard link (opt-in): offer it in the same Add flow as the
+    /// browser capture path. Existing task URLs are ignored so copying a link
+    /// from WDM itself cannot create a duplicate.</summary>
+    private void HandleClipboardUrl(string url)
+    {
+        if (_exiting || string.IsNullOrWhiteSpace(url))
+            return;
+        foreach (DownloadTask task in _viewModel.Tasks)
+        {
+            if (string.Equals(task.Url, url, StringComparison.OrdinalIgnoreCase))
+                return;
+        }
+        ShowAddDialog(url, fromCapture: true);
+    }
+
+    private static IReadOnlyList<string> SplitFileTypes(string? text)
+    {
+        if (string.IsNullOrWhiteSpace(text))
+            return Array.Empty<string>();
+        return text.Split(new[] { ',', ';', ' ', '\t', '\r', '\n' },
+            StringSplitOptions.RemoveEmptyEntries);
+    }
 
     private void ShowAddDialog(string? prefillUrl = null, string? prefillFileName = null, string? prefillReferer = null, Dictionary<string, string>? prefillHeaders = null, bool fromCapture = false, string? pageTitle = null,
         string? postData = null, string? postContentType = null, string? proxyHost = null, int proxyPort = 0, string? proxyType = null, bool fullSession = false,
@@ -1170,7 +1201,11 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
         ExtensionView.Visibility = Visibility.Collapsed;
         NoticeView.Visibility = Visibility.Collapsed;
         DownloadsView.Visibility = Visibility.Visible;
+        // Leaving Settings by any route (Close, the Options command, Escape)
+        // must persist text fields too, not only the immediate-save toggles.
+        SettingsContent.SaveCurrentSettings();
         _viewModel.PersistSettings();
+        _clipboardWatcher.SetEnabled(_viewModel.Settings.WatchClipboardForUrls);
         TaskGrid.Focus();
     }
 
@@ -1415,6 +1450,7 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
         try { _trayTimer.Stop(); } catch { }
         try { MainViewModel.Restarting -= OnRestarting; } catch { }
         _progressPanel?.Close();
+        try { _clipboardWatcher.Dispose(); } catch { }
         _captureServer.Dispose();
         _tray.Dispose();
         _viewModel.SaveTasksNow();

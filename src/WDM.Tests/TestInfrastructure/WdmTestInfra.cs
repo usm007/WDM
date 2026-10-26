@@ -255,6 +255,10 @@ public static class EngineDriver
         using var http = new HttpClient(origin) { Timeout = TimeSpan.FromSeconds(60) };
         string dest = Path.Combine(dir, name);
         urls ??= new List<string> { "http://primary/file.bin" };
+        // Isolate learned per-origin pressure between tests: one 503/429 test
+        // must not make a later test on the same fake host wait 30 seconds.
+        foreach (string url in urls)
+            OriginController.ResetOriginForTests(url);
         await engine.RunAsync(content.Length, dest, dest + ".wdmstate", urls, etag, null,
             workers, maxRetries, null, http,
             (method, range, url) =>

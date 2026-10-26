@@ -92,7 +92,10 @@ public sealed class ConcurrencyTests
     {
         var origin = new FakeProgrammableOrigin();
         byte[] content = TestFiles.Make(4 * 1024 * 1024, seed: 9);
-        origin.AddObject("http://primary/file.bin", content);
+        // Isolated host: this test needs all 16 origin slots, and sharing
+        // "primary" with status-code tests would let their learned backoff
+        // throttle it during a parallel run.
+        origin.AddObject("http://race005.test/file.bin", content);
         string dir = TestFiles.NewTempDir("wdm-race");
         try
         {
@@ -100,7 +103,7 @@ public sealed class ConcurrencyTests
             using var http = new HttpClient(origin) { Timeout = TimeSpan.FromSeconds(60) };
             string dest = Path.Combine(dir, "f.bin");
             await engine.RunAsync(content.Length, dest, dest + ".wdmstate",
-                new List<string> { "http://primary/file.bin" }, "\"v1\"", null,
+                new List<string> { "http://race005.test/file.bin" }, "\"v1\"", null,
                 16, 3, null, http,
                 (method, range, url) =>
                 {
