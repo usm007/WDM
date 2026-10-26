@@ -253,6 +253,13 @@ public static class VelopackUpdateService
         return new UpdateManager(source, options);
     }
 
+    /// <summary>Scratch directory for one feed check. A shared fixed directory
+    /// raced when the startup check and a manual About/Settings check
+    /// overlapped: whichever finished first deleted the other run's working
+    /// files, so a legitimate update looked unreachable.</summary>
+    internal static string NewIsolatedCheckDir()
+        => Path.Combine(Path.GetTempPath(), "WDM_Velopack_Check_" + Guid.NewGuid().ToString("N"));
+
     /// <summary>
     /// Checks GitHub for an update via Velopack feed. Returns null if not installed via Velopack,
     /// no update available, or network fails. Caller should fall back to <see cref="UpdateChecker.CheckLatestAsync"/>.
@@ -296,7 +303,7 @@ public static class VelopackUpdateService
         var asm = UpdateChecker.CurrentVersion;
         int build = asm.Build < 0 ? 0 : asm.Build;
         var currentVer = $"{asm.Major}.{asm.Minor}.{build}";
-        var tempDir = Path.Combine(Path.GetTempPath(), "WDM_Velopack_Check");
+        var tempDir = NewIsolatedCheckDir();
         try
         {
             Directory.CreateDirectory(tempDir);
@@ -336,10 +343,14 @@ public static class VelopackUpdateService
     /// <summary>Applies the pending update and restarts WDM. Must be called after <see cref="DownloadUpdatesAsync"/>.</summary>
     public static void ApplyAndRestart(VelopackAsset asset, string[]? restartArgs = null)
     {
-        // BUG-038: signal the main window to set _exiting before the restart
-        // so the MinimizeToTray guard doesn't cancel the shutdown.
-        ViewModels.MainViewModel.Restarting?.Invoke();
+        // Create the manager first. If that throws (broken install, missing
+        // locator) the caller keeps WDM open and shows the error; firing
+        // Restarting first would leave the window stuck with _exiting = true.
         var mgr = CreateManager();
+        // BUG-038: signal the main window to set _exiting and persist state
+        // before the restart so the MinimizeToTray guard doesn't cancel the
+        // shutdown (ApplyUpdatesAndRestart ends in Environment.Exit).
+        ViewModels.MainViewModel.Restarting?.Invoke();
         mgr.ApplyUpdatesAndRestart(asset, restartArgs ?? Array.Empty<string>());
     }
 

@@ -143,7 +143,14 @@ try {
         if ($LASTEXITCODE -ne 0) { throw "ISCC failed." }
         $builtInno = Join-Path $PSScriptRoot ("output\WDM_Setup_" + $numeric + ".exe")
         if (Test-Path $builtInno) {
-            Copy-Item $builtInno (Join-Path $uploadDir "WDM-Setup-$Version.exe") -Force
+            $installerDest = Join-Path $uploadDir "WDM-Setup-$Version.exe"
+            Copy-Item $builtInno $installerDest -Force
+            # SHA-256 sidecar: the in-app updater verifies it before launching.
+            # Without this asset only the PE header check applies. Format is
+            # "<hash>  <file name>", matching the updater's strict parser.
+            $installerHash = (Get-FileHash -Path $installerDest -Algorithm SHA256).Hash.ToLowerInvariant()
+            "$installerHash  WDM-Setup-$Version.exe" |
+                Set-Content -Path ("$installerDest.sha256") -Encoding ascii -NoNewline
         } else {
             Write-Host "WARNING: Inno output not found: $builtInno (release will lack WDM-Setup-$Version.exe)"
         }
@@ -157,6 +164,7 @@ Write-Host ""
 Write-Host "Release upload in $uploadDir :"
 Get-ChildItem $uploadDir | Format-Table Name, @{N="SizeMB";E={"{0:F2}" -f ($_.Length/1MB)}}, Length
 Write-Host "  1) WDM-Setup-$Version.exe        -> THE ONLY installer (Inno wizard, per-machine, installs for all users)"
+Write-Host "  1b) WDM-Setup-$Version.exe.sha256 -> installer checksum; the in-app updater verifies it before launching"
 Write-Host "  2) WDM-Portable-$Version.zip     -> portable, self-contained, no .NET install needed"
 Write-Host "  3) $($updatePkg.Name)  -> small update package - in-app updater downloads this delta, NOT the full installer"
 Write-Host "  4) $($fullPkg.Name)  -> full update package - fallback for updaters too far behind for delta"

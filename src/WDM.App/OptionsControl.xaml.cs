@@ -364,9 +364,10 @@ public partial class OptionsControl : UserControl
         _velopackUpdate = null;
         try
         {
+            bool velopackInstalled = VelopackUpdateService.IsVelopackInstalled;
             // Prefer Velopack packages when installed via Velopack (with fallback any-check).
             // 1 behind → delta only; 2+ behind → self-contained full nupkg. Setup.exe is new-users only.
-            if (VelopackUpdateService.IsVelopackInstalled)
+            if (velopackInstalled)
             {
                 var vUpdate = await VelopackUpdateService.CheckForUpdatesAsync();
                 if (vUpdate == null) vUpdate = await VelopackUpdateService.CheckForUpdatesAnyAsync();
@@ -389,6 +390,12 @@ public partial class OptionsControl : UserControl
             }
 
             _latestRelease = await UpdateChecker.CheckLatestAsync();
+            // A Velopack install must never be pointed at the per-machine Inno
+            // wizard when the feed check failed: that strands the user on two
+            // diverging installs. Strip the installer and use the feed/release
+            // page fallback below instead.
+            if (_latestRelease is not null && velopackInstalled)
+                _latestRelease = UpdateChecker.ForHostFlavor(velopackInstalled: true, _latestRelease);
             if (_latestRelease is null)
             {
                 UpdateStatusText.Text = "No release published yet, or GitHub is unreachable. Try again later.";
@@ -503,7 +510,8 @@ public partial class OptionsControl : UserControl
             {
                 UpdateProgressPanel.Visibility = Visibility.Collapsed;
                 App.LogException(ex);
-                UpdateStatusText.Text = "The update couldn't be downloaded. Check your internet connection and try again.";
+                UpdateStatusText.Text = UpdateChecker.DescribeUpdateFailure(ex)
+                    ?? "The update couldn't be downloaded. Check your internet connection and try again.";
                 DownloadInstallButton.IsEnabled = true;
                 OpenReleaseButton.IsEnabled = true;
                 CheckNowButton.IsEnabled = true;
@@ -527,6 +535,7 @@ public partial class OptionsControl : UserControl
         OpenReleaseButton.IsEnabled = false;
         CheckNowButton.IsEnabled = false;
         UpdateProgressPanel.Visibility = Visibility.Visible;
+        UpdateProgressBar.IsIndeterminate = false;
         UpdateProgressBar.Value = 0;
         UpdateProgressPctText.Text = "0%";
         UpdateProgressStatusText.Text = "Downloading full installer…";
@@ -537,25 +546,42 @@ public partial class OptionsControl : UserControl
             string installer = await UpdateChecker.DownloadInstallerAsync(_latestRelease, progress =>
                 Dispatcher.Invoke(() =>
                 {
-                    int pct = (int)Math.Round(progress * 100);
-                    UpdateProgressBar.Value = pct;
-                    UpdateProgressPctText.Text = $"{pct}%";
+                    UpdateProgressBar.IsIndeterminate = progress < 0;
+                    if (progress >= 0)
+                        UpdateProgressBar.Value = Math.Clamp((int)Math.Round(progress * 100), 0, 100);
+                    UpdateProgressPctText.Text = UpdateChecker.FormatDownloadProgress(progress);
                     UpdateProgressStatusText.Text = "Downloading full installer…";
-                    UpdateStatusText.Text = $"Downloading full installer… {pct}%";
+                    UpdateStatusText.Text = $"Downloading full installer… {UpdateChecker.FormatDownloadProgress(progress)}";
                 }));
             UpdateProgressStatusText.Text = "Launching installer…";
+            UpdateProgressBar.IsIndeterminate = false;
             UpdateProgressBar.Value = 100;
             UpdateProgressPctText.Text = "100%";
-            UpdateChecker.LaunchInstaller(installer, silent: true);
-            UpdateStatusText.Text = "Installer downloaded: WDM will close and restart to complete the update.";
-            await Task.Delay(500);
+
+            var launch = await UpdateChecker.LaunchInstallerAndWaitForStart(installer);
+            if (!launch.CanExitApp)
+            {
+                UpdateProgressPanel.Visibility = Visibility.Collapsed;
+                UpdateStatusText.Text = launch.Status == InstallerLaunchStatus.NotStarted
+                    ? "The installer couldn't be started. WDM is still running: try again."
+                    : $"The installer stopped before finishing (exit code {launch.ExitCode?.ToString() ?? "unknown"}). WDM is still running: try again or open the release page.";
+                ActivityLog.Write("UPDATE", $"installer did not start (status={launch.Status}, exit={launch.ExitCode})");
+                DownloadInstallButton.IsEnabled = true;
+                OpenReleaseButton.IsEnabled = true;
+                CheckNowButton.IsEnabled = true;
+                return;
+            }
+
+            UpdateStatusText.Text = "Installer running: WDM will close and restart to complete the update.";
+            ViewModels.MainViewModel.Restarting?.Invoke();
             Application.Current.Shutdown();
         }
         catch (Exception ex)
         {
             UpdateProgressPanel.Visibility = Visibility.Collapsed;
             App.LogException(ex);
-            UpdateStatusText.Text = "The installer couldn't be downloaded. Check your internet connection and try again.";
+            UpdateStatusText.Text = UpdateChecker.DescribeUpdateFailure(ex)
+                ?? "The installer couldn't be downloaded. Check your internet connection and try again.";
             DownloadInstallButton.IsEnabled = true;
             OpenReleaseButton.IsEnabled = true;
             CheckNowButton.IsEnabled = true;

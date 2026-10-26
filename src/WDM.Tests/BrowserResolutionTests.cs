@@ -11,6 +11,13 @@ using Xunit;
 
 namespace WDM.Tests;
 
+// Redirects the process-wide AppPaths.DataDir (alias of TaskStore.AppDir) to a
+// temp profile dir. Must share the TaskStoreState collection: running beside
+// FullSessionReplay/Round10/Round14 let one class's restore/delete land between
+// another class's settings write and read, so an allow-list test saw empty hosts
+// and failed intermittently. The collection also keeps it off other collections
+// while the static is swapped.
+[Collection("TaskStoreState")]
 public sealed class BrowserResolutionTests
 {
     private sealed class FakeSession : IBrowserSession

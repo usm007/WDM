@@ -81,13 +81,21 @@ public partial class AboutDialog : Window
                 var check = await UpdateChecker.CheckLatestAsync();
                 if (check?.Version is { } cv && cv.CompareTo(UpdateChecker.CurrentVersion) > 0)
                 {
+                    // Velopack installs must never be pointed at the per-machine
+                    // Inno wizard: that creates a second copy and strands the user
+                    // on two diverging installs when the feed was merely unreachable.
+                    bool githubOfferedInstaller = !string.IsNullOrWhiteSpace(check.InstallerUrl);
+                    var offer = UpdateChecker.ForHostFlavor(velopackInstalled: true, check);
                     Velopack.UpdateInfo? any = null;
-                    if (string.IsNullOrWhiteSpace(check.InstallerUrl) && !string.IsNullOrWhiteSpace(check.UpdatePackageUrl))
-                    {
-                        try { any = await VelopackUpdateService.CheckForUpdatesAnyAsync(); } catch { }
-                    }
+                    try { any = await VelopackUpdateService.CheckForUpdatesAnyAsync(); } catch { }
                     UpdateStatusText.Text = "";
-                    ShowInlineUpdate(check, any);
+                    ShowInlineUpdate(offer, any);
+                    if (any is null && githubOfferedInstaller)
+                    {
+                        InlineStatusText.Text =
+                            "A new version is available, but the update feed couldn't be reached. Retry, or open the release page.";
+                        InlineInstallButton.Content = "Retry Update";
+                    }
                     return;
                 }
                 UpdateStatusText.Text = "You are running the latest version.";
@@ -299,18 +307,34 @@ public partial class AboutDialog : Window
                 InlineProgressPanel.Visibility = Visibility.Collapsed;
                 InlineStatusText.Visibility = Visibility.Visible;
                 App.LogException(ex);
-                InlineStatusText.Text = "The update couldn't be downloaded. Check your internet connection and try again.";
+                InlineStatusText.Text = UpdateChecker.DescribeUpdateFailure(ex)
+                    ?? "The update couldn't be downloaded. Check your internet connection and try again.";
                 InlineLaterButton.IsEnabled = true;
                 InlineInstallButton.IsEnabled = true;
             }
             return;
         }
 
-        // Full installer path
+        // Full installer path. Never run the per-machine Inno wizard over a
+        // Velopack install (defense in depth: the check path already strips it).
+        if (VelopackUpdateService.IsVelopackInstalled)
+        {
+            _isDownloading = false;
+            InlineProgressPanel.Visibility = Visibility.Collapsed;
+            InlineStatusText.Visibility = Visibility.Visible;
+            InlineStatusText.Text = "This WDM copy updates through the Velopack feed. Opening the release page instead of installing a second copy.";
+            InlineLaterButton.IsEnabled = true;
+            InlineInstallButton.IsEnabled = true;
+            InlineInstallButton.Content = "Retry Update";
+            UpdateChecker.OpenReleasesPage(_inlineRelease.Url);
+            return;
+        }
+
         InlineStatusText.Visibility = Visibility.Collapsed;
         InlineProgressPanel.Visibility = Visibility.Visible;
         InlineProgressStatusText.Text = "Downloading full installer…";
         InlineProgressDetailText.Text = "Downloading full installer package for this release.";
+        InlineDownloadProgressBar.IsIndeterminate = false;
         InlineDownloadProgressBar.Value = 0;
         InlineProgressPctText.Text = "0%";
         try
@@ -318,15 +342,35 @@ public partial class AboutDialog : Window
             string installer = await UpdateChecker.DownloadInstallerAsync(_inlineRelease, progress =>
                 Dispatcher.InvokeAsync(() =>
                 {
-                    int pct = (int)Math.Round(progress * 100);
-                    InlineDownloadProgressBar.Value = pct;
-                    InlineProgressPctText.Text = $"{pct}%";
+                    InlineDownloadProgressBar.IsIndeterminate = progress < 0;
+                    if (progress >= 0)
+                        InlineDownloadProgressBar.Value = Math.Clamp((int)Math.Round(progress * 100), 0, 100);
+                    InlineProgressPctText.Text = UpdateChecker.FormatDownloadProgress(progress);
                     InlineProgressStatusText.Text = "Downloading full installer…";
                 }));
             InlineProgressStatusText.Text = "Launching installer…";
+            InlineDownloadProgressBar.IsIndeterminate = false;
             InlineDownloadProgressBar.Value = 100;
             InlineProgressPctText.Text = "100%";
-            await UpdateChecker.LaunchInstallerAndWaitForStart(installer);
+
+            var launch = await UpdateChecker.LaunchInstallerAndWaitForStart(installer);
+            if (!launch.CanExitApp)
+            {
+                _isDownloading = false;
+                InlineProgressPanel.Visibility = Visibility.Collapsed;
+                InlineStatusText.Visibility = Visibility.Visible;
+                InlineStatusText.Text = launch.Status == InstallerLaunchStatus.NotStarted
+                    ? "The installer couldn't be started. WDM is still running: try again."
+                    : $"The installer stopped before finishing (exit code {launch.ExitCode?.ToString() ?? "unknown"}). WDM is still running: try again or open the release page.";
+                InlineLaterButton.IsEnabled = true;
+                InlineInstallButton.IsEnabled = true;
+                InlineInstallButton.Content = "Download & Install";
+                ActivityLog.Write("UPDATE", $"installer did not start (status={launch.Status}, exit={launch.ExitCode})");
+                return;
+            }
+
+            // Only now may WDM close: the installer is running (or already finished).
+            ViewModels.MainViewModel.Restarting?.Invoke();
             Close();
             Application.Current?.Shutdown();
         }
@@ -336,7 +380,8 @@ public partial class AboutDialog : Window
             InlineProgressPanel.Visibility = Visibility.Collapsed;
             InlineStatusText.Visibility = Visibility.Visible;
             App.LogException(ex);
-            InlineStatusText.Text = "The installer couldn't be downloaded. Check your internet connection and try again.";
+            InlineStatusText.Text = UpdateChecker.DescribeUpdateFailure(ex)
+                ?? "The installer couldn't be downloaded. Check your internet connection and try again.";
             InlineLaterButton.IsEnabled = true;
             InlineInstallButton.IsEnabled = true;
             InlineInstallButton.Content = "Download & Install";

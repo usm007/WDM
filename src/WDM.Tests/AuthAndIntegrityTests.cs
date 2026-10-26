@@ -69,7 +69,9 @@ public sealed class AuthAndIntegrityTests
             m.Invoke(null, new object?[] { path, good });
             // Mismatched hash throws and deletes the file.
             var ex = Assert.Throws<TargetInvocationException>(() => m.Invoke(null, new object?[] { path, new string('0', 64) }));
-            Assert.IsType<InvalidOperationException>(ex.InnerException);
+            // UpdateException is the actionable subtype of InvalidOperationException
+            // (it carries a user-facing message and is matched by DescribeUpdateFailure).
+            Assert.IsAssignableFrom<InvalidOperationException>(ex.InnerException);
             Assert.False(File.Exists(path));
         }
         finally

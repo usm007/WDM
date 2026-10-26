@@ -793,7 +793,9 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
         DateTime? lastCheck = DateTime.TryParse(settings.LastUpdateCheckUtc, null, System.Globalization.DateTimeStyles.RoundtripKind, out var parsed)
             ? parsed
             : null;
-        if (lastCheck is not null && DateTime.UtcNow - lastCheck < TimeSpan.FromMinutes(15))
+        // Clock-skew safe: a future stamp must not suppress checks until real
+        // time catches up (settings copied between machines, clock moved back).
+        if (UpdateChecker.ShouldSkipAutoCheck(lastCheck, DateTime.UtcNow))
             return;
 
         // 1) Velopack → nupkg only (delta if 1 behind, self-contained full if 2+ behind).
@@ -819,7 +821,14 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
                                 await VelopackUpdateService.DownloadUpdatesAsync(velopackUpdate, null);
                                 _ = _dispatcher.BeginInvoke(() => VelopackUpdateService.ApplyAndRestart(velopackUpdate.TargetFullRelease));
                             }
-                            catch { }
+                            catch (Exception ex)
+                            {
+                                // Automatic install failed (offline, feed moved,
+                                // disk full). Keep the update icon so the user
+                                // can retry from About instead of silently
+                                // missing the update.
+                                ActivityLog.Write("UPDATE", $"automatic update download failed: {ex.Message}");
+                            }
                         });
                         return;
                     }
@@ -840,12 +849,17 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
                     });
                     return;
                 }
-                // No delta — fall back to GitHub full installer so the About icon still offers Download & Install
+                // No delta — fall back to the GitHub release so the About icon
+                // still offers Download & Install. A Velopack install is never
+                // pointed at the per-machine Inno wizard: that would install a
+                // second copy and strand the user on two diverging installs.
                 try
                 {
                     var fallback = await UpdateChecker.CheckLatestAsync();
                     settings.LastUpdateCheckUtc = DateTime.UtcNow.ToString("O");
                     _viewModel.PersistSettings();
+                    if (fallback is not null)
+                        fallback = UpdateChecker.ForHostFlavor(velopackInstalled: true, fallback);
                     if (fallback?.Version is not null && fallback.Version.CompareTo(UpdateChecker.CurrentVersion) > 0)
                     {
                         // Nupkg-only release (no Setup.exe yet): attach Velopack info now so the About
@@ -869,14 +883,20 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
                                                 await VelopackUpdateService.DownloadUpdatesAsync(auto, null);
                                                 _ = _dispatcher.BeginInvoke(() => VelopackUpdateService.ApplyAndRestart(auto.TargetFullRelease));
                                             }
-                                            catch { }
+                                            catch (Exception ex)
+                                            {
+                                                ActivityLog.Write("UPDATE", $"automatic update download failed: {ex.Message}");
+                                            }
                                         });
                                         return;
                                     }
                                     pendingVelo = any;
                                 }
                             }
-                            catch { }
+                            catch (Exception ex)
+                            {
+                                ActivityLog.Write("UPDATE", $"update feed re-check failed: {ex.Message}");
+                            }
                         }
                         var captured = pendingVelo;
                         _ = _dispatcher.BeginInvoke(() =>
@@ -892,25 +912,33 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
                     }
                     return;
                 }
-                catch
+                catch (Exception ex)
                 {
                     settings.LastUpdateCheckUtc = DateTime.UtcNow.ToString("O");
                     _viewModel.PersistSettings();
+                    ActivityLog.Write("UPDATE", $"GitHub release check failed: {ex.Message}");
                     return;
                 }
             }
-            catch
+            catch (Exception ex)
             {
+                // Feed check failed (offline, rate limit, broken feed). Stamp
+                // the check and still try the GitHub release path below: a
+                // misconfigured feed must not hide a release GitHub can serve.
                 settings.LastUpdateCheckUtc = DateTime.UtcNow.ToString("O");
                 _viewModel.PersistSettings();
-                return;
+                ActivityLog.Write("UPDATE", $"Velopack update check failed: {ex.Message}");
             }
         }
 
-        // 2) Non-Velopack (portable/dev) → GitHub full installer — show in-app dialog, not a balloon
+        // 2) Non-Velopack (portable/dev) → GitHub full installer — show in-app dialog, not a balloon.
+        // Also reached by a Velopack install whose feed check just failed.
         var latest = await UpdateChecker.CheckLatestAsync();
         if (latest is null)
             return;
+
+        if (VelopackUpdateService.IsVelopackInstalled)
+            latest = UpdateChecker.ForHostFlavor(velopackInstalled: true, latest);
 
         settings.LastUpdateCheckUtc = DateTime.UtcNow.ToString("O");
         _viewModel.PersistSettings();
@@ -1404,7 +1432,35 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
         base.OnClosing(e);
     }
 
-    private void OnRestarting() => _exiting = true;
+    /// <summary>Called just before an updater takes WDM down. Velopack's
+    /// ApplyUpdatesAndRestart ends in Environment.Exit, which skips OnClosed,
+    /// and the Inno installer may taskkill WDM before a graceful close
+    /// finishes. Persist tasks and settings here, synchronously, or in-flight
+    /// downloads come back as "Interrupted" after the restart.</summary>
+    private void OnRestarting()
+    {
+        _exiting = true;
+        try
+        {
+            if (_dispatcher.CheckAccess())
+            {
+                _viewModel.SaveTasksNow();
+                _viewModel.PersistSettings();
+            }
+            else
+            {
+                _dispatcher.Invoke(() =>
+                {
+                    _viewModel.SaveTasksNow();
+                    _viewModel.PersistSettings();
+                });
+            }
+        }
+        catch (Exception ex)
+        {
+            App.LogException(ex);
+        }
+    }
 
     /// <summary>Window-level fallback for list shortcut keys (Delete/Enter/Space/F5)
     /// when the user clicked outside the DataGrid (e.g. sidebar, background).
