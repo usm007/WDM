@@ -819,7 +819,7 @@ public partial class AddDownloadDialog : Window
                     || NameBox.Text == _lastDerivedName
                     || NameBox.Text.EndsWith(".bin", StringComparison.OrdinalIgnoreCase)))
             {
-                _lastDerivedName = DownloadEngine.SanitizeFileName(probe.FileName);
+                _lastDerivedName = FileNameHelper.SafeServerFileName(probe.FileName);
                 NameBox.Text = _lastDerivedName;
             }
 

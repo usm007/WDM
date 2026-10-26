@@ -151,6 +151,58 @@ public static class FileNameHelper
     }
 
     /// <summary>
+    /// Conservative sanitizer for names the server supplied. The server's name is
+    /// authority: keep brackets, parentheses, case, separators and release tokens.
+    /// Only illegal characters and Windows hazards are changed.
+    /// </summary>
+    public static string SafeServerFileName(string? name)
+    {
+        if (string.IsNullOrWhiteSpace(name))
+            return "";
+
+        string cleaned = Regex.Replace(name, @"[\u0000-\u001F\u007F]", "");
+        cleaned = cleaned.Replace('\u00A0', ' ');
+
+        var invalid = Path.GetInvalidFileNameChars();
+        var builder = new StringBuilder(cleaned.Length);
+        foreach (char c in cleaned)
+            builder.Append(Array.IndexOf(invalid, c) >= 0 ? '_' : c);
+        cleaned = Regex.Replace(builder.ToString(), @"\s+", " ").Trim();
+
+        // Path traversal has no meaning inside a leaf name.
+        cleaned = cleaned.Replace("..", "_");
+
+        string ext = Path.GetExtension(cleaned);
+        if (ext.Length > 12)
+        {
+            ext = "";
+        }
+        string stem = ext.Length > 0 ? cleaned[..^ext.Length] : cleaned;
+        if (string.IsNullOrWhiteSpace(stem))
+            stem = "download";
+
+        const int maxStem = 160;
+        if (stem.Length > maxStem)
+            stem = stem[..maxStem].TrimEnd();
+        stem = stem.TrimEnd('.', ' ');
+
+        string result = stem + ext;
+        if (string.IsNullOrWhiteSpace(result))
+            return "download";
+
+        string upper = result.ToUpperInvariant();
+        int dot = upper.IndexOf('.');
+        string basePart = dot > 0 ? upper[..dot] : upper;
+        if (basePart is "CON" or "PRN" or "AUX" or "NUL" ||
+            Regex.IsMatch(basePart, @"^(COM[1-9]|LPT[1-9])$"))
+        {
+            result = "_" + result;
+        }
+
+        return result;
+    }
+
+    /// <summary>
     /// Extracts a filename from an S3-style <c>response-content-disposition</c> query
     /// parameter, e.g. <c>response-content-disposition=attachment;%20filename=%22x.mkv%22</c>.
     /// </summary>

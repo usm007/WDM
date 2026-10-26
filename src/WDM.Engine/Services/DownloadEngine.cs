@@ -1687,8 +1687,10 @@ public sealed class DownloadEngine
             if (name.Length > 120 || name.IndexOfAny(['/', '\\']) >= 0 || Path.HasExtension(name))
                 return null;
         }
-        name = SanitizeFileName(name);
-        return IsMediaFile(name) ? CleanReleaseName(name) : name;
+        // The server's name is authority: keep brackets, parentheses, case and
+        // release tokens. Only illegal characters and Windows hazards change.
+        string safe = FileNameHelper.SafeServerFileName(name);
+        return string.IsNullOrWhiteSpace(safe) ? null : safe;
     }
 
     private static int AutoChunkCount(long totalBytes)
@@ -2172,7 +2174,7 @@ public sealed class DownloadEngine
             string? dispositionName = NameFromDisposition(response.Content.Headers.ContentDisposition);
             if (!string.IsNullOrWhiteSpace(dispositionName))
             {
-                string sanitized = SanitizeFileName(dispositionName, referer: task.Referer);
+                string sanitized = FileNameHelper.SafeServerFileName(dispositionName);
                 if (!string.Equals(task.FileName, sanitized, StringComparison.OrdinalIgnoreCase))
                 {
                     task.FileName = ReserveRenamedFile(task, sanitized);
@@ -2264,7 +2266,7 @@ public sealed class DownloadEngine
                 string? dispositionName = NameFromDisposition(response.Content.Headers.ContentDisposition);
                 if (!string.IsNullOrWhiteSpace(dispositionName))
                 {
-                    string sanitized = SanitizeFileName(dispositionName, referer: task.Referer);
+                    string sanitized = FileNameHelper.SafeServerFileName(dispositionName);
                     if (!string.Equals(task.FileName, sanitized, StringComparison.OrdinalIgnoreCase))
                     {
                         task.FileName = ReserveRenamedFile(task, sanitized);

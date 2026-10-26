@@ -116,4 +116,47 @@ public sealed class FileNameTests
         Assert.DoesNotContain(".bin", name);
         Assert.False(name.StartsWith("download_", StringComparison.OrdinalIgnoreCase), name);
     }
+
+    [Theory]
+    [InlineData("Report (Final).pdf")]
+    [InlineData("Song [Remix].mp3")]
+    [InlineData("Movie.2024.1080p.WEB-DL.x264-GROUP.mkv")]
+    public void SafeServerName_LeavesLegalServerNamesUntouched(string supplied)
+    {
+        Assert.Equal(supplied, FileNameHelper.SafeServerFileName(supplied));
+    }
+
+    [Fact]
+    public void SafeServerName_ReplacesPathSeparatorOnly()
+    {
+        Assert.Equal("AC_DC - Back In Black.mp3", FileNameHelper.SafeServerFileName("AC/DC - Back In Black.mp3"));
+    }
+
+    [Fact]
+    public void SafeServerName_ReplacesIllegalCharacters()
+    {
+        string result = FileNameHelper.SafeServerFileName("a/b:c*d?\"e<f>g|h.zip");
+
+        Assert.Equal("a_b_c_d__e_f_g_h.zip", result);
+    }
+
+    [Fact]
+    public void SafeServerName_TrimsTrailingDotAndSpace()
+    {
+        Assert.Equal("report.pdf", FileNameHelper.SafeServerFileName("report.pdf ."));
+    }
+
+    [Fact]
+    public void SafeServerName_PrefixesReservedDeviceName()
+    {
+        Assert.Equal("_CON.txt", FileNameHelper.SafeServerFileName("CON.txt"));
+    }
+
+    [Fact]
+    public void ServerName_IsNotAPlaceholder()
+    {
+        Assert.False(DownloadEngine.IsGenericOrPlaceholderName(
+            "Ubuntu 24.04 LTS (Desktop).iso",
+            "https://releases.example.com/ubuntu-24.04.iso"));
+    }
 }
