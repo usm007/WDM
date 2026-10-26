@@ -783,162 +783,52 @@ public partial class AddDownloadDialog : Window
 
         try
         {
-            var handler = new SocketsHttpHandler
-            {
-                AllowAutoRedirect = true,
-                UseCookies = false,
-            };
-            // Probe through the captured browser proxy when one rides along
-            // (http/https only); otherwise a refused direct connection would
-            // misreport a reachable-behind-proxy link as dead.
+            System.Net.IWebProxy? effectiveProxy = null;
+            // A captured browser proxy wins over the manual setting: a link that
+            // only exists behind that proxy would otherwise look dead.
             if (!string.IsNullOrWhiteSpace(_prefillProxyHost) && _prefillProxyPort >= 1 && _prefillProxyPort <= 65535 &&
                 (_prefillProxyType ?? "http").StartsWith("http", StringComparison.OrdinalIgnoreCase))
             {
-                try
-                {
-                    handler.Proxy = new System.Net.WebProxy($"http://{_prefillProxyHost.Trim()}:{_prefillProxyPort}");
-                    handler.UseProxy = true;
-                }
+                try { effectiveProxy = new System.Net.WebProxy($"http://{_prefillProxyHost.Trim()}:{_prefillProxyPort}"); }
                 catch { }
             }
-            // Route the probe (and the HLS playlist fetch below) through the manual proxy when set.
-            var proxy = ProxyHelper.BuildProxy(_viewModel.Settings);
-            if (proxy is not null)
-            {
-                handler.Proxy = proxy;
-                handler.UseProxy = true;
-            }
-            using var http = new HttpClient(handler) { Timeout = TimeSpan.FromSeconds(6) };
-            http.DefaultRequestHeaders.UserAgent.ParseAdd("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0 Safari/537.36");
+            effectiveProxy ??= ProxyHelper.BuildProxy(_viewModel.Settings);
 
-            var req = new HttpRequestMessage(HttpMethod.Head, url);
+            using var http = LinkResolver.CreateClient(effectiveProxy, TimeSpan.FromSeconds(10));
 
-            // Apply custom headers from dialog (Cookie, Referer, Authorization)
             var customHeaders = ParseHeaders();
             if (!string.IsNullOrWhiteSpace(_prefillReferer) && !customHeaders.ContainsKey("Referer"))
-            {
                 customHeaders["Referer"] = _prefillReferer;
-            }
 
-            foreach (var kv in customHeaders)
-            {
-                if (!string.IsNullOrWhiteSpace(kv.Key) && !string.IsNullOrWhiteSpace(kv.Value))
-                    req.Headers.TryAddWithoutValidation(kv.Key, kv.Value);
-            }
-
-            using var resp = await http.SendAsync(req, HttpCompletionOption.ResponseHeadersRead, ct);
-            if (seq != _probeSeq || ct.IsCancellationRequested)
-                return;
-
-            // HEAD Content-Length is a confirmed size only for a successful
-            // file representation (never an HTML error/auth page).
-            string? headType = resp.Content.Headers.ContentType?.MediaType;
-            bool headUsable = DownloadEngine.IsProbeSizeContentType(headType);
-            long totalBytes = -1;
-            if (resp.IsSuccessStatusCode && headUsable)
-            {
-                long cl = resp.Content.Headers.ContentLength ?? -1;
-                if (cl > 0 && cl <= DownloadEngine.MaxProbeSizeBytes)
-                    totalBytes = cl;
-            }
-            bool supportsRanges = resp.Headers.AcceptRanges.Any(r => r.Equals("bytes", StringComparison.OrdinalIgnoreCase));
-            string? rangeDispositionRaw = null;
-            string? rangeType = null;
-            System.Net.HttpStatusCode rangeStatus = 0;
-
-            // A known filename never suppresses this fallback; advertising
-            // Accept-Ranges without a total still probes. Only a confirmed
-            // total + range support together skip the bounded request.
-            if (totalBytes <= 0 || !supportsRanges || !resp.IsSuccessStatusCode)
-            {
-                // Range test with byte=0-0 fallback probe
-                var rangeReq = new HttpRequestMessage(HttpMethod.Get, url);
-                rangeReq.Headers.Range = new RangeHeaderValue(0, 0);
-                foreach (var kv in customHeaders)
-                {
-                    if (!string.IsNullOrWhiteSpace(kv.Key) && !string.IsNullOrWhiteSpace(kv.Value))
-                        rangeReq.Headers.TryAddWithoutValidation(kv.Key, kv.Value);
-                }
-                using HttpResponseMessage rangeResp = await http.SendAsync(rangeReq, HttpCompletionOption.ResponseHeadersRead, ct);
-                if (seq != _probeSeq || ct.IsCancellationRequested)
-                    return;
-                rangeStatus = rangeResp.StatusCode;
-                rangeType = rangeResp.Content.Headers.ContentType?.MediaType;
-                if (rangeResp.StatusCode == System.Net.HttpStatusCode.PartialContent)
-                {
-                    // 206: total from Content-Range after '/', never the
-                    // partial Content-Length.
-                    long? rangeTotal = DownloadEngine.GetContentRangeTotal(rangeResp);
-                    if (rangeTotal.HasValue)
-                    {
-                        totalBytes = rangeTotal.Value;
-                        supportsRanges = true;
-                    }
-                }
-                else if (rangeResp.IsSuccessStatusCode)
-                {
-                    // 200 ignoring Range: full Content-Length, headers only.
-                    if (DownloadEngine.IsProbeSizeContentType(rangeType ?? headType))
-                    {
-                        long len = rangeResp.Content.Headers.ContentLength ?? -1;
-                        if (len > 0 && len <= DownloadEngine.MaxProbeSizeBytes)
-                            totalBytes = len;
-                    }
-                    supportsRanges = false;
-                }
-                else if (rangeResp.StatusCode == System.Net.HttpStatusCode.RequestedRangeNotSatisfiable)
-                {
-                    // 416: only bytes */N with a valid N proves the total.
-                    long? total416 = DownloadEngine.GetContentRangeTotal(rangeResp);
-                    if (total416.HasValue)
-                    {
-                        totalBytes = total416.Value;
-                        supportsRanges = true;
-                    }
-                }
-                string? rangeRaw = rangeResp.Content.Headers.TryGetValues("Content-Disposition", out var rvals) ? rvals.FirstOrDefault() : null;
-                rangeDispositionRaw = rangeRaw;
-            }
-
-            // If the server announces a real filename via Content-Disposition, use it —
-            // URLs with signed/tokenized paths (e.g. googleusercontent) don't carry an
-            // extension, so DeriveName would otherwise fall back to a meaningless .bin.
-            string? dispositionRaw = resp.Content.Headers.TryGetValues("Content-Disposition", out var vals) ? vals.FirstOrDefault() : null;
-            string? dispositionName = FileNameHelper.ParseDispositionFileName(dispositionRaw);
-            if (string.IsNullOrWhiteSpace(dispositionName))
-                dispositionName = FileNameHelper.ParseDispositionFileName(rangeDispositionRaw);
-            if (string.IsNullOrWhiteSpace(dispositionName))
-                dispositionName = FileNameHelper.FileNameFromS3Query(url);
-            if (!string.IsNullOrWhiteSpace(dispositionName)
-                && (string.IsNullOrWhiteSpace(NameBox.Text) || NameBox.Text == _lastDerivedName || NameBox.Text.EndsWith(".bin", StringComparison.OrdinalIgnoreCase)))
-            {
-                _lastDerivedName = DownloadEngine.SanitizeFileName(dispositionName);
-                NameBox.Text = _lastDerivedName;
-            }
+            LinkProbe probe = await LinkResolver.ProbeAsync(
+                http,
+                new LinkProbeRequest(url, customHeaders, _prefillReferer),
+                ct);
 
             if (ct.IsCancellationRequested || !IsLoaded)
                 return;
-
-            // Late landing from a superseded keystroke must not poison the
-            // current URL's size (same guard as the duplicate refresh below).
             if (seq != _probeSeq)
                 return;
             if (!string.Equals(NormalizePastedUrl(UrlBox.Text), url, StringComparison.Ordinal))
                 return;
-            // A hint belonging to a previous URL is never reused; only the
-            // current URL's hint may be displayed, and never as confirmed.
-            long? hintForUrl = GetObservedHintFor(url);
-            _probeTotalBytes = totalBytes;
-            // The probe learned the size after the keystroke handler ran — refresh the
-            // duplicate verdict for the URL that was actually probed.
-            if (string.Equals(NormalizePastedUrl(UrlBox.Text), url, StringComparison.Ordinal))
-                UpdateDuplicateWarning(url);
 
-            bool isHls = resp.Content.Headers.ContentType?.MediaType is string mt
-                && (mt.Contains("mpegurl", StringComparison.OrdinalIgnoreCase) || mt.Contains("m3u8", StringComparison.OrdinalIgnoreCase))
-                || url.Contains(".m3u8", StringComparison.OrdinalIgnoreCase);
-            _probeIsStream = isHls;
-            if (isHls)
+            // The server's name is authority. Only replace a name WDM derived
+            // itself (or a meaningless .bin), never one the user typed.
+            if (!string.IsNullOrWhiteSpace(probe.FileName)
+                && (string.IsNullOrWhiteSpace(NameBox.Text)
+                    || NameBox.Text == _lastDerivedName
+                    || NameBox.Text.EndsWith(".bin", StringComparison.OrdinalIgnoreCase)))
+            {
+                _lastDerivedName = DownloadEngine.SanitizeFileName(probe.FileName);
+                NameBox.Text = _lastDerivedName;
+            }
+
+            long? hintForUrl = GetObservedHintFor(url);
+            _probeTotalBytes = probe.TotalBytes;
+            _probeIsStream = probe.Outcome == LinkProbeOutcome.Stream;
+            UpdateDuplicateWarning(url);
+
+            if (_probeIsStream)
             {
                 // Manifest bytes are not media bytes: never show the playlist
                 // Content-Length as the final media size.
@@ -946,11 +836,30 @@ public partial class AddDownloadDialog : Window
                 ProbeText.Text = "Size unknown • HLS stream (downloads as one media file)";
                 _ = LoadHlsVariantsAsync(url, http, ct);
             }
-            else if (totalBytes > 0)
+            else if (probe.Outcome == LinkProbeOutcome.AuthRequired)
             {
-                // Valid native result replaces any hint.
-                string sizeStr = DownloadTask.FormatBytes(totalBytes);
-                if (supportsRanges)
+                ProbeIcon.Symbol = SymbolRegular.Warning24;
+                ProbeText.Text = probe.Detail ?? "The server needs the browser session.";
+            }
+            else if (probe.Outcome == LinkProbeOutcome.Blocked)
+            {
+                ProbeIcon.Symbol = SymbolRegular.Warning24;
+                ProbeText.Text = probe.Detail ?? "The server refused the check. Retry shortly.";
+            }
+            else if (probe.Outcome == LinkProbeOutcome.Timeout)
+            {
+                ProbeIcon.Symbol = SymbolRegular.Warning24;
+                ProbeText.Text = "No answer in time • the download will retry";
+            }
+            else if (probe.Outcome == LinkProbeOutcome.Page)
+            {
+                ProbeIcon.Symbol = SymbolRegular.Warning24;
+                ProbeText.Text = "This link is a web page, not a file";
+            }
+            else if (probe.TotalBytes > 0)
+            {
+                string sizeStr = DownloadTask.FormatBytes(probe.TotalBytes);
+                if (probe.SupportsRanges)
                 {
                     ProbeIcon.Symbol = SymbolRegular.CheckmarkCircle24;
                     ProbeText.Text = $"{sizeStr} • Multi-threaded resume supported";
@@ -958,14 +867,12 @@ public partial class AddDownloadDialog : Window
                 else
                 {
                     ProbeIcon.Symbol = SymbolRegular.Info24;
-                    ProbeText.Text = $"{sizeStr} • Single-thread download (Server doesn't support resuming)";
+                    ProbeText.Text = $"{sizeStr} • Single-thread download (server doesn't support resuming)";
                 }
                 if (HlsPanel != null) HlsPanel.Visibility = Visibility.Collapsed;
             }
             else if (hintForUrl.HasValue)
             {
-                // Unknown native result does not confirm the hint: show it
-                // only as an unconfirmed observed size. Never "0 B".
                 ProbeIcon.Symbol = SymbolRegular.Info24;
                 ProbeText.Text = $"{DownloadTask.FormatBytes(hintForUrl.Value)} • Observed size (unconfirmed)";
                 if (HlsPanel != null) HlsPanel.Visibility = Visibility.Collapsed;
@@ -973,10 +880,9 @@ public partial class AddDownloadDialog : Window
             else
             {
                 ProbeIcon.Symbol = SymbolRegular.Info24;
-                ProbeText.Text = "Size unknown • Single-thread download (Server doesn't support resuming)";
+                ProbeText.Text = "Size unknown • the server did not reveal one";
                 if (HlsPanel != null) HlsPanel.Visibility = Visibility.Collapsed;
             }
-
             await TryAutoSyncTitleAsync(url, ct);
         }
         catch (OperationCanceledException)
