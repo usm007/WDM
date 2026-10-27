@@ -33,7 +33,7 @@
 ; Command-line /dMyAppVersion=... (build-test-install.ps1) overrides this;
 ; script-level default stays for plain ISCC.exe runs.
 #ifndef MyAppVersion
-#define MyAppVersion "3.0.1.0"
+#define MyAppVersion "3.0.2.0"
 #endif
 #define MyAppPublisher "WDM Team"
 #define MyAppExeName "WDM.exe"

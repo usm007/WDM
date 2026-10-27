@@ -560,22 +560,18 @@ public static class UpdateChecker
         return IsVelopackSetup(installerPath) ? "--silent" : "/SILENT /NORESTART";
     }
 
-    /// <summary>Runs the downloaded installer. Inno is per-machine and cannot
-    /// install without elevation, so it launches via UAC (runas); without it
-    /// the install fails silently after the app already exited. Velopack
-    /// one-click is per-user and must NOT elevate (breaks its
-    /// %LocalAppData% targeting). Inno-style flags break Velopack's
-    /// clap-style parsing and drop it back to the interactive
-    /// "already installed" dialog, hence per-family args.</summary>
+    /// <summary>Runs the downloaded installer. Inno is per-machine and needs
+    /// elevation, but Setup must raise the UAC prompt itself: pre-elevating it
+    /// with the runas verb hides the signed-in user's original token, so the
+    /// installer's [Run] relaunch (runasoriginaluser) comes back with
+    /// administrator rights instead of the user's own. Velopack one-click is
+    /// per-user and must not elevate at all (breaks its %LocalAppData%
+    /// targeting). Inno-style flags break Velopack's clap-style parsing and
+    /// drop it back to the interactive "already installed" dialog, hence
+    /// per-family args.</summary>
     public static Process? LaunchInstaller(string installerPath, bool silent = false, bool signalRestart = true)
     {
-        if (string.IsNullOrWhiteSpace(installerPath) || !File.Exists(installerPath) ||
-            !installerPath.EndsWith(".exe", StringComparison.OrdinalIgnoreCase))
-            throw new InvalidOperationException("Invalid installer path.");
-        string full = Path.GetFullPath(installerPath);
-        string temp = Path.GetFullPath(Path.GetTempPath());
-        if (!full.StartsWith(temp, StringComparison.OrdinalIgnoreCase))
-            throw new InvalidOperationException("Installer must be inside the temp folder.");
+        ProcessStartInfo psi = BuildInstallerStartInfo(installerPath, silent);
         if (silent && signalRestart)
         {
             // The installer replaces the running exe (taskkill on install):
@@ -586,11 +582,22 @@ public static class UpdateChecker
             // OptionsControl/About/UpdateAvailable paths all funnel here).
             try { ViewModels.MainViewModel.Restarting?.Invoke(); } catch { }
         }
-        string args = InstallerArgs(full, silent);
-        var psi = new ProcessStartInfo(full, args) { UseShellExecute = true };
-        if (silent && !IsVelopackSetup(full))
-            psi.Verb = "runas";
         return Process.Start(psi);
+    }
+
+    /// <summary>Start info for a downloaded installer: shell-execute with the
+    /// family's silent flags and no runas verb, so the installer owns its own
+    /// elevation and can relaunch WDM as the logged-in user afterwards.</summary>
+    internal static ProcessStartInfo BuildInstallerStartInfo(string installerPath, bool silent)
+    {
+        if (string.IsNullOrWhiteSpace(installerPath) || !File.Exists(installerPath) ||
+            !installerPath.EndsWith(".exe", StringComparison.OrdinalIgnoreCase))
+            throw new InvalidOperationException("Invalid installer path.");
+        string full = Path.GetFullPath(installerPath);
+        string temp = Path.GetFullPath(Path.GetTempPath());
+        if (!full.StartsWith(temp, StringComparison.OrdinalIgnoreCase))
+            throw new InvalidOperationException("Installer must be inside the temp folder.");
+        return new ProcessStartInfo(full, InstallerArgs(full, silent)) { UseShellExecute = true };
     }
 
     /// <summary>Launches the installer silently and reports whether it is
