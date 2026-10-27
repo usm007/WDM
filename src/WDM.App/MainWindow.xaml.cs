@@ -252,11 +252,15 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
                 catch { }
             });
 
-            // Started via the Windows-startup shortcut: run in the background and only
-            // surface the window when the user clicks the tray icon.
+            // Started via the Windows-startup shortcut: the window is already
+            // hidden by App.OnStartup, and Loaded only runs on the first real
+            // Show() — i.e. when the user clicks the tray icon. Hiding it here
+            // again ran inside that first show's layout pass and left the
+            // visible window permanently unpainted: a blank white rectangle
+            // with no title bar that never filled in. Keep the tray progress
+            // panel in sync, but never touch visibility from Loaded.
             if (App.StartMinimized)
             {
-                Hide();
                 var active = _viewModel.Tasks.FirstOrDefault(t => t.Status == Models.TaskStatus.Downloading);
                 if (active is not null)
                     UpdateProgressPanel(_viewModel.Settings.ShowTrayProgress ? active : null);

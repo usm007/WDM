@@ -117,6 +117,25 @@ public partial class App : Application
                                           string.Equals(a, "--no-single-instance", StringComparison.OrdinalIgnoreCase)) ||
                           !string.IsNullOrEmpty(Environment.GetEnvironmentVariable("WDM_TEST_MODE"));
         IsTestMode = isTestMode;
+        // Launch flags drive both the log entry and the silent-autostart handoff
+        // below, so resolve them before either one runs. Reading them later made
+        // every [START] line claim minimized=False, and left the boot-flag state
+        // to be guessed by the UI.
+        StartMinimized = e.Args.Any(a =>
+            string.Equals(a, "/minimized", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(a, "--minimized", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(a, "/autostart", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(a, "--autostart", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(a, "/tray", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(a, "--tray", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(a, "/silent", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(a, "--silent", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(a, "/s", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(a, "-s", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(a, "/background", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(a, "-minimized", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(a, "-silent", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(a, "-tray", StringComparison.OrdinalIgnoreCase));
         ActivityLog.Start(UpdateChecker.CurrentVersion.ToString(), e.Args, StartMinimized);
 
         // Single instance: if another WDM is already running, surface its window
@@ -158,24 +177,7 @@ public partial class App : Application
             _ownsMutex = true;
         }
 
-        StartMinimized = e.Args.Any(a =>
-            string.Equals(a, "/minimized", StringComparison.OrdinalIgnoreCase) ||
-            string.Equals(a, "--minimized", StringComparison.OrdinalIgnoreCase) ||
-            string.Equals(a, "/autostart", StringComparison.OrdinalIgnoreCase) ||
-            string.Equals(a, "--autostart", StringComparison.OrdinalIgnoreCase) ||
-            string.Equals(a, "/tray", StringComparison.OrdinalIgnoreCase) ||
-            string.Equals(a, "--tray", StringComparison.OrdinalIgnoreCase) ||
-            string.Equals(a, "/silent", StringComparison.OrdinalIgnoreCase) ||
-            string.Equals(a, "--silent", StringComparison.OrdinalIgnoreCase) ||
-            string.Equals(a, "/s", StringComparison.OrdinalIgnoreCase) ||
-            string.Equals(a, "-s", StringComparison.OrdinalIgnoreCase) ||
-            string.Equals(a, "/background", StringComparison.OrdinalIgnoreCase) ||
-            string.Equals(a, "-minimized", StringComparison.OrdinalIgnoreCase) ||
-             string.Equals(a, "-silent", StringComparison.OrdinalIgnoreCase) ||
-             string.Equals(a, "-tray", StringComparison.OrdinalIgnoreCase));
-        // Local activity log (testing): silent file log, real launches only
-        // (screenshot mode returned earlier and never reaches here).
-        ActivityLog.Start(UpdateChecker.CurrentVersion.ToString(), e.Args, StartMinimized);
+        // (launch flags were resolved above; StartMinimized is already correct here)
         ActivityLog.Write("ARGS", ArgsContainUrl(e.Args) ? "launch carries download URL(s)" : "no URL args");
         if (!isTestMode)
             _ = System.Threading.Tasks.Task.Run(() =>

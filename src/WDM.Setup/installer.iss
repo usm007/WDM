@@ -33,7 +33,7 @@
 ; Command-line /dMyAppVersion=... (build-test-install.ps1) overrides this;
 ; script-level default stays for plain ISCC.exe runs.
 #ifndef MyAppVersion
-#define MyAppVersion "3.0.0.0"
+#define MyAppVersion "3.0.1.0"
 #endif
 #define MyAppPublisher "WDM Team"
 #define MyAppExeName "WDM.exe"
@@ -118,7 +118,12 @@ Root: HKCR; Subkey: "*\shell\WDM.Download"; ValueType: string; ValueName: "Icon"
 Root: HKCR; Subkey: "*\shell\WDM.Download\command"; ValueType: string; ValueName: ""; ValueData: """{app}\{#MyAppExeName}"" ""%1"""; Flags: uninsdeletekey
 
 [Run]
-Filename: "{app}\{#MyAppExeName}"; Description: "{cm:LaunchProgram,{#StringChange(MyAppName, '&', '&&')}}"; Flags: nowait postinstall skipifsilent
+; Relaunch WDM when setup finishes — including a silent update. The updater
+; starts this installer with /SILENT, so "skipifsilent" meant an automatic
+; update closed WDM and never brought it back. runasoriginaluser keeps the
+; relaunched app on the logged-in user's non-elevated token instead of the
+; elevated installer's, so its data stays in the user's own profile.
+Filename: "{app}\{#MyAppExeName}"; Description: "{cm:LaunchProgram,{#StringChange(MyAppName, '&', '&&')}}"; Flags: nowait postinstall runasoriginaluser
 
 [Code]
 const
