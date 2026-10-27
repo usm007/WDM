@@ -164,15 +164,17 @@
     <SolidColorBrush x:Key="Brush.PromoStart"    Color="{StaticResource Color.PromoStart}" />
     <SolidColorBrush x:Key="Brush.PromoEnd"      Color="{StaticResource Color.PromoEnd}" />
 
-    <!-- Shadow effects — Windows elevation ramp (card = 8, dialog = 64).
-         Dark theme keeps them subtle; the CardStroke contour carries most of the separation. -->
+    <!-- Shadow effects — same ramp as the light palette and as Windows' own window
+         shadow: a ~12px blur, 2px drop, low alpha. Dark surfaces hide a light-alpha
+         shadow, so the dialog/popup alpha is nudged up; cards stay nearly shadowless
+         because the CardStroke contour already separates them. -->
     <DropShadowEffect x:Key="Shadow.Button"       BlurRadius="12" ShadowDepth="2" Opacity="0.25" Color="#1865F2" />
     <DropShadowEffect x:Key="Shadow.ButtonStrong" BlurRadius="18" ShadowDepth="3" Opacity="0.35" Color="#1865F2" />
     <DropShadowEffect x:Key="Shadow.Input"        BlurRadius="0" ShadowDepth="0" Opacity="0" Color="#000000" />
     <DropShadowEffect x:Key="Shadow.InputFocus"   BlurRadius="0" ShadowDepth="0" Opacity="0" Color="#000000" />
-    <DropShadowEffect x:Key="Shadow.Card"         BlurRadius="12" ShadowDepth="0" Opacity="0.22" Color="#000000" />
-    <DropShadowEffect x:Key="Shadow.CardDialog"   BlurRadius="32" ShadowDepth="6" Opacity="0.45" Color="#000000" />
-    <DropShadowEffect x:Key="Shadow.Popup"        BlurRadius="12" ShadowDepth="4" Opacity="0.3" Color="#000000" />
+    <DropShadowEffect x:Key="Shadow.Card"         BlurRadius="8" ShadowDepth="0" Opacity="0.10" Color="#000000" />
+    <DropShadowEffect x:Key="Shadow.CardDialog"   BlurRadius="12" ShadowDepth="2" Opacity="0.30" Color="#000000" />
+    <DropShadowEffect x:Key="Shadow.Popup"        BlurRadius="12" ShadowDepth="2" Opacity="0.22" Color="#000000" />
     <DropShadowEffect x:Key="Shadow.ToolbarPill"  BlurRadius="0" ShadowDepth="0" Opacity="0" Color="#000000" />
     <!-- R-13: single focal glow in dark theme. Primary CTA keeps blue glow; logo glow removed. -->
     <DropShadowEffect x:Key="Shadow.Logo"         BlurRadius="0" ShadowDepth="0" Opacity="0" Color="#000000" />

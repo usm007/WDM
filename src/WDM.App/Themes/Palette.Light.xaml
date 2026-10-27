@@ -164,15 +164,17 @@
     <SolidColorBrush x:Key="Brush.PromoStart" Color="{StaticResource Color.PromoStart}" />
     <SolidColorBrush x:Key="Brush.PromoEnd" Color="{StaticResource Color.PromoEnd}" />
 
-    <!-- Shadow effects — Windows elevation ramp: card = 8, dialog = 64, control = 2.
-         Cards pair a 1px CardStroke contour with the ambient shadow (no key shadow on Windows). -->
+    <!-- Shadow effects — matched to the shadow Windows itself draws around a window:
+         short falloff (about a 12px blur) with a 2px drop and low alpha, so dialogs,
+         menus and panels sit on the desktop instead of glowing. Cards carry almost
+         no shadow - the 1px CardStroke contour does the separating. -->
     <DropShadowEffect x:Key="Shadow.Button"       BlurRadius="12" ShadowDepth="2" Opacity="0.2" Color="#1865F2" />
     <DropShadowEffect x:Key="Shadow.ButtonStrong" BlurRadius="16" ShadowDepth="3" Opacity="0.25" Color="#1865F2" />
     <DropShadowEffect x:Key="Shadow.Input"        BlurRadius="10" ShadowDepth="1" Opacity="0.08" Color="#0F172A" />
     <DropShadowEffect x:Key="Shadow.InputFocus"   BlurRadius="12" ShadowDepth="2" Opacity="0.12" Color="#1677E8" />
     <DropShadowEffect x:Key="Shadow.Card"         BlurRadius="6" ShadowDepth="0" Opacity="0.04" Color="#0F172A" />
-    <DropShadowEffect x:Key="Shadow.CardDialog"   BlurRadius="32" ShadowDepth="6" Opacity="0.22" Color="#0F172A" />
-    <DropShadowEffect x:Key="Shadow.Popup"        BlurRadius="20" ShadowDepth="4" Opacity="0.15" Color="#0F172A" />
+    <DropShadowEffect x:Key="Shadow.CardDialog"   BlurRadius="12" ShadowDepth="2" Opacity="0.18" Color="#0F172A" />
+    <DropShadowEffect x:Key="Shadow.Popup"        BlurRadius="12" ShadowDepth="2" Opacity="0.14" Color="#0F172A" />
     <DropShadowEffect x:Key="Shadow.ToolbarPill"  BlurRadius="10" ShadowDepth="1" Opacity="0.06" Color="#0F172A" />
     <!-- R-13: single focal glow. Primary CTA keeps blue glow; logo glow removed so glow appears once. -->
     <DropShadowEffect x:Key="Shadow.Logo"         BlurRadius="0"  ShadowDepth="0" Opacity="0" Color="#000000" />

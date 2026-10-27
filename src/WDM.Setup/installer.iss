@@ -33,7 +33,7 @@
 ; Command-line /dMyAppVersion=... (build-test-install.ps1) overrides this;
 ; script-level default stays for plain ISCC.exe runs.
 #ifndef MyAppVersion
-#define MyAppVersion "3.0.2.0"
+#define MyAppVersion "3.0.3.0"
 #endif
 #define MyAppPublisher "WDM Team"
 #define MyAppExeName "WDM.exe"
@@ -76,7 +76,6 @@ Name: "english"; MessagesFile: "compiler:Default.isl"
 
 [Tasks]
 Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"
-Name: "startwithwindows"; Description: "Start {#MyAppName} when Windows starts (for all users)"; GroupDescription: "{cm:AdditionalIcons}"; Flags: unchecked
 
 [Files]
 ; Ship the complete publish output: the apphost, managed dlls, the
@@ -98,12 +97,18 @@ Type: filesandordirs; Name: "{app}"
 ; pathway). Stale entries from previous versions are removed by [Code]
 ; RemoveForceInstallPolicy on install and uninstall. Firefox stays on the
 ; AMO store listing + manual install (unsigned XPI cannot be policy-installed).
-; Machine-wide auto-start (no per-user areas: the installer runs elevated, so a
-; {userstartup} shortcut would land in the admin's profile, not the user's).
-; Tied to the "startwithwindows" task; removed on uninstall (uninsdeletevalue +
-; CleanRegistryKeys below). Note the in-app Options toggle manages a separate
-; per-user HKCU Run value; both set = single-instance Mutex dedupes at logon.
-Root: HKLM; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueType: string; ValueName: "{#MyAppShortName}"; ValueData: """{app}\{#MyAppExeName}"" /minimized"; Tasks: startwithwindows; Flags: uninsdeletevalue
+; Auto-start is per-user and owned by the app: the Options switch writes the
+; signed-in user's own HKCU Run value, so the same switch can turn it off
+; again. Earlier versions ALSO wrote an HKLM Run value from setup, which the
+; switch could not reach: autostart then started WDM twice at logon (the
+; second copy handed off and exited) and turning the switch off left the
+; machine-wide copy running. Those values are deleted on install so an
+; upgrade converges on the single per-user entry; the in-app toggle recreates
+; it on next start when the setting is on, so autostart survives the upgrade.
+; Uninstall removes the Run values for every hive in CleanRegistryKeys too.
+Root: HKLM; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueType: none; ValueName: "{#MyAppShortName}"; Flags: deletevalue uninsdeletevalue
+Root: HKLM32; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueType: none; ValueName: "{#MyAppShortName}"; Flags: deletevalue uninsdeletevalue
+Root: HKLM; Subkey: "Software\Microsoft\Windows\CurrentVersion\Explorer\StartupApproved\Run"; ValueType: none; ValueName: "{#MyAppShortName}"; Flags: deletevalue
 
 [Icons]
 Name: "{group}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"
@@ -543,7 +548,7 @@ end;
 
 procedure CleanRegistryKeys;
 begin
-  // Startup Run values (installer task + in-app Options toggle share value 'WDM').
+  // Startup Run value (in-app Options toggle owns it; value name 'WDM').
   // Per-user hives (HKCU + every HKEY_USERS SID) are handled in CleanAllUserHives.
   RegDeleteValue(HKCU, 'Software\Microsoft\Windows\CurrentVersion\Run', 'WDM');
   RegDeleteValue(HKLM, 'Software\Microsoft\Windows\CurrentVersion\Run', 'WDM');

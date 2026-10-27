@@ -68,4 +68,27 @@ public sealed class InstallerPackagingTests
         // administrator and write user data into the admin context.
         Assert.Contains("runasoriginaluser", launch, StringComparison.OrdinalIgnoreCase);
     }
+
+    /// <summary>Auto-start must have exactly one owner: the app's per-user
+    /// switch. A machine-wide HKLM Run value written by setup cannot be
+    /// turned off from the app, so autostart started WDM twice at logon and
+    /// the switch appeared not to work.</summary>
+    [Trait("Category", Cats.Unit)][Fact]
+    public void Autostart_IsOwnedByTheAppOnly()
+    {
+        List<string> registry = Section("Registry");
+
+        Assert.DoesNotContain(registry, l =>
+            l.Contains("CurrentVersion\\Run", StringComparison.OrdinalIgnoreCase) &&
+            l.Contains("ValueData:", StringComparison.OrdinalIgnoreCase));
+
+        Assert.DoesNotContain(Section("Tasks"), l =>
+            l.Contains("startwithwindows", StringComparison.OrdinalIgnoreCase));
+
+        // Upgrades must remove the value earlier versions wrote.
+        Assert.Contains(registry, l =>
+            l.Contains("Root: HKLM;", StringComparison.OrdinalIgnoreCase) &&
+            l.Contains("CurrentVersion\\Run", StringComparison.OrdinalIgnoreCase) &&
+            l.Contains("deletevalue", StringComparison.OrdinalIgnoreCase));
+    }
 }
