@@ -646,6 +646,11 @@ public sealed class DownloadEngine
             _sessions[task.Id] = session;
         }
         task.Status = TaskStatus.Downloading;
+        // A retry of a failed row starts clean: the old error belongs to the
+        // attempt being retried, not to the download now in progress.
+        task.Error = null;
+        task.ErrorDetail = null;
+        task.AutoResumeAttempts = 0;
         // Show "working" state immediately: the resolve/probe gap runs after
         // this with no bytes, speed or size yet (see RunSessionAsync).
         task.IsPreparing = true;
@@ -723,6 +728,7 @@ public sealed class DownloadEngine
                 if (task.Status == TaskStatus.Failed)
                     return; // FailTask already reported (missing source, same file…)
                 session.Token.ThrowIfCancellationRequested();
+                FinalizeCompleted(task);
                 task.Status = TaskStatus.Completed;
                 task.CompletedAt = DateTime.Now;
                 task.Progress = 100;
@@ -973,6 +979,7 @@ public sealed class DownloadEngine
                 await RunSingleStreamAsync(session, meta.ProbeBody);
 
             session.Token.ThrowIfCancellationRequested();
+            FinalizeCompleted(task);
             task.Status = TaskStatus.Completed;
             task.CompletedAt = DateTime.Now;
             task.Progress = 100;
@@ -991,6 +998,7 @@ public sealed class DownloadEngine
             // fully downloaded file as Paused.
             if (IsFileComplete(task))
             {
+                FinalizeCompleted(task);
                 task.Status = TaskStatus.Completed;
                 task.CompletedAt = DateTime.Now;
                 task.Progress = 100;
@@ -1484,11 +1492,45 @@ public sealed class DownloadEngine
             return false;
         try
         {
-            return task.DownloadedBytes >= task.TotalBytes;
+            // Trust the file, not the progress counter: a discarded part used to
+            // leave the counter above the real length, which could turn a
+            // cancelled partial download into a "completed" truncated file.
+            string path = task.FullPath;
+            if (!task.IsSizeEstimated && !string.IsNullOrWhiteSpace(path) && File.Exists(path))
+                return new FileInfo(path).Length == task.TotalBytes;
+            return task.IsSizeEstimated && task.DownloadedBytes >= task.TotalBytes;
         }
         catch
         {
             return false;
+        }
+    }
+
+    /// <summary>A finished download's counters must describe the file that is
+    /// actually on disk, and a successful retry must not keep showing the
+    /// error text from the attempt that failed before it.</summary>
+    private static void FinalizeCompleted(DownloadTask task)
+    {
+        task.Error = null;
+        task.ErrorDetail = null;
+        try
+        {
+            string path = task.FullPath;
+            if (!string.IsNullOrWhiteSpace(path) && File.Exists(path))
+            {
+                long length = new FileInfo(path).Length;
+                if (task.TotalBytes <= 0 || task.IsSizeEstimated)
+                    task.TotalBytes = length;
+                task.DownloadedBytes = length;
+            }
+            else if (task.TotalBytes > 0)
+            {
+                task.DownloadedBytes = task.TotalBytes;
+            }
+        }
+        catch
+        {
+            // Accounting must never fail a download that already finished.
         }
     }
 
@@ -1728,31 +1770,56 @@ public sealed class DownloadEngine
 
         var engine = new IdmRangeEngine();
         session.RangeEngine = engine;
-        await engine.RunAsync(
-            totalBytes,
-            task.FullPath,
-            session.StatePath,
-            urls,
-            task.Etag,
-            task.LastModified,
-            initial,
-            MaxRetries,
-            task.SegmentSnapshot,
-            () => _http,
-            (method, range, url) => BuildRequest(method, task, range, url),
-            (response, url) => ClassifyCloudflareForRange(response, url),
-            async (bytes, ct) =>
-            {
-                await ThrottleIdmAsync(bytes, ct);
-                await session.Governor.ThrottleAsync(task.SpeedLimitKbps, bytes, ct);
-            },
-            bytes => Interlocked.Add(ref session.BytesDownloaded, bytes),
-            baseline =>
-            {
-                Interlocked.Exchange(ref session.BytesDownloaded, baseline);
-                Interlocked.Exchange(ref session.LastBytes, baseline);
-            },
-            session.Token);
+        try
+        {
+            await engine.RunAsync(
+                totalBytes,
+                task.FullPath,
+                session.StatePath,
+                urls,
+                task.Etag,
+                task.LastModified,
+                initial,
+                MaxRetries,
+                task.SegmentSnapshot,
+                () => _http,
+                (method, range, url) => BuildRequest(method, task, range, url),
+                (response, url) => ClassifyCloudflareForRange(response, url),
+                async (bytes, ct) =>
+                {
+                    await ThrottleIdmAsync(bytes, ct);
+                    await session.Governor.ThrottleAsync(task.SpeedLimitKbps, bytes, ct);
+                },
+                bytes => Interlocked.Add(ref session.BytesDownloaded, bytes),
+                baseline =>
+                {
+                    Interlocked.Exchange(ref session.BytesDownloaded, baseline);
+                    Interlocked.Exchange(ref session.LastBytes, baseline);
+                },
+                session.Token);
+        }
+        catch (RangeNotSupportedException)
+        {
+            // The source started answering ranged requests with the whole
+            // entity (range support dropped mid-transfer). Finish over one
+            // ordinary connection rather than failing every segment.
+            ActivityLog.Write("SESSION",
+                $"'{task.FileName}' source stopped accepting byte ranges - continuing as a single stream");
+            DeleteParts(task.FullPath);
+            TryDelete(session.StatePath);
+            session.RangeEngine = null;
+            task.ChunkCount = 1;
+            Interlocked.Exchange(ref session.BytesDownloaded, 0);
+            Interlocked.Exchange(ref session.LastBytes, 0);
+            TaskChanged?.Invoke();
+            await RunSingleStreamAsync(session, null);
+        }
+
+        // The assembled file is verified against the expected length, so the
+        // persisted counters can be pinned to it (they used to drift from the
+        // real file whenever a part was discarded and re-fetched).
+        Interlocked.Exchange(ref session.BytesDownloaded, totalBytes);
+        Interlocked.Exchange(ref session.LastBytes, totalBytes);
     }
 
     /// <summary>Stream-path Cloudflare verdict for the range transport: an explicit

@@ -28,6 +28,16 @@ internal sealed class DiskWriteException : IOException
     public DiskWriteException(string message, Exception inner) : base(message, inner) { }
 }
 
+/// <summary>The source stopped honouring byte ranges mid-transfer: a ranged
+/// request came back as a plain 200 with the whole entity. The caller falls
+/// back to a single-stream transfer instead of failing the whole download
+/// (IDM does the same when a server drops range support).</summary>
+internal sealed class RangeNotSupportedException : IOException
+{
+    public RangeNotSupportedException(string url)
+        : base($"source {url} stopped honouring byte ranges") { }
+}
+
 /// <summary>
 /// One HTTP range download executed by the IDM core (Redm.Core): the segment
 /// plan comes from <see cref="Redm.Core.Engine.Plan"/>, resume is part-file based
@@ -178,11 +188,24 @@ public sealed class IdmRangeEngine
         int retries = maxRetries > 0 ? maxRetries : TransferEngine.MaxAttempts;
         var health = new MirrorHealth(mirrors);
 
+        // Workers share a linked token so the first hard failure stops the
+        // others: leaving them writing part files after the task is reported
+        // Failed lets a later resume/delete race with those orphaned writes.
+        using var runCts = CancellationTokenSource.CreateLinkedTokenSource(sessionToken);
         var workers = plan
             .Select(segment => RunSegmentAsync(segment, parts, health, totalBytes, etag, lastModified, retries,
-                httpProvider, buildRequest, classifyCloudflare, throttleAsync, addBytes, sessionToken))
+                httpProvider, buildRequest, classifyCloudflare, throttleAsync, addBytes, runCts.Token))
             .ToArray();
-        await Task.WhenAll(workers).ConfigureAwait(false);
+        try
+        {
+            await Task.WhenAll(workers).ConfigureAwait(false);
+        }
+        catch
+        {
+            runCts.Cancel();
+            try { await Task.WhenAll(workers).ConfigureAwait(false); } catch { }
+            throw;
+        }
 
         await MergeAsync(destPath, parts, totalBytes, sessionToken).ConfigureAwait(false);
         TryDelete(statePath);
@@ -205,15 +228,28 @@ public sealed class IdmRangeEngine
     {
         string part = parts[segment.Index];
         long need = segment.End - segment.Start + 1;
-        int attempt = 0;
+        // IDM's retry rule: a reconnect is only a failure when the transfer is
+        // not advancing. `consecutive` counts attempts since the last durable
+        // byte; any progress resets it, so a link that keeps dropping after
+        // delivering data is resumed for as long as it keeps making headway.
+        int consecutive = 0;
+        int requests = 0;
         Exception? lastError = null;
         string? lastWriter = null;
+        // Highest part length already credited. A reconnect only counts as a
+        // failure while the part is not growing.
+        long durableBytes = -1;
 
         while (true)
         {
             ct.ThrowIfCancellationRequested();
 
             long have = PartLength(part);
+            if (have > durableBytes)
+            {
+                durableBytes = have;
+                consecutive = 0;
+            }
             if (have >= need)
             {
                 MarkWritten(segment.Index, need);
@@ -221,16 +257,19 @@ public sealed class IdmRangeEngine
             }
             if (have > need)
             {
-                TryDelete(part);
+                Discard(segment.Index, part, have, addBytes);
                 have = 0;
+                durableBytes = 0;
                 lastWriter = null;
-                MarkWritten(segment.Index, 0);
             }
 
-            attempt++;
+            requests++;
+            if (requests > MaxRequestsPerSegment)
+                throw Failure(segment, requests, lastError, "too many reconnects");
+
             if (!mirrors.TryPick(out int mirrorIndex, out string url))
             {
-                throw Failure(segment, attempt, lastError, "no usable source remains");
+                throw Failure(segment, requests, lastError, "no usable source remains");
             }
 
             // A part written by the previous process (or by another mirror) is
@@ -249,9 +288,9 @@ public sealed class IdmRangeEngine
                     mirrors.ReportBad(mirrorIndex);
                     lastError = new IOException(
                         $"source {url} served different bytes at offset {at} than the already-downloaded part");
-                    if (attempt > retries)
-                        throw Failure(segment, attempt, lastError, lastError.Message);
-                    await Task.Delay(TransferEngine.RetryDelay, ct).ConfigureAwait(false);
+                    if (++consecutive > retries)
+                        throw Failure(segment, requests, lastError, lastError.Message);
+                    await BackoffAsync(consecutive, ct).ConfigureAwait(false);
                     continue;
                 }
             }
@@ -283,7 +322,7 @@ public sealed class IdmRangeEngine
                     outcome = status == 429 ? HttpOutcome.TooManyRequests : HttpOutcome.ServerError;
                     mirrors.ReportTransient(mirrorIndex);
                     lastError = new HttpRequestException($"server returned HTTP {status} from {url}");
-                    if (attempt > retries)
+                    if (++consecutive > TransportBudget(retries))
                         break;
                     continue;
                 }
@@ -291,12 +330,14 @@ public sealed class IdmRangeEngine
                 if (response.StatusCode == HttpStatusCode.RequestedRangeNotSatisfiable)
                 {
                     outcome = HttpOutcome.RangeNotSatisfiable;
-                    TryDelete(part);
+                    Discard(segment.Index, part, have, addBytes);
+                    have = 0;
+                    durableBytes = 0;
                     lastWriter = null;
-                    MarkWritten(segment.Index, 0);
                     lastError = new HttpRequestException($"source {url} rejected the requested range with HTTP 416");
-                    if (attempt > retries)
+                    if (++consecutive > retries)
                         break;
+                    await BackoffAsync(consecutive, ct).ConfigureAwait(false);
                     continue;
                 }
 
@@ -304,18 +345,12 @@ public sealed class IdmRangeEngine
                 {
                     if (have > 0 || segment.Start > 0)
                     {
-                        // A ranged request answered with the whole entity: the
-                        // part cannot be resumed from this response. Restart it
-                        // clean and try again (the server may honour the next one).
+                        // A ranged request answered with the whole entity: this
+                        // source no longer supports ranges. Do not burn the
+                        // retry budget on every segment - tell the host so the
+                        // file can continue over one ordinary connection.
                         outcome = HttpOutcome.OkWithoutRange;
-                        TryDelete(part);
-                        have = 0;
-                        lastWriter = null;
-                        MarkWritten(segment.Index, 0);
-                        lastError = new HttpRequestException($"source {url} ignored the byte range");
-                        if (attempt > retries)
-                            break;
-                        continue;
+                        throw new RangeNotSupportedException(url);
                     }
                     // First byte of the first segment: a plain 200 is a valid
                     // full-body response. Copy only this segment's window.
@@ -325,7 +360,7 @@ public sealed class IdmRangeEngine
                     outcome = HttpOutcome.ClientError;
                     mirrors.ReportTransient(mirrorIndex);
                     lastError = new HttpRequestException($"source {url} returned HTTP {status}");
-                    if (attempt > retries)
+                    if (++consecutive > retries)
                         break;
                     continue;
                 }
@@ -335,8 +370,8 @@ public sealed class IdmRangeEngine
                     outcome = HttpOutcome.CloudflareBlocked;
                     mirrors.ReportBad(mirrorIndex);
                     lastError = blocked;
-                    if (attempt > retries || !mirrors.HasUsable)
-                        throw Failure(segment, attempt, blocked, "Cloudflare challenge");
+                    if (++consecutive > retries || !mirrors.HasUsable)
+                        throw Failure(segment, requests, blocked, "Cloudflare challenge");
                     continue;
                 }
 
@@ -351,9 +386,9 @@ public sealed class IdmRangeEngine
                         mirrors.ReportBad(mirrorIndex);
                         lastError = new HttpRequestException(
                             $"source {url} returned range {range?.From}-{range?.To}, expected {wantFrom}-{segment.End}");
-                        if (attempt > retries)
+                        if (++consecutive > retries)
                             break;
-                        await Task.Delay(TransferEngine.RetryDelay, ct).ConfigureAwait(false);
+                        await BackoffAsync(consecutive, ct).ConfigureAwait(false);
                         continue;
                     }
 
@@ -364,9 +399,9 @@ public sealed class IdmRangeEngine
                         mirrors.ReportBad(mirrorIndex);
                         lastError = new HttpRequestException(
                             $"source {url} serves a different object than the primary (ETag/length mismatch)");
-                        if (attempt > retries)
+                        if (++consecutive > retries)
                             break;
-                        await Task.Delay(TransferEngine.RetryDelay, ct).ConfigureAwait(false);
+                        await BackoffAsync(consecutive, ct).ConfigureAwait(false);
                         continue;
                     }
                 }
@@ -408,7 +443,10 @@ public sealed class IdmRangeEngine
                     }
 
                     if (written > have)
+                    {
                         lastWriter = url;
+                        consecutive = 0; // durable progress: the retry budget restarts
+                    }
                 }
 
                 if (written >= need)
@@ -420,23 +458,37 @@ public sealed class IdmRangeEngine
                 }
 
                 // Short body (the server closed early): keep the grown part and
-                // resume on the next attempt.
+                // resume on the next attempt. Progress already reset the budget.
                 if (written > have)
+                {
                     OriginController.ReportResult(originKey, HttpOutcome.Success);
+                    consecutive = 0;
+                }
                 outcome = HttpOutcome.ShortRead;
                 lastError = new IOException(
                     $"source {url} ended after {written - have} of {need - have} requested bytes");
-                if (attempt > retries)
+                if (++consecutive > TransportBudget(retries))
                     break;
+                await BackoffAsync(consecutive, ct).ConfigureAwait(false);
             }
             catch (OperationCanceledException) when (!ct.IsCancellationRequested)
             {
-                outcome = HttpOutcome.Timeout;
-                mirrors.ReportTransient(mirrorIndex);
+                // Timed out after bytes landed? The host is still serving; only
+                // a stall from a standing start is server pressure.
                 lastError = new TimeoutException($"source {url} timed out");
-                if (attempt > retries)
-                    break;
-                await Task.Delay(TransferEngine.RetryDelay, ct).ConfigureAwait(false);
+                if (GrewSince(part, have))
+                {
+                    outcome = HttpOutcome.Success;
+                    consecutive = 0;
+                }
+                else
+                {
+                    outcome = HttpOutcome.Timeout;
+                    mirrors.ReportTransient(mirrorIndex);
+                    if (++consecutive > TransportBudget(retries))
+                        break;
+                }
+                await BackoffAsync(consecutive, ct).ConfigureAwait(false);
             }
             catch (OperationCanceledException)
             {
@@ -448,23 +500,43 @@ public sealed class IdmRangeEngine
                 lastError = ex;
                 throw;
             }
+            catch (RangeNotSupportedException)
+            {
+                throw;
+            }
             catch (HttpRequestException ex)
             {
-                outcome = HttpOutcome.ConnectionReset;
-                mirrors.ReportTransient(mirrorIndex);
                 lastError = ex;
-                if (attempt > retries)
-                    break;
-                await Task.Delay(TransferEngine.RetryDelay, ct).ConfigureAwait(false);
+                if (GrewSince(part, have))
+                {
+                    outcome = HttpOutcome.Success;
+                    consecutive = 0;
+                }
+                else
+                {
+                    outcome = HttpOutcome.ConnectionReset;
+                    mirrors.ReportTransient(mirrorIndex);
+                    if (++consecutive > TransportBudget(retries))
+                        break;
+                }
+                await BackoffAsync(consecutive, ct).ConfigureAwait(false);
             }
             catch (IOException ex)
             {
-                outcome = HttpOutcome.ConnectionReset;
-                mirrors.ReportTransient(mirrorIndex);
                 lastError = ex;
-                if (attempt > retries)
-                    break;
-                await Task.Delay(TransferEngine.RetryDelay, ct).ConfigureAwait(false);
+                if (GrewSince(part, have))
+                {
+                    outcome = HttpOutcome.Success;
+                    consecutive = 0;
+                }
+                else
+                {
+                    outcome = HttpOutcome.ConnectionReset;
+                    mirrors.ReportTransient(mirrorIndex);
+                    if (++consecutive > TransportBudget(retries))
+                        break;
+                }
+                await BackoffAsync(consecutive, ct).ConfigureAwait(false);
             }
             finally
             {
@@ -475,7 +547,49 @@ public sealed class IdmRangeEngine
             }
         }
 
-        throw Failure(segment, attempt, lastError, "retry budget exhausted");
+        throw Failure(segment, requests, lastError, "retry budget exhausted");
+    }
+
+    /// <summary>Consecutive transport failures (no durable progress) a segment
+    /// waits through. IDM keeps reconnecting for roughly half a minute to a
+    /// minute before it reports a dead link.</summary>
+    private const int MinTransportAttempts = 8;
+
+    /// <summary>Hard ceiling on requests per segment, counting the ones that
+    /// made progress. Guards against a source that dribbles one byte per
+    /// response instead of letting it loop forever.</summary>
+    private const int MaxRequestsPerSegment = 1000;
+
+    private static int TransportBudget(int retries) => Math.Max(retries, MinTransportAttempts);
+
+    /// <summary>True when the part grew while the failed attempt was running:
+    /// the drop delivered data, so the mirror is serving and the reconnect must
+    /// not be charged as server pressure.</summary>
+    private static bool GrewSince(string part, long before)
+    {
+        try { return PartLength(part) > before; }
+        catch { return false; }
+    }
+
+    /// <summary>Throws away a part that can no longer be used and retracts the
+    /// bytes it contributed, so progress always mirrors durable data (a
+    /// discarded part used to inflate DownloadedBytes past the file size).</summary>
+    private void Discard(int index, string part, long have, Action<long> addBytes)
+    {
+        TryDelete(part);
+        MarkWritten(index, 0);
+        if (have <= 0)
+            return;
+        try { addBytes(-have); } catch { }
+    }
+
+    /// <summary>Jittered exponential wait between reconnects (IDM waits between
+    /// attempts instead of hammering the source).</summary>
+    private static async Task BackoffAsync(int attempt, CancellationToken ct)
+    {
+        int cap = (int)Math.Min(8000, 400 * Math.Pow(2, Math.Min(attempt, 6)));
+        int ms = Random.Shared.Next(cap / 2, cap + 1);
+        await Task.Delay(ms, ct).ConfigureAwait(false);
     }
 
     /// <summary>Re-fetches the durable tail of a part from <paramref name="url"/>
